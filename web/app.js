@@ -117,6 +117,44 @@ function renderPorts(text) {
 
 let SCHEMA = [], VALUES = {};
 
+/*
+ * Some keys hold the hex of an ASCII string — GPON_PLOAM_PASSWD keeps
+ * "1234567890" as 31323334353637383930. Show the readable form, keeping the hex
+ * alongside since that is what the device stores and what you would type back.
+ *
+ * Driven by the schema type, never sniffed: INT1 holds 2147483647, which is
+ * valid hex decoding to '!GH6G', so a heuristic would mangle plain integers.
+ * A PLOAM password is 10 arbitrary octets by standard and is not required to be
+ * printable, so a value that is not stays hex.
+ */
+function hexAscii(hex) {
+  if (!hex) return null;
+  if (hex.length % 2 || /[^0-9a-fA-F]/.test(hex)) return null;
+  let out = '';
+  for (let i = 0; i < hex.length; i += 2) {
+    const c = parseInt(hex.slice(i, i + 2), 16);
+    if (c < 0x20 || c > 0x7e) return null;
+    out += String.fromCharCode(c);
+  }
+  return out;
+}
+
+function renderValue(row, raw) {
+  if (raw === undefined) return el('td', null, '\u2014');
+  if (raw === '') return el('td', null, '(empty)');
+  if (row.type === 'hexascii') {
+    const txt = hexAscii(raw);
+    const td = el('td');
+    if (txt === null) {
+      td.append(el('span', 'key', raw), el('span', 'tag', 'not ascii'));
+    } else {
+      td.append(el('span', null, txt), el('span', 'tag', raw));
+    }
+    return td;
+  }
+  return el('td', null, raw);
+}
+
 function renderConfig(filter) {
   const host = $('#sections');
   host.textContent = '';
@@ -142,8 +180,7 @@ function renderConfig(filter) {
       if (row.writable === 'identity') k.append(el('span', 'tag identity', 'identity'));
       if (row.apply === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
       tr.append(k);
-      const v = VALUES[row.name];
-      tr.append(el('td', null, v === undefined ? '—' : (v === '' ? '(empty)' : v)));
+      tr.append(renderValue(row, VALUES[row.name]));
       tr.append(el('td', null, row.type));
       tr.append(el('td', null, row.apply === 'unknown' ? '—' : row.apply));
       t.append(tr);

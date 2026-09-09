@@ -64,6 +64,21 @@ ssh admin@<stick> 'printf "admin:CHANGEME" > /etc/config/confd.auth; chmod 600 /
 unauthenticated: an open config UI on the LAN is a worse outcome than no UI, and
 "it stopped working" is a much better failure than "it let anyone in".
 
+### There is no session
+
+HTTP Basic is stateless, so this is worth being explicit about:
+
+- **No session, no cookie, no token, and no expiry.** The browser caches the
+  credential and replays it on every request; each one is authenticated
+  independently.
+- **No logout**, short of closing the browser or clearing its credential store.
+- Failed attempts are **delayed one second**. Without that, the only limit on
+  guessing was how fast the device could answer — measured at **319
+  attempts/sec**, enough to walk a human-chosen password. The daemon is
+  single-threaded and serial, so the delay is a hard global rate limit rather
+  than a per-connection one: an attacker cannot open more sockets to go faster.
+  Measured after: **1/sec**, with correct logins unaffected.
+
 The credential travels in cleartext. There is no usable TLS stack in this image
 and a handshake on a ~300 BogoMIPS core is not worth the cost — the same
 exposure `boa` already has, and telnet is open on `:23` regardless. Use a
@@ -104,6 +119,17 @@ scripts/gen-schema.py /tmp/cs /tmp/hs /tmp/runomci.sh > schema/keys.tsv
 
 `type` and `apply` are worth correcting by hand afterwards; the file is checked
 in for that reason.
+
+### Hex-encoded ASCII
+
+`GPON_PLOAM_PASSWD` stores the **hex of an ASCII string** — `1234567890` is kept
+as `31323334353637383930` — so the UI shows the readable form with the hex
+alongside, since the hex is what the device stores and what you would type back.
+
+That is driven by the schema type `hexascii`, never sniffed. `INT1` holds
+`2147483647`, which is valid hex and decodes to the printable nonsense `!GH6G`,
+so a heuristic would mangle ordinary integers. A PLOAM password is 10 arbitrary
+octets by standard and need not be printable; one that is not stays hex.
 
 ## Applying changes without a reboot
 

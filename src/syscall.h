@@ -31,6 +31,7 @@
  * architecture. It needs Linux 2.6.27; the stick runs 2.6.30.9, and the number
  * below is from Realtek's own asm/unistd.h for this kernel (4000 + 328). */
 #define __NR_pipe2      4328
+#define __NR_nanosleep  4166
 #define __NR_socket     4183
 #define __NR_bind       4169
 #define __NR_listen     4174

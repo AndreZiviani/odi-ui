@@ -399,6 +399,19 @@ static void serve(int conn)
 	 * any later scan for a header dead. That cost an hour of a correct
 	 * password being rejected. */
 	if (!authorised(req)) {
+		/*
+		 * Sleep before answering a failed attempt. HTTP Basic has no
+		 * session and no lockout, so without this the only limit on
+		 * guessing is how fast the device can answer — measured at 319
+		 * attempts/sec, which is plenty to walk a human-chosen password.
+		 *
+		 * This server is single-threaded and serial, which turns a
+		 * modest delay into a hard global rate limit: the sleep blocks
+		 * every other request too, so an attacker cannot open more
+		 * connections to go faster. It costs a legitimate typo one
+		 * second.
+		 */
+		sleep_s(1);
 		respond(conn, "401 Unauthorized", "text/plain",
 			"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");
 		put_fd(conn, "authentication required\n");

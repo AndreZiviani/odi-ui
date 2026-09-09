@@ -31,6 +31,13 @@ import sys
 # pads.
 REFUSED = {"LAN_SDS_MODE", "LAN_SPEED_MODE", "FIBER_MODE"}
 
+# Stored as the hex of an ASCII string: "abc" is kept as 616263. The UI decodes
+# these for display, and it has to be driven from here rather than sniffed —
+# INT1 holds 2147483647, which is valid hex and decodes to the printable
+# nonsense '!GH6G'. A heuristic would corrupt every integer that happens to be
+# hex-shaped.
+HEX_ASCII = {"GPON_PLOAM_PASSWD"}
+
 # Lose these and the OLT stops authenticating the ONU.
 IDENTITY = {
     "GPON_SN", "PON_VENDOR_ID", "MAC_KEY", "ELAN_MAC_ADDR", "GPON_ONU_MODEL",
@@ -55,7 +62,9 @@ def section_of(name):
     return "other"
 
 
-def type_of(value):
+def type_of(name, value):
+    if name in HEX_ASCII:
+        return "hexascii"
     if value == "":
         return "string"
     if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", value):
@@ -132,7 +141,8 @@ def main():
             writable = "yes"
         apply_ = "restart:omci" if base in omci_keys else "unknown"
         sect = "switch" if table else section_of(base)
-        print("\t".join([name, store, address, sect, type_of(value), apply_, writable]))
+        print("\t".join([name, store, address, sect,
+                         type_of(base, value), apply_, writable]))
 
 
 if __name__ == "__main__":
