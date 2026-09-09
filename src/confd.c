@@ -494,7 +494,52 @@ static void emit_firmware_json(int fd)
 			n++;
 		put_json_str(fd, ver, n);
 	}
-	put_fd(fd, "\",\"env\":{");
+	put_fd(fd, "\",\"mem\":\"");
+	{
+		/* Total RAM, so the upload note can state the real figure rather
+		 * than a number baked into the page. */
+		char mi[256];
+		unsigned long k;
+
+		if (read_file("/proc/meminfo", mi, sizeof(mi)) > 0) {
+			for (k = 0; mi[k]; k++) {
+				if (!spre(mi + k, "MemTotal:"))
+					continue;
+				k += 9;
+				while (mi[k] == ' ')
+					k++;
+				{
+					unsigned long e = k;
+
+					while (mi[e] && mi[e] != ' ' && mi[e] != '\n')
+						e++;
+					/* kB -> MB, integer, good enough for a note */
+					{
+						unsigned long v = 0, q;
+
+						for (q = k; q < e; q++)
+							v = v * 10 + (unsigned long)(mi[q] - '0');
+						v /= 1024;
+						{
+							char num[8];
+							unsigned long n = 0;
+
+							if (!v)
+								num[n++] = '0';
+							while (v) {
+								num[n++] = (char)('0' + v % 10);
+								v /= 10;
+							}
+							while (n)
+								write_all(fd, &num[--n], 1);
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
+	put_fd(fd, " MB\",\"env\":{");
 
 	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf)) > 0) {
 		while (buf[i]) {
