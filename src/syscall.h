@@ -1,9 +1,12 @@
 /*
- * Copied verbatim from ~/git/sfp-exporter/src/syscall.h.
+ * Started as a copy of ~/git/sfp-exporter/src/syscall.h and has since diverged:
+ * confd needs a child's exit status (wait_exitcode, run_to_buf_ex) and the
+ * MIPS socket-timeout constants, neither of which the exporter has any use for.
  *
  * Kept as a copy rather than a submodule: it is one header, it changes rarely,
  * and a submodule for it would cost every clone more than the duplication does.
- * If you fix something here, fix it there too.
+ * A fix to the SHARED parts -- the syscall stubs, read_file, close_inherited,
+ * sig_ignore -- belongs in both. The additions above do not.
  */
 /*
  * Minimal o32 MIPS syscall layer, shared by the freestanding binaries here.
@@ -60,6 +63,18 @@
 #define SOCK_STREAM   2       /* generic ABI says 1 */
 #define SOL_SOCKET    65535   /* generic ABI says 1 */
 #define SO_REUSEADDR  4
+
+/*
+ * The two timeouts are MIPS values too (0x1005/0x1006 against the generic
+ * 20/21). Both take a `struct timeval`, which is two longs on this 32-bit
+ * target.
+ *
+ * A wrong constant here fails safe: setsockopt returns -1, nothing checks it,
+ * and the socket keeps the blocking behaviour it has always had. So this cannot
+ * break a stick that boots -- it can only fail to fix the hang it is for.
+ */
+#define SO_SNDTIMEO   4101    /* 0x1005 */
+#define SO_RCVTIMEO   4102    /* 0x1006 */
 
 /* Defined in start.S — only setsockopt needs more than three arguments. */
 extern long __syscall6(long n, long a, long b, long c, long d, long e, long f);
@@ -234,6 +249,20 @@ __attribute__((unused)) static void put_u32_fd(int fd, unsigned long v)
  */
 __attribute__((unused))
 /*
+ * Decode a waitpid status into an exit code: 0-255 for a normal exit, -1 for a
+ * child killed by a signal or one that never exited at all.
+ *
+ * Without this, "did the child succeed?" gets answered by how many bytes it
+ * printed, and a failed execve -- which exits 127 silently -- reads as success.
+ */
+static long wait_exitcode(long status)
+{
+	if ((status & 0x7f) != 0)
+		return -1;                 /* killed by a signal */
+	return (status >> 8) & 0xff;
+}
+
+/*
  * Run a command and capture its output.
  *
  * A pipe, not a temporary file. The file version needed a writable directory,
@@ -243,14 +272,16 @@ __attribute__((unused))
  * the dependency: nothing to create, nothing left behind, and no fixed path
  * for two instances to collide on.
  */
-static long run_to_buf(const char *path, char *const argv[],
-		       char *buf, unsigned long cap)
+static long run_to_buf_ex(const char *path, char *const argv[],
+			  char *buf, unsigned long cap, long *exitcode)
 {
 	int fds[2];
 	long pid;
 	long status = 0;
 	unsigned long got = 0;
 
+	if (exitcode)
+		*exitcode = -1;
 	if (syscall3(__NR_pipe2, (long)fds, 0, 0) < 0)
 		return -1;
 
@@ -293,7 +324,21 @@ static long run_to_buf(const char *path, char *const argv[],
 
 	syscall3(__NR_close, fds[0], 0, 0);
 	syscall3(__NR_waitpid, pid, (long)&status, 0);
+	if (exitcode)
+		*exitcode = wait_exitcode(status);
 	return (long)got;
+}
+
+/*
+ * The common case: the caller wants the output and does not care why the child
+ * stopped. Anything acting on "did it work" must use the _ex form -- a child
+ * that never exec'd exits 127 having written nothing, which is indistinguishable
+ * from success by byte count alone.
+ */
+__attribute__((unused)) static long run_to_buf(const char *path, char *const argv[],
+					       char *buf, unsigned long cap)
+{
+	return run_to_buf_ex(path, argv, buf, cap, 0);
 }
 
 /*

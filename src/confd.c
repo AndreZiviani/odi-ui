@@ -10,14 +10,24 @@
  * of indexed tables, described by a schema file rather than by C, so adding a
  * key is a data change and not a new handler.
  *
- * Phase 1 is READ ONLY. There is deliberately no write path in this binary yet.
- *
  * Values are emitted as the literal text `flash` printed. Nothing is parsed to
  * a number and formatted back, which is why a freestanding build with no libc
  * costs nothing here.
  */
 
 #include "util.h"
+
+/*
+ * Stamped in by the Makefile from `git describe`. It is reported by
+ * /api/firmware and shown in the page footer for the same reason the exporter
+ * reports its own: /etc/config/confd/confd overrides the image's copy and
+ * survives reflashing, so the binary that is running can quietly outlive the
+ * image it was built against. Which one is live should be a query, not an
+ * inspection.
+ */
+#ifndef BUILD_ID
+#define BUILD_ID "unknown"
+#endif
 
 #define DEFAULT_PORT 8080
 #define BACKLOG      8
@@ -57,8 +67,17 @@
 
 /* Static, not stack: this is a single-threaded serial server and these would
  * otherwise be tens of kilobytes of stack in one frame. */
-static char req[4096];
+/*
+ * req holds a whole request, headers and body together. 4096 was not enough: a
+ * save of a dozen keys with long values overran it, and the overrun did not
+ * announce itself -- the body was simply truncated mid-value and written. It is
+ * sized so that a realistic save fits with room to spare, and read_request
+ * answers 413 rather than trimming anything that still does not.
+ */
+static char req[16384];
 static char schema[40960];
+static char meta[16384];
+static char cons[16384];
 static char values[24576];
 static char status[16384];
 static char authbuf[256];
@@ -155,6 +174,122 @@ static int header_copy(const char *r, const char *name, char *out, unsigned long
 			return o > 0;
 		}
 	}
+}
+
+/*
+ * Read a whole request: the headers, then exactly Content-Length bytes of body.
+ *
+ * One read() is not a request. TCP is a byte stream, and a browser routinely
+ * puts the headers in one segment and the body in the next -- so a POST arrived
+ * with an empty body and handle_write answered {"results":[],"apply":"none"},
+ * reporting no error and writing nothing.
+ *
+ * The truncation case was worse. A body larger than req[] was cut mid-value,
+ * url_decode accepted the fragment, write_key wrote it, and the read-back then
+ * compared the fragment against ITSELF and reported ok:true. Every guard in the
+ * write path was satisfied by a value the user never typed. A request that does
+ * not fit is therefore refused outright, not trimmed.
+ *
+ * Returns the byte count, -1 if the peer gave up mid-request, -2 if it does not
+ * fit.
+ */
+#define REQ_INCOMPLETE (-1)
+#define REQ_TOO_LARGE  (-2)
+
+static long read_request(int conn, char *buf, unsigned long cap)
+{
+	unsigned long got = 0, hdr = 0, want = 0;
+	int have_hdr = 0;
+
+	for (;;) {
+		long n;
+		unsigned long i;
+
+		if (have_hdr && got >= hdr + want)
+			return (long)got;
+		if (got + 1 >= cap)
+			return REQ_TOO_LARGE;
+
+		n = syscall3(__NR_read, conn, (long)(buf + got), cap - got - 1);
+		if (n <= 0)
+			return REQ_INCOMPLETE;
+		got += (unsigned long)n;
+		buf[got] = 0;
+
+		if (have_hdr)
+			continue;
+
+		for (i = 0; i + 3 < got; i++) {
+			if (buf[i] == '\r' && buf[i + 1] == '\n' &&
+			    buf[i + 2] == '\r' && buf[i + 3] == '\n') {
+				have_hdr = 1;
+				hdr = i + 4;
+				break;
+			}
+		}
+		if (!have_hdr)
+			continue;
+
+		/* A GET has no Content-Length and wants nothing more. An absent
+		 * or unparsable header is treated as zero rather than guessed
+		 * at: a body we were not told the length of is one we cannot
+		 * know we have all of. */
+		if (header_copy(buf, "content-length", hdrbuf, sizeof(hdrbuf))) {
+			unsigned long v = 0, k;
+
+			for (k = 0; hdrbuf[k]; k++) {
+				if (hdrbuf[k] < '0' || hdrbuf[k] > '9') {
+					v = 0;
+					break;
+				}
+				v = v * 10 + (unsigned long)(hdrbuf[k] - '0');
+				if (v > cap)
+					return REQ_TOO_LARGE;
+			}
+			want = v;
+		}
+		/* Reject an oversized body before reading it rather than after. */
+		if (hdr + want + 1 > cap)
+			return REQ_TOO_LARGE;
+	}
+}
+
+/*
+ * Reject a cross-site write.
+ *
+ * HTTP Basic has no session and no token: the browser replays the credential on
+ * every request to this host, including one triggered by a page on some other
+ * site. Without this, any page the operator visits can POST to /api/firmware
+ * with action=reboot, or to /api/config with _confirm=identity. A urlencoded
+ * form POST is a CORS-simple request, so there is no preflight to stop it, and
+ * the attacker not being able to READ the reply does not matter -- every one of
+ * those routes is a write.
+ *
+ * The test is Origin-when-present. Every current browser sends Origin on a
+ * cross-origin POST, form submissions included, so the attack is blocked; curl
+ * and the repo's own scripts send none and keep working. That asymmetry is the
+ * point -- a check that demanded a header would break every non-browser client
+ * for no gain, since an attacker who can set arbitrary headers is not doing CSRF
+ * in the first place.
+ */
+static int same_origin(const char *r)
+{
+	char origin[256], host[128];
+	const char *o = origin;
+
+	if (!header_copy(r, "origin", origin, sizeof(origin)))
+		return 1;                  /* not a browser-initiated write */
+	if (!header_copy(r, "host", host, sizeof(host)))
+		return 0;
+
+	if (spre(o, "http://"))
+		o += 7;
+	else if (spre(o, "https://"))
+		o += 8;
+	else
+		return 0;                  /* "null", or something exotic */
+
+	return seq(o, host);
 }
 
 /*
@@ -291,19 +426,26 @@ static int type_ok(const char *type, const char *v)
 		return 1;
 	}
 	if (seq(type, "ipv4")) {
+		unsigned long oct = 0;
+
+		/* Counting dots and digits is not enough: it accepts
+		 * 1.2.3.400 and 999.999.999.999. Seven keys carry this type,
+		 * LAN_IP_ADDR among them -- the address this UI is reached on. */
 		for (i = 0; v[i]; i++) {
 			if (v[i] == '.') {
-				if (!digits || digits > 3)
+				if (!digits || digits > 3 || oct > 255)
 					return 0;
 				digits = 0;
+				oct = 0;
 				dots++;
 			} else if (v[i] >= '0' && v[i] <= '9') {
+				oct = oct * 10 + (unsigned long)(v[i] - '0');
 				digits++;
 			} else {
 				return 0;
 			}
 		}
-		return dots == 3 && digits && digits <= 3;
+		return dots == 3 && digits && digits <= 3 && oct <= 255;
 	}
 	if (seq(type, "mac") || seq(type, "hex32") || seq(type, "hexascii")) {
 		unsigned long want = seq(type, "mac") ? 12 : (seq(type, "hex32") ? 32 : 0);
@@ -315,7 +457,20 @@ static int type_ok(const char *type, const char *v)
 			return 0;                  /* hex is whole bytes */
 		return want ? (i == want) : 1;
 	}
-	return 1;                                  /* string: anything */
+	if (seq(type, "string"))
+		return 1;
+
+	/*
+	 * An unrecognised type is refused, not waved through.
+	 *
+	 * This used to `return 1` for anything it did not know, which meant a
+	 * typo in the schema's type column -- `itn` for `int` -- silently
+	 * disabled validation for that key while every other check still
+	 * passed. Failing closed turns that into a visible refusal instead.
+	 * scripts/check-schema.py validates the column against this same set,
+	 * so the two cannot drift apart unnoticed.
+	 */
+	return 0;
 }
 
 /* ----------------------------------------------------------------- write --- */
@@ -379,8 +534,20 @@ static int schema_lookup(const char *buf, const char *name,
 			if (name[n] || ls + n != p)
 				goto next;
 		}
-		/* columns 5 (apply) and 6 (writable) */
-		for (c = 1; c <= 6 && p < le; c++) {
+		/*
+		 * Every column through 6 must be present.
+		 *
+		 * The out-params were zeroed on entry, so a truncated row used
+		 * to leave writable and type as "" -- and "" is neither "never"
+		 * nor "identity", which made the key writable, and made type_ok
+		 * return 1 for anything. A malformed row became the most
+		 * permissive row in the file. It matters because confd prefers
+		 * /etc/config/confd/keys.tsv, edited live on the device, which
+		 * `make check` never sees.
+		 */
+		for (c = 1; c <= 6; c++) {
+			if (p >= le)
+				return 0;
 			p++;
 			fs = p;
 			while (p < le && buf[p] != '\t')
@@ -416,6 +583,132 @@ next:
 		i = (buf[le] == '\n') ? le + 1 : le;
 	}
 	return 0;
+}
+
+/*
+ * Column `col` of the row whose first column is `name`. Same shape as
+ * schema_lookup, but for the files where only one field is wanted.
+ *
+ * A row shorter than `col` yields an empty string and 0, so a caller cannot
+ * mistake "the file does not say" for "the file says nothing applies".
+ */
+static int tsv_field(const char *buf, const char *name, unsigned long col,
+		     char *out, unsigned long cap)
+{
+	unsigned long i = 0;
+
+	out[0] = 0;
+	while (buf[i]) {
+		unsigned long ls = i, le = i, p, c, fs, n = 0;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		if (buf[ls] == '#' || ls == le)
+			goto next;
+
+		p = ls;
+		while (p < le && buf[p] != '\t')
+			p++;
+		while (name[n] && ls + n < p && name[n] == buf[ls + n])
+			n++;
+		if (name[n] || ls + n != p)
+			goto next;
+
+		for (c = 1; c <= col; c++) {
+			if (p >= le)
+				return 0;      /* short row */
+			p++;
+			fs = p;
+			while (p < le && buf[p] != '\t')
+				p++;
+			if (c == col) {
+				unsigned long k = 0;
+
+				while (fs + k < p && k + 1 < cap)
+					out[k] = buf[fs + k], k++;
+				out[k] = 0;
+				return 1;
+			}
+		}
+		return 0;
+next:
+		i = (buf[le] == '\n') ? le + 1 : le;
+	}
+	return 0;
+}
+
+/*
+ * The range and option-list checks from meta.tsv, enforced server side.
+ *
+ * The browser applies these too, but that was ALL that applied them: an
+ * out-of-range VLAN ID typed into the page was marked invalid in red and then
+ * POSTed anyway, because save() never consulted the marking and the daemon had
+ * no notion of a range at all. A VLAN ID of 99999 is a valid integer and was
+ * written to flash as one.
+ *
+ * Returns 0 and fills `why` when the value is not acceptable.
+ */
+static int meta_ok(const char *name, const char *v, const char **why)
+{
+	char field[512];
+
+	*why = 0;
+
+	if (tsv_field(meta, name, 3, field, sizeof(field)) && field[0]) {
+		unsigned long i = 0;
+		int found = 0;
+
+		/* options are value=label pairs joined by '|'. Only the value
+		 * half is compared; the label is for the page. */
+		while (field[i] && !found) {
+			unsigned long vs = i, k = 0;
+
+			while (field[i] && field[i] != '=' && field[i] != '|')
+				i++;
+			if (field[i] == '=') {
+				while (vs + k < i && v[k] && v[k] == field[vs + k])
+					k++;
+				if (vs + k == i && !v[k])
+					found = 1;
+			}
+			while (field[i] && field[i] != '|')
+				i++;
+			if (field[i] == '|')
+				i++;
+		}
+		if (!found) {
+			*why = "not one of the values this key accepts";
+			return 0;
+		}
+	}
+
+	if (tsv_field(meta, name, 5, field, sizeof(field)) && field[0]) {
+		unsigned long i = 0, lo = 0, hi = 0, n = 0;
+
+		while (field[i] >= '0' && field[i] <= '9')
+			lo = lo * 10 + (unsigned long)(field[i++] - '0');
+		if (field[i] != '-')
+			return 1;              /* malformed range: check-schema.py catches it */
+		i++;
+		while (field[i] >= '0' && field[i] <= '9')
+			hi = hi * 10 + (unsigned long)(field[i++] - '0');
+		if (field[i])
+			return 1;
+
+		/* Reached only for a key whose type already proved it decimal. */
+		for (i = 0; v[i]; i++) {
+			if (v[i] < '0' || v[i] > '9')
+				return 1;
+			n = n * 10 + (unsigned long)(v[i] - '0');
+			if (n > 0xffffff)
+				break;
+		}
+		if (n < lo || n > hi) {
+			*why = "outside the range this key accepts";
+			return 0;
+		}
+	}
+	return 1;
 }
 
 /*
@@ -603,20 +896,35 @@ next:
 			i = (buf[le] == '\n') ? le + 1 : le;
 		}
 	}
-	put_fd(fd, "}}");
+	put_fd(fd, "},\"confd\":\"");
+	put_json_cstr(fd, BUILD_ID);
+	put_fd(fd, "\"}");
 }
 
 static int nv_set(const char *key, const char *value)
 {
 	char *argv[5];
 	char buf[256];
+	long code = -1;
 
 	argv[0] = "nv";
 	argv[1] = "setenv";
 	argv[2] = (char *)key;
 	argv[3] = (char *)value;
 	argv[4] = 0;
-	return run_to_buf("/bin/nv", argv, buf, sizeof(buf)) >= 0;
+
+	/*
+	 * The exit code is the whole check here, and this used to test the byte
+	 * count instead: `nv setenv` prints nothing on success, and a child that
+	 * failed to exec exits 127 printing nothing too. So a missing /bin/nv
+	 * answered {"ok":true,"note":"armed"} and the page said the partition
+	 * was armed for one boot. sw_tryactive was never written, the reboot
+	 * came up on the old image, and the natural conclusion was that the new
+	 * image had failed its trial.
+	 */
+	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code) < 0)
+		return 0;
+	return code == 0;
 }
 
 /* ---------------------------------------------------------------- routes --- */
@@ -715,6 +1023,18 @@ static void emit_values_json(int fd, const char *buf)
 				p++;
 			ve = p;
 			if (ke <= ks || ve < vs)
+				goto next;
+
+			/*
+			 * A value inside a table Dir that carries no index has
+			 * no addressable form -- TBL..Field is not a thing
+			 * xmlconfig accepts -- so it is dropped rather than
+			 * emitted bare. Emitted bare it would collide with a
+			 * real scalar of the same name, and the four
+			 * implementations of this parser disagreed about it:
+			 * gen-schema.py dropped it and the other three did not.
+			 */
+			if (table[0] && !index[0])
 				goto next;
 
 			if (!first)
@@ -869,7 +1189,8 @@ static void handle_write(int conn, const char *body)
 	char name[128], value[512], got[512], addr[160];
 	char type[32], writable[32], apply[32];
 	unsigned long i = 0;
-	int first = 1, confirm = 0, any_omci = 0, any_reboot = 0;
+	int first = 1, confirm = 0;
+	int any_omci = 0, any_reboot = 0, any_untraced = 0;
 
 	if (read_file(SCHEMA_PATH_OVR, schema, sizeof(schema)) <= 0 &&
 	    read_file(SCHEMA_PATH, schema, sizeof(schema)) <= 0) {
@@ -877,6 +1198,17 @@ static void handle_write(int conn, const char *body)
 		put_fd(conn, "{\"error\":\"no schema\"}");
 		return;
 	}
+
+	/* meta.tsv carries the ranges and option lists; consumers.tsv carries
+	 * the apply class derived from which binaries read the key. Both are
+	 * optional -- a device without them validates by type alone and reports
+	 * every write as untraced, which is the honest degraded answer. */
+	if (read_file(META_PATH_OVR, meta, sizeof(meta)) <= 0 &&
+	    read_file(META_PATH, meta, sizeof(meta)) <= 0)
+		meta[0] = 0;
+	if (read_file(CONS_PATH_OVR, cons, sizeof(cons)) <= 0 &&
+	    read_file(CONS_PATH, cons, sizeof(cons)) <= 0)
+		cons[0] = 0;
 
 	/* Identity keys need saying so explicitly. Losing GPON_SN or MAC_KEY
 	 * means the OLT stops authenticating the ONU, which is not something to
@@ -928,7 +1260,11 @@ static void handle_write(int conn, const char *body)
 					type, sizeof(type),
 					writable, sizeof(writable), apply, sizeof(apply)))
 			err = "not in the schema";
-		else if (seq(writable, "never"))
+		/* An allowlist, not a denylist. "never" was the only value
+		 * refused, so an empty or misspelt column -- from a short row,
+		 * or a hand edit of the device's own keys.tsv -- read as
+		 * writable. Only the two values that mean writable are. */
+		else if (!seq(writable, "yes") && !seq(writable, "identity"))
 			err = "not writable";
 		else if (seq(writable, "identity") && !confirm)
 			err = "identity key: resend with _confirm=identity";
@@ -936,6 +1272,8 @@ static void handle_write(int conn, const char *body)
 			err = "cannot be cleared: flash set refuses an empty value";
 		else if (!type_ok(type, value))
 			err = "not valid for its type";
+		else
+			meta_ok(name, value, &err);   /* sets err, or clears it */
 
 		if (!first)
 			put_fd(conn, ",");
@@ -955,12 +1293,34 @@ static void handle_write(int conn, const char *body)
 			put_fd(conn, "\"ok\":true,\"value\":\"");
 			put_json_cstr(conn, got);
 			put_fd(conn, "\"}");
-			/* The schema's apply column is the fallback; the derived
-			 * one in consumers.tsv is authoritative where present. */
-			if (seq(apply, "restart:omci"))
-				any_omci = 1;
-			else
-				any_reboot = 1;
+			/*
+			 * consumers.tsv is authoritative where it has a row --
+			 * it is derived from which binaries actually read the
+			 * key -- and the schema's own column is the fallback.
+			 * The comment here used to say exactly that while the
+			 * code read neither: it lumped everything that was not
+			 * literally restart:omci into "reboot", so a key marked
+			 * immediate still told the user to reboot, and the page
+			 * could show "no reboot" in the table and demand one on
+			 * save.
+			 */
+			{
+				char derived[32];
+				const char *a = apply;
+
+				if (tsv_field(cons, name, 1, derived, sizeof(derived)) &&
+				    derived[0] && !seq(derived, "unknown"))
+					a = derived;
+
+				if (seq(a, "restart:omci"))
+					any_omci = 1;
+				else if (seq(a, "reboot"))
+					any_reboot = 1;
+				else if (seq(a, "immediate"))
+					;              /* already in effect */
+				else
+					any_untraced = 1;
+			}
 		} else {
 			/* The write reported success and the value did not
 			 * change. This is why every write is read back. */
@@ -973,9 +1333,23 @@ next:
 			i++;
 	}
 
+	/*
+	 * The strongest class in the batch wins, and "untraced" is reported
+	 * separately from "reboot". They need different words: one is "this key
+	 * is known to need a reboot", the other is "nothing in the image was
+	 * seen reading this key, so assume the worst" -- and 159 of the 184 keys
+	 * are in the second group.
+	 */
 	put_fd(conn, "],\"apply\":\"");
-	put_fd(conn, any_reboot ? "reboot" : (any_omci ? "restart:omci" : "none"));
-	put_fd(conn, "\"}");
+	if (any_reboot || any_untraced)
+		put_fd(conn, "reboot");
+	else if (any_omci)
+		put_fd(conn, "restart:omci");
+	else
+		put_fd(conn, "none");
+	put_fd(conn, "\",\"untraced\":");
+	put_fd(conn, (any_untraced && !any_reboot) ? "true" : "false");
+	put_fd(conn, "}");
 }
 
 static void serve(int conn)
@@ -983,10 +1357,14 @@ static void serve(int conn)
 	char *path, *method, *body;
 	long n;
 
-	n = syscall3(__NR_read, conn, (long)req, sizeof(req) - 1);
+	n = read_request(conn, req, sizeof(req));
+	if (n == REQ_TOO_LARGE) {
+		respond(conn, "413 Payload Too Large", "text/plain", 0);
+		put_fd(conn, "request too large\n");
+		return;
+	}
 	if (n <= 0)
 		return;
-	req[n] = 0;
 
 	/* Authenticate BEFORE parsing, not after: request_path() NUL-terminates
 	 * the method and the path in place, and the first of those NULs stops
@@ -1014,12 +1392,48 @@ static void serve(int conn)
 
 	/* Grab the body BEFORE parsing the request line: request_path()
 	 * NUL-terminates the method in place and the first of those NULs would
-	 * stop the scan for the header/body boundary dead. */
+	 * stop the scan for the header/body boundary dead. Same for the CSRF
+	 * check, which reads the Origin and Host headers. */
 	body = request_body(req);
+	{
+		int cross = !same_origin(req);
 
-	path = request_path(req, &method);
-	if (!path) {
-		respond(conn, "400 Bad Request", "text/plain", 0);
+		path = request_path(req, &method);
+		if (!path) {
+			respond(conn, "400 Bad Request", "text/plain", 0);
+			return;
+		}
+		if (cross && !seq(method, "GET")) {
+			respond(conn, "403 Forbidden", "text/plain", 0);
+			put_fd(conn, "cross-site request refused\n");
+			return;
+		}
+	}
+
+	/*
+	 * Sign out, as far as HTTP Basic allows.
+	 *
+	 * There is no session to end -- the browser holds the credential and
+	 * replays it -- so the honest implementation is to answer 401 and let
+	 * the browser drop what it cached for this realm. It is not a guarantee
+	 * (the credential is cleared at the browser's discretion), which is why
+	 * the page says close the tab.
+	 *
+	 * The button shipped before this route did, and posting to a route that
+	 * does not exist fell through to the 405 handler: the whole UI was
+	 * replaced by a plain-text error page with no way back but retyping the
+	 * URL.
+	 */
+	if (seq(path, "/api/logout")) {
+		respond(conn, "401 Unauthorized", "text/html",
+			"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");
+		put_fd(conn,
+		       "<!doctype html><meta charset=utf-8>"
+		       "<title>Signed out</title>"
+		       "<body style=\"font:14px system-ui;padding:2rem\">"
+		       "<h1>Signed out</h1>"
+		       "<p>Close this tab to be sure the credential is gone. "
+		       "<a href=\"/\">Sign in again</a>.</body>");
 		return;
 	}
 
@@ -1152,12 +1566,26 @@ static void serve(int conn)
 
 	if (seq(path, "/api/defaults")) {
 		/* Both files are small — ten values between them — so one buffer
-		 * and the values parser already written cover it. */
-		long n = read_file(DEFAULT_CS, values, sizeof(values));
+		 * and the values parser already written cover it.
+		 *
+		 * Clear it FIRST. read_file returns without touching the buffer
+		 * when open() fails, and `values` is the same buffer
+		 * /api/values fills. A device missing both default files
+		 * therefore served the previous /api/values response back as
+		 * the image defaults, and the page labelled every key on it an
+		 * image default -- the exact inversion of what it is for, and
+		 * it suppressed the baseline "changed" labels too. */
+		long n, m;
 
+		values[0] = 0;
+		n = read_file(DEFAULT_CS, values, sizeof(values));
 		if (n < 0)
 			n = 0;
-		read_file(DEFAULT_HS, values + n, sizeof(values) - (unsigned long)n);
+		values[n] = 0;
+		m = read_file(DEFAULT_HS, values + n, sizeof(values) - (unsigned long)n);
+		if (m < 0)
+			m = 0;
+		values[n + m] = 0;
 		respond(conn, "200 OK", "application/json", 0);
 		emit_values_json(conn, values);
 		return;
@@ -1270,9 +1698,46 @@ int main(int argc, char **argv)
 	}
 
 	for (;;) {
+		/* struct timeval: seconds, microseconds — two longs here. */
+		long tv[2];
+
 		conn = syscall3(__NR_accept, fd, 0, 0);
-		if (conn < 0)
+		if (conn < 0) {
+			/*
+			 * Back off instead of retrying flat out. A transient
+			 * EINTR costs a second; a sticky one -- EMFILE from a
+			 * descriptor leak, or ENOBUFS under memory pressure --
+			 * would otherwise spin this loop at full speed on a
+			 * ~300 BogoMIPS core, starving omci_app and the
+			 * exporter. Nothing logs it and nothing exits, so the
+			 * only symptom would be a stick that goes slow and
+			 * stays slow.
+			 */
+			sleep_s(1);
 			continue;
+		}
+
+		/*
+		 * Bound how long one client can hold the server.
+		 *
+		 * This is single-threaded and serial, which the auth path uses
+		 * deliberately as a global rate limit -- but it also means a
+		 * peer that connects and never sends blocks every other request
+		 * for as long as it likes. A port scanner holding a socket
+		 * open, or a client whose network drops between connect and
+		 * send, took the config UI down with no error and no log.
+		 *
+		 * The send timeout matters for the same reason in the other
+		 * direction: a client that stops reading mid-response would
+		 * otherwise block the write.
+		 */
+		tv[0] = 15;
+		tv[1] = 0;
+		__syscall6(__NR_setsockopt, conn, SOL_SOCKET, SO_RCVTIMEO,
+			   (long)tv, sizeof(tv), 0);
+		__syscall6(__NR_setsockopt, conn, SOL_SOCKET, SO_SNDTIMEO,
+			   (long)tv, sizeof(tv), 0);
+
 		serve((int)conn);
 		syscall3(__NR_close, conn, 0, 0);
 	}
