@@ -57,7 +57,11 @@ for line in sys.stdin:
     v = re.search(r"<Value Name=\"([^\"]*)\" Value=\"([^\"]*)\"", line)
     if not v:
         continue
-    name = f"{table}[{index}].{v.group(1)}" if table and index else v.group(1)
+    # Dropped, not emitted bare: a value in a table Dir with no index has no
+    # addressable form. Same rule as gen-schema.py and the daemon.
+    if table and not index:
+        continue
+    name = f"{table}[{index}].{v.group(1)}" if table else v.group(1)
     # Tabs would break the file format; no device value has ever contained one,
     # but a silent corruption here would be invisible.
     print(name + "\t" + v.group(2).replace("\t", " "))

@@ -20,6 +20,12 @@ REFUSED = {"LAN_SDS_MODE", "LAN_SPEED_MODE", "FIBER_MODE"}
 APPLY_CLASSES = {"restart:omci", "reboot", "immediate", "unknown"}
 WRITABLE = {"yes", "never", "identity"}
 
+# Exactly the set type_ok() in src/confd.c implements. It fails CLOSED on
+# anything else -- so a typo here is a key that cannot be written at all, which
+# is the safe direction but still a bug, and one nothing else would report.
+# Keep the two in step: adding a type means adding it in both places.
+TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "string"}
+
 problems = []
 
 
@@ -64,6 +70,8 @@ for name, store, addr, section, typ, apply_, writable, common in keys:
         note(name, f"address {addr!r} is in display form, not dotted")
     if apply_ not in APPLY_CLASSES:
         note(name, f"apply {apply_!r} is not a known class")
+    if typ not in TYPES:
+        note(name, f"type {typ!r} is not a type the daemon implements")
     if writable not in WRITABLE:
         note(name, f"writable {writable!r} is not a known value")
     if common not in ("yes", "no"):
@@ -72,14 +80,27 @@ for name, store, addr, section, typ, apply_, writable, common in keys:
         note(name, "must be marked never-writable")
 
 # --- meta.tsv --------------------------------------------------------------
+by_name = {r[0]: r for r in keys}
 for name, label, help_, options, depends, rng in meta:
     if name not in names:
         note(name, "has metadata but is not in the schema")
     if not label:
         note(name, "has no label")
+    typ = by_name[name][4] if name in by_name else None
+    seen = set()
     for pair in filter(None, options.split("|")):
         if "=" not in pair:
             note(name, f"option {pair!r} has no value=label separator")
+            continue
+        val = pair.split("=", 1)[0]
+        # The daemon enforces the option list on write, so a value in it that
+        # its own type would reject is a control the UI offers and the device
+        # refuses.
+        if typ == "int" and not val.isdigit():
+            note(name, f"option value {val!r} is not valid for type int")
+        if val in seen:
+            note(name, f"option value {val!r} appears twice")
+        seen.add(val)
     for cond in filter(None, depends.split("&")):
         if "=" not in cond:
             note(name, f"depends {cond!r} is not KEY=VALUE")
@@ -88,6 +109,12 @@ for name, label, help_, options, depends, rng in meta:
         if dep not in names:
             # Silent in the UI: it would report "needs <typo>=1" forever.
             note(name, f"depends on {dep!r}, which is not a key")
+    if rng and options:
+        # Both are enforced on write and a value cannot satisfy an enumeration
+        # and a range at once without one of them being redundant.
+        note(name, "has both an option list and a range")
+    if rng and typ not in (None, "int"):
+        note(name, f"has a range but type is {typ!r}, not int")
     if rng:
         parts = rng.split("-")
         # A negative lower bound would need different parsing; nothing uses one.
