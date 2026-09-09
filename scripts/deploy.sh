@@ -5,9 +5,12 @@
 # The rootfs is read-only squashfs, so the daemon and its assets go to
 # /etc/config/confd/, which is /var/config -- mtd3, jffs2, read-write, and the
 # one place fwu.sh never writes. Everything there survives a reboot and a
-# reflash. Roughly 35 KB of the partition's ~196 KB free, so check before adding
-# to it: filling it puts device configuration at risk, which is a far worse
-# outcome than having no UI.
+# reflash. The payload is around 96 KB against the partition's ~196 KB free,
+# and the staged binary copy takes the peak to roughly 116 KB -- so this is half
+# the partition, not the 35 KB an earlier version of this comment claimed.
+# Filling it puts device configuration at risk, which is a far worse outcome
+# than having no UI, so the space check below is computed from the actual files
+# rather than being a number someone remembered.
 #
 # Connection details differ per stick, so pass whatever ssh needs in SSH_OPTS:
 #
@@ -28,18 +31,48 @@ if ! file build/confd | grep -q "ELF 32-bit MSB executable, MIPS"; then
 	exit 1
 fi
 
+ASSETS=(schema/keys.tsv schema/meta.tsv schema/consumers.tsv
+	web/index.html web/app.js web/style.css)
+
 echo "==> free space on the config partition"
+# What this actually needs, measured: every file that gets written, plus a
+# second copy of the binary, because it is staged as confd.new in the same
+# filesystem before being renamed over the live one. Plus headroom, because
+# jffs2 is log-structured -- overwriting a file does not free its old blocks
+# until garbage collection, so even a re-deploy of identical content can
+# transiently need the whole payload again.
+NEED=0
+for f in "${ASSETS[@]}" build/confd build/confd; do
+	NEED=$((NEED + $(wc -c < "$f")))
+done
+NEED_KB=$(((NEED + 1023) / 1024 + 32))
+
 # shellcheck disable=SC2016  # $4 is awk's and must reach the device unexpanded
 AVAIL=$("${SSH[@]}" 'df /var/config 2>/dev/null | awk "NR==2{print \$4}"')
-printf '    %s KB available\n' "$AVAIL"
-[ -z "$AVAIL" ] || [ "$AVAIL" -ge 80 ] || { echo "    under 80 KB free -- refusing" >&2; exit 1; }
+case "$AVAIL" in
+'' | *[!0-9]*)
+	# Fail CLOSED. This used to pass when df returned nothing, which is the
+	# wrong direction for the one guard standing between a deploy and a full
+	# config partition.
+	echo "    could not read free space on /var/config -- refusing" >&2
+	echo "    (override with FORCE=1 if you have checked by hand)" >&2
+	[ "${FORCE:-0}" = 1 ] || exit 1
+	;;
+*)
+	printf '    %s KB available, %s KB needed\n' "$AVAIL" "$NEED_KB"
+	if [ "$AVAIL" -lt "$NEED_KB" ]; then
+		echo "    not enough room -- refusing" >&2
+		exit 1
+	fi
+	;;
+esac
 
 # baseline.tsv is NOT shipped: it is per-stick and captured on the device by
 # scripts/capture-baseline.sh. Overwriting it from here would replace one
 # stick's reference with another's.
 echo "==> $DEST"
 "${SSH[@]}" "mkdir -p $DEST"
-for f in schema/keys.tsv schema/meta.tsv schema/consumers.tsv web/index.html web/app.js web/style.css; do
+for f in "${ASSETS[@]}"; do
 	base=$(basename "$f")
 	# shellcheck disable=SC2094  # the redirect writes on the device, not here
 	"${SSH[@]}" "cat > $DEST/$base" < "$f"
