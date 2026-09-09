@@ -55,7 +55,7 @@ LOID_OLD	cs	LOID_OLD	other	string	restart:omci	yes
 LOID_PASSWD_OLD	cs	LOID_PASSWD_OLD	other	string	restart:omci	yes
 PROVINCE_TRAP_PPPOE_TRAFFIC	cs	PROVINCE_TRAP_PPPOE_TRAFFIC	other	int	unknown	yes
 GPON_PLOAM_FORMAT	cs	GPON_PLOAM_FORMAT	gpon	int	unknown	identity
-GPON_PLOAM_PASSWD	cs	GPON_PLOAM_PASSWD	gpon	int	restart:omci	identity
+GPON_PLOAM_PASSWD	cs	GPON_PLOAM_PASSWD	gpon	hexascii	restart:omci	identity
 OMCI_DBGLVL	cs	OMCI_DBGLVL	omci	int	restart:omci	yes
 OMCI_LOGFILE	cs	OMCI_LOGFILE	omci	int	restart:omci	yes
 OMCI_PORT_TYPE	cs	OMCI_PORT_TYPE	omci	int	unknown	yes

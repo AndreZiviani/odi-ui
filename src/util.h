@@ -114,4 +114,14 @@ static void put_json_cstr(int fd, const char *s)
 	put_json_str(fd, s, slen(s));
 }
 
+/* Sleep whole seconds. struct timespec is two longs on this 32-bit target. */
+static void sleep_s(long secs)
+{
+	long ts[2];
+
+	ts[0] = secs;
+	ts[1] = 0;
+	syscall3(__NR_nanosleep, (long)ts, 0, 0);
+}
+
 #endif /* ODI_UTIL_H */
