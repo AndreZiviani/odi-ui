@@ -39,6 +39,42 @@ hundred lines instead of 88 handlers.
 The split is a `common` column in the schema, so which keys are everyday ones is
 a data decision rather than something baked into the page.
 
+## What a change costs
+
+`schema/consumers.tsv` records who reads each key and therefore what it takes
+for a change to take effect. It is **derived from the firmware**, not asserted:
+`scripts/classify-apply.py` searches an extracted rootfs for every key and the
+class follows from where it turns up.
+
+| class | meaning | count |
+|---|---|---|
+| `restart:omci` | `runomci.sh` reads it, so restarting `omci_app` rebuilds the command line from it — about six seconds, no reboot | 20 |
+| `reboot` | only a boot script reads it, and nothing re-runs those | 5 |
+| `unknown` | referenced inside a binary, so *when* it is read is not known | 159 |
+
+`unknown` stays unknown rather than being guessed. A reference inside a binary
+says nothing about when that binary reads it, and the UI tells you to assume a
+reboot — the safe reading. The reader list is shown either way, because "which
+program cares about this key" is useful even when the timing is not.
+
+Two false positives were caught before this shipped, both of which would have
+told someone "no reboot needed" when there is:
+
+- the table field `VID` matched inside `VLAN_MANU_TAG_VID`, so
+  `SW_PORT_TBL[*].VID` was classified `restart:omci` on the strength of an
+  unrelated key. The search is word-anchored now.
+- `bin/startup` is an **ELF binary** despite the name, and treating it as a boot
+  script classified `PON_LED_SPEC` as `reboot` on no evidence.
+
+The corrected `restart:omci` set is exactly the 20 keys `runomci.sh` reads —
+two independent derivations agreeing.
+
+Regenerate against an extracted rootfs:
+
+```sh
+scripts/classify-apply.py /path/to/squashfs-root schema/keys.tsv > schema/consumers.tsv
+```
+
 ## Guided fields
 
 `schema/meta.tsv` carries hand-written help for the keys worth explaining:
@@ -68,8 +104,9 @@ would overwrite anything written by hand.
 |---|---|---|
 | 1 | schema, values, status | **done** |
 | 2 | writes, verified, with apply | **done** |
-| 3 | `SW_PORT_TBL` rows, and `apply` classes for the remaining keys | |
-| 4 | firmware upload and `sw_tryactive` trial boot | |
+| 3 | `apply` classes derived from the firmware | **done** |
+| 4 | `SW_PORT_TBL` row add/remove | |
+| 5 | firmware upload and `sw_tryactive` trial boot | |
 
 ### Writing
 

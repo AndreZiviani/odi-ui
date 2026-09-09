@@ -33,6 +33,8 @@
 #define SCHEMA_PATH_OVR "/etc/config/confd/keys.tsv"
 #define META_PATH       "/etc/confd/meta.tsv"
 #define META_PATH_OVR   "/etc/config/confd/meta.tsv"
+#define CONS_PATH       "/etc/confd/consumers.tsv"
+#define CONS_PATH_OVR   "/etc/config/confd/consumers.tsv"
 #define AUTH_PATH    "/etc/config/confd.auth"
 
 /* Static, not stack: this is a single-threaded serial server and these would
@@ -758,6 +760,8 @@ static void handle_write(int conn, const char *body)
 			put_fd(conn, "\"ok\":true,\"value\":\"");
 			put_json_cstr(conn, got);
 			put_fd(conn, "\"}");
+			/* The schema's apply column is the fallback; the derived
+			 * one in consumers.tsv is authoritative where present. */
 			if (seq(apply, "restart:omci"))
 				any_omci = 1;
 			else
@@ -875,6 +879,23 @@ static void serve(int conn)
 		}
 		respond(conn, "200 OK", "application/json", 0);
 		emit_tsv_json(conn, schema, col, 6);
+		return;
+	}
+
+	if (seq(path, "/api/consumers")) {
+		static const char *col[] = { "name", "apply", "readers" };
+
+		/* Derived from the firmware by scripts/classify-apply.py: which
+		 * programs read each key, and therefore what it costs to change
+		 * one. Absent degrades to the schema's own apply column. */
+		if (read_file(CONS_PATH_OVR, schema, sizeof(schema)) <= 0 &&
+		    read_file(CONS_PATH, schema, sizeof(schema)) <= 0) {
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "[]");
+			return;
+		}
+		respond(conn, "200 OK", "application/json", 0);
+		emit_tsv_json(conn, schema, col, 3);
 		return;
 	}
 
