@@ -178,6 +178,258 @@ static int authorised(const char *r)
 	return diff == 0;
 }
 
+/* ------------------------------------------------------------ form input --- */
+
+static int hexval(char c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+/*
+ * Decode one application/x-www-form-urlencoded token, stopping at `stop`.
+ * Returns the index just past what it consumed, or 0 on a malformed escape —
+ * rejected rather than passed through, so a mangled field cannot quietly become
+ * a different one.
+ */
+static unsigned long url_decode(const char *in, unsigned long i, char stop,
+				char *out, unsigned long cap)
+{
+	unsigned long o = 0;
+
+	while (in[i] && in[i] != stop && in[i] != '&') {
+		char c = in[i];
+
+		if (c == '+') {
+			c = ' ';
+			i++;
+		} else if (c == '%') {
+			int hi = hexval(in[i + 1]), lo = hexval(in[i + 2]);
+
+			if (hi < 0 || lo < 0)
+				return 0;
+			c = (char)((hi << 4) | lo);
+			i += 3;
+		} else {
+			i++;
+		}
+		if (o + 1 < cap)
+			out[o++] = c;
+	}
+	out[o] = 0;
+	return i;
+}
+
+/* --------------------------------------------------------------- validate --- */
+
+/*
+ * Type-level validation, server side.
+ *
+ * The browser also checks ranges and option lists from meta.tsv, but that is a
+ * convenience: anything reachable over HTTP has to be validated here too, since
+ * a request need not come from the page.
+ */
+static int type_ok(const char *type, const char *v)
+{
+	unsigned long i, dots = 0, digits = 0;
+
+	if (seq(type, "int")) {
+		if (!v[0])
+			return 0;
+		for (i = 0; v[i]; i++)
+			if (v[i] < '0' || v[i] > '9')
+				return 0;
+		return 1;
+	}
+	if (seq(type, "ipv4")) {
+		for (i = 0; v[i]; i++) {
+			if (v[i] == '.') {
+				if (!digits || digits > 3)
+					return 0;
+				digits = 0;
+				dots++;
+			} else if (v[i] >= '0' && v[i] <= '9') {
+				digits++;
+			} else {
+				return 0;
+			}
+		}
+		return dots == 3 && digits && digits <= 3;
+	}
+	if (seq(type, "mac") || seq(type, "hex32") || seq(type, "hexascii")) {
+		unsigned long want = seq(type, "mac") ? 12 : (seq(type, "hex32") ? 32 : 0);
+
+		for (i = 0; v[i]; i++)
+			if (hexval(v[i]) < 0)
+				return 0;
+		if (i % 2)
+			return 0;                  /* hex is whole bytes */
+		return want ? (i == want) : 1;
+	}
+	return 1;                                  /* string: anything */
+}
+
+/* ----------------------------------------------------------------- write --- */
+
+/*
+ * Never writable, whatever the schema says.
+ *
+ * A wrong SerDes mode takes out telnet, ssh, this UI and the exporter
+ * simultaneously, because every one of them arrives over that link. What is
+ * left is a serial console behind soldered UART pads. The schema marks these
+ * too; this list exists so that a bad schema edit cannot be the only thing
+ * standing between a typo and a bricked stick.
+ */
+static int refused_key(const char *k)
+{
+	return seq(k, "LAN_SDS_MODE") || seq(k, "LAN_SPEED_MODE") ||
+	       seq(k, "FIBER_MODE");
+}
+
+/* Look a key up in the schema, copying its `writable` and `apply` columns. */
+static int schema_lookup(const char *buf, const char *name,
+			 char *type, unsigned long tcap,
+			 char *writable, unsigned long wcap,
+			 char *apply, unsigned long acap)
+{
+	unsigned long i = 0;
+
+	type[0] = 0;
+	writable[0] = 0;
+	apply[0] = 0;
+	while (buf[i]) {
+		unsigned long ls = i, le = i, p, c, fs;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		if (buf[ls] == '#' || ls == le)
+			goto next;
+
+		/* column 0 is the name */
+		p = ls;
+		while (p < le && buf[p] != '\t')
+			p++;
+		{
+			unsigned long n = 0;
+
+			while (name[n] && ls + n < p && name[n] == buf[ls + n])
+				n++;
+			if (name[n] || ls + n != p)
+				goto next;
+		}
+		/* columns 5 (apply) and 6 (writable) */
+		for (c = 1; c <= 6 && p < le; c++) {
+			p++;
+			fs = p;
+			while (p < le && buf[p] != '\t')
+				p++;
+			if (c == 4) {
+				unsigned long n = 0;
+
+				while (fs + n < p && n + 1 < tcap)
+					type[n] = buf[fs + n], n++;
+				type[n] = 0;
+			} else if (c == 5) {
+				unsigned long n = 0;
+
+				while (fs + n < p && n + 1 < acap)
+					apply[n] = buf[fs + n], n++;
+				apply[n] = 0;
+			} else if (c == 6) {
+				unsigned long n = 0;
+
+				while (fs + n < p && n + 1 < wcap)
+					writable[n] = buf[fs + n], n++;
+				writable[n] = 0;
+			}
+		}
+		return 1;
+next:
+		i = (buf[le] == '\n') ? le + 1 : le;
+	}
+	return 0;
+}
+
+/*
+ * Write one key and read it back.
+ *
+ * `flash set` is used rather than driving xmlconfig directly because it also
+ * decides whether the value belongs in the CS or the HS file, which is not
+ * something to reimplement. Exactly three arguments matter: with more, flash
+ * treats them as a list to hex-encode and concatenate. Values reach execve as
+ * one argv element with no shell in between, so a space or a quote in a value
+ * is data rather than syntax.
+ *
+ * The read-back is the point. `flash set` cannot clear a key at all — its set
+ * branch is guarded by [ "$3" != "" ], so an empty value falls through to the
+ * usage text and exits 1 while looking like it worked.
+ */
+static int write_key(const char *name, const char *value, char *out, unsigned long cap)
+{
+	char *argv[5];
+	char buf[512];
+	unsigned long i = 0, vs;
+
+	argv[0] = "flash";
+	argv[1] = "set";
+	argv[2] = (char *)name;
+	argv[3] = (char *)value;
+	argv[4] = 0;
+
+	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf)) <= 0)
+		return 0;
+
+	/* flash echoes "KEY=value" from its own xmlconfig -g when it is done. */
+	while (buf[i] && buf[i] != '=')
+		i++;
+	if (!buf[i])
+		return 0;
+	vs = ++i;
+	while (buf[i] && buf[i] != '\n' && buf[i] != '\r')
+		i++;
+	{
+		unsigned long n = 0;
+
+		while (vs + n < i && n + 1 < cap)
+			out[n] = buf[vs + n], n++;
+		out[n] = 0;
+	}
+	return seq(out, value);
+}
+
+/*
+ * Restart the OMCI stack so a change takes effect without a reboot.
+ *
+ * PATH is not optional: omci_app shells out to `flash` itself and inherits it,
+ * and without /etc/scripts it reads a zero MAC and exits with
+ * "GPON mac_check fail", taking the ONU off the line. runomci.sh also calls
+ * runigmp.sh, which noisily fails to re-insmod a loaded module and to start a
+ * second igmpd; neither is an error worth reporting.
+ */
+static int apply_omci(void)
+{
+	static char *const argv[] = { "sh", 0 };
+	static const char script[] =
+		"PATH=$PATH:/etc/scripts\n"
+		"kill $(pidof omci_app) 2>/dev/null\n"
+		"i=0; while [ $i -lt 15 ] && pidof omci_app >/dev/null 2>&1; do sleep 1; i=$((i+1)); done\n"
+		"trap '' HUP\n"
+		"( /etc/runomci.sh >/dev/null 2>&1 & )\n"
+		"sleep 3\n"
+		"pidof omci_app >/dev/null 2>&1 && echo APPLIED || echo FAILED\n";
+	char buf[256];
+	unsigned long i;
+
+	if (run_script_to_buf("/bin/sh", argv, script, buf, sizeof(buf)) <= 0)
+		return 0;
+	for (i = 0; buf[i]; i++)
+		if (spre(buf + i, "APPLIED"))
+			return 1;
+	return 0;
+}
+
 /* ---------------------------------------------------------------- routes --- */
 
 /*
@@ -397,9 +649,139 @@ static void serve_static(int fd, const char *name, const char *ctype)
 	write_all(fd, filebuf, (unsigned long)got);
 }
 
+static char *request_body(char *r)
+{
+	unsigned long i;
+
+	for (i = 0; r[i]; i++)
+		if (r[i] == '\r' && r[i+1] == '\n' && r[i+2] == '\r' && r[i+3] == '\n')
+			return r + i + 4;
+	return r + slen(r);
+}
+
+/*
+ * POST /api/config — write keys, one report line each.
+ *
+ * Nothing is applied implicitly. The response says which apply class the
+ * changes need and the caller decides, because on this device a config write
+ * does nothing until omci_app is restarted or the stick reboots, and pretending
+ * otherwise is how you end up reading a stale command line and drawing the
+ * wrong conclusion.
+ */
+static void handle_write(int conn, const char *body)
+{
+	char name[128], value[512], got[512];
+	char type[32], writable[32], apply[32];
+	unsigned long i = 0;
+	int first = 1, confirm = 0, any_omci = 0, any_reboot = 0;
+
+	if (read_file(SCHEMA_PATH_OVR, schema, sizeof(schema)) <= 0 &&
+	    read_file(SCHEMA_PATH, schema, sizeof(schema)) <= 0) {
+		respond(conn, "500 Internal Server Error", "application/json", 0);
+		put_fd(conn, "{\"error\":\"no schema\"}");
+		return;
+	}
+
+	/* Identity keys need saying so explicitly. Losing GPON_SN or MAC_KEY
+	 * means the OLT stops authenticating the ONU, which is not something to
+	 * do by mis-clicking. */
+	{
+		char c[16];
+		unsigned long j = 0;
+
+		while (body[j]) {
+			unsigned long k = url_decode(body, j, '=', name, sizeof(name));
+
+			if (!k)
+				break;
+			j = k;
+			if (body[j] == '=')
+				j++;
+			j = url_decode(body, j, 0, c, sizeof(c));
+			if (!j)
+				break;
+			if (seq(name, "_confirm") && seq(c, "identity"))
+				confirm = 1;
+			if (body[j] == '&')
+				j++;
+		}
+	}
+
+	respond(conn, "200 OK", "application/json", 0);
+	put_fd(conn, "{\"results\":[");
+
+	while (body[i]) {
+		unsigned long k = url_decode(body, i, '=', name, sizeof(name));
+		const char *err = 0;
+
+		if (!k)
+			break;
+		i = k;
+		if (body[i] == '=')
+			i++;
+		i = url_decode(body, i, 0, value, sizeof(value));
+		if (!i)
+			break;
+
+		if (seq(name, "_confirm"))
+			goto next;
+
+		if (refused_key(name))
+			err = "refused: a wrong SerDes mode costs every management path";
+		else if (!schema_lookup(schema, name, type, sizeof(type),
+					writable, sizeof(writable), apply, sizeof(apply)))
+			err = "not in the schema";
+		else if (seq(writable, "never"))
+			err = "not writable";
+		else if (seq(writable, "identity") && !confirm)
+			err = "identity key: resend with _confirm=identity";
+		else if (!value[0])
+			err = "cannot be cleared: flash set refuses an empty value";
+		else if (!type_ok(type, value))
+			err = "not valid for its type";
+
+		if (!first)
+			put_fd(conn, ",");
+		first = 0;
+		put_fd(conn, "{\"name\":\"");
+		put_json_cstr(conn, name);
+		put_fd(conn, "\",");
+
+		if (err) {
+			put_fd(conn, "\"ok\":false,\"error\":\"");
+			put_json_cstr(conn, err);
+			put_fd(conn, "\"}");
+			goto next;
+		}
+
+		if (write_key(name, value, got, sizeof(got))) {
+			put_fd(conn, "\"ok\":true,\"value\":\"");
+			put_json_cstr(conn, got);
+			put_fd(conn, "\"}");
+			if (seq(apply, "restart:omci"))
+				any_omci = 1;
+			else
+				any_reboot = 1;
+		} else {
+			/* The write reported success and the value did not
+			 * change. This is why every write is read back. */
+			put_fd(conn, "\"ok\":false,\"error\":\"did not stick, device holds '");
+			put_json_cstr(conn, got);
+			put_fd(conn, "'\"}");
+		}
+next:
+		if (body[i] == '&')
+			i++;
+	}
+
+	put_fd(conn, "],\"apply\":\"");
+	put_fd(conn, any_reboot ? "reboot" : (any_omci ? "restart:omci" : "none"));
+	put_fd(conn, "\"}");
+}
+
 static void serve(int conn)
 {
-	char *path, *method;
+	char *path, *method, *body;
 	long n;
 
 	n = syscall3(__NR_read, conn, (long)req, sizeof(req) - 1);
@@ -431,16 +813,32 @@ static void serve(int conn)
 		return;
 	}
 
+	/* Grab the body BEFORE parsing the request line: request_path()
+	 * NUL-terminates the method in place and the first of those NULs would
+	 * stop the scan for the header/body boundary dead. */
+	body = request_body(req);
+
 	path = request_path(req, &method);
 	if (!path) {
 		respond(conn, "400 Bad Request", "text/plain", 0);
 		return;
 	}
 
-	/* Phase 1 is read only, so anything that is not a GET is refused here
-	 * rather than in each route. */
+	if (seq(path, "/api/config") && seq(method, "POST")) {
+		handle_write(conn, body);
+		return;
+	}
+
+	if (seq(path, "/api/apply") && seq(method, "POST")) {
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, apply_omci() ? "{\"applied\":true}"
+					  : "{\"applied\":false,\"error\":\"omci_app did not come back\"}");
+		return;
+	}
+
 	if (!seq(method, "GET")) {
-		respond(conn, "405 Method Not Allowed", "text/plain", "Allow: GET\r\n");
+		respond(conn, "405 Method Not Allowed", "text/plain",
+			"Allow: GET, POST\r\n");
 		return;
 	}
 
