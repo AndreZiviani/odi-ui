@@ -152,9 +152,16 @@ h2 {
 .side dd {
   margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .85rem;
 }
+/* The host side mirrors the fibre side: value then label, so the two face each
+   other across the arrow. `order: 1` on the dt was wrong -- in a grid, order
+   sorts ALL items as one sequence, so it laid out three dd's and then three
+   dt's, and every row showed another row's label. Explicit columns plus dense
+   packing keeps each pair on its own row while leaving dt before dd in the
+   DOM, which is the order a screen reader wants. */
 .side.right { text-align: right; }
-.side.right dl { grid-template-columns: 1fr auto; }
-.side.right dt { order: 1; }
+.side.right dl { grid-template-columns: 1fr auto; grid-auto-flow: row dense; }
+.side.right dt { grid-column: 2; }
+.side.right dd { grid-column: 1; }
 .mirror { color: var(--muted); font-size: 1.4rem; line-height: 1; }
 
 .env { display: flex; gap: 2.5rem; flex-wrap: wrap; margin-top: .4rem; }
@@ -254,7 +261,8 @@ td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-fami
   .flow { grid-template-columns: 1fr; }
   .mirror { display: none; }
   .side.right, .side.right dl { text-align: left; grid-template-columns: auto 1fr; }
-  .side.right dt { order: 0; }
+  .side.right dt { grid-column: 1; }
+  .side.right dd { grid-column: 2; }
   td:first-child, td:nth-child(2) { width: auto; }
   #savebar { padding: .7rem 1rem; }
 }

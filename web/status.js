@@ -69,7 +69,10 @@ function meter(hostSel, spec, value) {
   scale.append(track);
 
   const ends = el('div', 'ends');
-  ends.append(el('span', null, spec.lo + ' dBm'), el('span', null, '+' + spec.hi + ' dBm'));
+  /* Sign it, do not prefix it: the receive window's upper bound is -4 dBm, and
+     a hardcoded '+' rendered that as "+-4 dBm". */
+  const dbmLabel = (v) => (v > 0 ? '+' : '') + v + ' dBm';
+  ends.append(el('span', null, dbmLabel(spec.lo)), el('span', null, dbmLabel(spec.hi)));
   scale.append(ends, el('div', 'note', spec.note));
   host.append(scale);
 }
