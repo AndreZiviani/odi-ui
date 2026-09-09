@@ -266,3 +266,6 @@ td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-fami
 #upload {
   max-width: 62ch; margin: .2rem 0 1.4rem; font-size: .78rem; line-height: 1.7;
 }
+
+.tag.default { color: var(--muted); }
+.tag.changed { color: var(--fibre); border-color: #4A3E1E; }
