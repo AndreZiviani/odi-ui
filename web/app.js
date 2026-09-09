@@ -155,13 +155,13 @@ function renderValue(row, raw) {
   return el('td', null, raw);
 }
 
-function renderConfig(filter) {
-  const host = $('#sections');
+function renderConfig(hostSel, rows, filter) {
+  const host = $(hostSel);
   host.textContent = '';
   const f = (filter || '').toLowerCase();
   const bySection = {};
 
-  for (const row of SCHEMA) {
+  for (const row of rows) {
     if (f && !(row.name.toLowerCase().includes(f) || row.section.includes(f))) continue;
     (bySection[row.section] ||= []).push(row);
   }
@@ -191,14 +191,14 @@ function renderConfig(filter) {
 
 /* --- wiring ------------------------------------------------------------- */
 
+const TABS = ['status', 'config', 'advanced'];
 for (const b of document.querySelectorAll('nav button')) {
   b.onclick = () => {
     for (const o of document.querySelectorAll('nav button')) o.classList.toggle('on', o === b);
-    $('#status').hidden = b.dataset.tab !== 'status';
-    $('#config').hidden = b.dataset.tab !== 'config';
+    for (const t of TABS) $('#' + t).hidden = b.dataset.tab !== t;
   };
 }
-$('#filter').oninput = (e) => renderConfig(e.target.value);
+$('#filter').oninput = (e) => renderConfig('#sections', SCHEMA, e.target.value);
 
 async function refresh() {
   try {
@@ -211,7 +211,11 @@ async function refresh() {
 (async function init() {
   try {
     [SCHEMA, VALUES] = await Promise.all([get('/api/schema'), get('/api/values')]);
-    renderConfig('');
+    /* Config shows the keys provisioning actually uses; Advanced shows all of
+       them. The split is a schema flag, so which keys are "common" is a data
+       decision and not something baked in here. */
+    renderConfig('#common', SCHEMA.filter((r) => r.common === 'yes'), '');
+    renderConfig('#sections', SCHEMA, '');
   } catch (e) { fail(e); }
   await refresh();
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is

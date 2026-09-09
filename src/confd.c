@@ -282,7 +282,7 @@ next:
 static void emit_schema_json(int fd, const char *buf)
 {
 	static const char *col[] = { "name", "store", "address", "section",
-				     "type", "apply", "writable" };
+				     "type", "apply", "writable", "common" };
 	unsigned long i = 0;
 	int first = 1;
 
@@ -301,7 +301,7 @@ static void emit_schema_json(int fd, const char *buf)
 		first = 0;
 		put_fd(fd, "{");
 		p = ls;
-		for (c = 0; c < 7; c++) {
+		for (c = 0; c < 8; c++) {
 			unsigned long fs = p;
 
 			while (p < le && buf[p] != '\t')
