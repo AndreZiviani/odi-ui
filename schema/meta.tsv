@@ -36,3 +36,19 @@ GPON_PLOAM_PASSWD	PLOAM password	Stored as the hex of an ASCII string, shown dec
 GPON_PLOAM_FORMAT	PLOAM format	1 on both of our lines.			
 SUSER_NAME	Admin username	The device login for SSH and telnet. Not this UI's password, which lives in /etc/config/confd.auth.			
 SUSER_PASSWORD	Admin password	The device login for SSH and telnet.			
+SW_PORT_TBL[0].PVID	Port 0 default VLAN	The VLAN untagged frames are placed in on the host-side switch port. Upstream issue #475 reports setting this to 0 as the fix for an ONU that registers but forwards nothing; both of our sticks run the shipped values and forward correctly, so it is recorded as untried rather than recommended.			
+SW_PORT_TBL[1].PVID	Port 1 default VLAN	As above, for the second switch port.			
+LAN_SUBNET	Management netmask	Netmask for the management address. Changing it drops your session along with the address.			
+LAN_ENABLE_IP2	Second management address	Whether the device answers on a second address as well.	0=0 — off|1=1 — on		
+LAN_IP_ADDR2	Second management IP	Only used when the second address is enabled.		LAN_ENABLE_IP2=1	
+LAN_SUBNET2	Second management netmask			LAN_ENABLE_IP2=1	
+DNS_MODE	DNS source	Whether the resolver addresses below are used or taken from the upstream connection.	0=0 — from upstream|1=1 — use the addresses below		
+DNS1	Primary DNS			DNS_MODE=1	
+DNS2	Secondary DNS			DNS_MODE=1	
+DNS3	Tertiary DNS			DNS_MODE=1	
+OMCI_LOGFILE	OMCI logging	Writes the decoded OMCI conversation with the OLT. 2 is the parsed form, landing in /tmp/omcilog.par — about 95 KB for a full registration. Reading that exchange is the only way to see what the OLT is actually asking for.	0=0 — off|1=1 — raw|2=2 — parsed		
+OMCI_LOGFILE_MASK	OMCI log filter	Which message types to log. 4294967295 logs everything.		OMCI_LOGFILE=2	
+OMCI_DBGLVL	OMCI debug level	Leave at 0. /tmp is an unbounded RAM disk on a device with about 1.5 MB free, so the debug level can exhaust memory; parsed message logging is bounded and is what you actually want.	0=0 — errors only|1=1 — errors|2=2 — warnings|3=3 — info|4=4 — debug (can exhaust memory)		
+PON_DETECT_ENABLE	PON detection	Read at boot by runsdk.sh, so a change needs a reboot.			
+FIBER_MODE	Fibre mode	Never writable here. Like the SerDes mode, getting it wrong can take the link down and with it every way into the device.			
+GPON_ONU_MODEL	ONU model	Reported to the OLT in the ONU-G managed entity.			
