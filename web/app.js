@@ -176,20 +176,69 @@ function hexAscii(hex) {
   return out;
 }
 
+/* Pending edits, keyed by name. Kept out of the DOM so switching tabs or
+   re-filtering cannot silently drop a change the user has typed. */
+const EDITS = new Map();
+
 function renderValue(row, raw) {
-  if (raw === undefined) return el('td', null, '\u2014');
-  if (raw === '') return el('td', null, '(empty)');
-  if (row.type === 'hexascii') {
-    const txt = hexAscii(raw);
-    const td = el('td');
-    if (txt === null) {
-      td.append(el('span', 'key', raw), el('span', 'tag', 'not ascii'));
-    } else {
-      td.append(el('span', null, txt), el('span', 'tag', raw));
-    }
+  const td = el('td');
+  const meta = META[row.name] || {};
+
+  /* Never-writable keys get no control at all. The refusal is enforced in the
+     daemon twice over, but not offering the field is the honest presentation. */
+  if (row.writable === 'never') {
+    td.append(el('span', null, raw === '' ? '(empty)' : raw));
     return td;
   }
-  return el('td', null, raw);
+
+  let input;
+  if (meta.options) {
+    input = el('select');
+    for (const pair of meta.options.split('|')) {
+      const eq = pair.indexOf('=');
+      const o = el('option', null, pair.slice(eq + 1));
+      o.value = pair.slice(0, eq);
+      input.append(o);
+    }
+    /* A value the device holds that is not in the option list must still be
+       selectable, or opening the page would silently propose changing it. */
+    if (![...input.options].some((o) => o.value === raw)) {
+      const o = el('option', null, raw + ' (current, not a listed value)');
+      o.value = raw;
+      input.append(o);
+    }
+    input.value = raw;
+  } else {
+    input = el('input');
+    input.type = 'text';
+    input.value = raw === undefined ? '' : raw;
+    input.spellcheck = false;
+    if (row.type === 'int') input.inputMode = 'numeric';
+  }
+  input.dataset.name = row.name;
+  input.oninput = input.onchange = () => {
+    const v = input.value;
+    if (v === raw) EDITS.delete(row.name); else EDITS.set(row.name, v);
+    input.classList.toggle('changed', v !== raw);
+    validateInput(row, input);
+    refreshSaveBar();
+  };
+  td.append(input);
+
+  /* PLOAM and friends store the hex of an ASCII string; show the readable form
+     beside the field it is stored in. */
+  if (row.type === 'hexascii') {
+    const txt = hexAscii(raw);
+    td.append(el('div', 'aside', txt === null ? 'not printable ASCII' : 'ASCII: ' + txt));
+  }
+  return td;
+}
+
+function validateInput(row, input) {
+  const bad = rangeBad(row, input.value);
+  input.classList.toggle('invalid', !!bad);
+  input.title = bad || '';
+  return !bad;
 }
 
 function renderConfig(hostSel, rows, filter) {
@@ -221,12 +270,7 @@ function renderConfig(hostSel, rows, filter) {
       if (meta.range) k.append(el('span', 'tag', meta.range));
       tr.append(k);
 
-      const vtd = renderValue(row, VALUES[row.name]);
-      const opt = optionLabel(row, VALUES[row.name]);
-      if (opt) { vtd.textContent = ''; vtd.append(el('span', null, opt)); }
-      const bad = rangeBad(row, VALUES[row.name]);
-      if (bad) vtd.append(el('span', 'tag never', bad));
-      tr.append(vtd);
+      tr.append(renderValue(row, VALUES[row.name]));
 
       const info = el('td', 'info');
       if (meta.help) info.append(el('div', 'help', meta.help));
@@ -246,6 +290,101 @@ function renderConfig(hostSel, rows, filter) {
   }
 }
 
+/* --- saving ------------------------------------------------------------- */
+
+function refreshSaveBar() {
+  const bar = $('#savebar');
+  const n = EDITS.size;
+  bar.hidden = n === 0;
+  $('#savecount').textContent = n === 1 ? '1 change' : n + ' changes';
+  const identity = [...EDITS.keys()].filter(
+    (k) => (SCHEMA.find((r) => r.name === k) || {}).writable === 'identity');
+  $('#confirmwrap').hidden = identity.length === 0;
+  $('#confirmwhat').textContent = identity.join(', ');
+}
+
+function encode(pairs) {
+  return pairs.map(([k, v]) =>
+    encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+}
+
+async function save() {
+  const out = $('#saveout');
+  out.textContent = '';
+  const pairs = [...EDITS.entries()];
+  if (!pairs.length) return;
+
+  if (!$('#confirmwrap').hidden && !$('#confirm').checked) {
+    out.append(el('div', 'bad', 'Identity keys need the confirmation ticked.'));
+    return;
+  }
+  if ($('#confirm').checked) pairs.push(['_confirm', 'identity']);
+
+  $('#save').disabled = true;
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encode(pairs),
+    });
+    if (r.status === 401) { location.href = '/'; return; }
+    const res = await r.json();
+
+    for (const item of res.results || []) {
+      const line = el('div', item.ok ? 'good' : 'bad');
+      line.textContent = item.ok
+        ? `${item.name} = ${item.value}`
+        : `${item.name}: ${item.error}`;
+      out.append(line);
+      if (item.ok) EDITS.delete(item.name);
+    }
+
+    /* Nothing is applied implicitly: a write on this device does nothing until
+       omci_app restarts or the stick reboots, so say which and let the user
+       choose. */
+    if (res.apply === 'restart:omci') {
+      const b = el('button', 'apply', 'Apply now (restarts OMCI, ~6s, no reboot)');
+      b.onclick = doApply;
+      out.append(b);
+    } else if (res.apply === 'reboot') {
+      out.append(el('div', 'warn',
+        'These keys have no traced consumer, so assume a reboot is needed for ' +
+        'them to take effect. Nothing here reboots the stick for you.'));
+    }
+
+    VALUES = await get('/api/values');
+    renderAll();
+  } catch (e) {
+    out.append(el('div', 'bad', String(e.message || e)));
+  } finally {
+    $('#save').disabled = false;
+    refreshSaveBar();
+  }
+}
+
+async function doApply(ev) {
+  const out = $('#saveout');
+  ev.target.disabled = true;
+  ev.target.textContent = 'Restarting OMCI…';
+  try {
+    const r = await fetch('/api/apply', { method: 'POST' });
+    const res = await r.json();
+    out.append(el('div', res.applied ? 'good' : 'bad',
+      res.applied ? 'Applied — omci_app restarted and the ONU is re-registering.'
+                  : 'Apply failed: ' + (res.error || 'unknown')));
+  } catch (e) {
+    out.append(el('div', 'bad', String(e.message || e)));
+  } finally {
+    ev.target.remove();
+    await refresh();
+  }
+}
+
+function renderAll() {
+  renderConfig('#common', SCHEMA.filter((r) => r.common === 'yes'), '');
+  renderConfig('#sections', SCHEMA, $('#filter').value);
+}
+
 /* --- wiring ------------------------------------------------------------- */
 
 const TABS = ['status', 'config', 'advanced'];
@@ -256,6 +395,8 @@ for (const b of document.querySelectorAll('nav button')) {
   };
 }
 $('#filter').oninput = (e) => renderConfig('#sections', SCHEMA, e.target.value);
+$('#save').onclick = save;
+$('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
 async function refresh() {
   try {
@@ -272,11 +413,7 @@ async function refresh() {
       get('/api/schema'), get('/api/values'), get('/api/meta'),
     ]);
     for (const m of metaRows) META[m.name] = m;
-    /* Config shows the keys provisioning actually uses; Advanced shows all of
-       them. The split is a schema flag, so which keys are "common" is a data
-       decision and not something baked in here. */
-    renderConfig('#common', SCHEMA.filter((r) => r.common === 'yes'), '');
-    renderConfig('#sections', SCHEMA, '');
+    renderAll();
   } catch (e) { fail(e); }
   await refresh();
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is
