@@ -53,7 +53,12 @@ confd: image
 	@ls -l $(BUILD)/confd
 
 # The target cannot run anything this refuses.
-verify: image
+#
+# Depends on confd, not just on the container: `verify` and `test` on a clean
+# tree used to fail with "cannot open build/confd", which reads like a broken
+# check rather than a missing build step. `all` only worked because confd
+# happened to be listed first, and -j would have broken that too.
+verify: confd
 	$(RUN) scripts/verify.sh $(BUILD)/confd
 
 # The data files against each other. No device needed, so this is the one that
