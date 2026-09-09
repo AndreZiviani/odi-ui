@@ -13,6 +13,7 @@
     <button data-tab="status" class="on">Status</button>
     <button data-tab="config">Config</button>
     <button data-tab="advanced">Advanced</button>
+    <button data-tab="firmware">Firmware</button>
   </nav>
   <form method="post" action="/api/logout"><button id="logout" type="submit">Sign out</button></form>
   <span id="err" hidden></span>
@@ -59,6 +60,20 @@
        traced, its cost to change is shown; where it has not, assume a reboot.</p>
     <input id="filter" type="search" placeholder="Filter settings" autocomplete="off">
     <div id="sections"></div>
+  </section>
+  <section id="firmware" hidden>
+    <p class="hint">Two partitions, one running. New images are uploaded from a
+       shell with <code>fwu_starter.sh</code>; what happens next is decided
+       here, because that is the part worth getting right.</p>
+    <div id="parts"></div>
+
+    <h2>How a trial boot works</h2>
+    <p class="hint">Trying a partition boots it <strong>once</strong>, with the
+       hardware watchdog armed. If the image does not come up, the stick returns
+       by itself to whichever partition is kept &mdash; no console, no
+       intervention. A trial that boots fine still reverts on the next reboot,
+       so keeping it is a separate decision you make after seeing it work.</p>
+    <div id="fwout"></div>
   </section>
 </main>
 

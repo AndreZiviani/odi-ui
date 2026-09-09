@@ -224,6 +224,33 @@ static unsigned long url_decode(const char *in, unsigned long i, char stop,
 	return i;
 }
 
+/* One named field out of a urlencoded body. */
+static int form_get(const char *body, const char *want, char *out, unsigned long cap)
+{
+	char name[64];
+	unsigned long i = 0;
+
+	out[0] = 0;
+	while (body[i]) {
+		unsigned long k = url_decode(body, i, '=', name, sizeof(name));
+
+		if (!k)
+			return 0;
+		i = k;
+		if (body[i] == '=')
+			i++;
+		i = url_decode(body, i, 0, out, cap);
+		if (!i)
+			return 0;
+		if (seq(name, want))
+			return 1;
+		if (body[i] == '&')
+			i++;
+	}
+	out[0] = 0;
+	return 0;
+}
+
 /* --------------------------------------------------------------- validate --- */
 
 /*
@@ -430,6 +457,84 @@ static int apply_omci(void)
 		if (spre(buf + i, "APPLIED"))
 			return 1;
 	return 0;
+}
+
+/* -------------------------------------------------------------- firmware --- */
+
+/*
+ * Boot selection.
+ *
+ * U-Boot keeps a one-shot trial slot, and using it is the difference between an
+ * experiment and a site visit. Setting sw_tryactive boots a partition ONCE with
+ * the watchdog armed; if the image does not come up, the next boot returns to
+ * whatever sw_commit names, unattended. A trial that boots fine still reverts on
+ * the following reboot, so keeping an image is a separate deliberate act.
+ *
+ * The obvious-looking alternative — writing sw_commit straight away — makes an
+ * unproven image permanent before it has booted even once, and is what every
+ * runbook for this device used to say.
+ *
+ * sw_active is U-Boot's own record of what it last booted. It is written by the
+ * bootloader on every boot and is never set here.
+ */
+static void emit_firmware_json(int fd)
+{
+	static char *const argv[] = { "nv", "getenv", 0 };
+	char buf[4096];
+	char ver[128];
+	unsigned long i = 0;
+	int first = 1;
+
+	respond(fd, "200 OK", "application/json", 0);
+	put_fd(fd, "{\"running\":\"");
+	if (read_file("/etc/version", ver, sizeof(ver)) > 0) {
+		unsigned long n = 0;
+
+		while (ver[n] && ver[n] != '\n' && ver[n] != ' ')
+			n++;
+		put_json_str(fd, ver, n);
+	}
+	put_fd(fd, "\",\"env\":{");
+
+	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf)) > 0) {
+		while (buf[i]) {
+			unsigned long ls = i, le = i, eq;
+
+			while (buf[le] && buf[le] != '\n')
+				le++;
+			if (!spre(buf + ls, "sw_"))
+				goto next;
+			eq = ls;
+			while (eq < le && buf[eq] != '=')
+				eq++;
+			if (eq == le)
+				goto next;
+			if (!first)
+				put_fd(fd, ",");
+			first = 0;
+			put_fd(fd, "\"");
+			put_json_str(fd, buf + ls, eq - ls);
+			put_fd(fd, "\":\"");
+			put_json_str(fd, buf + eq + 1, le - eq - 1);
+			put_fd(fd, "\"");
+next:
+			i = (buf[le] == '\n') ? le + 1 : le;
+		}
+	}
+	put_fd(fd, "}}");
+}
+
+static int nv_set(const char *key, const char *value)
+{
+	char *argv[5];
+	char buf[256];
+
+	argv[0] = "nv";
+	argv[1] = "setenv";
+	argv[2] = (char *)key;
+	argv[3] = (char *)value;
+	argv[4] = 0;
+	return run_to_buf("/bin/nv", argv, buf, sizeof(buf)) >= 0;
 }
 
 /* ---------------------------------------------------------------- routes --- */
@@ -831,6 +936,62 @@ static void serve(int conn)
 	if (seq(path, "/api/config") && seq(method, "POST")) {
 		handle_write(conn, body);
 		return;
+	}
+
+	if (seq(path, "/api/firmware")) {
+		if (seq(method, "GET")) {
+			emit_firmware_json(conn);
+			return;
+		}
+		if (seq(method, "POST")) {
+			char action[32], part[8];
+
+			form_get(body, "action", action, sizeof(action));
+			form_get(body, "partition", part, sizeof(part));
+
+			/* Only ever 0 or 1. sw_tryactive == 2 is U-Boot's "no
+			 * trial pending" state, and writing it here would mean
+			 * silently doing nothing while reporting success. */
+			if ((seq(action, "try") || seq(action, "commit")) &&
+			    !(seq(part, "0") || seq(part, "1"))) {
+				respond(conn, "400 Bad Request", "application/json", 0);
+				put_fd(conn, "{\"error\":\"partition must be 0 or 1\"}");
+				return;
+			}
+
+			if (seq(action, "try")) {
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, nv_set("sw_tryactive", part)
+					? "{\"ok\":true,\"note\":\"armed\"}"
+					: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
+				return;
+			}
+			if (seq(action, "commit")) {
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, nv_set("sw_commit", part)
+					? "{\"ok\":true,\"note\":\"committed\"}"
+					: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
+				return;
+			}
+			if (seq(action, "reboot")) {
+				static char *const rb[] = { "sh", 0 };
+				static const char script[] =
+					"trap '' HUP\n"
+					"( sleep 1; /sbin/reboot || /bin/reboot ) >/dev/null 2>&1 &\n";
+				char out[64];
+
+				/* Answer first, then reboot a second later: the
+				 * reply cannot be delivered by a kernel that is
+				 * already going down. */
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, "{\"ok\":true,\"note\":\"rebooting\"}");
+				run_script_to_buf("/bin/sh", rb, script, out, sizeof(out));
+				return;
+			}
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"error\":\"unknown action\"}");
+			return;
+		}
 	}
 
 	if (seq(path, "/api/apply") && seq(method, "POST")) {
