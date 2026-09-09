@@ -42,8 +42,16 @@ function renderValue(row, raw) {
       input.append(o);
     }
     /* A value the device holds that is not in the option list must still be
-       selectable, or opening the page would silently propose changing it. */
-    if (![...input.options].some((o) => o.value === raw)) {
+       selectable, or opening the page would silently propose changing it.
+       A key with NO value is a different case and gets said differently:
+       several read `GET fail` on both of our sticks, and rendering that as
+       "undefined (current, not a listed value)" reads like a fault in the page
+       rather than an empty key. */
+    if (raw === undefined || raw === '') {
+      const o = el('option', null, '(not set)');
+      o.value = '';
+      input.append(o);
+    } else if (![...input.options].some((o) => o.value === raw)) {
       const o = el('option', null, raw + ' (current, not a listed value)');
       o.value = raw;
       input.append(o);

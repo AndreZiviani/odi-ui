@@ -405,6 +405,36 @@ Every check in there is a bug this has actually had, and each was confirmed to
 fail against the code from before its fix — 13 of the 28 do. A test that has only
 ever passed proves nothing about the thing it is watching.
 
+## Looking at it without a stick
+
+```sh
+scripts/preview.sh                       # the real binary under qemu on :18080
+npm i puppeteer-core && node scripts/shot.mjs
+docker rm -f odi-ui-preview              # stop it
+```
+
+`preview.sh` runs the ACTUAL daemon — same routing, same asset table, same auth
+— with stubs for `/etc/scripts/flash` and `/bin/diag` answering in the shapes
+the device does. `shot.mjs` drives the browser you already have, screenshots
+every tab, and fails on any console error or failed request.
+
+This is not redundant with `make check`. That proves the module graph loads and
+the functions run; it cannot see that a grid rule put every label in the wrong
+row. Three bugs were found the first time anyone looked at the rendered page:
+
+- `.side.right dt { order: 1 }` — in a grid, `order` sorts **all** items as one
+  sequence, so the mirrored Host column laid out three values and then three
+  labels, and every row showed another row's label.
+- `'+' + spec.hi` — the receive window's upper bound is −4 dBm, rendered
+  `+−4 dBm`.
+- A key with no value rendered as `undefined (current, not a listed value)` in
+  a dropdown. Not hypothetical: several keys read `GET fail` on both sticks.
+
+A fourth thing it caught was the *fixture* being wrong rather than the page —
+the first diag stub answered every `pon get transceiver *` with one block, and
+the page showed the temperature as the Rx power. Worth saying because that is
+the failure mode of a harness: it can lie in the direction of alarming you.
+
 ## Keeping the schema honest
 
 ```sh
