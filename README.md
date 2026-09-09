@@ -200,12 +200,20 @@ and it does not survive a reboot.
 ## Build and deploy
 
 ```sh
-make confd                                  # -> build/confd, ~9 KB
-make verify                                 # ELF shape + ISA audit
+make confd                                  # -> build/confd, ~20 KB
+make test                                   # ELF shape + ISA audit, data files, HTTP
 SSH_OPTS='-S /tmp/odi_ctl' scripts/deploy.sh admin@<stick> 8080
 ```
 
-Docker is the only requirement; it runs on macOS. Everything lands in
+Docker builds and runs everything; `make check` also needs the host's `python3`,
+since it reads data files and wants no cross-compiler. It runs on macOS.
+
+The binary reports the build it was made from, as `confd` in `/api/firmware` and
+in the Firmware tab's footer. An override at `/etc/config/confd/confd` beats the
+image's copy and survives reflashing, so which one is answering should be a
+question you can ask rather than one you have to go and look.
+
+Everything lands in
 `/etc/config/confd/` — `mtd3`, jffs2, the one partition `fwu.sh` never writes —
 so it survives reboots and reflashes. About 35 KB of roughly 196 KB free, and
 `deploy.sh` refuses to install if the partition is tight, because filling it
@@ -230,13 +238,31 @@ HTTP Basic is stateless, so this is worth being explicit about:
 - **No session, no cookie, no token, and no expiry.** The browser caches the
   credential and replays it on every request; each one is authenticated
   independently.
-- **No logout**, short of closing the browser or clearing its credential store.
+- **Sign out is best-effort.** There is no session to end, so the button answers
+  `401` and lets the browser drop what it cached for the realm. Most browsers
+  do; none promise to. Closing the tab is the only certain way, which is what
+  the signed-out page says.
 - Failed attempts are **delayed one second**. Without that, the only limit on
   guessing was how fast the device could answer — measured at **319
   attempts/sec**, enough to walk a human-chosen password. The daemon is
   single-threaded and serial, so the delay is a hard global rate limit rather
   than a per-connection one: an attacker cannot open more sockets to go faster.
   Measured after: **1/sec**, with correct logins unaffected.
+
+### Cross-site writes are refused
+
+Basic has no token, and the browser replays the credential on any request to
+this host — including one a page on another site caused. Without a check, any
+page the operator visits could POST `action=reboot` to `/api/firmware`, or
+rewrite `GPON_SN` with `_confirm=identity`. A urlencoded form POST is a
+CORS-simple request, so nothing preflights it, and the attacker being unable to
+*read* the reply does not help: every one of those routes is a write.
+
+So a write carrying an `Origin` header that does not match `Host` is refused
+with `403`. A write carrying no `Origin` is allowed — that is `curl` and this
+repo's own scripts, and an attacker who can set arbitrary headers is not doing
+CSRF in the first place. Every current browser sends `Origin` on a cross-origin
+POST, form submissions included.
 
 The credential travels in cleartext. There is no usable TLS stack in this image
 and a handshake on a ~300 BogoMIPS core is not worth the cost — the same
@@ -268,10 +294,36 @@ that does not exist makes the UI say "needs FOO=1" forever; a malformed
 not have is simply never seen. None of those announce themselves.
 
 It also refuses an `address` left in display form and a refused key not marked
-`never`, which are the two ways a data edit could cause a wrong write.
+`never`, which are the two ways a data edit could cause a wrong write; a `type`
+the daemon does not implement, since `type_ok` fails closed and the key would
+simply stop being writable; and an option value its own key's type would reject,
+which would offer a control the device refuses.
 
 Each of those was verified by injecting the fault and watching the check fail —
 a check that has only ever passed has not been tested.
+
+## Running the daemon without a stick
+
+```sh
+make smoke      # ~20s
+```
+
+`qemu-user-static` in the toolchain image runs the big-endian MIPS binary on the
+build host, so the whole request path can be exercised: framing, auth, form
+parsing, validation, apply classification, the routes. A stub `/etc/scripts/flash`
+stands in for the device, answering in the two shapes the daemon parses, so
+writes run end to end and the read-back comparison is real.
+
+That path is worth testing precisely because it fails *silently* on hardware. It
+already had a bug of exactly that shape: the whole request came from a single
+`read()`, so a body the browser sent in a second TCP segment arrived empty and
+the daemon answered `{"results":[],"apply":"none"}` — no error, nothing written.
+A body larger than the buffer was worse, truncated mid-value and then written,
+with the read-back comparing the fragment against *itself* and reporting success.
+
+Every check in there is a bug this has actually had, and each was confirmed to
+fail against the code from before its fix — 13 of the 28 do. A test that has only
+ever passed proves nothing about the thing it is watching.
 
 ## Keeping the schema honest
 
@@ -281,6 +333,13 @@ SSH_OPTS='-S /tmp/odi_ctl' scripts/schema-drift.sh admin@<stick>
 
 Asserts the schema and a live device agree **in both directions**, and that no
 `address` still carries the display form.
+
+It compares three lists, not two: `flash all` parsed by a reference copy of the
+parser in the script, `/api/values` as the daemon's own parser sees the same XML,
+and `keys.tsv`. The schema is judged against the *daemon*, because that is what
+the UI sees; the reference exists to catch the daemon's parser disagreeing with
+it. Checking only against the reference left the daemon's copy untested by the
+one script whose entire job is catching this kind of disagreement.
 
 That second check exists because the two notations are easy to confuse and the
 confusion is silent. A table row is *displayed* as `SW_PORT_TBL[1].PVID` — this

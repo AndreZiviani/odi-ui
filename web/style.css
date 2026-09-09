@@ -29,6 +29,18 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * The `hidden` attribute has to beat an ID selector.
+ *
+ * The UA rule is `[hidden] { display: none }`, specificity 0,1,0 -- so
+ * `#savebar { display: flex }` outranked it and the save bar was pinned to the
+ * bottom of every tab, reading "0 changes" beside a live Save button, on a page
+ * with nothing edited. `bar.hidden = false` in refreshSaveBar() had never done
+ * anything visible. Declaring it here once covers every element the JS toggles,
+ * rather than leaving each ID rule to remember.
+ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--ink);
@@ -211,19 +223,20 @@ td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-fami
   padding: .8rem 1.5rem; display: flex; flex-wrap: wrap;
   gap: .5rem 1rem; align-items: center;
 }
-#confirmwrap { flex: 0 1 auto; }
+#confirmwrap { flex: 0 1 auto; color: var(--fibre); font-size: .82rem; }
 #discard { margin-left: auto; }   /* holds the buttons right either way */
-#savebar button { flex: 0 0 auto; }
-#saveout { flex-basis: 100%; }
 #savecount { font-weight: 600; }
-#confirmwrap { color: var(--fibre); font-size: .82rem; }
 #savebar button {
+  flex: 0 0 auto;
   padding: .4rem 1rem; border-radius: 3px; cursor: pointer; font: inherit;
   border: 1px solid var(--rule); background: none; color: var(--text);
 }
 #save { border-color: var(--fibre); background: var(--fibre); color: var(--ink); font-weight: 600; }
 #save:disabled { opacity: .45; cursor: default; }
-#saveout { display: grid; gap: .2rem; font-size: .82rem; font-family: var(--mono); }
+#saveout {
+  flex-basis: 100%;
+  display: grid; gap: .2rem; font-size: .82rem; font-family: var(--mono);
+}
 #saveout .good { color: var(--apc); }
 #saveout .bad  { color: var(--alarm); }
 #saveout .warn { color: var(--fibre); }

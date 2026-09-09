@@ -188,7 +188,12 @@ function renderFlow(text) {
   }
   const now = Date.now();
   const rate = (id, k) => {
-    if (!PREV || !PREV.ports[id]) return null;
+    /* Both sides need the `|| {}`. side() had it and this did not, so a poll
+       that reported one port and not the other — a truncated counter dump, or
+       a diag hiccup — threw a TypeError out of renderStatus, and the whole
+       status page froze on the previous sample while the timer kept retrying
+       the same throw every 15 seconds. */
+    if (!PREV || !PREV.ports[id] || !ports[id]) return null;
     const dt = (now - PREV.at) / 1000;
     if (dt < 1) return null;
     const d = Number(ports[id][k] || 0) - Number(PREV.ports[id][k] || 0);
@@ -255,17 +260,6 @@ function applyOf(row) {
   return (CONS[row.name] || {}).apply || row.apply || 'unknown';
 }
 
-/* Show what a stored value actually means: "1 — manual" rather than "1". */
-function optionLabel(row, raw) {
-  const m = META[row.name];
-  if (!m || !m.options) return null;
-  for (const pair of m.options.split('|')) {
-    const eq = pair.indexOf('=');
-    if (eq > 0 && pair.slice(0, eq) === raw) return pair.slice(eq + 1);
-  }
-  return null;
-}
-
 /*
  * Whether a key's `depends` condition holds. The firmware ignores some keys
  * unless others are set a particular way — VLAN_MANU_TAG_VID only reaches
@@ -290,6 +284,44 @@ function rangeBad(row, raw) {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < lo || n > hi) return `outside ${lo}\u2013${hi}`;
   return null;
+}
+
+/*
+ * Everything wrong with a value, in one place, so the field marking and the
+ * Save gate cannot disagree about what is acceptable.
+ *
+ * These checks mirror the daemon's rather than replacing them — anything
+ * reachable over HTTP is validated there too, since a request need not come
+ * from this page. What they buy is telling the user before the write instead of
+ * after it.
+ */
+function valueProblem(row, raw) {
+  if (raw === '' || raw === undefined) {
+    return 'cannot be empty \u2014 flash set refuses to clear a key';
+  }
+  if (row.type === 'int' && !/^\d+$/.test(raw)) return 'must be a whole number';
+  if (row.type === 'ipv4') {
+    const oct = raw.split('.');
+    if (oct.length !== 4 || !oct.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255)) {
+      return 'must be four numbers 0\u2013255 separated by dots';
+    }
+  }
+  if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
+    return 'must be 12 hex digits, no separators';
+  }
+  if (row.type === 'hex32' && !/^[0-9a-fA-F]{32}$/.test(raw)) {
+    return 'must be 32 hex digits';
+  }
+  if (row.type === 'hexascii' && !/^([0-9a-fA-F]{2})+$/.test(raw)) {
+    return 'must be hex, a whole number of bytes';
+  }
+
+  const m = META[row.name];
+  if (m && m.options) {
+    const allowed = m.options.split('|').map((p) => p.slice(0, p.indexOf('=')));
+    if (!allowed.includes(raw)) return 'not one of: ' + allowed.join(', ');
+  }
+  return rangeBad(row, raw);
 }
 
 /*
@@ -322,6 +354,17 @@ function renderValue(row, raw) {
   const td = el('td');
   const meta = META[row.name] || {};
 
+  /* What to PUT IN THE FIELD: the pending edit if there is one, otherwise the
+     device value. `raw` stays the comparison baseline throughout.
+
+     Keeping edits in a Map outside the DOM is what lets a tab switch or a
+     filter keystroke rebuild the table without losing them — but only if the
+     rebuild reads the Map back. It did not: renderConfig repopulated every
+     field from VALUES, so a typed change vanished from the screen while the
+     bar still counted it and Save still wrote it. A value the user cannot see
+     is a value they cannot check. */
+  const shown = EDITS.has(row.name) ? EDITS.get(row.name) : raw;
+
   /* Never-writable keys get no control at all. The refusal is enforced in the
      daemon twice over, but not offering the field is the honest presentation. */
   if (row.writable === 'never') {
@@ -345,11 +388,16 @@ function renderValue(row, raw) {
       o.value = raw;
       input.append(o);
     }
-    input.value = raw;
+    if (shown !== raw && ![...input.options].some((o) => o.value === shown)) {
+      const o = el('option', null, shown);
+      o.value = shown;
+      input.append(o);
+    }
+    input.value = shown;
   } else {
     input = el('input');
     input.type = 'text';
-    input.value = raw === undefined ? '' : raw;
+    input.value = shown === undefined ? '' : shown;
     input.spellcheck = false;
     if (row.type === 'int') input.inputMode = 'numeric';
   }
@@ -361,6 +409,8 @@ function renderValue(row, raw) {
     validateInput(row, input);
     refreshSaveBar();
   };
+  input.classList.toggle('changed', shown !== raw);
+  validateInput(row, input);
   td.append(input);
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form
@@ -373,10 +423,23 @@ function renderValue(row, raw) {
 }
 
 function validateInput(row, input) {
-  const bad = rangeBad(row, input.value);
+  /* Only mark what the user is actually proposing. A value the device already
+     holds that falls outside its option list is shown as it is, not scolded. */
+  const bad = EDITS.has(row.name) ? valueProblem(row, input.value) : null;
   input.classList.toggle('invalid', !!bad);
   input.title = bad || '';
   return !bad;
+}
+
+/* Every queued edit that the daemon would refuse, as [name, why] pairs. */
+function invalidEdits() {
+  const out = [];
+  for (const [name, v] of EDITS) {
+    const row = SCHEMA.find((r) => r.name === name);
+    const why = row && valueProblem(row, v);
+    if (why) out.push([name, why]);
+  }
+  return out;
 }
 
 function renderConfig(hostSel, rows, filter) {
@@ -453,6 +516,12 @@ function refreshSaveBar() {
   const n = EDITS.size;
   bar.hidden = n === 0;
   $('#savecount').textContent = n === 1 ? '1 change' : n + ' changes';
+  /* Disabled rather than failing on click: the field is already marked, and a
+     Save button that does nothing is worse than one that says it cannot. */
+  const bad = invalidEdits();
+  $('#save').disabled = bad.length > 0;
+  $('#save').title = bad.length
+    ? bad.map(([k, w]) => `${k}: ${w}`).join('\n') : '';
   const identity = [...EDITS.keys()].filter(
     (k) => (SCHEMA.find((r) => r.name === k) || {}).writable === 'identity');
   $('#confirmwrap').hidden = identity.length === 0;
@@ -472,6 +541,18 @@ async function save() {
 
   if (!$('#confirmwrap').hidden && !$('#confirm').checked) {
     out.append(el('div', 'bad', 'Identity keys need the confirmation ticked.'));
+    return;
+  }
+
+  /* The red marking on a field used to be the only consequence of an invalid
+     value: save() never consulted it and POSTed anyway. The daemon rejects
+     these too, but saying so here means the whole batch is not sent to find
+     out. */
+  const bad = invalidEdits();
+  if (bad.length) {
+    for (const [name, why] of bad) {
+      out.append(el('div', 'bad', `${name}: ${why}`));
+    }
     return;
   }
   if ($('#confirm').checked) pairs.push(['_confirm', 'identity']);
@@ -503,9 +584,15 @@ async function save() {
       b.onclick = doApply;
       out.append(b);
     } else if (res.apply === 'reboot') {
-      out.append(el('div', 'warn',
-        'These keys have no traced consumer, so assume a reboot is needed for ' +
-        'them to take effect. Nothing here reboots the stick for you.'));
+      /* Two different statements, and the daemon now distinguishes them: a key
+         known to be read only at boot, versus a key nothing in the image was
+         seen reading at all. 159 of the 184 are the second kind, so collapsing
+         them into one sentence made the confident case sound like a guess. */
+      out.append(el('div', 'warn', res.untraced
+        ? 'Nothing in the image was seen reading these keys, so assume a ' +
+          'reboot is needed. Nothing here reboots the stick for you.'
+        : 'These keys are read at boot, so a reboot is needed for them to ' +
+          'take effect. Nothing here reboots the stick for you.'));
     }
 
     VALUES = await get('/api/values');
@@ -606,8 +693,13 @@ async function renderFirmware() {
   ].join('\n');
 
   const foot = el('p', 'hint');
+  /* Which confd is answering, not which one the image shipped. A binary at
+     /etc/config/confd/confd overrides the image's copy and survives reflashing,
+     so the two drift apart silently; reporting the build makes that a question
+     you can ask rather than one you have to go and look. */
   foot.textContent = 'Running ' + (fw.running || 'unknown') +
-    ' from partition ' + (booted === undefined ? '?' : booted) + '.';
+    ' from partition ' + (booted === undefined ? '?' : booted) +
+    '. Config UI build ' + (fw.confd || 'unknown') + '.';
   host.append(foot);
 
   if (fw.mem) $('#memtotal').textContent = fw.mem;
