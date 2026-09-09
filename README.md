@@ -170,8 +170,13 @@ would overwrite anything written by hand.
 
 ### Writing
 
-    POST /api/config   key=value&key2=value2   -> per-key result + required apply
+    POST /api/config   key=value&key2=value2   -> per-key result, apply class,
+                                                  and whether that class is a
+                                                  traced fact or an assumption
     POST /api/apply                            -> restart omci_app, no reboot
+
+A write carrying an `Origin` that does not match `Host` is refused with `403`;
+see "Cross-site writes are refused" below.
 
 Every write is **read back and compared**, because `flash set` reports success
 for things it did not do. A batch is per-key: a refused or invalid key does not
@@ -215,9 +220,26 @@ question you can ask rather than one you have to go and look.
 
 Everything lands in
 `/etc/config/confd/` — `mtd3`, jffs2, the one partition `fwu.sh` never writes —
-so it survives reboots and reflashes. About 35 KB of roughly 196 KB free, and
-`deploy.sh` refuses to install if the partition is tight, because filling it
-puts device configuration at risk.
+so it survives reboots and reflashes.
+
+**It is not a small payload.** The binary plus the six web and schema files is
+about 96 KB against the partition's roughly 196 KB free, and because the binary
+is staged as `confd.new` before being renamed over the live one, the peak is
+nearer 116 KB. jffs2 is log-structured too, so overwriting a file does not free
+its old blocks until garbage collection — even re-deploying identical content
+can transiently need the whole payload again. `deploy.sh` therefore computes
+what it needs from the actual files (currently **148 KB** including headroom)
+and refuses below that.
+
+That check used to be a hardcoded `-ge 80`, which was *less* than the payload:
+it passed and then filled the partition. It also passed when `df` returned
+nothing at all. Filling this partition puts device configuration at risk, which
+is a far worse outcome than having no UI, so it now fails closed —
+`FORCE=1` overrides an unreadable `df` if you have checked by hand.
+
+The override is for iterating. Living in it means half of `mtd3` spent on a
+copy of what the image already carries; flash an image built from
+`odi-sandbox` instead.
 
 ## Authentication
 
