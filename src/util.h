@@ -38,45 +38,6 @@ static int spre(const char *s, const char *p)
 	return 1;
 }
 
-/* -1 for a non-base64 byte, so a malformed header fails rather than decodes. */
-static int b64val(char c)
-{
-	if (c >= 'A' && c <= 'Z') return c - 'A';
-	if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-	if (c >= '0' && c <= '9') return c - '0' + 52;
-	if (c == '+') return 62;
-	if (c == '/') return 63;
-	return -1;
-}
-
-/* Decode base64 into dst. Returns length, or -1 on any invalid byte. */
-static long b64decode(const char *src, unsigned long len, char *dst, unsigned long cap)
-{
-	unsigned long i = 0, n = 0;
-	unsigned long acc = 0;
-	int bits = 0;
-
-	for (i = 0; i < len; i++) {
-		int v;
-
-		if (src[i] == '=')
-			break;
-		v = b64val(src[i]);
-		if (v < 0)
-			return -1;
-		acc = (acc << 6) | (unsigned long)v;
-		bits += 6;
-		if (bits >= 8) {
-			bits -= 8;
-			if (n + 1 >= cap)
-				return -1;
-			dst[n++] = (char)((acc >> bits) & 0xff);
-		}
-	}
-	dst[n] = 0;
-	return (long)n;
-}
-
 /*
  * Emit a JSON string body, escaped. Values come from device config and can
  * contain anything, so this is what keeps a stray quote or control byte from

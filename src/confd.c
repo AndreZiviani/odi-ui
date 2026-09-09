@@ -33,15 +33,376 @@
 #define SCHEMA_PATH_OVR "/etc/config/confd/keys.tsv"
 #define AUTH_PATH    "/etc/config/confd.auth"
 
+/*
+ * Sessions.
+ *
+ * HTTP Basic was replaced by a form login for one reason: with Basic the
+ * browser caches the credential and replays it on every request, so a session
+ * cookie beside it buys nothing — there is no logout and no expiry, only a
+ * credential the browser will keep sending. A form login means the cookie is
+ * the only thing carrying authority, which makes both possible.
+ *
+ * Tokens are random and looked up in a fixed table, so there is no crypto here
+ * at all — no HMAC, no signing, nothing to get subtly wrong. The cost is that
+ * sessions live in this process: restarting confd logs everyone out, which is
+ * a feature rather than a bug on a box you administer over ssh.
+ *
+ * TTL is measured against /proc/uptime, not the wall clock. This device boots
+ * at Jan 1 1970 and its clock is never set, so time-of-day is both wrong and
+ * liable to jump if anything ever sets it — which would expire every session at
+ * once, or none of them. Uptime only ever goes forward.
+ */
+#define SESSION_TTL   3600      /* seconds; one hour */
+#define SESSION_SLOTS 8
+#define TOKEN_HEX     32        /* 16 random bytes */
+
+struct session {
+	char tok[TOKEN_HEX + 1];
+	long expires;               /* uptime seconds */
+};
+
+static struct session sessions[SESSION_SLOTS];
+
 /* Static, not stack: this is a single-threaded serial server and these would
  * otherwise be tens of kilobytes of stack in one frame. */
 static char req[4096];
 static char schema[40960];
 static char values[24576];
 static char status[16384];
-static char authbuf[256];
 static char credbuf[256];
 static char filebuf[65536];
+
+/* --------------------------------------------------------------- session --- */
+
+/* Monotonic seconds. /proc/uptime is "SECS.FRAC IDLE"; the integer part is all
+ * this needs, and it cannot go backwards the way a settable clock can. */
+static long now_s(void)
+{
+	char buf[64];
+	long v = 0;
+	unsigned long i = 0;
+
+	if (read_file("/proc/uptime", buf, sizeof(buf)) <= 0)
+		return -1;
+	while (buf[i] >= '0' && buf[i] <= '9') {
+		v = v * 10 + (buf[i] - '0');
+		i++;
+	}
+	return v;
+}
+
+static int rand_token(char *out)
+{
+	static const char hexd[] = "0123456789abcdef";
+	unsigned char raw[TOKEN_HEX / 2];
+	long fd = syscall3(__NR_open, (long)"/dev/urandom", 0, 0);
+	unsigned long got = 0, i;
+
+	if (fd < 0)
+		return 0;
+	while (got < sizeof(raw)) {
+		long n = syscall3(__NR_read, fd, (long)(raw + got), sizeof(raw) - got);
+
+		if (n <= 0)
+			break;
+		got += (unsigned long)n;
+	}
+	syscall3(__NR_close, fd, 0, 0);
+	/* Short of a full token is a failure, not something to pad: a partly
+	 * random session id is a guessable one. */
+	if (got != sizeof(raw))
+		return 0;
+
+	for (i = 0; i < sizeof(raw); i++) {
+		out[i * 2]     = hexd[(raw[i] >> 4) & 0xf];
+		out[i * 2 + 1] = hexd[raw[i] & 0xf];
+	}
+	out[TOKEN_HEX] = 0;
+	return 1;
+}
+
+/* Compare without an early exit, so timing does not leak a token prefix. */
+static int tok_eq(const char *a, const char *b)
+{
+	unsigned long i;
+	int diff = 0;
+
+	for (i = 0; i < TOKEN_HEX; i++) {
+		if (!a[i] || !b[i])
+			return 0;
+		diff |= (a[i] ^ b[i]);
+	}
+	return diff == 0;
+}
+
+static const char *session_new(void)
+{
+	long now = now_s();
+	unsigned long i, slot = 0;
+	long oldest = 0;
+
+	/* Prefer a free or expired slot; otherwise evict the one closest to
+	 * expiry, so a busy box cannot be locked out by stale sessions. */
+	for (i = 0; i < SESSION_SLOTS; i++) {
+		if (!sessions[i].tok[0] || sessions[i].expires <= now) {
+			slot = i;
+			goto take;
+		}
+		if (!oldest || sessions[i].expires < oldest) {
+			oldest = sessions[i].expires;
+			slot = i;
+		}
+	}
+take:
+	if (!rand_token(sessions[slot].tok)) {
+		sessions[slot].tok[0] = 0;
+		return 0;
+	}
+	sessions[slot].expires = now + SESSION_TTL;
+	return sessions[slot].tok;
+}
+
+static int session_valid(const char *tok)
+{
+	long now = now_s();
+	unsigned long i;
+
+	if (!tok || !tok[0])
+		return 0;
+	for (i = 0; i < SESSION_SLOTS; i++) {
+		if (!sessions[i].tok[0])
+			continue;
+		if (sessions[i].expires <= now) {
+			sessions[i].tok[0] = 0;      /* reap on sight */
+			continue;
+		}
+		if (tok_eq(sessions[i].tok, tok))
+			return 1;
+	}
+	return 0;
+}
+
+static void session_kill(const char *tok)
+{
+	unsigned long i;
+
+	if (!tok)
+		return;
+	for (i = 0; i < SESSION_SLOTS; i++)
+		if (sessions[i].tok[0] && tok_eq(sessions[i].tok, tok))
+			sessions[i].tok[0] = 0;
+}
+
+/* ------------------------------------------------------------------ HTTP --- */
+
+static void respond(int fd, const char *status_line, const char *ctype,
+		    const char *extra)
+{
+	put_fd(fd, "HTTP/1.0 ");
+	put_fd(fd, status_line);
+	put_fd(fd, "\r\nContent-Type: ");
+	put_fd(fd, ctype);
+	put_fd(fd, "\r\nCache-Control: no-store\r\nConnection: close\r\n");
+	if (extra)
+		put_fd(fd, extra);
+	put_fd(fd, "\r\n");
+}
+
+/*
+ * Extract the request path. Returns a pointer into req, NUL-terminated in
+ * place. A request line that does not look like "METHOD path HTTP/x" yields 0
+ * rather than a guess.
+ */
+static char *request_path(char *r, char **method)
+{
+	unsigned long i = 0, s;
+
+	*method = r;
+	while (r[i] && r[i] != ' ' && r[i] != '\r' && r[i] != '\n')
+		i++;
+	if (r[i] != ' ')
+		return 0;
+	r[i++] = 0;
+
+	s = i;
+	while (r[i] && r[i] != ' ' && r[i] != '\r' && r[i] != '\n')
+		i++;
+	if (r[i] != ' ')
+		return 0;
+	r[i] = 0;
+	return r + s;
+}
+
+/*
+ * Copy a header's value into `out`. Case-insensitive on the name.
+ *
+ * Non-destructive, deliberately. An earlier version NUL-terminated the value in
+ * place, which quietly broke every login: Content-Length is the last header, so
+ * terminating it overwrote the CR of the CRLFCRLF that marks the start of the
+ * body, request_body() then found no body, and a correct password was reported
+ * as wrong. Parsers that edit their input are how that keeps happening — see
+ * also the note on request_path().
+ */
+static int header_copy(const char *r, const char *name, char *out, unsigned long cap)
+{
+	unsigned long i = 0, n = slen(name);
+
+	out[0] = 0;
+	for (;;) {
+		unsigned long k = 0;
+
+		while (r[i] && r[i] != '\n')
+			i++;
+		if (!r[i])
+			return 0;
+		i++;
+		if (!r[i] || r[i] == '\r' || r[i] == '\n')
+			return 0;              /* end of headers */
+
+		while (k < n) {
+			char a = r[i + k], b = name[k];
+
+			if (a >= 'A' && a <= 'Z')
+				a = (char)(a - 'A' + 'a');
+			if (b >= 'A' && b <= 'Z')
+				b = (char)(b - 'A' + 'a');
+			if (a != b)
+				break;
+			k++;
+		}
+		if (k == n && r[i + k] == ':') {
+			unsigned long v = i + k + 1, o = 0;
+
+			while (r[v] == ' ')
+				v++;
+			while (r[v] && r[v] != '\r' && r[v] != '\n' && o + 1 < cap)
+				out[o++] = r[v++];
+			out[o] = 0;
+			return o > 0;
+		}
+	}
+}
+
+/* --------------------------------------------------------------- session --- *//* --------------------------------------------------------------- session --- */
+
+/* Monotonic seconds. /proc/uptime is "SECS.FRAC IDLE"; the integer part is all
+ * this needs, and it cannot go backwards the way a settable clock can. */
+static long now_s(void)
+{
+	char buf[64];
+	long v = 0;
+	unsigned long i = 0;
+
+	if (read_file("/proc/uptime", buf, sizeof(buf)) <= 0)
+		return -1;
+	while (buf[i] >= '0' && buf[i] <= '9') {
+		v = v * 10 + (buf[i] - '0');
+		i++;
+	}
+	return v;
+}
+
+static int rand_token(char *out)
+{
+	static const char hexd[] = "0123456789abcdef";
+	unsigned char raw[TOKEN_HEX / 2];
+	long fd = syscall3(__NR_open, (long)"/dev/urandom", 0, 0);
+	unsigned long got = 0, i;
+
+	if (fd < 0)
+		return 0;
+	while (got < sizeof(raw)) {
+		long n = syscall3(__NR_read, fd, (long)(raw + got), sizeof(raw) - got);
+
+		if (n <= 0)
+			break;
+		got += (unsigned long)n;
+	}
+	syscall3(__NR_close, fd, 0, 0);
+	/* Short of a full token is a failure, not something to pad: a partly
+	 * random session id is a guessable one. */
+	if (got != sizeof(raw))
+		return 0;
+
+	for (i = 0; i < sizeof(raw); i++) {
+		out[i * 2]     = hexd[(raw[i] >> 4) & 0xf];
+		out[i * 2 + 1] = hexd[raw[i] & 0xf];
+	}
+	out[TOKEN_HEX] = 0;
+	return 1;
+}
+
+/* Compare without an early exit, so timing does not leak a token prefix. */
+static int tok_eq(const char *a, const char *b)
+{
+	unsigned long i;
+	int diff = 0;
+
+	for (i = 0; i < TOKEN_HEX; i++) {
+		if (!a[i] || !b[i])
+			return 0;
+		diff |= (a[i] ^ b[i]);
+	}
+	return diff == 0;
+}
+
+static const char *session_new(void)
+{
+	long now = now_s();
+	unsigned long i, slot = 0;
+	long oldest = 0;
+
+	/* Prefer a free or expired slot; otherwise evict the one closest to
+	 * expiry, so a busy box cannot be locked out by stale sessions. */
+	for (i = 0; i < SESSION_SLOTS; i++) {
+		if (!sessions[i].tok[0] || sessions[i].expires <= now) {
+			slot = i;
+			goto take;
+		}
+		if (!oldest || sessions[i].expires < oldest) {
+			oldest = sessions[i].expires;
+			slot = i;
+		}
+	}
+take:
+	if (!rand_token(sessions[slot].tok)) {
+		sessions[slot].tok[0] = 0;
+		return 0;
+	}
+	sessions[slot].expires = now + SESSION_TTL;
+	return sessions[slot].tok;
+}
+
+static int session_valid(const char *tok)
+{
+	long now = now_s();
+	unsigned long i;
+
+	if (!tok || !tok[0])
+		return 0;
+	for (i = 0; i < SESSION_SLOTS; i++) {
+		if (!sessions[i].tok[0])
+			continue;
+		if (sessions[i].expires <= now) {
+			sessions[i].tok[0] = 0;      /* reap on sight */
+			continue;
+		}
+		if (tok_eq(sessions[i].tok, tok))
+			return 1;
+	}
+	return 0;
+}
+
+static void session_kill(const char *tok)
+{
+	unsigned long i;
+
+	if (!tok)
+		return;
+	for (i = 0; i < SESSION_SLOTS; i++)
+		if (sessions[i].tok[0] && tok_eq(sessions[i].tok, tok))
+			sessions[i].tok[0] = 0;
+}
 
 /* ------------------------------------------------------------------ HTTP --- */
 
@@ -125,44 +486,123 @@ static char *header(char *r, const char *name)
 	}
 }
 
+/* The session token from the Cookie header, or 0 if there is not one. */
+static int cookie_token(const char *r, char *out, unsigned long cap)
+{
+	char c[512];
+	unsigned long i = 0, n;
+
+	out[0] = 0;
+	if (!header_copy(r, "cookie", c, sizeof(c)))
+		return 0;
+	for (;;) {
+		while (c[i] == ' ' || c[i] == ';')
+			i++;
+		if (!c[i])
+			return 0;
+		if (spre(c + i, "sid=")) {
+			i += 4;
+			n = 0;
+			while (c[i] && c[i] != ';' && c[i] != ' ' && n + 1 < cap)
+				out[n++] = c[i++];
+			out[n] = 0;
+			return n > 0;
+		}
+		while (c[i] && c[i] != ';')
+			i++;
+	}
+}
+
+static int hexval(char c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+/* One field out of an application/x-www-form-urlencoded body. */
+static int form_field(const char *body, const char *name, char *out, unsigned long cap)
+{
+	unsigned long i = 0, n = slen(name), o = 0;
+
+	out[0] = 0;
+	for (;;) {
+		if (spre(body + i, name) && body[i + n] == '=') {
+			i += n + 1;
+			while (body[i] && body[i] != '&' && o + 1 < cap) {
+				char ch = body[i];
+
+				if (ch == '+') {
+					ch = ' ';
+					i++;
+				} else if (ch == '%' && body[i + 1] && body[i + 2]) {
+					int va = hexval(body[i + 1]);
+					int vb = hexval(body[i + 2]);
+
+					/* A malformed escape is rejected outright
+					 * rather than passed through as a literal
+					 * '%', so a mangled field cannot silently
+					 * become a different one. */
+					if (va < 0 || vb < 0)
+						return 0;
+					ch = (char)((va << 4) | vb);
+					i += 3;
+				} else {
+					i++;
+				}
+				out[o++] = ch;
+			}
+			out[o] = 0;
+			return o > 0;
+		}
+		while (body[i] && body[i] != '&')
+			i++;
+		if (!body[i])
+			return 0;
+		i++;
+	}
+}
+
 /*
- * HTTP Basic, against user:password in /etc/config/confd.auth.
+ * Check submitted credentials against user:password in /etc/config/confd.auth.
  *
- * If the file is missing or empty the daemon refuses every request rather than
- * running open. An unauthenticated config UI on the LAN is a worse outcome than
- * no config UI, and "it stopped working" is a far better failure than "it let
+ * With no credential file the daemon refuses every login rather than running
+ * open. An unauthenticated config UI on the LAN is a worse outcome than no
+ * config UI, and "it stopped working" is a far better failure than "it let
  * anyone in".
  */
-static int authorised(char *r)
+static int credentials_ok(const char *user, const char *pass)
 {
-	char *h;
-	long n, want;
-	unsigned long i = 0;
+	long want;
+	unsigned long i, ul = slen(user), pl = slen(pass);
 	int diff = 0;
 
-	want = read_file(AUTH_PATH, credbuf, sizeof(credbuf));
+    want = read_file(AUTH_PATH, credbuf, sizeof(credbuf));
 	if (want <= 0)
 		return 0;
-	/* trim trailing newline/CR so an editor-written file works */
 	while (want > 0 && (credbuf[want - 1] == '\n' || credbuf[want - 1] == '\r'))
 		credbuf[--want] = 0;
 	if (want == 0)
 		return 0;
 
-	h = header(r, "authorization");
-	if (!h || !spre(h, "Basic "))
-		return 0;
-
-	n = b64decode(h + 6, slen(h + 6), authbuf, sizeof(authbuf));
-	if (n < 0)
-		return 0;
-
-	/* Compare every byte regardless, so timing does not leak the prefix.
-	 * A length mismatch is folded in rather than returned early. */
-	if (n != want)
+	/* Rebuild "user:password" and compare the whole thing, so the split
+	 * point cannot be moved by a colon in either field. */
+	if (ul + 1 + pl != (unsigned long)want)
 		diff = 1;
-	for (i = 0; i < (unsigned long)want && i + 1 < sizeof(authbuf); i++)
-		diff |= (authbuf[i] ^ credbuf[i]);
+	for (i = 0; i < (unsigned long)want; i++) {
+		char c;
+
+		if (i < ul)
+			c = user[i];
+		else if (i == ul)
+			c = ':';
+		else if (i - ul - 1 < pl)
+			c = pass[i - ul - 1];
+		else
+			c = 0;
+		diff |= (c ^ credbuf[i]);
+	}
 	return diff == 0;
 }
 
@@ -384,45 +824,169 @@ static void serve_static(int fd, const char *name, const char *ctype)
 	write_all(fd, filebuf, (unsigned long)got);
 }
 
+/*
+ * Read a whole request, headers and body.
+ *
+ * One read is usually enough for a form POST, but "usually" is how a login
+ * intermittently fails, so this keeps reading until Content-Length bytes of
+ * body have arrived. Bounded by the buffer either way.
+ */
+static long read_request(int conn)
+{
+	long n, total = 0;
+	char *body;
+	long want;
+
+	for (;;) {
+		n = syscall3(__NR_read, conn, (long)(req + total),
+			     (long)(sizeof(req) - 1 - (unsigned long)total));
+		if (n <= 0)
+			break;
+		total += n;
+		req[total] = 0;
+
+		body = 0;
+		{
+			long i;
+
+			for (i = 0; i + 3 < total; i++)
+				if (req[i] == '\r' && req[i+1] == '\n' &&
+				    req[i+2] == '\r' && req[i+3] == '\n') {
+					body = req + i + 4;
+					break;
+				}
+		}
+		if (!body)
+			continue;               /* headers not complete yet */
+
+		{
+			char cl[32];
+			long have = total - (long)(body - req);
+			unsigned long k;
+
+			want = 0;
+			if (header_copy(req, "content-length", cl, sizeof(cl)))
+				for (k = 0; cl[k] >= '0' && cl[k] <= '9'; k++)
+					want = want * 10 + (cl[k] - '0');
+			if (have >= want)
+				break;
+		}
+		if ((unsigned long)total + 1 >= sizeof(req))
+			break;
+	}
+	return total;
+}
+
+static char *request_body(char *r)
+{
+	unsigned long i;
+
+	for (i = 0; r[i]; i++)
+		if (r[i] == '\r' && r[i+1] == '\n' && r[i+2] == '\r' && r[i+3] == '\n')
+			return r + i + 4;
+	return r + slen(r);
+}
+
+static void set_cookie(int conn, const char *tok, int clear)
+{
+	/* HttpOnly keeps it away from script, SameSite=Strict keeps another
+	 * origin from riding it. No Secure flag: there is no TLS on this device,
+	 * and setting it would simply stop the cookie working. */
+	put_fd(conn, "Set-Cookie: sid=");
+	put_fd(conn, clear ? "" : tok);
+	put_fd(conn, "; Path=/; HttpOnly; SameSite=Strict; Max-Age=");
+	put_fd(conn, clear ? "0" : "3600");
+	put_fd(conn, "\r\n");
+}
+
 static void serve(int conn)
 {
-	char *path, *method;
+	char *path, *method, *body;
+	char tok[TOKEN_HEX + 8];
+	char user[64], pass[128];
 	long n;
+	int authed;
 
-	n = syscall3(__NR_read, conn, (long)req, sizeof(req) - 1);
+	n = read_request(conn);
 	if (n <= 0)
 		return;
-	req[n] = 0;
 
-	/* Authenticate BEFORE parsing, not after: request_path() NUL-terminates
-	 * the method and the path in place, and the first of those NULs stops
-	 * any later scan for a header dead. That cost an hour of a correct
-	 * password being rejected. */
-	if (!authorised(req)) {
-		/*
-		 * Sleep before answering a failed attempt. HTTP Basic has no
-		 * session and no lockout, so without this the only limit on
-		 * guessing is how fast the device can answer — measured at 319
-		 * attempts/sec, which is plenty to walk a human-chosen password.
-		 *
-		 * This server is single-threaded and serial, which turns a
-		 * modest delay into a hard global rate limit: the sleep blocks
-		 * every other request too, so an attacker cannot open more
-		 * connections to go faster. It costs a legitimate typo one
-		 * second.
-		 */
-		sleep_s(1);
-		respond(conn, "401 Unauthorized", "text/plain",
-			"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");
-		put_fd(conn, "authentication required\n");
-		return;
-	}
+	/* Cookie and body are read out BEFORE parsing the request line, because
+	 * request_path() NUL-terminates the method in place and the first of
+	 * those NULs stops any later header scan dead. */
+	authed = cookie_token(req, tok, sizeof(tok)) && session_valid(tok);
+	body = request_body(req);
 
 	path = request_path(req, &method);
 	if (!path) {
 		respond(conn, "400 Bad Request", "text/plain", 0);
 		return;
 	}
+
+	/* ---- login and logout, the only routes reachable unauthenticated --- */
+
+	if (seq(path, "/api/login")) {
+		if (!seq(method, "POST")) {
+			respond(conn, "405 Method Not Allowed", "text/plain", "Allow: POST\r\n");
+			return;
+		}
+		if (!form_field(body, "user", user, sizeof(user)) ||
+		    !form_field(body, "pass", pass, sizeof(pass)) ||
+		    !credentials_ok(user, pass)) {
+			/* Delay before answering a bad login. Without it the only
+			 * limit on guessing is how fast the device answers, which
+			 * measured 319 attempts/sec. This server is single
+			 * threaded and serial, so the sleep is a hard global rate
+			 * limit rather than a per-connection one. */
+			sleep_s(1);
+			respond(conn, "303 See Other", "text/html", "Location: /?bad=1\r\n");
+			return;
+		}
+		{
+			const char *t = session_new();
+
+			if (!t) {
+				respond(conn, "500 Internal Server Error", "text/plain", 0);
+				put_fd(conn, "could not allocate a session\n");
+				return;
+			}
+			put_fd(conn, "HTTP/1.0 303 See Other\r\nLocation: /\r\n"
+				     "Cache-Control: no-store\r\nConnection: close\r\n");
+			set_cookie(conn, t, 0);
+			put_fd(conn, "\r\n");
+		}
+		return;
+	}
+
+	if (seq(path, "/api/logout")) {
+		session_kill(tok);
+		put_fd(conn, "HTTP/1.0 303 See Other\r\nLocation: /\r\n"
+			     "Cache-Control: no-store\r\nConnection: close\r\n");
+		set_cookie(conn, "", 1);
+		put_fd(conn, "\r\n");
+		return;
+	}
+
+	/* Stylesheet is served unauthenticated so the login page is not naked.
+	 * It carries nothing worth protecting. */
+	if (seq(path, "/style.css")) {
+		serve_static(conn, "style.css", "text/css");
+		return;
+	}
+
+	if (!authed) {
+		/* A browser navigating gets the login form; the API says 401 so
+		 * the app can tell an expired session from a broken request. */
+		if (spre(path, "/api/")) {
+			respond(conn, "401 Unauthorized", "application/json", 0);
+			put_fd(conn, "{\"error\":\"no session\"}");
+		} else {
+			serve_static(conn, "login.html", "text/html; charset=utf-8");
+		}
+		return;
+	}
+
+	/* ---- authenticated from here ------------------------------------- */
 
 	/* Phase 1 is read only, so anything that is not a GET is refused here
 	 * rather than in each route. */
@@ -464,8 +1028,6 @@ static void serve(int conn)
 		serve_static(conn, "index.html", "text/html; charset=utf-8");
 	else if (seq(path, "/app.js"))
 		serve_static(conn, "app.js", "application/javascript");
-	else if (seq(path, "/style.css"))
-		serve_static(conn, "style.css", "text/css");
 	else {
 		respond(conn, "404 Not Found", "text/plain", 0);
 		put_fd(conn, "not found\n");

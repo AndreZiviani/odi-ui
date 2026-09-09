@@ -24,6 +24,10 @@ function fail(e) {
 
 async function get(path) {
   const r = await fetch(path, { cache: 'no-store' });
+  /* The session is an hour long and this page polls, so it will outlive one.
+     A 401 means expired, not broken — go back to the login form rather than
+     showing an error nobody can act on. */
+  if (r.status === 401) { location.href = '/'; throw new Error('session expired'); }
   if (!r.ok) throw new Error(path + ' -> HTTP ' + r.status);
   return r.json();
 }

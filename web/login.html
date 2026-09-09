@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in &mdash; ODI ONU</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="login">
+<!-- A plain form post, no script. The login page is the one thing that has to
+     work when everything else is broken. -->
+<form method="post" action="/api/login">
+  <h1>ODI DFP-34X-2C2</h1>
+  <label>Username <input name="user" autocomplete="username" autofocus required></label>
+  <label>Password <input name="pass" type="password" autocomplete="current-password" required></label>
+  <button type="submit">Sign in</button>
+  <p class="note">Sessions last one hour. There is no TLS on this device, so the
+     password crosses the network in the clear &mdash; treat the upstream router
+     as the boundary.</p>
+</form>
+<script>
+  /* The server redirects here with ?bad=1 rather than rendering an error, so
+     that a failed login cannot be replayed by refreshing. */
+  if (location.search.includes('bad=1')) {
+    const p = document.createElement('p');
+    p.className = 'err';
+    p.textContent = 'Wrong username or password.';
+    document.querySelector('h1').after(p);
+  }
+</script>
+</body>
+</html>
