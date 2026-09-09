@@ -256,7 +256,32 @@ scripts/            build verification, schema drift, deploy
 
 Nothing is fetched from a CDN. The stick has no route to the internet, so
 anything loaded from one renders an unstyled page exactly when you need it
-most.
+most — which rules out webfonts and is why the type is a system stack with the
+personality carried by large tabular numerals.
+
+## The look
+
+Styled as test equipment rather than as a dashboard, because that is what this
+is: a fibre-optic line terminal whose measured values *are* the interface.
+Structure comes from rules and space, not cards and shadows.
+
+The two accents are taken from the objects the stick is plugged into —
+singlemode jacket yellow `#E8B931` and APC connector green `#35B37E`, on cool
+slate.
+
+Three deliberate choices worth keeping:
+
+- **Optical power is drawn on a scale, not printed as a number.** The band
+  behind the needle is the class B+ window the optics is specified for, so
+  −23.01 dBm is judged rather than merely reported.
+- **O1 to O5 is rendered as a ladder.** It is the one thing on the page that is
+  genuinely a sequence — an ONU climbs it on every registration — so it is the
+  one place numbering earns its keep.
+- **Forwarding shows throughput, not totals.** `omci_app` clears port 0's
+  counters every performance-monitoring interval while port 2 runs free, so the
+  running totals diverge wildly — 14 GB against 58 MB on a stick forwarding
+  perfectly — and side by side that reads as a fault. Rates between refreshes
+  mirror to within 0.1%, which is the actual test.
 
 ## Related
 

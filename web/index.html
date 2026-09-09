@@ -3,43 +3,61 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ODI ONU</title>
+<title>ODI DFP-34X-2C2</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header>
-  <h1>ODI DFP-34X-2C2</h1>
+  <h1>ODI DFP-34X-2C2 <span id="host"></span></h1>
   <nav>
     <button data-tab="status" class="on">Status</button>
     <button data-tab="config">Config</button>
     <button data-tab="advanced">Advanced</button>
   </nav>
+  <form method="post" action="/api/logout"><button id="logout" type="submit">Sign out</button></form>
   <span id="err" hidden></span>
 </header>
 
 <main>
   <section id="status">
-    <div class="cards" id="statuscards"></div>
-    <h2>Switch ports</h2>
-    <p class="hint">Port&nbsp;2 is the PON side, port&nbsp;0 the host SerDes side.
-       Forwarding shows as a mirror between them.</p>
-    <div id="ports"></div>
-    <details><summary>Raw <code>diag</code> output</summary><pre id="raw"></pre></details>
+    <div class="link">
+      <div class="meter" id="rx"></div>
+      <div class="meter" id="tx"></div>
+    </div>
+
+    <h2>Registration</h2>
+    <ol class="ladder" id="ladder"></ol>
+    <p class="state-note" id="statenote"></p>
+
+    <h2>Forwarding</h2>
+    <div class="flow" id="flow"></div>
+    <p class="hint">Traffic crosses the switch in hardware, so these counters are
+       the only place forwarding is visible. Healthy looks like a mirror: what
+       the fibre receives, the host side sends. Rates are measured between
+       refreshes &mdash; the running totals cannot be compared, because the
+       performance-monitoring cycle clears the host side every fifteen minutes
+       and leaves the fibre side alone.</p>
+
+    <h2>Transceiver</h2>
+    <div class="env" id="env"></div>
+
+    <details>
+      <summary>Raw diag output</summary>
+      <pre id="raw"></pre>
+    </details>
   </section>
 
   <section id="config" hidden>
-    <p class="hint">The keys that provisioning a stick for a line actually uses.
-       Read-only for now &mdash; this build has no write path at all.
-       <strong>never</strong> marks keys that are refused permanently;
-       <strong>identity</strong> marks keys the OLT authenticates on.</p>
+    <p class="hint">The settings that provisioning a stick for a line actually
+       uses. Changes are written one key at a time and read back; nothing is
+       applied until you say so.</p>
     <div id="common"></div>
   </section>
 
   <section id="advanced" hidden>
-    <p class="hint">Every key on the device, including the ones nothing here
-       understands. <strong>apply</strong> is only known where a consumer has
-       been traced; <strong>unknown</strong> means assume a reboot.</p>
-    <input id="filter" type="search" placeholder="Filter keys&hellip;" autocomplete="off">
+    <p class="hint">Every key the device stores. Where a key's consumer has been
+       traced, its cost to change is shown; where it has not, assume a reboot.</p>
+    <input id="filter" type="search" placeholder="Filter settings" autocomplete="off">
     <div id="sections"></div>
   </section>
 </main>
@@ -48,14 +66,12 @@
   <span id="savecount"></span>
   <label id="confirmwrap" hidden>
     <input type="checkbox" id="confirm">
-    I understand these are identity keys the OLT authenticates on:
-    <span id="confirmwhat"></span>
+    Change identity keys the line authenticates on: <span id="confirmwhat"></span>
   </label>
   <button id="discard" type="button">Discard</button>
-  <button id="save" type="button">Save</button>
+  <button id="save" type="button">Save changes</button>
   <div id="saveout"></div>
 </div>
-</main>
 
 <script src="/app.js"></script>
 </body>
