@@ -25,8 +25,14 @@ STRIP := $(CROSS)strip
 CFLAGS  := -std=c99 -Os -Wall -Wextra \
            -march=mips1 -mabi=32 -EB -msoft-float -G0 \
            -fno-pic -mno-abicalls -ffreestanding -fno-builtin -fno-stack-protector \
+           -flto \
            -DBUILD_ID='"$(BUILD_ID)"' 
-LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none
+# -flto on both sides. Splitting confd.c into translation units cost 6.5 KB of
+# lost cross-file inlining (20664 -> 27208); LTO gives it back at 20712, within
+# 48 bytes of the single-file build. `make verify` re-runs the ISA audit on the
+# result, which is the check that matters: LTO changes codegen, and this core
+# traps on instructions GCC will happily emit.
+LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none -flto
 
 SRCS := src/start.S src/main.c src/routes.c src/http.c src/mib.c \
         src/firmware.c src/status.c src/buffers.c
