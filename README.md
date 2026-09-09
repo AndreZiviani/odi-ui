@@ -75,6 +75,30 @@ Regenerate against an extracted rootfs:
 scripts/classify-apply.py /path/to/squashfs-root schema/keys.tsv > schema/consumers.tsv
 ```
 
+## Firmware
+
+Shows both partitions, their versions, which one is kept and which is running,
+and offers the two actions that matter:
+
+- **Try** arms `sw_tryactive`, which boots that partition **once** with the
+  hardware watchdog armed. If the image does not come up, the stick returns by
+  itself to whichever partition is kept — no console, no intervention.
+- **Keep** writes `sw_commit`, and is a separate decision made *after* seeing
+  the trial work. A trial that boots fine still reverts on the next reboot.
+
+Writing `sw_commit` up front instead is what every runbook for this device used
+to say, and it makes an unproven image permanent before it has booted once.
+
+`sw_active` is U-Boot's own record of what it last booted and is never written
+here. Partitions other than 0 and 1 are refused — `sw_tryactive=2` is the
+bootloader's "no trial pending" state, so accepting it would mean doing nothing
+while reporting success.
+
+**Uploading an image is still a shell job** (`fwu_starter.sh`). Streaming a 3 MB
+multipart body through a freestanding daemon with fixed buffers is a large and
+risky piece of work, and it is not the part that is easy to get wrong — the boot
+selection is.
+
 ## Guided fields
 
 `schema/meta.tsv` carries hand-written help for the keys worth explaining:
@@ -106,7 +130,8 @@ would overwrite anything written by hand.
 | 2 | writes, verified, with apply | **done** |
 | 3 | `apply` classes derived from the firmware | **done** |
 | 4 | `SW_PORT_TBL` row add/remove | |
-| 5 | firmware upload and `sw_tryactive` trial boot | |
+| 5 | firmware: partitions, trial boot, keep, reboot | **done** |
+| 6 | image upload from the browser | |
 
 ### Writing
 

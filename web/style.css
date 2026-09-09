@@ -201,12 +201,18 @@ td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-fami
 
 /* --- save bar ----------------------------------------------------------- */
 
+/* Flex, not grid. With fixed grid tracks, hiding the confirmation label left
+   its 1fr track to the next item and Discard stretched across the bar. */
 #savebar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
   background: var(--panel); border-top: 1px solid var(--rule);
-  padding: .8rem 1.5rem; display: grid; gap: .5rem 1rem;
-  grid-template-columns: auto 1fr auto auto; align-items: center;
+  padding: .8rem 1.5rem; display: flex; flex-wrap: wrap;
+  gap: .5rem 1rem; align-items: center;
 }
+#confirmwrap { flex: 0 1 auto; }
+#discard { margin-left: auto; }   /* holds the buttons right either way */
+#savebar button { flex: 0 0 auto; }
+#saveout { flex-basis: 100%; }
 #savecount { font-weight: 600; }
 #confirmwrap { color: var(--fibre); font-size: .82rem; }
 #savebar button {
@@ -215,7 +221,7 @@ td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-fami
 }
 #save { border-color: var(--fibre); background: var(--fibre); color: var(--ink); font-weight: 600; }
 #save:disabled { opacity: .45; cursor: default; }
-#saveout { grid-column: 1 / -1; display: grid; gap: .2rem; font-size: .82rem; font-family: var(--mono); }
+#saveout { display: grid; gap: .2rem; font-size: .82rem; font-family: var(--mono); }
 #saveout .good { color: var(--apc); }
 #saveout .bad  { color: var(--alarm); }
 #saveout .warn { color: var(--fibre); }
@@ -230,9 +236,22 @@ td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-fami
   .side.right, .side.right dl { text-align: left; grid-template-columns: auto 1fr; }
   .side.right dt { order: 0; }
   td:first-child, td:nth-child(2) { width: auto; }
-  #savebar { grid-template-columns: 1fr auto auto; }
+  #savebar { padding: .7rem 1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* --- firmware ----------------------------------------------------------- */
+.fwbtn {
+  margin: .5rem .5rem 0 0; padding: .35rem .8rem; font: inherit; font-size: .85rem;
+  background: none; color: var(--text);
+  border: 1px solid var(--rule); border-radius: 3px; cursor: pointer;
+}
+.fwbtn:hover { border-color: var(--fibre); }
+.fwbtn.danger { color: var(--alarm); border-color: #4A2B29; }
+#fwout { display: grid; gap: .3rem; margin-top: 1rem; font-size: .85rem; max-width: 62ch; }
+#fwout .good { color: var(--apc); }
+#fwout .bad  { color: var(--alarm); }
+#fwout .warn { color: var(--fibre); }
