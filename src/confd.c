@@ -31,6 +31,8 @@
 #define WEB_DIR_OVR  "/etc/config/confd/"
 #define SCHEMA_PATH     "/etc/confd/keys.tsv"
 #define SCHEMA_PATH_OVR "/etc/config/confd/keys.tsv"
+#define META_PATH       "/etc/confd/meta.tsv"
+#define META_PATH_OVR   "/etc/config/confd/meta.tsv"
 #define AUTH_PATH    "/etc/config/confd.auth"
 
 /* Static, not stack: this is a single-threaded serial server and these would
@@ -288,11 +290,12 @@ next:
 	put_fd(fd, "}");
 }
 
-/* The schema TSV, as JSON rows. Comments and the header line are skipped. */
-static void emit_schema_json(int fd, const char *buf)
+/*
+ * A TSV as JSON rows, given the column names. Comment lines and the header are
+ * skipped, so the files stay readable and self-documenting on disk.
+ */
+static void emit_tsv_json(int fd, const char *buf, const char **col, unsigned long ncol)
 {
-	static const char *col[] = { "name", "store", "address", "section",
-				     "type", "apply", "writable", "common" };
 	unsigned long i = 0;
 	int first = 1;
 
@@ -304,14 +307,14 @@ static void emit_schema_json(int fd, const char *buf)
 			le++;
 
 		if (buf[ls] == '#' || ls == le || spre(buf + ls, "name\t"))
-			goto next;
+			goto next;   /* comment, blank line, or the header */
 
 		if (!first)
 			put_fd(fd, ",");
 		first = 0;
 		put_fd(fd, "{");
 		p = ls;
-		for (c = 0; c < 8; c++) {
+		for (c = 0; c < ncol; c++) {
 			unsigned long fs = p;
 
 			while (p < le && buf[p] != '\t')
@@ -448,8 +451,32 @@ static void serve(int conn)
 			put_fd(conn, "{\"error\":\"no schema\"}");
 			return;
 		}
+		{
+			static const char *col[] = { "name", "store", "address",
+						     "section", "type", "apply",
+						     "writable", "common" };
+
+			respond(conn, "200 OK", "application/json", 0);
+			emit_tsv_json(conn, schema, col, 8);
+		}
+		return;
+	}
+
+	if (seq(path, "/api/meta")) {
+		static const char *col[] = { "name", "label", "help",
+					     "options", "depends", "range" };
+
+		/* Curated help, hand-written and merged with the schema by the
+		 * browser. Absent is not an error: the UI degrades to bare key
+		 * names rather than refusing to load. */
+		if (read_file(META_PATH_OVR, schema, sizeof(schema)) <= 0 &&
+		    read_file(META_PATH, schema, sizeof(schema)) <= 0) {
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "[]");
+			return;
+		}
 		respond(conn, "200 OK", "application/json", 0);
-		emit_schema_json(conn, schema);
+		emit_tsv_json(conn, schema, col, 6);
 		return;
 	}
 

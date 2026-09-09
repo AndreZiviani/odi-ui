@@ -39,6 +39,29 @@ hundred lines instead of 88 handlers.
 The split is a `common` column in the schema, so which keys are everyday ones is
 a data decision rather than something baked into the page.
 
+## Guided fields
+
+`schema/meta.tsv` carries hand-written help for the keys worth explaining:
+a readable label, what the key actually does, the values it accepts, a valid
+range, and — the useful part — which *other* keys have to be set before it does
+anything.
+
+That last one exists because the firmware silently ignores settings. `runomci.sh`
+only passes `VLAN_MANU_TAG_VID` to `omci_app` when `VLAN_CFG_TYPE=1` **and**
+`VLAN_MANU_MODE=1`; otherwise it sends `-iot_vid 65535` and your VLAN ID goes
+nowhere. Worse, if the VID or the priority is empty it drops the whole `-iot_`
+block. The UI says so in place:
+
+    Ignored by the firmware right now — needs VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1.
+
+Values render as their meaning (`0 — SFU / bridge`, not `0`), and anything
+outside its documented range is flagged.
+
+Every claim in that file is sourced from the device — `/etc/runomci.sh` for how
+a key reaches `omci_app`, and measurement for the rest. It is a **separate file
+from `schema/keys.tsv` on purpose**: that one is regenerated from a stick and
+would overwrite anything written by hand.
+
 ## Status: phase 1, read-only
 
 There is **no write path in this binary at all** — not disabled, absent.
@@ -170,6 +193,7 @@ src/util.h          base64, JSON escaping, small string helpers
 src/syscall.h       copied from sfp-exporter; fix it in both places
 web/                the entire UI: one page, one script, one stylesheet
 schema/keys.tsv     the keyspace, generated from a device
+schema/meta.tsv     curated help: labels, options, ranges, dependencies
 scripts/            build verification, schema drift, deploy
 ```
 

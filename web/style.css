@@ -59,3 +59,14 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tag.never    { color: var(--bad);    border-color: var(--bad); }
 .tag.identity { color: var(--warn);   border-color: var(--warn); }
 .tag.omci     { color: var(--accent); border-color: var(--accent); }
+
+/* --- guided config ------------------------------------------------------ */
+td .label { font-weight: 600; }
+td .key { display: block; color: var(--dim); font-size: .75rem; margin-top: .1rem; }
+td.info { color: var(--dim); font-size: .8rem; max-width: 42rem; }
+td.info .help { line-height: 1.45; }
+td.info .opts { margin-top: .3rem; font-size: .75rem; opacity: .8; }
+td.info .unmet {
+  margin-top: .35rem; color: var(--warn);
+  border-left: 2px solid var(--warn); padding-left: .5rem;
+}
