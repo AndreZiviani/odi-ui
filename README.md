@@ -254,7 +254,15 @@ and the OLT stops authenticating the ONU.
 SSH_OPTS='-S /tmp/odi_ctl' scripts/schema-drift.sh admin@<stick>
 ```
 
-Asserts the schema and a live device agree **in both directions**. A key on the
+Asserts the schema and a live device agree **in both directions**, and that no
+`address` still carries the display form.
+
+That second check exists because the two notations are easy to confuse and the
+confusion is silent. A table row is *displayed* as `SW_PORT_TBL[1].PVID` — this
+project's own notation — while `xmlconfig` wants `SW_PORT_TBL.1.PVID`. Handing
+it the display form does not fail: it resolves to a **different entry**, writes
+that, and exits 0 echoing the wrong key. Writes therefore go through the schema's
+`address` column, never the name. A key on the
 device but not in the schema is invisible; a key in the schema but not on the
 device renders a control that can never work. Neither fails loudly on its own.
 It has already earned its keep once, catching four table keys whose names the
