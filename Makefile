@@ -28,9 +28,15 @@ CFLAGS  := -std=c99 -Os -Wall -Wextra \
            -DBUILD_ID='"$(BUILD_ID)"' 
 LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none
 
-HDRS := src/syscall.h src/util.h
+SRCS := src/start.S src/main.c src/routes.c src/http.c src/mib.c \
+        src/firmware.c src/status.c src/buffers.c
+HDRS := $(wildcard src/*.h)
 
-$(BUILD)/confd: src/start.S src/confd.c $(HDRS) | $(BUILD)
+# One compiler invocation rather than per-object rules and a link step: there
+# are eight inputs, the whole build takes under a second, and there is no
+# incremental case worth the machinery. Splitting into real translation units
+# was for the source, not for the build.
+$(BUILD)/confd: $(SRCS) $(HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(filter %.S %.c,$^)
 	$(STRIP) $@
 

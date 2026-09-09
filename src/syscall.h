@@ -185,7 +185,7 @@ __attribute__((unused)) static void put_fd(int fd, const char *s)
 /* Unbuffered by construction — every put() is its own write syscall, which is
  * output already on the wire survives a SIGILL, which is what made mapping
  * this CPU possible in the first place. */
-static void put(const char *s)
+__attribute__((unused)) static void put(const char *s)
 {
 	write_all(1, s, str_len(s));
 }
@@ -356,7 +356,7 @@ __attribute__((unused)) static long run_to_buf(const char *path, char *const arg
  * 5.5x, and it makes an extra metric cost its own work (1-3 ms) instead of
  * another process startup.
  */
-static long run_script_to_buf(const char *path, char *const argv[],
+__attribute__((unused)) static long run_script_to_buf(const char *path, char *const argv[],
 			      const char *script, char *buf, unsigned long cap)
 {
 	int in[2], out[2];
