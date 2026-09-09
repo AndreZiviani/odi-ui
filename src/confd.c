@@ -336,13 +336,26 @@ static int refused_key(const char *k)
 }
 
 /* Look a key up in the schema, copying its `writable` and `apply` columns. */
+/*
+ * Look a key up in the schema, copying the columns the write path needs.
+ *
+ * `address` matters more than it looks. A table row is displayed as
+ * SW_PORT_TBL[1].PVID, which is this project's own notation, while xmlconfig
+ * wants SW_PORT_TBL.1.PVID. Handing the display form to `flash set` does not
+ * fail — it resolves to a DIFFERENT entry, writes that, and exits 0 echoing
+ * the wrong key. Silently writing the wrong setting while reporting success is
+ * the worst failure available here, so the address column exists to make the
+ * two forms impossible to confuse.
+ */
 static int schema_lookup(const char *buf, const char *name,
+			 char *addr, unsigned long dcap,
 			 char *type, unsigned long tcap,
 			 char *writable, unsigned long wcap,
 			 char *apply, unsigned long acap)
 {
 	unsigned long i = 0;
 
+	addr[0] = 0;
 	type[0] = 0;
 	writable[0] = 0;
 	apply[0] = 0;
@@ -372,7 +385,13 @@ static int schema_lookup(const char *buf, const char *name,
 			fs = p;
 			while (p < le && buf[p] != '\t')
 				p++;
-			if (c == 4) {
+			if (c == 2) {
+				unsigned long n = 0;
+
+				while (fs + n < p && n + 1 < dcap)
+					addr[n] = buf[fs + n], n++;
+				addr[n] = 0;
+			} else if (c == 4) {
 				unsigned long n = 0;
 
 				while (fs + n < p && n + 1 < tcap)
@@ -413,7 +432,7 @@ next:
  * branch is guarded by [ "$3" != "" ], so an empty value falls through to the
  * usage text and exits 1 while looking like it worked.
  */
-static int write_key(const char *name, const char *value, char *out, unsigned long cap)
+static int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 {
 	char *argv[5];
 	char buf[512];
@@ -421,7 +440,7 @@ static int write_key(const char *name, const char *value, char *out, unsigned lo
 
 	argv[0] = "flash";
 	argv[1] = "set";
-	argv[2] = (char *)name;
+	argv[2] = (char *)addr;
 	argv[3] = (char *)value;
 	argv[4] = 0;
 
@@ -847,7 +866,7 @@ static char *request_body(char *r)
  */
 static void handle_write(int conn, const char *body)
 {
-	char name[128], value[512], got[512];
+	char name[128], value[512], got[512], addr[160];
 	char type[32], writable[32], apply[32];
 	unsigned long i = 0;
 	int first = 1, confirm = 0, any_omci = 0, any_reboot = 0;
@@ -905,7 +924,8 @@ static void handle_write(int conn, const char *body)
 
 		if (refused_key(name))
 			err = "refused: a wrong SerDes mode costs every management path";
-		else if (!schema_lookup(schema, name, type, sizeof(type),
+		else if (!schema_lookup(schema, name, addr, sizeof(addr),
+					type, sizeof(type),
 					writable, sizeof(writable), apply, sizeof(apply)))
 			err = "not in the schema";
 		else if (seq(writable, "never"))
@@ -931,7 +951,7 @@ static void handle_write(int conn, const char *body)
 			goto next;
 		}
 
-		if (write_key(name, value, got, sizeof(got))) {
+		if (write_key(addr, value, got, sizeof(got))) {
 			put_fd(conn, "\"ok\":true,\"value\":\"");
 			put_json_cstr(conn, got);
 			put_fd(conn, "\"}");

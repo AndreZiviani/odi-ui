@@ -67,4 +67,15 @@ if [ -n "$extra" ]; then
 fi
 [ "$fail" = 0 ] || exit 1
 
+# The display name and the address are different notations, and confusing them
+# is silent rather than loud: handing xmlconfig a bracketed name resolves to a
+# DIFFERENT entry, writes it, and exits 0 echoing the wrong key. Assert the
+# address column never carries the display form.
+badaddr=$(grep -v '^#' "$SCHEMA" | tail -n +2 | awk -F'\t' '$3 ~ /\[/ {print $1}')
+if [ -n "$badaddr" ]; then
+	echo "addresses still in display form (would write the wrong entry):"
+	printf '%s\n' "$badaddr" | while IFS= read -r k; do printf '  %s\n' "$k"; done
+	exit 1
+fi
+
 echo "in sync: $(wc -l < "$tmp/schema" | tr -d ' ') keys match $HOST"
