@@ -8,7 +8,7 @@
 </head>
 <body>
 <header>
-  <h1>ODI DFP-34X-2C2 <span id="host"></span></h1>
+  <h1>ODI DFP-34X-2C2</h1>
   <nav>
     <button data-tab="status" class="on">Status</button>
     <button data-tab="config">Config</button>
@@ -62,10 +62,26 @@
     <div id="sections"></div>
   </section>
   <section id="firmware" hidden>
-    <p class="hint">Two partitions, one running. New images are uploaded from a
-       shell with <code>fwu_starter.sh</code>; what happens next is decided
-       here, because that is the part worth getting right.</p>
+    <p class="hint">Two partitions, one running. An image is always written to
+       the one that is not running, so the firmware you are using now survives
+       whatever happens next.</p>
     <div id="parts"></div>
+
+    <h2>Loading a new image</h2>
+    <p class="hint">Uploading is still a shell job &mdash; the image is about
+       3&nbsp;MB and this daemon would have to hold it in memory the device does
+       not have. Build it, copy it over, check it arrived intact, then write it
+       to the partition you are <em>not</em> running:</p>
+<pre id="upload"></pre>
+    <p class="hint">Then come back here and press Try on that partition. Do not
+       reach for Keep first: the whole value of the trial is that the stick
+       recovers on its own if the image is bad.</p>
+    <p class="hint"><code>/tmp</code> is a RAM disk sharing
+       <span id="memtotal">27&nbsp;MB</span> with everything else running, so the
+       copy is tight but fits &mdash; the page cache gives way. The updater
+       checks the md5 of both the kernel and the root filesystem before it
+       erases anything, and streams each straight to flash, so it needs no
+       scratch space beyond the tarball itself.</p>
 
     <h2>How a trial boot works</h2>
     <p class="hint">Trying a partition boots it <strong>once</strong>, with the

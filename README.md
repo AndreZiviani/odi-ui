@@ -94,10 +94,11 @@ here. Partitions other than 0 and 1 are refused — `sw_tryactive=2` is the
 bootloader's "no trial pending" state, so accepting it would mean doing nothing
 while reporting success.
 
-**Uploading an image is still a shell job** (`fwu_starter.sh`). Streaming a 3 MB
-multipart body through a freestanding daemon with fixed buffers is a large and
-risky piece of work, and it is not the part that is easy to get wrong — the boot
-selection is.
+**Uploading an image is still a shell job**, and the page now spells out the
+commands with this stick's own address and the partition it is *not* running,
+so they can be pasted rather than adapted. Streaming a 3 MB multipart body
+through a freestanding daemon with fixed buffers is large and risky, and it is
+not the part that is easy to get wrong — the boot selection is.
 
 ## Guided fields
 

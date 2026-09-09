@@ -554,10 +554,27 @@ async function renderFirmware() {
   }
   host.append(t);
 
+  /* Spell the commands out with this stick's own address and the partition it
+     is not running, so they can be pasted without being adapted. */
+  const other = booted === '0' ? '1' : '0';
+  $('#upload').textContent = [
+    '# on your machine, in ~/git/odi-sandbox',
+    'make image                     # -> firmware/out/*.tar',
+    '',
+    'IMG=firmware/out/<image>.tar',
+    `cat "$IMG" | ssh admin@${location.hostname} 'cat > /tmp/img.tar'`,
+    `md5 -q "$IMG"; ssh admin@${location.hostname} 'md5sum /tmp/img.tar'`,
+    '',
+    `# writes partition ${other}, the one this stick is not running`,
+    `ssh admin@${location.hostname} '/etc/scripts/fwu_starter.sh ${other} /tmp/img.tar'`,
+  ].join('\n');
+
   const foot = el('p', 'hint');
   foot.textContent = 'Running ' + (fw.running || 'unknown') +
     ' from partition ' + (booted === undefined ? '?' : booted) + '.';
   host.append(foot);
+
+  if (fw.mem) $('#memtotal').textContent = fw.mem;
 
   const rb = el('button', 'fwbtn danger', 'Reboot now');
   rb.onclick = () => fwAction('reboot', '',
@@ -616,7 +633,6 @@ async function refresh() {
 }
 
 (async function init() {
-  $('#host').textContent = location.hostname;
   try {
     let metaRows, consRows;
     [SCHEMA, VALUES, metaRows, consRows] = await Promise.all([
