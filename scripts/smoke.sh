@@ -34,7 +34,7 @@ fi
 # real ones rather than teaching it about a prefix it would only need for tests.
 mkdir -p /etc/confd /etc/config
 cp schema/keys.tsv schema/meta.tsv schema/consumers.tsv /etc/confd/
-cp web/index.html web/app.js web/style.css /etc/confd/
+cp web/*.html web/*.css web/*.js /etc/confd/
 printf '%s' "$AUTH" > /etc/config/confd.auth
 chmod 600 /etc/config/confd.auth
 
@@ -175,6 +175,23 @@ check "an identity key needs confirmation" yes \
 	"$(err "$(post 'GPON_SN=ODI12345678')" '_confirm=identity')"
 check "an unknown key is refused" yes \
 	"$(err "$(post 'NOT_A_REAL_KEY=1')" 'not in the schema')"
+
+echo "== web assets"
+# Every module the page imports must actually be served, and nothing outside
+# the table may be. A 404 on one module is a blank page in a browser and
+# nothing at all in a log.
+for f in web/*.js web/*.css web/*.html; do
+	b=$(basename "$f")
+	u="/$b"; [ "$b" = index.html ] && u="/"
+	check "serves $b" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT$u")"
+done
+check "an unlisted file is refused" 404 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/keys.tsv")"
+# The table is literals, so there is no path to traverse -- assert it anyway,
+# because /etc/config/confd/ next door holds the credential.
+for p in "/../confd.auth" "/..%2fconfd.auth" "//etc/config/confd.auth"; do
+	check "refuses $p" 404 "$(code -u "$AUTH" "http://127.0.0.1:$PORT$p")"
+done
 
 echo "== routes"
 check "sign out answers 401, not 405" 401 \

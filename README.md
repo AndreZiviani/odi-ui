@@ -252,8 +252,9 @@ make test                                   # ELF shape + ISA audit, data files,
 SSH_OPTS='-S /tmp/odi_ctl' scripts/deploy.sh admin@<stick> 8080
 ```
 
-Docker builds and runs everything; `make check` also needs the host's `python3`,
-since it reads data files and wants no cross-compiler. It runs on macOS.
+Docker builds and runs everything; `make check` also needs the host's `python3`
+and `node`, since it reads data files and loads the web modules and wants no
+cross-compiler. It runs on macOS.
 
 The binary reports the build it was made from, as `confd` in `/api/firmware` and
 in the Firmware tab's footer. An override at `/etc/config/confd/confd` beats the
@@ -350,6 +351,21 @@ and the OLT stops authenticating the ONU.
 ```sh
 make check      # the files against each other, no device needed
 ```
+
+Three checks, none of which needs a device:
+
+| | |
+|---|---|
+| `check-schema.py` | `keys.tsv`, `meta.tsv` and `consumers.tsv` against each other |
+| `check-assets.py` | `web/` against the daemon's `web_assets[]` table, both directions |
+| `web-check.mjs` | loads the whole module graph against fixture data and renders |
+
+The last two exist because splitting the UI into modules moved a class of
+mistake from obvious to silent. A missing export, an import that resolves to
+`undefined`, an import cycle leaving a binding uninitialised, or a module the
+daemon will not serve — every one produces a blank page and a console error
+nobody sees, because the only way to run this page is to flash a stick and open
+a browser. `web-check.mjs` caught two of those the moment it was written.
 
 The schema is generated and the metadata is hand-written, which is the right
 split but lets the hand-written half drift silently. A `depends` naming a key

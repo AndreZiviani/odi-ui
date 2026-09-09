@@ -457,13 +457,7 @@ void serve(int conn)
 		return;
 	}
 
-	if (seq(path, "/") || seq(path, "/index.html"))
-		serve_static(conn, "index.html", "text/html; charset=utf-8");
-	else if (seq(path, "/app.js"))
-		serve_static(conn, "app.js", "application/javascript");
-	else if (seq(path, "/style.css"))
-		serve_static(conn, "style.css", "text/css");
-	else {
+	if (!serve_asset(conn, path)) {
 		respond(conn, "404 Not Found", "text/plain", 0);
 		put_fd(conn, "not found\n");
 	}
