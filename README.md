@@ -164,9 +164,51 @@ would overwrite anything written by hand.
 | 1 | schema, values, status | **done** |
 | 2 | writes, verified, with apply | **done** |
 | 3 | `apply` classes derived from the firmware | **done** |
-| 4 | `SW_PORT_TBL` row add/remove | |
+| 4 | `SW_PORT_TBL` row add/remove | **not doing** — see below |
 | 5 | firmware: partitions, trial boot, keep, reboot | **done** |
 | 6 | image upload from the browser | |
+
+### Why there is no row add/remove
+
+Phase 4 was going to let the Advanced tab add and delete `SW_PORT_TBL` rows.
+It is not a UI feature waiting to be written: **the device has no safe
+mechanism for it.**
+
+What the firmware actually offers, read out of the shipped binaries:
+
+- `/etc/scripts/flash` accepts exactly four commands — `all`, `default`,
+  `get`, `set`. There is no add and no delete.
+- `xmlconfig`'s own usage lists `-g`, `-s`, `-h`, `-if`, `-def`, `-nodef`,
+  `-of` and `-def_mib`. Also no add and no delete. (A `-index` string exists
+  in the binary but appears in no usage text.)
+- Rows *are* created — `xmlconfig` calls `mib_chain_add`, and fails with
+  `[ERR] mib_chain_add failed for dir(%s, %d)` — but only while **importing a
+  whole configuration file** with `-if`. That is a total rewrite of the
+  configuration, not a surgical row insert, and it is what `flash default`
+  uses.
+- `libmib.so.0` does export `__mib_chain_add` and `__mib_chain_delete`, and
+  `/bin/mib` imports them, but `/bin/mib` has no usage text and no
+  command-line surface for them. Reaching them means linking `libmib` and
+  `librtk` into this daemon — the opposite of the rule the exporter already
+  settled on for the same reason: fork the vendor CLI, do not link the vendor
+  libraries, because the behaviour that matters lives in the tool rather than
+  in the library call.
+
+So the only available path is "export the whole config, edit the XML, import
+it back", which trades a per-key write with a read-back for a whole-file
+replacement with none. Against that, `xmlconfig` carries
+`[ERR] Warning, unknown dir.idx.entry`, so a `-s` to an index that does not
+exist is at best a warning — and a malformed table address is already known to
+exit 0 having written **a different entry** (see "Keeping the schema honest").
+
+Editing the fields of an existing row works today and is what the actual lead
+needed anyway: the upstream report matching the Vero symptom is fixed by
+setting `PVID` on the row that is already there, not by adding one.
+
+If this is ever genuinely needed, the honest order is: establish on a stick you
+can afford to lose whether `-s TBL.<new index>.<field>` creates, warns, or
+silently writes elsewhere; then decide. Nothing here should be built on a guess
+about that.
 
 ### Writing
 
