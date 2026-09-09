@@ -190,6 +190,13 @@ Clearing a key is rejected with a message saying why: `flash set` guards its set
 branch with `[ "$3" != "" ]`, so an empty value falls through to its usage text
 and exits 1 while looking like it worked.
 
+## In the firmware image
+
+`~/git/odi-sandbox` builds `confd` and its assets into the image and starts it
+from `rc35`, so a flashed stick serves this without anything being started by
+hand. Until such an image is flashed, the deploy below is what puts it there —
+and it does not survive a reboot.
+
 ## Build and deploy
 
 ```sh
