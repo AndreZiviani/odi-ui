@@ -27,6 +27,18 @@ data change** — no new handler, no recompile, no reflash.
 That is the one thing the vendor design got wrong, and it is why this is a few
 hundred lines instead of 88 handlers.
 
+## Tabs
+
+- **Status** &mdash; optics, ONU state, alarms, switch-port counters.
+- **Config** &mdash; the 23 keys the line profiles in `odi-sandbox` actually
+  carry. That set is an empirical answer to "what gets changed" rather than a
+  guess, since it is exactly what provisioning a stick for an ISP line has
+  needed.
+- **Advanced** &mdash; all 184 keys, filterable.
+
+The split is a `common` column in the schema, so which keys are everyday ones is
+a data decision rather than something baked into the page.
+
 ## Status: phase 1, read-only
 
 There is **no write path in this binary at all** — not disabled, absent.
@@ -57,7 +69,7 @@ puts device configuration at risk.
 HTTP Basic, credentials in `/etc/config/confd.auth` as `user:password`:
 
 ```sh
-ssh admin@<stick> 'printf "admin:CHANGEME" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'
+ssh admin@<stick> 'printf "admin:admin" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'
 ```
 
 **With no credential file, confd refuses every request.** It never runs

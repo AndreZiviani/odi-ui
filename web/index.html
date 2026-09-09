@@ -12,6 +12,7 @@
   <nav>
     <button data-tab="status" class="on">Status</button>
     <button data-tab="config">Config</button>
+    <button data-tab="advanced">Advanced</button>
   </nav>
   <span id="err" hidden></span>
 </header>
@@ -27,9 +28,17 @@
   </section>
 
   <section id="config" hidden>
-    <p class="hint">Read-only for now &mdash; this build has no write path at all.
+    <p class="hint">The keys that provisioning a stick for a line actually uses.
+       Read-only for now &mdash; this build has no write path at all.
        <strong>never</strong> marks keys that are refused permanently;
        <strong>identity</strong> marks keys the OLT authenticates on.</p>
+    <div id="common"></div>
+  </section>
+
+  <section id="advanced" hidden>
+    <p class="hint">Every key on the device, including the ones nothing here
+       understands. <strong>apply</strong> is only known where a consumer has
+       been traced; <strong>unknown</strong> means assume a reboot.</p>
     <input id="filter" type="search" placeholder="Filter keys&hellip;" autocomplete="off">
     <div id="sections"></div>
   </section>
