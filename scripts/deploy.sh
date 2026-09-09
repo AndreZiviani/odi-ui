@@ -31,8 +31,10 @@ if ! file build/confd | grep -q "ELF 32-bit MSB executable, MIPS"; then
 	exit 1
 fi
 
-ASSETS=(schema/keys.tsv schema/meta.tsv schema/consumers.tsv
-	web/index.html web/app.js web/style.css)
+# Globbed, not listed: the UI is many modules now, and a hand-kept list here
+# would be a fourth copy of it. scripts/check-assets.py is what asserts web/
+# and the daemon's own table agree.
+ASSETS=(schema/keys.tsv schema/meta.tsv schema/consumers.tsv web/*.html web/*.css web/*.js)
 
 echo "==> free space on the config partition"
 # What this actually needs, measured: every file that gets written, plus a

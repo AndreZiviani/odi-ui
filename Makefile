@@ -73,6 +73,8 @@ verify: confd
 # say "needs FOO=1" forever with nothing to notice.
 check:
 	scripts/check-schema.py
+	scripts/check-assets.py
+	node scripts/web-check.mjs
 
 # Run the daemon under qemu and talk HTTP to it. No stick needed: it is the
 # request path -- framing, auth, form parsing, validation -- that fails silently

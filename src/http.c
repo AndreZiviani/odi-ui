@@ -358,3 +358,40 @@ void serve_static(int fd, const char *name, const char *ctype)
 	respond(fd, "200 OK", ctype, 0);
 	write_all(fd, filebuf, (unsigned long)got);
 }
+
+/*
+ * Every asset, in one list. Adding a module to the UI is a line here and a file
+ * in web/ -- and scripts/check-assets.py asserts those two agree, because a
+ * file with no row is dead weight on a jffs2 partition that is already half
+ * spent, and a row with no file is a 404 nobody notices until the page is
+ * blank.
+ */
+const struct web_asset web_assets[] = {
+	{ "/",              "index.html",  "text/html; charset=utf-8" },
+	{ "/index.html",    "index.html",  "text/html; charset=utf-8" },
+	{ "/style.css",     "style.css",   "text/css" },
+	{ "/app.js",        "app.js",      "application/javascript" },
+	{ "/dom.js",        "dom.js",      "application/javascript" },
+	{ "/state.js",      "state.js",    "application/javascript" },
+	{ "/status.js",     "status.js",   "application/javascript" },
+	{ "/flow.js",       "flow.js",     "application/javascript" },
+	{ "/validate.js",   "validate.js", "application/javascript" },
+	{ "/config.js",     "config.js",   "application/javascript" },
+	{ "/save.js",       "save.js",     "application/javascript" },
+	{ "/firmware.js",   "firmware.js", "application/javascript" },
+	{ 0, 0, 0 },
+};
+
+int serve_asset(int fd, const char *path)
+{
+	unsigned long i;
+
+	for (i = 0; web_assets[i].url; i++) {
+		if (!seq(path, web_assets[i].url))
+			continue;
+		/* The table's own literal, never the request. */
+		serve_static(fd, web_assets[i].file, web_assets[i].ctype);
+		return 1;
+	}
+	return 0;
+}
