@@ -1,8 +1,12 @@
 # odi-ui — web configuration UI for the ODI DFP-34X-2C2 (Realtek RTL9601D).
 #
-# Everything runs in containers; nothing but Docker is needed on the host, and
-# it works on macOS. The C build re-enters this Makefile inside the container
-# with IN_CONTAINER=1.
+# The C build runs in a container -- Docker is all that is needed to produce the
+# binary, and it works on macOS. The Makefile re-enters itself inside the
+# container with IN_CONTAINER=1.
+#
+# `make check` is the exception: it runs scripts/check-schema.py with the host's
+# python3, because it checks data files and needs no cross-compiler. `make all`
+# and `make test` depend on it, so python3 is a host requirement too.
 
 IMAGE := odi-ui-toolchain
 BUILD := build
@@ -20,7 +24,8 @@ STRIP := $(CROSS)strip
 # so nothing is quietly turned back into a libc call.
 CFLAGS  := -std=c99 -Os -Wall -Wextra \
            -march=mips1 -mabi=32 -EB -msoft-float -G0 \
-           -fno-pic -mno-abicalls -ffreestanding -fno-builtin -fno-stack-protector
+           -fno-pic -mno-abicalls -ffreestanding -fno-builtin -fno-stack-protector \
+           -DBUILD_ID='"$(BUILD_ID)"' 
 LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none
 
 HDRS := src/syscall.h src/util.h
@@ -36,9 +41,9 @@ else
 
 RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(IMAGE)
 
-.PHONY: all confd image verify check schema test clean help
+.PHONY: all confd image verify check smoke schema test clean help
 
-all: confd verify check
+all: confd verify check smoke
 
 image:
 	docker build -q -t $(IMAGE) . >/dev/null
@@ -58,11 +63,18 @@ verify: image
 check:
 	scripts/check-schema.py
 
+# Run the daemon under qemu and talk HTTP to it. No stick needed: it is the
+# request path -- framing, auth, form parsing, validation -- that fails silently
+# on real hardware, and every case in there is a bug this has actually had.
+# The idle-client check waits out a 15 s socket timeout, so budget ~20 s.
+smoke: confd
+	scripts/smoke.sh
+
 # Assert the schema and the device agree in both directions. Needs a stick.
 schema:
 	scripts/schema-drift.sh $(HOST)
 
-test: verify check
+test: verify check smoke
 	@echo "ok"
 
 clean:
@@ -72,6 +84,7 @@ help:
 	@echo "make confd    build the daemon"
 	@echo "make verify   ELF shape + ISA audit"
 	@echo "make check    the data files against each other, no device needed"
+	@echo "make smoke    run the daemon under qemu and talk HTTP to it (~20s)"
 	@echo "make schema HOST=admin@<stick>   schema-vs-device drift check"
 
 endif
