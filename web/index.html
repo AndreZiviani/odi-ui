@@ -44,6 +44,19 @@
   </section>
 </main>
 
+<div id="savebar" hidden>
+  <span id="savecount"></span>
+  <label id="confirmwrap" hidden>
+    <input type="checkbox" id="confirm">
+    I understand these are identity keys the OLT authenticates on:
+    <span id="confirmwhat"></span>
+  </label>
+  <button id="discard" type="button">Discard</button>
+  <button id="save" type="button">Save</button>
+  <div id="saveout"></div>
+</div>
+</main>
+
 <script src="/app.js"></script>
 </body>
 </html>
