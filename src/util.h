@@ -16,7 +16,7 @@
 /* str_len, put_fd and read_file come from syscall.h. */
 #define slen str_len
 
-static int seq(const char *a, const char *b)
+static inline int seq(const char *a, const char *b)
 {
 	unsigned long i = 0;
 
@@ -26,7 +26,7 @@ static int seq(const char *a, const char *b)
 }
 
 /* Whether `s` starts with `p`. */
-static int spre(const char *s, const char *p)
+static inline int spre(const char *s, const char *p)
 {
 	unsigned long i = 0;
 
@@ -38,8 +38,21 @@ static int spre(const char *s, const char *p)
 	return 1;
 }
 
+/*
+ * One hex digit, or -1. Shared because two unrelated callers need it: decoding
+ * a %XX escape out of a form body, and checking that a value the schema calls
+ * hex really is.
+ */
+static inline int hexval(char c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
 /* -1 for a non-base64 byte, so a malformed header fails rather than decodes. */
-static int b64val(char c)
+static inline int b64val(char c)
 {
 	if (c >= 'A' && c <= 'Z') return c - 'A';
 	if (c >= 'a' && c <= 'z') return c - 'a' + 26;
@@ -50,7 +63,7 @@ static int b64val(char c)
 }
 
 /* Decode base64 into dst. Returns length, or -1 on any invalid byte. */
-static long b64decode(const char *src, unsigned long len, char *dst, unsigned long cap)
+static inline long b64decode(const char *src, unsigned long len, char *dst, unsigned long cap)
 {
 	unsigned long i = 0, n = 0;
 	unsigned long acc = 0;
@@ -82,7 +95,7 @@ static long b64decode(const char *src, unsigned long len, char *dst, unsigned lo
  * contain anything, so this is what keeps a stray quote or control byte from
  * producing a response the browser cannot parse.
  */
-static void put_json_str(int fd, const char *s, unsigned long len)
+static inline void put_json_str(int fd, const char *s, unsigned long len)
 {
 	static const char hexd[] = "0123456789abcdef";
 	unsigned long i;
@@ -109,13 +122,13 @@ static void put_json_str(int fd, const char *s, unsigned long len)
 	}
 }
 
-static void put_json_cstr(int fd, const char *s)
+static inline void put_json_cstr(int fd, const char *s)
 {
 	put_json_str(fd, s, slen(s));
 }
 
 /* Sleep whole seconds. struct timespec is two longs on this 32-bit target. */
-static void sleep_s(long secs)
+static inline void sleep_s(long secs)
 {
 	long ts[2];
 
