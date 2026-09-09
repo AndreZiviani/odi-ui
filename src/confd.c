@@ -40,6 +40,7 @@ static char schema[40960];
 static char values[24576];
 static char status[16384];
 static char authbuf[256];
+static char hdrbuf[512];
 static char credbuf[256];
 static char filebuf[65536];
 
@@ -83,22 +84,32 @@ static char *request_path(char *r, char **method)
 	return r + s;
 }
 
-/* Value of a header, NUL-terminated in place, or 0. Case-insensitive name. */
-static char *header(char *r, const char *name)
+/*
+ * Copy a header's value into `out`. Case-insensitive on the name.
+ *
+ * Non-destructive, deliberately. The obvious implementation NUL-terminates the
+ * value in place, and that quietly breaks any request with a body:
+ * Content-Length is typically the last header, so terminating it overwrites the
+ * CR of the CRLFCRLF that marks where the body starts, and the body then
+ * appears to be empty. Harmless while every route is a GET; fatal the moment
+ * the write path starts POSTing. Parsers that edit their input are how that
+ * keeps happening — see also the note in serve() about request_path().
+ */
+static int header_copy(const char *r, const char *name, char *out, unsigned long cap)
 {
 	unsigned long i = 0, n = slen(name);
 
+	out[0] = 0;
 	for (;;) {
 		unsigned long k = 0;
 
-		/* advance to the start of the next line */
 		while (r[i] && r[i] != '\n')
 			i++;
 		if (!r[i])
 			return 0;
 		i++;
-		if (!r[i])
-			return 0;
+		if (!r[i] || r[i] == '\r' || r[i] == '\n')
+			return 0;              /* end of headers */
 
 		while (k < n) {
 			char a = r[i + k], b = name[k];
@@ -112,15 +123,14 @@ static char *header(char *r, const char *name)
 			k++;
 		}
 		if (k == n && r[i + k] == ':') {
-			unsigned long v = i + k + 1, e;
+			unsigned long v = i + k + 1, o = 0;
 
 			while (r[v] == ' ')
 				v++;
-			e = v;
-			while (r[e] && r[e] != '\r' && r[e] != '\n')
-				e++;
-			r[e] = 0;
-			return r + v;
+			while (r[v] && r[v] != '\r' && r[v] != '\n' && o + 1 < cap)
+				out[o++] = r[v++];
+			out[o] = 0;
+			return o > 0;
 		}
 	}
 }
@@ -133,9 +143,8 @@ static char *header(char *r, const char *name)
  * no config UI, and "it stopped working" is a far better failure than "it let
  * anyone in".
  */
-static int authorised(char *r)
+static int authorised(const char *r)
 {
-	char *h;
 	long n, want;
 	unsigned long i = 0;
 	int diff = 0;
@@ -149,11 +158,12 @@ static int authorised(char *r)
 	if (want == 0)
 		return 0;
 
-	h = header(r, "authorization");
-	if (!h || !spre(h, "Basic "))
+	if (!header_copy(r, "authorization", hdrbuf, sizeof(hdrbuf)))
+		return 0;
+	if (!spre(hdrbuf, "Basic "))
 		return 0;
 
-	n = b64decode(h + 6, slen(h + 6), authbuf, sizeof(authbuf));
+	n = b64decode(hdrbuf + 6, slen(hdrbuf + 6), authbuf, sizeof(authbuf));
 	if (n < 0)
 		return 0;
 
@@ -492,6 +502,21 @@ int main(int argc, char **argv)
 {
 	unsigned long port = parse_u16(argc > 1 ? argv[1] : 0, DEFAULT_PORT);
 	long one = 1;
+
+	/*
+	 * Ignore SIGPIPE, or the first client to hang up mid-response kills the
+	 * server. Writing to a socket whose peer has closed raises it, and the
+	 * default action is to terminate — with no libc there is nothing
+	 * installing a handler on our behalf.
+	 *
+	 * This is not theoretical and it is not rare: curl reads a response to
+	 * the end, but a browser cancels requests, reloads mid-load and closes
+	 * tabs constantly. Reproduced by asking for the 25 KB schema and closing
+	 * the socket immediately — the daemon was gone before the next request.
+	 * write_all already stops on a short write, so the EPIPE return is
+	 * handled; it was only the signal that was fatal.
+	 */
+	sig_ignore(SIGPIPE);
 	long fd, conn;
 	unsigned char addr[16];
 	unsigned long i;
