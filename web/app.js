@@ -115,7 +115,12 @@ function renderPorts(text) {
 
 /* --- config ------------------------------------------------------------- */
 
-let SCHEMA = [], VALUES = {}, META = {};
+let SCHEMA = [], VALUES = {}, META = {}, CONS = {};
+
+/* The apply class, preferring the derived one over the schema's. */
+function applyOf(row) {
+  return (CONS[row.name] || {}).apply || row.apply || 'unknown';
+}
 
 /* Show what a stored value actually means: "1 — manual" rather than "1". */
 function optionLabel(row, raw) {
@@ -266,7 +271,9 @@ function renderConfig(hostSel, rows, filter) {
       k.append(el('div', 'key', row.name));
       if (row.writable === 'never') k.append(el('span', 'tag never', 'never'));
       if (row.writable === 'identity') k.append(el('span', 'tag identity', 'identity'));
-      if (row.apply === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
+      const ap = applyOf(row);
+      if (ap === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
+      if (ap === 'reboot') k.append(el('span', 'tag identity', 'needs reboot'));
       if (meta.range) k.append(el('span', 'tag', meta.range));
       tr.append(k);
 
@@ -283,6 +290,10 @@ function renderConfig(hostSel, rows, filter) {
         info.append(el('div', 'opts', 'Accepts: ' +
           meta.options.split('|').map((p) => p.slice(0, p.indexOf('='))).join(', ')));
       }
+      /* Who reads the key. Useful even where the timing is unknown, and it is
+         what the apply class was derived from. */
+      const rd = (CONS[row.name] || {}).readers;
+      if (rd) info.append(el('div', 'opts', 'Read by: ' + rd.split(',').join(', ')));
       tr.append(info);
       t.append(tr);
     }
@@ -408,11 +419,12 @@ async function refresh() {
 
 (async function init() {
   try {
-    let metaRows;
-    [SCHEMA, VALUES, metaRows] = await Promise.all([
-      get('/api/schema'), get('/api/values'), get('/api/meta'),
+    let metaRows, consRows;
+    [SCHEMA, VALUES, metaRows, consRows] = await Promise.all([
+      get('/api/schema'), get('/api/values'), get('/api/meta'), get('/api/consumers'),
     ]);
     for (const m of metaRows) META[m.name] = m;
+    for (const c of consRows) CONS[c.name] = c;
     renderAll();
   } catch (e) { fail(e); }
   await refresh();
