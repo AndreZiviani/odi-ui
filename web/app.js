@@ -115,7 +115,44 @@ function renderPorts(text) {
 
 /* --- config ------------------------------------------------------------- */
 
-let SCHEMA = [], VALUES = {};
+let SCHEMA = [], VALUES = {}, META = {};
+
+/* Show what a stored value actually means: "1 — manual" rather than "1". */
+function optionLabel(row, raw) {
+  const m = META[row.name];
+  if (!m || !m.options) return null;
+  for (const pair of m.options.split('|')) {
+    const eq = pair.indexOf('=');
+    if (eq > 0 && pair.slice(0, eq) === raw) return pair.slice(eq + 1);
+  }
+  return null;
+}
+
+/*
+ * Whether a key's `depends` condition holds. The firmware ignores some keys
+ * unless others are set a particular way — VLAN_MANU_TAG_VID only reaches
+ * omci_app when VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1, and otherwise a sentinel
+ * is sent in its place. Saying so is more useful than showing a value that
+ * looks live and is not.
+ */
+function dependsUnmet(row) {
+  const m = META[row.name];
+  if (!m || !m.depends) return null;
+  const unmet = m.depends.split('&').filter((c) => {
+    const [k, v] = c.split('=');
+    return VALUES[k] !== v;
+  });
+  return unmet.length ? unmet : null;
+}
+
+function rangeBad(row, raw) {
+  const m = META[row.name];
+  if (!m || !m.range || raw === '' || raw === undefined) return null;
+  const [lo, hi] = m.range.split('-').map(Number);
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < lo || n > hi) return `outside ${lo}\u2013${hi}`;
+  return null;
+}
 
 /*
  * Some keys hold the hex of an ASCII string — GPON_PLOAM_PASSWD keeps
@@ -170,19 +207,39 @@ function renderConfig(hostSel, rows, filter) {
     host.append(el('h2', null, name));
     const t = el('table');
     const head = el('tr');
-    for (const h of ['Key', 'Value', 'Type', 'Apply']) head.append(el('th', null, h));
+    for (const h of ['Setting', 'Value', 'Notes']) head.append(el('th', null, h));
     t.append(head);
     for (const row of bySection[name]) {
+      const meta = META[row.name] || {};
       const tr = el('tr');
       const k = el('td');
-      k.append(el('span', 'key', row.name));
+      k.append(el('div', 'label', meta.label || row.name));
+      k.append(el('div', 'key', row.name));
       if (row.writable === 'never') k.append(el('span', 'tag never', 'never'));
       if (row.writable === 'identity') k.append(el('span', 'tag identity', 'identity'));
       if (row.apply === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
+      if (meta.range) k.append(el('span', 'tag', meta.range));
       tr.append(k);
-      tr.append(renderValue(row, VALUES[row.name]));
-      tr.append(el('td', null, row.type));
-      tr.append(el('td', null, row.apply === 'unknown' ? '—' : row.apply));
+
+      const vtd = renderValue(row, VALUES[row.name]);
+      const opt = optionLabel(row, VALUES[row.name]);
+      if (opt) { vtd.textContent = ''; vtd.append(el('span', null, opt)); }
+      const bad = rangeBad(row, VALUES[row.name]);
+      if (bad) vtd.append(el('span', 'tag never', bad));
+      tr.append(vtd);
+
+      const info = el('td', 'info');
+      if (meta.help) info.append(el('div', 'help', meta.help));
+      const unmet = dependsUnmet(row);
+      if (unmet) {
+        info.append(el('div', 'unmet',
+          'Ignored by the firmware right now \u2014 needs ' + unmet.join(' and ') + '.'));
+      }
+      if (meta.options) {
+        info.append(el('div', 'opts', 'Accepts: ' +
+          meta.options.split('|').map((p) => p.slice(0, p.indexOf('='))).join(', ')));
+      }
+      tr.append(info);
       t.append(tr);
     }
     host.append(t);
@@ -210,7 +267,11 @@ async function refresh() {
 
 (async function init() {
   try {
-    [SCHEMA, VALUES] = await Promise.all([get('/api/schema'), get('/api/values')]);
+    let metaRows;
+    [SCHEMA, VALUES, metaRows] = await Promise.all([
+      get('/api/schema'), get('/api/values'), get('/api/meta'),
+    ]);
+    for (const m of metaRows) META[m.name] = m;
     /* Config shows the keys provisioning actually uses; Advanced shows all of
        them. The split is a schema flag, so which keys are "common" is a data
        decision and not something baked in here. */

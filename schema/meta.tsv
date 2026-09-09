@@ -1,0 +1,38 @@
+# Curated help for the keys worth explaining. Hand-written, and deliberately NOT
+# produced by gen-schema.py: that file is regenerated from a device and would
+# overwrite anything written here. Merged with it by name, in the browser.
+#
+# Everything below is sourced from the device itself — /etc/runomci.sh for how a
+# key reaches omci_app, and measurement for the rest. Where a claim is not
+# grounded it says so rather than guessing.
+#
+# options  value=label, separated by |
+# depends  KEY=VALUE, joined by &. When unmet the UI says the key is ignored,
+#          because that is what the firmware does with it.
+# range    min-max, inclusive
+name	label	help	options	depends	range
+DEVICE_TYPE	Device mode	Becomes `omci_app -t`. Anything outside the listed values falls back to bridge. Switching between HGU and SFU also needs a CS factory reset — this key alone leaves a stale WAN entry behind and the ONU keeps running as a router.	0=0 — SFU / bridge|1=1 — HGU / router|2=2 — hybrid		
+VLAN_CFG_TYPE	VLAN config mode	Selects which VLAN path omci_app takes. 1 gives `-iot_vt 1`; every other value gives `-iot_vt 0`, and the manual VLAN fields below are ignored entirely.	0=0 — transparent|1=1 — manual		
+VLAN_MANU_MODE	Manual VLAN mode	Only read when VLAN config mode is 1. Mode 1 passes the VLAN ID and priority below to omci_app; any other value sends the 65535/255 sentinels instead, which means the VLAN ID is ignored.	0=0 — off|1=1 — tag using the VLAN ID below	VLAN_CFG_TYPE=1	
+VLAN_MANU_TAG_VID	Service VLAN ID	The C-VLAN the ONU tags upstream traffic with — your ISP's service VLAN. Used only when VLAN config mode is 1 AND manual VLAN mode is 1. If this or the priority is left empty, runomci.sh drops the whole -iot_ block and no VLAN configuration reaches omci_app at all.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	1-4094
+VLAN_MANU_TAG_PRI	VLAN priority	802.1p priority bits carried in the tag. Same gating as the VLAN ID, and equally must not be empty.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	0-7
+OMCI_CUSTOM_RDP	Routing datapath features	Hex bitmask, passed as `omci_app -cr`. Bit 0x4 suppresses the ME 171 uniNode association check; both of our sticks run 4. On the 2024 firmware that same bit also skips populating the resolved association, which stops the ONU forwarding at all.			
+OMCI_CUSTOM_BDP	Bridge datapath features	Hex bitmask, passed as `omci_app -cb`.			
+OMCI_CUSTOM_ME	Managed-entity features	Hex bitmask, passed as `omci_app -cme`.			
+OMCI_CUSTOM_MCAST	Multicast features	Hex bitmask, passed as `omci_app -cmc`.			
+DUAL_MGMT_MODE	Dual management	1 starts omci_app with `-m enable_wq`.	0=0 — off|1=1 — enable_wq		
+OMCI_FAKE_OK	Acknowledge unsupported OMCI	Answers OK to OMCI operations the stack cannot actually satisfy. Some OLTs refuse to finish provisioning without it.	0=0 — off|1=1 — on		
+OMCI_OLT_MODE	OLT vendor profile	Read by boa, configd, led, mib and xmlconfig — and NOT by omci_app or checkomci. It does not affect provisioning, which was confirmed from the binaries rather than assumed.			
+OMCI_VEIP_SLOT_ID	VEIP slot	Passed to omci_app. 255 is the default here; the OLT bridges to the VEIP rather than the physical UNI on both of our lines.			
+LAN_IP_ADDR	Management IP	The address this UI, SSH and telnet answer on. Changing it drops your session.			
+LAN_SUBNET	Management netmask				
+PON_MODE	PON type	Handed to the europa driver at boot by insert_europa.sh.	1=1 — GPON|2=2 — EPON		
+GPON_SN	ONU serial number	What the OLT authenticates. Four-character vendor prefix followed by eight hex digits. Lose it and the ONU will not come up on the line.			
+PON_VENDOR_ID	Vendor prefix	The first four characters of the serial number, and must match it.			
+MAC_KEY	MAC key	32 hex characters.			
+ELAN_MAC_ADDR	UNI MAC address	eth0 comes up with this address.			
+GPON_ONU_MODEL	ONU model	Reported to the OLT in the ONU-G managed entity.			
+GPON_PLOAM_PASSWD	PLOAM password	Stored as the hex of an ASCII string, shown decoded above. Many OLTs authenticate on the serial number alone and leave this empty — one of ours does, the other uses it.			
+GPON_PLOAM_FORMAT	PLOAM format	1 on both of our lines.			
+SUSER_NAME	Admin username	The device login for SSH and telnet. Not this UI's password, which lives in /etc/config/confd.auth.			
+SUSER_PASSWORD	Admin password	The device login for SSH and telnet.			

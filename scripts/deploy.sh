@@ -36,7 +36,7 @@ printf '    %s KB available\n' "$AVAIL"
 
 echo "==> $DEST"
 "${SSH[@]}" "mkdir -p $DEST"
-for f in schema/keys.tsv web/index.html web/app.js web/style.css; do
+for f in schema/keys.tsv schema/meta.tsv web/index.html web/app.js web/style.css; do
 	base=$(basename "$f")
 	# shellcheck disable=SC2094  # the redirect writes on the device, not here
 	"${SSH[@]}" "cat > $DEST/$base" < "$f"
