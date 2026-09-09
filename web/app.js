@@ -224,7 +224,31 @@ function renderFlow(text) {
 
 /* --- config ------------------------------------------------------------- */
 
-let SCHEMA = [], VALUES = {}, META = {}, CONS = {};
+let SCHEMA = [], VALUES = {}, META = {}, CONS = {}, DEFAULTS = {}, BASELINE = {};
+
+/*
+ * Where a value came from.
+ *
+ * The image ships only ten defaults in /etc/config_default*.xml; the rest are
+ * built into the MIB with no read-only way to read them out. So a key is judged
+ * against the image default where one exists, and otherwise against a baseline
+ * captured from a stick considered correct. Anything with neither reference is
+ * left unlabelled rather than guessed at.
+ */
+function provenance(row, raw) {
+  const name = row.name;
+  if (name in DEFAULTS) {
+    return raw === DEFAULTS[name]
+      ? { cls: 'default', label: 'image default' }
+      : { cls: 'changed', label: 'changed', was: DEFAULTS[name], from: 'image default' };
+  }
+  if (name in BASELINE) {
+    return raw === BASELINE[name]
+      ? null
+      : { cls: 'changed', label: 'changed', was: BASELINE[name], from: 'baseline' };
+  }
+  return null;
+}
 
 /* The apply class, preferring the derived one over the schema's. */
 function applyOf(row) {
@@ -384,6 +408,14 @@ function renderConfig(hostSel, rows, filter) {
       if (ap === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
       if (ap === 'reboot') k.append(el('span', 'tag identity', 'needs reboot'));
       if (meta.range) k.append(el('span', 'tag', meta.range));
+      const prov = provenance(row, VALUES[row.name]);
+      if (prov) {
+        const t = el('span', 'tag ' + prov.cls, prov.label);
+        if (prov.was !== undefined) {
+          t.title = `${prov.from}: ${prov.was === '' ? '(empty)' : prov.was}`;
+        }
+        k.append(t);
+      }
       tr.append(k);
 
       tr.append(renderValue(row, VALUES[row.name]));
@@ -403,6 +435,10 @@ function renderConfig(hostSel, rows, filter) {
          what the apply class was derived from. */
       const rd = (CONS[row.name] || {}).readers;
       if (rd) info.append(el('div', 'opts', 'Read by: ' + rd.split(',').join(', ')));
+      if (prov && prov.was !== undefined) {
+        info.append(el('div', 'opts',
+          `${prov.from} was ${prov.was === '' ? '(empty)' : prov.was}`));
+      }
       tr.append(info);
       t.append(tr);
     }
@@ -634,12 +670,14 @@ async function refresh() {
 
 (async function init() {
   try {
-    let metaRows, consRows;
-    [SCHEMA, VALUES, metaRows, consRows] = await Promise.all([
-      get('/api/schema'), get('/api/values'), get('/api/meta'), get('/api/consumers'),
+    let metaRows, consRows, baseRows;
+    [SCHEMA, VALUES, metaRows, consRows, DEFAULTS, baseRows] = await Promise.all([
+      get('/api/schema'), get('/api/values'), get('/api/meta'),
+      get('/api/consumers'), get('/api/defaults'), get('/api/baseline'),
     ]);
     for (const m of metaRows) META[m.name] = m;
     for (const c of consRows) CONS[c.name] = c;
+    for (const b of baseRows) BASELINE[b.name] = b.value;
     renderAll();
   } catch (e) { fail(e); }
   await refresh();

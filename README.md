@@ -100,6 +100,40 @@ so they can be pasted rather than adapted. Streaming a 3 MB multipart body
 through a freestanding daemon with fixed buffers is large and risky, and it is
 not the part that is easy to get wrong — the boot selection is.
 
+## Default or changed
+
+Each setting is labelled against two references, and neither is guessed.
+
+**`/etc/config_default.xml`** and its HS twin are what the *image* ships, and
+they are authoritative — but they cover only ten keys. A value matching one is
+tagged `image default`; a value differing from one is tagged `changed` and the
+shipped value is shown beside it.
+
+There is deliberately no attempt to invent defaults for the other 174. The full
+set lives inside the MIB and **there is no read-only way to read it out**:
+`xmlconfig -def_mib -os` looks exactly like the command for the job and prints
+the *current* configuration instead. Trusting it would have labelled every key
+on the device a default — worse than having no label at all.
+
+So the second reference is a **baseline captured from a stick you consider
+correct**, which answers the question that actually gets asked: what have we
+changed since. It lives on the device, not in this repo, because two sticks on
+different lines legitimately differ in serial, VLAN and address and one shared
+file would show the second as drifted in dozens of places.
+
+```sh
+SSH_OPTS='-S /tmp/odi_ctl' scripts/capture-baseline.sh admin@<stick>
+```
+
+Re-capture after deliberately changing something you mean to keep, or the UI
+will keep flagging it. The script refuses to install a baseline of fewer than
+50 rows, since a truncated one silently marks everything as changed.
+
+Worth knowing what this turned up on our two sticks straight away: Claro
+differs from the image on exactly `OMCI_CUSTOM_BDP` and `OMCI_CUSTOM_ME`, while
+Vero matches all ten — because the image's defaults *are* Vero's values, the
+base having been rebuilt from its working configuration.
+
 ## Guided fields
 
 `schema/meta.tsv` carries hand-written help for the keys worth explaining:

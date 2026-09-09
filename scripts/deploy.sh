@@ -34,6 +34,9 @@ AVAIL=$("${SSH[@]}" 'df /var/config 2>/dev/null | awk "NR==2{print \$4}"')
 printf '    %s KB available\n' "$AVAIL"
 [ -z "$AVAIL" ] || [ "$AVAIL" -ge 80 ] || { echo "    under 80 KB free -- refusing" >&2; exit 1; }
 
+# baseline.tsv is NOT shipped: it is per-stick and captured on the device by
+# scripts/capture-baseline.sh. Overwriting it from here would replace one
+# stick's reference with another's.
 echo "==> $DEST"
 "${SSH[@]}" "mkdir -p $DEST"
 for f in schema/keys.tsv schema/meta.tsv schema/consumers.tsv web/index.html web/app.js web/style.css; do

@@ -35,6 +35,24 @@
 #define META_PATH_OVR   "/etc/config/confd/meta.tsv"
 #define CONS_PATH       "/etc/confd/consumers.tsv"
 #define CONS_PATH_OVR   "/etc/config/confd/consumers.tsv"
+#define BASE_PATH       "/etc/confd/baseline.tsv"
+#define BASE_PATH_OVR   "/etc/config/confd/baseline.tsv"
+
+/*
+ * Two reference points for "is this value ours or the device's?".
+ *
+ * /etc/config_default*.xml is what the IMAGE ships, and is authoritative — but
+ * it covers only ten keys. The full set of built-in defaults lives inside the
+ * MIB and there is no read-only way to dump it: `xmlconfig -def_mib -os` looks
+ * like it should and simply prints the current configuration instead, which
+ * would have made every key look like a default.
+ *
+ * So the second reference is a baseline captured from a stick you consider
+ * correct, which answers the question that actually gets asked: what have we
+ * changed since.
+ */
+#define DEFAULT_CS "/etc/config_default.xml"
+#define DEFAULT_HS "/etc/config_default_hs.xml"
 #define AUTH_PATH    "/etc/config/confd.auth"
 
 /* Static, not stack: this is a single-threaded serial server and these would
@@ -625,7 +643,15 @@ static void emit_values_json(int fd, const char *buf)
 		while (buf[le] && buf[le] != '\n')
 			le++;
 
-		if (spre(buf + ls, " <Dir Name=\"") || spre(buf + ls, "<Dir Name=\"")) {
+		/* Skip indentation before matching. `flash all` indents with
+		 * spaces and /etc/config_default*.xml with tabs, and matching
+		 * literal prefixes meant the defaults file parsed as zero
+		 * values — an empty answer that looked like "no defaults" rather
+		 * than a parse failure. */
+		while (ls < le && (buf[ls] == ' ' || buf[ls] == '\t'))
+			ls++;
+
+		if (spre(buf + ls, "<Dir Name=\"")) {
 			unsigned long p = ls, n = 0;
 
 			while (p < le && buf[p] != '"')
@@ -653,8 +679,7 @@ static void emit_values_json(int fd, const char *buf)
 			goto next;
 		}
 
-		if (spre(buf + ls, "  <Value Name=\"") || spre(buf + ls, " <Value Name=\"") ||
-		    spre(buf + ls, "<Value Name=\"")) {
+		if (spre(buf + ls, "<Value Name=\"")) {
 			unsigned long p = ls, ks, ke, vs, ve;
 
 			while (p < le && buf[p] != '"')
@@ -1102,6 +1127,33 @@ static void serve(int conn)
 		}
 		respond(conn, "200 OK", "application/json", 0);
 		emit_tsv_json(conn, schema, col, 3);
+		return;
+	}
+
+	if (seq(path, "/api/defaults")) {
+		/* Both files are small — ten values between them — so one buffer
+		 * and the values parser already written cover it. */
+		long n = read_file(DEFAULT_CS, values, sizeof(values));
+
+		if (n < 0)
+			n = 0;
+		read_file(DEFAULT_HS, values + n, sizeof(values) - (unsigned long)n);
+		respond(conn, "200 OK", "application/json", 0);
+		emit_values_json(conn, values);
+		return;
+	}
+
+	if (seq(path, "/api/baseline")) {
+		static const char *col[] = { "name", "value" };
+
+		if (read_file(BASE_PATH_OVR, schema, sizeof(schema)) <= 0 &&
+		    read_file(BASE_PATH, schema, sizeof(schema)) <= 0) {
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "[]");
+			return;
+		}
+		respond(conn, "200 OK", "application/json", 0);
+		emit_tsv_json(conn, schema, col, 2);
 		return;
 	}
 

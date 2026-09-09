@@ -2,3 +2,6 @@ build/
 out/
 *.o
 schema/*.local.tsv
+
+# per-stick, captured on the device by scripts/capture-baseline.sh
+schema/baseline.tsv
