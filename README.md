@@ -255,6 +255,24 @@ protection is not enough for that.
 Identity keys (`GPON_SN`, `MAC_KEY`, PLOAM, …) are marked `identity`: lose them
 and the OLT stops authenticating the ONU.
 
+## Keeping the data files honest
+
+```sh
+make check      # the files against each other, no device needed
+```
+
+The schema is generated and the metadata is hand-written, which is the right
+split but lets the hand-written half drift silently. A `depends` naming a key
+that does not exist makes the UI say "needs FOO=1" forever; a malformed
+`options` pair renders a blank dropdown; a `meta` row for a key the device does
+not have is simply never seen. None of those announce themselves.
+
+It also refuses an `address` left in display form and a refused key not marked
+`never`, which are the two ways a data edit could cause a wrong write.
+
+Each of those was verified by injecting the fault and watching the check fail —
+a check that has only ever passed has not been tested.
+
 ## Keeping the schema honest
 
 ```sh

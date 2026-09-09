@@ -36,9 +36,9 @@ else
 
 RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(IMAGE)
 
-.PHONY: all confd image verify schema test clean help
+.PHONY: all confd image verify check schema test clean help
 
-all: confd verify
+all: confd verify check
 
 image:
 	docker build -q -t $(IMAGE) . >/dev/null
@@ -51,11 +51,18 @@ confd: image
 verify: image
 	$(RUN) scripts/verify.sh $(BUILD)/confd
 
-# Assert the schema and the device agree in both directions.
+# The data files against each other. No device needed, so this is the one that
+# runs every time: the generated schema and the hand-written metadata can drift
+# apart silently, and a `depends` naming a key that does not exist makes the UI
+# say "needs FOO=1" forever with nothing to notice.
+check:
+	scripts/check-schema.py
+
+# Assert the schema and the device agree in both directions. Needs a stick.
 schema:
 	scripts/schema-drift.sh $(HOST)
 
-test: verify
+test: verify check
 	@echo "ok"
 
 clean:
@@ -64,6 +71,7 @@ clean:
 help:
 	@echo "make confd    build the daemon"
 	@echo "make verify   ELF shape + ISA audit"
+	@echo "make check    the data files against each other, no device needed"
 	@echo "make schema HOST=admin@<stick>   schema-vs-device drift check"
 
 endif
