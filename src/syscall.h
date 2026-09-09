@@ -107,6 +107,26 @@ static long syscall3(long n, long a, long b, long c)
  *
  * sigsetsize is _NSIG/8 = 16 on this target.
  */
+/*
+ * Close every descriptor above stderr in a freshly forked child.
+ *
+ * Without this a child inherits whatever the parent had open — including, in a
+ * server, the accepted client socket. A long-lived grandchild then holds that
+ * socket open and the client never sees EOF: observed as POST /api/apply
+ * returning its JSON and then hanging until the client's own timeout, because
+ * the restarted omci_app was still holding the connection.
+ *
+ * 3..63 rather than a real enumeration: there is no closefrom() here and no
+ * /proc walk worth doing in a fork, and this server never has that many open.
+ */
+__attribute__((unused)) static void close_inherited(void)
+{
+	long fd;
+
+	for (fd = 3; fd < 64; fd++)
+		syscall3(__NR_close, fd, 0, 0);
+}
+
 __attribute__((unused)) static long sig_ignore(long signum)
 {
 	long act[6];
@@ -247,6 +267,7 @@ static long run_to_buf(const char *path, char *const argv[],
 		syscall3(__NR_dup2, fds[1], 2, 0);	/* stderr, same place */
 		if (fds[1] > 2)
 			syscall3(__NR_close, fds[1], 0, 0);
+		close_inherited();
 		syscall3(__NR_execve, (long)path, (long)argv, 0);
 		syscall3(__NR_exit, 127, 0, 0);	/* exec failed */
 	}
@@ -328,6 +349,7 @@ static long run_script_to_buf(const char *path, char *const argv[],
 			syscall3(__NR_close, in[0], 0, 0);
 		if (out[1] > 2)
 			syscall3(__NR_close, out[1], 0, 0);
+		close_inherited();
 		syscall3(__NR_execve, (long)path, (long)argv, 0);
 		syscall3(__NR_exit, 127, 0, 0);		/* exec failed */
 	}

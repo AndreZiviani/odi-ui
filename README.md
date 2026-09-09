@@ -62,16 +62,36 @@ a key reaches `omci_app`, and measurement for the rest. It is a **separate file
 from `schema/keys.tsv` on purpose**: that one is regenerated from a stick and
 would overwrite anything written by hand.
 
-## Status: phase 1, read-only
-
-There is **no write path in this binary at all** — not disabled, absent.
+## Status
 
 | phase | scope | |
 |---|---|---|
-| **1** | schema, values, status | **done** |
-| 2 | writes for the provisioning key set, verified, with apply | |
-| 3 | remaining scalars and `SW_PORT_TBL` rows | |
+| 1 | schema, values, status | **done** |
+| 2 | writes, verified, with apply | **done** |
+| 3 | `SW_PORT_TBL` rows, and `apply` classes for the remaining keys | |
 | 4 | firmware upload and `sw_tryactive` trial boot | |
+
+### Writing
+
+    POST /api/config   key=value&key2=value2   -> per-key result + required apply
+    POST /api/apply                            -> restart omci_app, no reboot
+
+Every write is **read back and compared**, because `flash set` reports success
+for things it did not do. A batch is per-key: a refused or invalid key does not
+stop the others, and each gets its own verdict.
+
+Nothing is applied implicitly. The response says which apply class the changes
+need and the caller decides, because a config write on this device does nothing
+until `omci_app` restarts or the stick reboots.
+
+Refused regardless of what the schema says: `LAN_SDS_MODE`, `LAN_SPEED_MODE`,
+`FIBER_MODE`. Identity keys need `_confirm=identity` in the same body. Values
+are validated server-side against their type, not only in the browser, since a
+request need not come from the page.
+
+Clearing a key is rejected with a message saying why: `flash set` guards its set
+branch with `[ "$3" != "" ]`, so an empty value falls through to its usage text
+and exits 1 while looking like it worked.
 
 ## Build and deploy
 
