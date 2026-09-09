@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ODI ONU</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>ODI DFP-34X-2C2</h1>
+  <nav>
+    <button data-tab="status" class="on">Status</button>
+    <button data-tab="config">Config</button>
+  </nav>
+  <span id="err" hidden></span>
+</header>
+
+<main>
+  <section id="status">
+    <div class="cards" id="statuscards"></div>
+    <h2>Switch ports</h2>
+    <p class="hint">Port&nbsp;2 is the PON side, port&nbsp;0 the host SerDes side.
+       Forwarding shows as a mirror between them.</p>
+    <div id="ports"></div>
+    <details><summary>Raw <code>diag</code> output</summary><pre id="raw"></pre></details>
+  </section>
+
+  <section id="config" hidden>
+    <p class="hint">Read-only for now &mdash; this build has no write path at all.
+       <strong>never</strong> marks keys that are refused permanently;
+       <strong>identity</strong> marks keys the OLT authenticates on.</p>
+    <input id="filter" type="search" placeholder="Filter keys&hellip;" autocomplete="off">
+    <div id="sections"></div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
