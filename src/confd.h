@@ -71,4 +71,10 @@
 #define DEFAULT_HS "/etc/config_default_hs.xml"
 #define AUTH_PATH    "/etc/config/confd.auth"
 
+/* Written by the image build: image=, base=, confd=, exporter=, built=.
+ * One file naming every component, so "what is on this stick" is a single read
+ * rather than three build stamps that have to be correlated by hand. Absent on
+ * a stick running an override, which is itself worth seeing. */
+#define BUILD_MANIFEST "/etc/odi-build"
+
 #endif /* CONFD_H */
