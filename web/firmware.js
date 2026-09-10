@@ -79,6 +79,31 @@ async function renderFirmware() {
     '. Config UI build ' + (fw.confd || 'unknown') + '.';
   host.append(foot);
 
+  /* What this image was built from, if it says. A stick running an override
+     has no manifest, and saying so is more useful than an empty panel: it
+     means the daemon answering is not the one the image ships. */
+  const b = fw.build || {};
+  const keys = Object.keys(b);
+  if (keys.length) {
+    host.append(el('h2', null, 'This image'));
+    const t = el('table');
+    for (const k of ['image', 'base', 'confd', 'exporter', 'built']) {
+      if (!(k in b)) continue;
+      const tr = el('tr');
+      tr.append(el('td', null, k), el('td', 'mono', b[k]));
+      t.append(tr);
+    }
+    host.append(t);
+    if (b.confd && fw.confd && b.confd !== fw.confd) {
+      host.append(el('p', 'warn',
+        `The config UI answering is build ${fw.confd}, but this image ships ` +
+        `${b.confd} — so an override in /etc/config is being used.`));
+    }
+  } else {
+    host.append(el('p', 'hint',
+      'No /etc/odi-build in this image, so it predates build manifests.'));
+  }
+
   if (fw.mem) $('#memtotal').textContent = fw.mem;
 
   const rb = el('button', 'fwbtn danger', 'Reboot now');

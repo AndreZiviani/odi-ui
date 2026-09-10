@@ -256,6 +256,12 @@ Docker builds and runs everything; `make check` also needs the host's `python3`
 and `node`, since it reads data files and loads the web modules and wants no
 cross-compiler. It runs on macOS.
 
+`/api/firmware` also returns a `build` object read from `/etc/odi-build`, the
+manifest the image build writes: which image, which base, and which `confd` and
+exporter are inside it. The Firmware tab shows it, and flags the case that used
+to be invisible — the daemon answering being a *different* build from the one
+the image ships, which means an override in `/etc/config` is in use.
+
 The binary reports the build it was made from, as `confd` in `/api/firmware` and
 in the Firmware tab's footer. An override at `/etc/config/confd/confd` beats the
 image's copy and survives reflashing, so which one is answering should be a

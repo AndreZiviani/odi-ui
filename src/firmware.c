@@ -113,7 +113,43 @@ next:
 	}
 	put_fd(fd, "},\"confd\":\"");
 	put_json_cstr(fd, BUILD_ID);
-	put_fd(fd, "\"}");
+	put_fd(fd, "\"");
+
+	/* The build manifest, as an object. Emitted from the file rather than
+	 * parsed into known fields: the build writes key=value lines, and a new
+	 * component should appear here without a C change. */
+	{
+		char man[512];
+		long n = read_file(BUILD_MANIFEST, man, sizeof(man));
+		unsigned long i = 0;
+		int first = 1;
+
+		put_fd(fd, ",\"build\":{");
+		if (n > 0) {
+			while (man[i]) {
+				unsigned long ls = i, le = i, eq;
+
+				while (man[le] && man[le] != '\n')
+					le++;
+				eq = ls;
+				while (eq < le && man[eq] != '=')
+					eq++;
+				if (eq == le || eq == ls)
+					goto nextline;
+				if (!first)
+					put_fd(fd, ",");
+				first = 0;
+				put_fd(fd, "\"");
+				put_json_str(fd, man + ls, eq - ls);
+				put_fd(fd, "\":\"");
+				put_json_str(fd, man + eq + 1, le - eq - 1);
+				put_fd(fd, "\"");
+nextline:
+				i = (man[le] == '\n') ? le + 1 : le;
+			}
+		}
+		put_fd(fd, "}}");
+	}
 }
 
 int nv_set(const char *key, const char *value)
