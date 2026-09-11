@@ -109,10 +109,17 @@ const API = {
  * purely to cope with a format that is inconsistent between tables, and a
  * fixture written to match the parser would test nothing.
  */
+const fx = (f) => readFileSync(join(root, 'scripts/fixtures/omci', f), 'utf8');
 const OMCI = {
-  84: readFileSync(join(root, 'scripts/fixtures/omci/84-VlanTagFilterData.txt'), 'utf8'),
-  171: readFileSync(join(root, 'scripts/fixtures/omci/171-ExtVlanTagOperCfgData.txt'), 'utf8'),
+  84: fx('84-VlanTagFilterData.txt'),
+  171: fx('171-ExtVlanTagOperCfgData.txt'),
+  7: fx('7-SWImage.txt'),
+  131: fx('131-OltG.txt'),
+  11: fx('11-EthUni-claro.txt'),
+  329: fx('329-VEIP-claro.txt'),
+  47: fx('47-MacBriPortCfgData-claro.txt'),
 };
+const OMCI_VERO_47 = fx('47-MacBriPortCfgData-vero.txt');
 
 /*
  * ME 7 has no capture yet. The FRAME below is verified -- it is the one the two
@@ -315,27 +322,51 @@ ok(idx.attrs.some(([k, v]) => k === 'Treatment Inner' && /VID 1600/.test(v)),
 const { renderServices } = await import(join(root, 'web', 'services.js'));
 await renderServices(true);
 const cards = doc.querySelector('#services-cards');
-ok(cards.children.length === 6, 'the Services tab renders a card per table');
+ok(cards.children.length === 7, 'the Services tab renders a card per table');
 const text = JSON.stringify(cards, (k, v) => (k === 'classList' ? undefined : v));
 ok(/VLAN 1600/.test(text), 'the translation card names the VLAN on the fibre');
 ok(/allows these VLANs on this line: 75, 1600/.test(text),
    'the filter card lists the VLANs the OLT permits');
-/* ME 7 has no fixture, so the card renders empty and must not claim a mismatch
-   against the U-Boot environment it cannot compare with. */
-ok(!/is not what the OLT was told/.test(text),
-   'no version mismatch is claimed when ME 7 returned nothing');
 
-/* Now with a software-image dump whose version is NOT what partition 0 holds:
-   the card must say so, because that difference is the whole mechanism behind
-   "my OMCI software version resets at every boot". */
-OMCI[7] = ME7_SHAPED;
+/* Captured from our own sticks, so these assert what the DEVICE says. */
+ok(/ODI|V1\.0-220923/.test(text), 'the software-image card shows a version');
+ok(/running/.test(text) && /kept/.test(text),
+   'Active and Committed are read -- the card assumed IsActive/IsCommitted and showed neither');
+ok(/HWTC/.test(text), 'the OLT vendor code is decoded from its hex word');
+ok(/carries both the physical Ethernet UNI and the VEIP/.test(text),
+   'Claro: the bridge carries the UNI and the VEIP');
+
+/* The same card on the other line, which is the difference that matters. */
+OMCI[47] = OMCI_VERO_47;
 await renderServices(true);
-const text2 = JSON.stringify(doc.querySelector('#services-cards'),
-                             (k, v) => (k === 'classList' ? undefined : v));
-ok(/is not what the OLT was told/.test(text2),
+const veroText = JSON.stringify(doc.querySelector('#services-cards'),
+                                (k, v) => (k === 'classList' ? undefined : v));
+ok(/carries the VEIP, not the physical port/.test(veroText),
+   'Vero: the bridge carries the VEIP alone');
+OMCI[47] = fx('47-MacBriPortCfgData-claro.txt');
+
+/* --- a MIB service that has stopped answering --------------------------- */
+const { unavailable } = await import(join(root, 'web', 'omci.js'));
+ok(unavailable({ ok: true, raw: '', instances: [] }) !== null,
+   'empty output is reported as unavailable, not as an empty table');
+ok(unavailable({ ok: true, raw: 'TableId [1] Name: Anig!\n', instances: [] }) !== null,
+   'a table listing in place of the table asked for is reported too');
+ok(unavailable({ ok: true, raw: OMCI[84], instances: parseOmci(OMCI[84]).instances }) === null,
+   'a real dump is not mistaken for a failure');
+
+/* --- indented continuation lines ----------------------------------------- */
+const tod = parseOmci(OMCI[131]).instances[0];
+ok(!tod.groups.length, 'ME 131 ToDInfo sub-lines do not become sub-tables');
+ok(/Sequence number/.test(attr(tod, 'ToDInfo') || ''),
+   'they are folded into the attribute they belong to');
+
+/* The active partition (sw_active=0 in the stub env) holds ODI-260910-...,
+   while the captured ME 7 reports V1.0-220923 -- which is exactly the real
+   situation on these sticks today: the versioned image has not been flashed.
+   The card must say so and name the nv variable that fixes it. */
+ok(/is not what the OLT was told/.test(text),
    'a version the active partition does not hold is reported as such');
-ok(/sw_custom_version0/.test(text2), 'and the fix names the right nv variable');
-delete OMCI[7];
+ok(/sw_custom_version0/.test(text), 'and the fix names the right nv variable');
 
 await import(join(root, 'web', 'app.js'));
 await new Promise((r) => setTimeout(r, 50));

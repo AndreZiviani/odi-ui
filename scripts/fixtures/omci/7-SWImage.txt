@@ -1,0 +1,21 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+SWImage
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+=================================
+EntityID: 0x00
+Active: 0
+Committed: 0
+Valid: 1
+Version: V1.0-220923
+ProductCode: 
+ImageHash: 0x00000000000000000000000000000000
+=================================
+=================================
+EntityID: 0x01
+Active: 1
+Committed: 1
+Valid: 1
+Version: V1.0-220923
+ProductCode: 
+ImageHash: 0x00000000000000000000000000000000
+=================================

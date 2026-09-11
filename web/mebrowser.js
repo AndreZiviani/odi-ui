@@ -15,34 +15,39 @@ import { $, el } from './dom.js';
 import { fetchOmci, fetchMe } from './omci.js';
 
 /*
- * The tables this image can register, from /lib/omci/mib_*.so in the base
- * itself rather than from a list someone typed. The device is still asked at
- * load time -- only the running stack knows which of these it actually
- * registered, and on a line that never reached O5 the difference is the answer
- * -- but the picker is useful before that returns, and remains useful if the
- * `get tables` output turns out to be shaped differently than expected.
+ * The table names `omcicli get tables` reports, taken off a stick.
+ *
+ * NOT the /lib/omci/mib_*.so filenames, which is what this list used to be:
+ * 23 of the 81 differ (`AuthSecMethod` against `Authen_Sec_Method`) and some
+ * runtime names contain spaces. A name omcicli does not recognise produces
+ * empty output rather than an error, so the filename form failed silently and
+ * looked like an empty table.
+ *
+ * The device is still asked at load time and that answer wins -- only the
+ * running stack knows what it registered. This is the list until it replies,
+ * and for the case where it cannot.
  */
 const TABLES = [
-  'Anig', 'Authen_Sec_Method', 'Cardholder', 'CircuitPack',
-  'Dot1RateLimiter', 'EthExtPmData', 'EthPmData2', 'EthPmData3',
-  'EthPmDataDs', 'EthPmDataUs', 'EthPmHistoryData', 'EthUni',
-  'ExtVlanTagOperCfgData', 'ExtendedIpHostCfgData', 'ExtendedMcastOperProf',
-  'ExtendedOnuG', 'FecPMHD', 'GalEthProf', 'GemIwTp', 'GemPortCtp',
-  'GemPortNetworkCtpPMHD', 'GemPortPMHD', 'GemTrafficDescriptor',
-  'GeneralPurposeBuffer', 'GenericPortal', 'IpHostConfigData', 'LargeString',
-  'LctUni', 'LoidAuth', 'LoopDetect', 'MacBriPortBriTblData',
-  'MacBriPortCfgData', 'MacBriServProf', 'MacBridgePortFilterPreassign',
-  'MacBridgePortFilterTable', 'MacBridgePortPmMonitorHistoryData',
-  'Map8021pServProf', 'McastOperProf', 'McastSubConfInfo', 'McastSubMonitor',
-  'Me242', 'Me243', 'Me350', 'Me370', 'Me373', 'MeZteMcastTag', 'MeZteSntp',
-  'MultiGemIwTp', 'Network_addr', 'OctetString', 'OltG',
-  'OltLocationCfgData', 'Omci', 'Ont2g', 'OntData', 'OntSelfLoopDetect',
-  'OntSystemMgmt', 'Ontg', 'OnuCapability', 'OnuLoopDetection',
-  'OnuPwrShedding', 'OnuRemoteDbg', 'PriQ', 'PrivateTellionOntStatistics',
+  'Anig', 'AuthSecMethod', 'Cardholder', 'CircuitPack',
+  'CTCOnuOnuLoopDetection', 'Dot1RateLimiter', 'EthExtPmData', 'EthPmData2',
+  'EthPmData3', 'EthPmDataDs', 'EthPmDataUs', 'EthPmHistoryData', 'EthUni',
+  'ExtendedMcastOperProf', 'ExtendedOnuG', 'ExtIpHostCfgData',
+  'ExtVlanTagOperCfgData', 'FecPmhd', 'GalEthProf', 'GemIwTp', 'GemPortCtp',
+  'GemPortPmhd', 'GeneralPurposeBuffer', 'GenericStatusPortal', 'GpncPmhd',
+  'HSQDefault', 'HW ME350', 'HW ME370', 'HW ME373', 'IpHostCfgData',
+  'LargeString', 'LargeString', 'LctUni', 'LoIdAuth', 'LoopDetect',
+  'MacBridgePortFilterPreassign', 'MacBridgePortFilterTable',
+  'MacBridgePortPmMonitorHistoryData', 'MacBriPortBriTblData',
+  'MacBriPortCfgData', 'MacBriServProf', 'Map8021pServProf', 'McastOperProf',
+  'McastSubConfInfo', 'McastSubMonitor', 'Me242', 'MultiGemIwTp',
+  'NetworkAddress', 'OltG', 'OLTLocationConfigData', 'Omci', 'Ont2g',
+  'OntData', 'Ontg', 'OntSelfLoopDetect', 'OntSystemMgmt', 'OnuCapability',
+  'OnuPwrShedding', 'OnuRemoteDebug', 'PriQ', 'PrivateTellionOntStatistics',
   'PrivateTqCfg', 'PrivateVlanCfg', 'PseudowireMaintenanceProfile',
-  'SWImage', 'Scheduler', 'TR069ManageServer', 'Tcont', 'TcpUdpCfgData',
-  'ThresholdData1', 'ThresholdData2', 'Unig', 'VEIP', 'VlanTagFilterData',
-  'VlanTagOpCfgData', 'hsq_default', 'hsq_wan', 'hsq_wan_deti'
+  'Scheduler', 'SWImage', 'Tcont', 'TcpUdpCfgData', 'ThresholdData1',
+  'ThresholdData2', 'TR069ManageServer', 'TrafficDescriptor', 'Unig', 'VEIP',
+  'VlanTagFilterData', 'VlanTagOpCfgData', 'WANConfigCata',
+  'WANConfigCataDeti', 'ZTE ME243', 'ZteMcastTag', 'ZteSntp'
 ];
 
 /* The class ids people quote in threads, so the picker speaks both dialects. */
@@ -176,6 +181,19 @@ function renderMeBrowser() {
    */
   fetchOmci({ cmd: 'tables' }).then((d) => {
     $('#me-tables').textContent = d.raw || d.error || '(no output)';
+
+    /* `TableId [7] Name: SWImage!` -- the runtime list replaces the built-in
+       one when it arrives, because this image is not necessarily the image
+       this list was taken from. */
+    const live = [...String(d.raw || '').matchAll(/^TableId\s*\[\d+\]\s*Name:\s*(.+?)!?\s*$/gm)]
+      .map((m) => m[1]);
+    if (!live.length) return;
+    for (const o of [...list.children]) if (!/^\d+$/.test(o.value)) o.remove();
+    for (const t of live) {
+      const o = el('option');
+      o.value = t;
+      list.append(o);
+    }
   });
 
   load();

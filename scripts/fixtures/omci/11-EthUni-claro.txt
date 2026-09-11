@@ -1,0 +1,22 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+EthUni
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+=================================
+EntityID: 0x0101
+ExpectedType: 47
+SensedType: 47
+AutoDectectCfg: 0
+EthLoopbackCfg: 0
+AdminState: 0
+OpState: 0
+DuplexInd: 3
+MaxFrameSize: 1518
+DTEorDCEInd: 0
+PauseTime: 65535
+BridgedorIPInd: 2
+ARC: 0
+ARCInterval: 0
+PppoeFilter: 0
+PowerControl: 0
+PhysicalPortId: 0
+=================================
