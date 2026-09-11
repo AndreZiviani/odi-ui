@@ -32,6 +32,7 @@ $('#filter').oninput = (e) => renderConfig('#sections', S.SCHEMA, e.target.value
 $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
 $('#pw-save').onclick = savePassword;
+$('#reset-go').onclick = resetConfig;
 $('#gopassword').onclick = () => { showTab('config'); $('#pw-pass').focus(); };
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
@@ -85,6 +86,101 @@ async function savePassword() {
     $('#pw-pass').value = '';
     await checkAuth();
   } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
+}
+
+/*
+ * Reset the service config, backup first.
+ *
+ * The backup is fetched as a blob and handed to the browser BEFORE the
+ * destructive call, and the reset does not run if that fails. A link the
+ * operator is told to click first is not a precondition -- it is a hope, and
+ * the whole reason this device has bricked sticks in the field is resets done
+ * without one.
+ */
+async function resetConfig() {
+  const out = $('#reset-out');
+  const btn = $('#reset-go');
+
+  out.textContent = '';
+  if (!confirm('Reset the service configuration to image defaults?\n\n'
+      + 'VLAN, management IP, device mode and the OMCI settings go back to '
+      + 'defaults, and the PLOAM password is cleared. The serial number, MAC '
+      + 'key and MAC address are NOT touched.\n\nA backup downloads first.')) return;
+
+  btn.disabled = true;
+  try {
+    out.append(el('div', null, 'Downloading a backup…'));
+    const r = await fetch('/api/backup', { cache: 'no-store' });
+    if (!r.ok) throw new Error('backup failed: HTTP ' + r.status);
+    const blob = await r.blob();
+    if (!blob.size) throw new Error('the backup came back empty');
+
+    /* Name it for the stick and the day, so a folder of these is still
+       readable in six months. */
+    const stamp = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `odi-config-${location.hostname}-${stamp}.xml`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    out.append(el('div', 'good', `Backup saved (${blob.size} bytes).`));
+
+    const p = await fetch('/api/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'store=cs&_confirm=reset',
+    });
+    const j = await p.json();
+    if (j.output) out.append(el('pre', null, j.output.trim()));
+    if (!j.ok) { out.append(el('div', 'bad', j.error || 'the reset reported a failure')); return; }
+    out.append(el('div', 'warn', 'Written. It takes effect at the next reboot.'));
+
+    /*
+     * The management IP is in the cs store, so the reset takes it back to
+     * 192.168.1.1 -- and on our lines that is off one stick's management
+     * subnet and collides with the other. The runbook's rule is to restore it
+     * BEFORE rebooting, which is a step that only works if you remember it, so
+     * offer it here with the old value already in hand.
+     */
+    const wasIp = S.VALUES.LAN_IP_ADDR;
+    if (wasIp && wasIp !== '192.168.1.1') {
+      out.append(el('div', 'warn', `The management IP was ${wasIp} and the reset `
+        + 'has set it back to 192.168.1.1. Put it back before rebooting, or this '
+        + 'stick comes up on an address you may not be able to reach.'));
+      const fix = el('button', 'fwbtn', `Restore the management IP to ${wasIp}`);
+      fix.type = 'button';
+      fix.onclick = async () => {
+        fix.disabled = true;
+        const w = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ LAN_IP_ADDR: wasIp }).toString(),
+        });
+        const wj = await w.json();
+        const r0 = (wj.results || [])[0] || {};
+        out.append(el('div', r0.ok ? 'good' : 'bad',
+          r0.ok ? `Management IP restored to ${r0.value}.`
+                : `Could not restore it: ${r0.error || 'unknown'}`));
+      };
+      out.append(fix);
+    }
+
+    const rb = el('button', 'fwbtn danger', 'Reboot now');
+    rb.type = 'button';
+    rb.onclick = () => fetch('/api/firmware', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=reboot',
+    });
+    out.append(rb);
+  } catch (e) {
+    out.append(el('div', 'bad', String(e.message || e)));
+    out.append(el('div', null, 'Nothing was reset.'));
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function refresh() {

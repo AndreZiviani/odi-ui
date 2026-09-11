@@ -313,34 +313,47 @@ can afford to lose whether `-s TBL.<new index>.<field>` creates, warns, or
 silently writes elsewhere; then decide. Nothing here should be built on a guess
 about that.
 
-### The backup, and the reset that is not here
+### Backup, and the reset that does not end sticks
 
-    GET /api/backup    -> both config stores as a file, identity included
+    GET  /api/backup   -> both config stores as a file, identity included
+    POST /api/reset    _confirm=reset   -> flash default cs
 
-`flash_eraseall /dev/mtd3` is the standard factory reset for this device, and
-that partition is also where `GPON_SN`, `ELAN_MAC_ADDR` and `MAC_KEY` live.
-Erase it without those written down and the ONU never gets past O0: the reset
-meant to fix a stick is what ends it. Anime4000/RTL960x#84 has people doing
-exactly that, including one who ran it across mtd3, mtd4 and mtd5 and lost the
-device outright.
+Every thread about resetting this device says `flash_eraseall /dev/mtd3`. That
+erases the whole config partition: both MIB stores, the identity in the `hs`
+store, this daemon's credential file, and any override binary living beside it.
+Anime4000/RTL960x#84 has people doing it, including one who ran it across mtd3,
+mtd4 and mtd5 and lost the device outright.
 
-So the backup is one click, served as a download rather than shown &mdash; a
-page you have to remember to copy out of is not a backup &mdash; and it carries
-the identity keys in clear, which is the point of it and why it needs the same
-credential as everything else.
+**The vendor ships a supported reset that is per-store**, and the split is
+exactly the one that matters:
 
-**There is no reset button, and that is a finding rather than an omission.**
-Working through it: confd's own credential lives in `/etc/config/confd.auth`,
-which is on the partition being erased, and confd refuses every request without
-it. A reset driven from this page would therefore destroy its own way back in.
-Restoring the credential and the identity keys afterwards is possible &mdash;
-read them first, erase, write them back, reboot &mdash; but it is an
-unrecoverable operation whose failure mode is a dead stick, and none of it has
-been tried on hardware. Shipping it on reasoning alone is not something this
-repo does.
+| store | keys | holds |
+|---|---|---|
+| `cs` | 118 | service config — VLAN, management IP, `DEVICE_TYPE`, the `OMCI_*` settings |
+| `hs` | 62 | the hardware identity — `GPON_SN`, `MAC_KEY`, `ELAN_MAC_ADDR`, `PON_VENDOR_ID` |
 
-The defensible half is here. The bricking in those reports comes from erasing
-without a backup, not from lacking a button.
+So `flash default cs` gives back a clean service configuration and leaves the
+values that cannot be regenerated alone. It rewrites `/var/config/lastgood.xml`
+rather than erasing the partition, so files there — `confd.auth`, an overridden
+`confd` or `metricsd` — survive it too. It does clear `GPON_PLOAM_PASSWD`, which
+is in `cs` and which some lines authenticate on; the page says so.
+
+**`hs` is not reachable from here.** The route hardcodes the store, and a
+`store=` parameter cannot steer it — there is a check for that. The reset people
+want is the service one; the one that ends sticks is the other.
+
+### The backup is a precondition, not a suggestion
+
+The page fetches the backup as a blob, hands it to the browser, and **only then**
+makes the destructive call — the reset does not run if the fetch fails or comes
+back empty. A link the operator is told to click first is not a precondition, it
+is a hope, and resets done without one are the whole reason there are dead
+sticks in those threads.
+
+It is served as a download rather than shown, because a page you have to
+remember to copy out of is not a backup, and it carries the identity keys in
+clear — which is the point of it, and why it needs the same credential as
+everything else.
 
 ### Writing
 
