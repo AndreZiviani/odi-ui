@@ -66,9 +66,25 @@ nothing passes" threads turn on.
 
 **MIB** runs `omcicli mib get` and shows exactly what it printed &mdash; which is
 what a support thread means when it asks you to post `omcicli mib get 84`. The
-picker offers all 81 tables this image can register, taken from
-`/lib/omci/mib_*.so` in the base rather than typed out, and accepts a bare class
-id as well because that is the dialect threads are written in.
+picker offers all 81 table names, captured from a stick once and shipped as
+data, and accepts a bare class id as well because that is the dialect threads
+are written in.
+
+**Captured, not queried, and the reason matters: `omcicli get tables` breaks the
+MIB service.** It returns zero bytes and leaves every later `mib get` empty
+until `omci_app` is restarted. This tab used to call it on load, so opening the
+MIB browser disabled the diagnostics it exists to show. `/api/omci` now refuses
+that verb outright — a route whose job is reading the MIB must not be able to
+break it — and there is a smoke check for the refusal.
+
+Isolated twice from a freshly restarted `omci_app`, with `get sn`,
+`get devmode` and `get cflag` harmless in the same run, so it is that one
+command rather than the `get` family or the call volume.
+
+The names are also **not** the `/lib/omci/mib_*.so` filenames: 23 of the 81
+differ (`AuthSecMethod` against `Authen_Sec_Method`) and some contain spaces.
+An unrecognised name produces empty output rather than an error, so the
+filename form failed silently and looked like an empty table.
 
 ### Two rules these pages are written to
 
@@ -497,6 +513,28 @@ and exits 1 while looking like it worked.
 from `rc35`, so a flashed stick serves this without anything being started by
 hand. Until such an image is flashed, the deploy below is what puts it there —
 and it does not survive a reboot.
+
+## Sizing a deploy against jffs2, not against your disk
+
+`/etc/config` is **jffs2, which compresses on write**, so summing `wc -c` to
+decide whether a payload fits over-counts text by about three times. That guard
+once refused a deploy that fits comfortably: 244 KB estimated, 188 KB free, and
+72 KB actually consumed.
+
+The model is measured. Uploading a 29,000-byte binary moved free space by
+exactly **16,384** bytes; that file gzips to 13,782, and
+`ceil(13782 / 4096) * 4096` is 16,384 — compress, then allocate whole 4 KB
+erase blocks (`erasesize` from `/proc/mtd`). So `deploy.sh` compresses each file
+with `gzip -6` — zlib's default, which is what jffs2 uses, keeping the estimate
+pessimistic — and rounds each to a block.
+
+Two things that still bite:
+
+- **A re-deploy can be refused even though the same payload just fitted.** jffs2
+  is log-structured: overwriting a file does not free its old blocks until
+  garbage collection. Deleting the override directory frees them immediately.
+- The partition is 240 KB **total**, shared with the device identity and the
+  exporter override, so the headroom is not ceremony.
 
 ## Build and deploy
 
