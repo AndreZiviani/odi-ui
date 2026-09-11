@@ -34,7 +34,12 @@ fi
 # Globbed, not listed: the UI is many modules now, and a hand-kept list here
 # would be a fourth copy of it. scripts/check-assets.py is what asserts web/
 # and the daemon's own table agree.
-ASSETS=(schema/keys.tsv schema/meta.tsv schema/consumers.tsv web/*.html web/*.css web/*.js)
+# features.tsv belongs here as much as in the image: without it /api/features
+# answers [] and the OMCI_CUSTOM_* fields decode to nothing at all. It was
+# added to build-overlay.sh and missed here, which is invisible until you look
+# at the page -- the decode degrades silently rather than erroring.
+ASSETS=(schema/keys.tsv schema/meta.tsv schema/consumers.tsv schema/features.tsv
+        web/*.html web/*.css web/*.js)
 
 echo "==> free space on the config partition"
 # What this actually needs, on jffs2 rather than on your disk.
