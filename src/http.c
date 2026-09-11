@@ -379,6 +379,9 @@ const struct web_asset web_assets[] = {
 	{ "/config.js",     "config.js",   "application/javascript" },
 	{ "/save.js",       "save.js",     "application/javascript" },
 	{ "/firmware.js",   "firmware.js", "application/javascript" },
+	{ "/omci.js",       "omci.js",     "application/javascript" },
+	{ "/services.js",   "services.js", "application/javascript" },
+	{ "/mebrowser.js",  "mebrowser.js", "application/javascript" },
 	{ 0, 0, 0 },
 };
 

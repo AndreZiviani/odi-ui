@@ -8,6 +8,7 @@
 #include "mib.h"
 #include "firmware.h"
 #include "status.h"
+#include "omci.h"
 #include "routes.h"
 
 /*
@@ -189,7 +190,7 @@ next:
 
 void serve(int conn)
 {
-	char *path, *method, *body;
+	char *path, *method, *body, *query;
 	long n;
 
 	n = read_request(conn, req, sizeof(req));
@@ -237,6 +238,24 @@ void serve(int conn)
 		if (!path) {
 			respond(conn, "400 Bad Request", "text/plain", 0);
 			return;
+		}
+		/*
+		 * Split the query off the path, once, here. Every route below
+		 * compares the path with seq(), so before this a single `?`
+		 * would have made `/api/status?x=1` a 404 -- and the read
+		 * routes that take arguments need the query anyway. It is
+		 * urlencoded exactly like a form body, so form_get reads it.
+		 */
+		query = "";
+		{
+			unsigned long q = 0;
+
+			while (path[q] && path[q] != '?')
+				q++;
+			if (path[q] == '?') {
+				path[q] = 0;
+				query = path + q + 1;
+			}
 		}
 		if (cross && !seq(method, "GET")) {
 			respond(conn, "403 Forbidden", "text/plain", 0);
@@ -454,6 +473,15 @@ void serve(int conn)
 	if (seq(path, "/api/status")) {
 		respond(conn, "200 OK", "application/json", 0);
 		emit_status_json(conn);
+		return;
+	}
+
+	/*
+	 * The OMCI MIB: what the OLT provisioned, as opposed to what we asked
+	 * for. Read-only, and allowlisted verb by verb inside -- see omci.c.
+	 */
+	if (seq(path, "/api/omci")) {
+		emit_omci_json(conn, query);
 		return;
 	}
 

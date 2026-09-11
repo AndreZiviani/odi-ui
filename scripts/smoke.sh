@@ -91,6 +91,18 @@ check() {  # check <name> <expected> <actual>
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
+# A stand-in for /bin/omcicli. The route builds its argv from the query string,
+# so the stub ECHOES what it was given before printing a dump: that is what
+# makes "the entity id reaches the command" a check that can fail, rather than
+# an assumption. Real omcicli is not runnable here -- it talks to omci_app.
+cat > /bin/omcicli <<'OMCICLI'
+#!/bin/sh
+echo "ARGV: $*"
+[ "$1 $2 $3" = "mib get 84" ] && cat /src/scripts/fixtures/omci/84-VlanTagFilterData.txt
+exit 0
+OMCICLI
+chmod +x /bin/omcicli
+
 echo "== auth"
 check "no credential is refused"    401 "$(code "http://127.0.0.1:$PORT/api/schema")"
 check "wrong credential is refused" 401 "$(code -u admin:wrong "http://127.0.0.1:$PORT/api/schema")"
@@ -208,6 +220,37 @@ check "defaults does not republish the values buffer" '{}' \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/defaults")"
 check "the build id is reported" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"confd":')"
+
+echo "== the OMCI MIB route"
+# Everything reaching omcicli comes off a query string, so the checks that
+# matter are the ones that keep a request from choosing the command. There is
+# no shell in this daemon -- run_to_buf_ex execve()s directly -- but the domain
+# check is what makes a bad argument fail as "not a MIB table" here instead of
+# somewhere further in.
+check "a class id is read" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84")" 'VlanTagFilterData')"
+check "the entity id reaches the command" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&entity=0x04")" 'ARGV: mib get 84 0x04')"
+check "a table name is accepted too" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=VlanTagFilterData")" 'ARGV: mib get VlanTagFilterData')"
+check "the registered table list is read" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=tables")" 'ARGV: get tables')"
+check "an allowlisted dump is read" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=dump&what=srvflow")" 'ARGV: dump srvflow')"
+
+for bad in 'cmd=me&me=84;reboot' 'cmd=me&me=../../etc/passwd' 'cmd=me&me=-rf' \
+           'cmd=me&me=84%20171' 'cmd=me' 'cmd=dump&what=conn;id' 'cmd=dump' \
+           'cmd=set&me=84' ''; do
+	check "refuses ?$bad" 400 \
+		"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?$bad")"
+done
+check "a non-hex entity is refused" 400 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&entity=zz")"
+
+# The query string is split off the path for every route, not just this one.
+# Before that, a single `?` made /api/status a 404.
+check "a query string does not break another route" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema?cachebust=1")"
 
 echo "== a malformed schema must fail closed"
 # confd prefers /etc/config/confd/keys.tsv, which is edited live on the device

@@ -29,6 +29,13 @@ extern char meta[16384];
 extern char cons[16384];
 extern char values[24576];
 extern char status[16384];
+/*
+ * The OMCI dumps are the largest thing this daemon holds. A provisioned line's
+ * ME 171 alone runs to a few kilobytes, and `mib get all` will exceed anything
+ * reasonable -- which is why the route reports truncation rather than pretending
+ * a short answer is a complete one.
+ */
+extern char omci[32768];
 extern char authbuf[256];
 extern char hdrbuf[512];
 extern char credbuf[256];

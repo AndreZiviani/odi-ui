@@ -8,6 +8,7 @@ char meta[16384];
 char cons[16384];
 char values[24576];
 char status[16384];
+char omci[32768];
 char authbuf[256];
 char hdrbuf[512];
 char credbuf[256];

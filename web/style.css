@@ -290,3 +290,98 @@ td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-fami
 
 .tag.default { color: var(--muted); }
 .tag.changed { color: var(--fibre); border-color: #4A3E1E; }
+
+/* --- the MIB: Services and the raw browser ------------------------------- */
+
+/*
+ * Same instrument-panel rules as everything above: structure from hairlines and
+ * space, never from a card. These sections are readings too -- they just come
+ * from the OLT instead of from the optics.
+ */
+.me-card {
+  border-top: 1px solid var(--rule);
+  padding-top: 1.4rem; margin-top: 2.2rem;
+}
+.me-card:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.me-card h3 {
+  font-size: .78rem; font-weight: 600; color: var(--muted);
+  margin: 0 0 .15rem; letter-spacing: .01em;
+}
+.me-src {
+  font-family: var(--mono); font-size: .72rem; color: var(--muted);
+  margin: 0 0 .9rem;
+}
+
+/* The one sentence the reader came for. Everything else on the card supports
+   it, so it is the only thing set at full text size. */
+.me-lead { margin: .2rem 0 .6rem; max-width: 62ch; }
+.me-note { color: var(--muted); font-size: .85rem; max-width: 62ch; margin: .4rem 0 0; }
+.me-note.bad { color: var(--alarm); }
+
+.me-kv {
+  margin: 0; display: grid; grid-template-columns: auto 1fr;
+  gap: .15rem .9rem; max-width: 62ch;
+}
+.me-kv dt { color: var(--muted); font-size: .78rem; }
+.me-kv dd {
+  margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: .85rem; overflow-wrap: anywhere;
+}
+
+/*
+ * The translation rule is the memorable thing on this page, and deliberately
+ * the only loud element: it is the value people get wrong, and the reason the
+ * page exists.
+ */
+.me-rules { display: grid; gap: .35rem; margin: .1rem 0 .9rem; }
+.me-rule {
+  display: flex; align-items: baseline; gap: .7rem;
+  font-family: var(--mono); font-size: 1.05rem;
+}
+.me-from { color: var(--muted); }
+.me-arrow { color: var(--rule); }
+.me-to { color: var(--fibre); }
+.me-pri { font-size: .75rem; color: var(--muted); }
+
+.me-raw { margin-top: 1rem; }
+
+/* The tail of the raw browser: a details block and then a closing note. The
+   global `details { margin-top: 2.5rem }` spaces the block itself, and without
+   this the note underneath sits flush against its summary. */
+#me-tables { margin-top: .6rem; }
+#omci > .hint:last-child { margin-top: 1.6rem; }
+
+/* --- the raw browser ----------------------------------------------------- */
+
+.me-bar {
+  display: flex; flex-wrap: wrap; align-items: end; gap: .6rem 1rem;
+  margin-bottom: 1.2rem;
+}
+.me-bar label { display: grid; gap: .25rem; color: var(--muted); font-size: .78rem; }
+.me-bar input {
+  padding: .4rem .6rem; font: inherit; font-family: var(--mono); font-size: .85rem;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--rule); border-radius: 3px; min-width: 16rem;
+}
+.me-bar #me-entity { min-width: 7rem; }
+.me-bar button {
+  padding: .4rem .9rem; font: inherit; font-size: .85rem; cursor: pointer;
+  background: none; color: var(--text);
+  border: 1px solid var(--rule); border-radius: 3px;
+}
+.me-bar button:hover { border-color: var(--fibre); }
+
+.me-inst {
+  border-top: 1px solid var(--rule); padding-top: 1rem; margin-top: 1.4rem;
+}
+.me-inst h4 {
+  margin: 0 0 .6rem; font-family: var(--mono); font-size: .85rem; font-weight: 600;
+}
+.me-inst h5 {
+  margin: 1rem 0 .4rem; font-size: .74rem; font-weight: 600; color: var(--muted);
+}
+
+@media (max-width: 46rem) {
+  .me-bar input { min-width: 0; width: 100%; }
+  .me-bar label { flex: 1 1 100%; }
+}

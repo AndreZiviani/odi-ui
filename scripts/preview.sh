@@ -62,6 +62,40 @@ while read -r l; do
 done
 DIAG
     chmod +x /bin/diag
+    # The omcicli stub. ME 84 and 171 come from scripts/fixtures/omci/, which
+    # is real device output; the rest are hand-built and the ATTRIBUTE NAMES in
+    # them are assumptions, not captures. So a screenshot of the Services tab
+    # proves the layout and the frame parsing, and proves nothing about whether
+    # this firmware really calls the ME 7 version attribute "Version". Only
+    # scripts/capture-omci.sh against a real stick settles that.
+    cat > /bin/omcicli <<"OMCICLI"
+#!/bin/sh
+frame() { printf "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n%s\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n" "$1"; }
+case "$1 $2 $3" in
+"mib get 84")  cat /src/scripts/fixtures/omci/84-VlanTagFilterData.txt ;;
+"mib get 171") cat /src/scripts/fixtures/omci/171-ExtVlanTagOperCfgData.txt ;;
+"mib get 7")
+  frame SWImage
+  printf "=================================\nEntityId: 0x0000\nVersion: ODI-260910-6861b53\nIsCommitted: 1\nIsActive: 1\nIsValid: 1\n=================================\n"
+  printf "=================================\nEntityId: 0x0001\nVersion: V1.0-220923\nIsCommitted: 0\nIsActive: 0\nIsValid: 1\n=================================\n" ;;
+"mib get 131")
+  frame OltG
+  printf "=================================\nEntityId: 0x0000\nOltVendorId: 0x414c434c\nEquipmentId: 0x00\nVersion: 0x00\nTime: 0x00\n=================================\n" ;;
+"mib get 262")
+  frame Tcont
+  printf "=================================\nEntityId: 0x8000\nAllocId: 1026\nPolicy: 0\n=================================\n" ;;
+"mib get 268")
+  frame GemPortCtp
+  for e in 0x0101 0x0102 0x0103; do
+    printf "=================================\nEntityId: %s\nPortId: 2177\nTcontPtr: 0x8000\n=================================\n" "$e"
+  done ;;
+"get tables ") printf "class id: 2 OntData\nclass id: 7 SWImage\nclass id: 84 VlanTagFilterData\nclass id: 171 ExtVlanTagOperCfgData\n" ;;
+"dump conn ") printf "no connection\n" ;;
+*) printf "" ;;
+esac
+exit 0
+OMCICLI
+    chmod +x /bin/omcicli
     exec qemu-mips-static build/confd 18080'
 sleep 2
 curl -s -o /dev/null -w "daemon: HTTP %{http_code}\n" -u admin:admin http://127.0.0.1:18080/

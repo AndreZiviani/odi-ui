@@ -12,17 +12,25 @@ import { renderStatus } from './status.js';
 import { renderConfig, renderAll } from './config.js';
 import { save, refreshSaveBar } from './save.js';
 import { renderFirmware } from './firmware.js';
+import { renderServices } from './services.js';
+import { renderMeBrowser } from './mebrowser.js';
 
-const TABS = ['status', 'config', 'advanced', 'firmware'];
+const TABS = ['status', 'config', 'advanced', 'services', 'omci', 'firmware'];
 for (const b of document.querySelectorAll('nav button')) {
   b.onclick = () => {
     for (const o of document.querySelectorAll('nav button')) o.classList.toggle('on', o === b);
     for (const t of TABS) $('#' + t).hidden = b.dataset.tab !== t;
     if (b.dataset.tab === 'firmware') renderFirmware();
+    /* The MIB tabs read the device, so they are loaded on first sight rather
+       than at boot: six forks of ~35 ms each is not something to spend before
+       the status page has painted. */
+    if (b.dataset.tab === 'services') renderServices();
+    if (b.dataset.tab === 'omci') renderMeBrowser();
   };
 }
 $('#filter').oninput = (e) => renderConfig('#sections', S.SCHEMA, e.target.value);
 $('#save').onclick = save;
+$('#services-reload').onclick = () => renderServices(true);
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
 async function refresh() {

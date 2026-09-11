@@ -15,7 +15,9 @@
   <nav>
     <button data-tab="status" class="on">Status</button>
     <button data-tab="config">Config</button>
-    <button data-tab="advanced">Advanced</button>
+    <button data-tab="advanced">All settings</button>
+    <button data-tab="services">Services</button>
+    <button data-tab="omci">MIB</button>
     <button data-tab="firmware">Firmware</button>
   </nav>
   <form method="post" action="/api/logout"><button id="logout" type="submit">Sign out</button></form>
@@ -64,6 +66,42 @@
     <input id="filter" type="search" placeholder="Filter settings" autocomplete="off">
     <div id="sections"></div>
   </section>
+  <section id="services" hidden>
+    <p class="hint">What the OLT built on this ONU, as opposed to what this
+       stick asked for. When the two disagree the line is right &mdash; so if
+       the state is O5 and no traffic passes, the answer is almost always on
+       this page.</p>
+    <p class="me-bar"><button id="services-reload" type="button">Read the MIB again</button></p>
+    <div id="services-cards"></div>
+  </section>
+
+  <section id="omci" hidden>
+    <p class="hint">Every managed entity, unedited. This runs
+       <code>omcicli mib get</code> and shows exactly what it printed &mdash;
+       which is what a support thread is asking for when it says to post
+       <code>omcicli mib get 84</code>.</p>
+    <div class="me-bar">
+      <label>Table or class id
+        <input id="me-pick" list="me-tables-list" autocomplete="off"
+               placeholder="84 or VlanTagFilterData">
+      </label>
+      <datalist id="me-tables-list"></datalist>
+      <label>Entity <input id="me-entity" autocomplete="off" placeholder="all"></label>
+      <button id="me-go" type="button">Read</button>
+    </div>
+    <div class="me-bar" id="me-dumps"></div>
+    <div id="me-out"></div>
+    <details>
+      <summary>Tables the running stack has registered</summary>
+      <pre id="me-tables"></pre>
+    </details>
+    <p class="hint">Nothing on this page writes. <code>omcicli mib set</code>
+       exists and is deliberately out of reach: the MIB is the OLT's copy of the
+       service and it is rebuilt at every re-registration, so a change made here
+       would survive one reboot and not the next. Settings that persist are on
+       the Config tab.</p>
+  </section>
+
   <section id="firmware" hidden>
     <p class="hint">Two partitions, one running. An image is always written to
        the one that is not running, so the firmware you are using now survives

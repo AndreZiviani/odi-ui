@@ -34,10 +34,65 @@ hundred lines instead of 88 handlers.
   carry. That set is an empirical answer to "what gets changed" rather than a
   guess, since it is exactly what provisioning a stick for an ISP line has
   needed.
-- **Advanced** &mdash; all 184 keys, filterable.
+- **All settings** &mdash; all 184 keys, filterable.
+- **Services** &mdash; what the OLT actually provisioned, in sentences.
+- **MIB** &mdash; the same thing unedited, one managed entity at a time.
+- **Firmware** &mdash; the two partitions and the trial-boot slot.
 
-The split is a `common` column in the schema, so which keys are everyday ones is
-a data decision rather than something baked into the page.
+The Config/All settings split is a `common` column in the schema, so which keys
+are everyday ones is a data decision rather than something baked into the page.
+
+## The MIB tabs
+
+The config keys are what this stick **asked for**. The OMCI MIB is what the line
+**built**, and when the two disagree the line is right. That distinction is the
+whole reason these two tabs exist, and it is the one most "state is O5 but
+nothing passes" threads turn on.
+
+**Services** answers six questions in plain language, reading ME 7, 131, 84,
+171, 262 and 268:
+
+- the software version the OLT sees &mdash; the only version string the ISP
+  gets, and the one `chk_swver_fix.sh` rewrites at boot
+- which OLT is at the other end, decoded from `OltVendorId`
+- which VLANs the line permits
+- whether the OLT is translating a VLAN, and which of the two to tag
+- what upstream containers and GEM ports exist
+
+**MIB** runs `omcicli mib get` and shows exactly what it printed &mdash; which is
+what a support thread means when it asks you to post `omcicli mib get 84`. The
+picker offers all 81 tables this image can register, taken from
+`/lib/omci/mib_*.so` in the base rather than typed out, and accepts a bare class
+id as well because that is the dialect threads are written in.
+
+### Two rules these pages are written to
+
+**Read-only.** `omcicli mib set` exists and no route reaches it. The MIB is the
+OLT's copy of the service and is rebuilt at every re-registration, so a change
+made there survives one reboot and not the next &mdash; a worse answer than no
+change at all. Settings that persist live on the Config tab.
+
+**Never invent a meaning.** Where an attribute reads unambiguously &mdash; a
+VLAN id is a VLAN id &mdash; it is spelled out. Where it does not, the value is
+shown as it came. That is why there is no table of forwarding-operation codes:
+the VIDs in the filter answer what people actually ask, and a confident wrong
+gloss on a MIB attribute is worse than none. The decoded card also prints the
+table name **the device returned**, not the one it asked for, so a wrong class
+id shows up as a wrong name instead of a mislabelled card.
+
+### The parser is tested against captures, not against itself
+
+The dump format is not consistent between tables. ME 84 prints `EntityID` and
+ME 171 prints `EntityId`, in the same firmware; a table's rows arrive as bare
+lines with no key at all. So `scripts/fixtures/omci/` holds **real device
+output** and `make check` runs the parser over it. A fixture written to match
+the parser would test nothing.
+
+Two of those fixtures came from a support thread on sticks running our own
+`V1.0-220923` base. `scripts/capture-omci.sh <user@stick>` dumps every
+registered table from live hardware and is how the rest get filled in &mdash;
+including the open question of whether this firmware takes a table name as well
+as a class id.
 
 ## What a change costs
 
@@ -513,12 +568,20 @@ line. That is why the schema carries an `apply` column — 20 keys are
 ## Layout
 
 ```
-src/confd.c         listener, auth, routing, JSON  (freestanding C, no libc)
+src/main.c          listener and accept loop   (freestanding C, no libc)
+src/routes.c        dispatch, and the config write path
+src/http.c          request parsing, auth, the static-asset table
+src/mib.c           the schema, validation, flash reads and writes
+src/status.c        the diag scrape
+src/omci.c          the OMCI MIB read path
+src/firmware.c      partitions, the trial slot, the build manifest
+src/buffers.c       every static buffer, in one place
 src/util.h          base64, JSON escaping, small string helpers
 src/syscall.h       copied from sfp-exporter; fix it in both places
-web/                the entire UI: one page, one script, one stylesheet
+web/                the UI: twelve ES modules, one page, one stylesheet
 schema/keys.tsv     the keyspace, generated from a device
 schema/meta.tsv     curated help: labels, options, ranges, dependencies
+scripts/fixtures/   captured device output the checks run against
 scripts/            build verification, schema drift, deploy
 ```
 

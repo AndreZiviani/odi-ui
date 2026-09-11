@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "web/ and scripts/*.mjs are ES modules. This file exists to say so: without it node reparses every module and warns, on a repo that ships no JavaScript dependencies at all. puppeteer-core for scripts/shot.mjs is an opt-in `npm i` and is not listed here."
+}
