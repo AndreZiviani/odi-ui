@@ -1,0 +1,66 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ExtVlanTagOperCfgData
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+=================================
+EntityId: 0x01
+AssociationType: 2
+ReceivedFrameVlanTagOperTableMaxSize: 0
+InputTPID: 0x8100
+OutputTPID: 0x8100
+DsMode: 0
+ReceivedFrameVlanTaggingOperTable
+INDEX 0
+Filter Outer   : PRI 15,VID 4096, TPID 0
+Filter Inner   : PRI 15,VID 4096, TPID 0, EthType 0x00
+Treatment Outer   : PRI 15,VID 4096, TPID 0, RemoveTags 0
+Treatment Inner   : PRI 0,VID 1, TPID 4
+INDEX 1
+Filter Outer   : PRI 14,VID 4096, TPID 0
+Filter Inner   : PRI 14,VID 4096, TPID 0, EthType 0x00
+Treatment Outer   : PRI 15,VID 0, TPID 0, RemoveTags 3
+Treatment Inner   : PRI 15,VID 0, TPID 0
+INDEX 2
+Filter Outer   : PRI 15,VID 4096, TPID 0
+Filter Inner   : PRI 14,VID 4096, TPID 0, EthType 0x00
+Treatment Outer   : PRI 15,VID 0, TPID 0, RemoveTags 3
+Treatment Inner   : PRI 15,VID 0, TPID 0
+AssociatedMePoint: 0x101
+DscpToPbitMapping:
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+=================================
+=================================
+EntityId: 0x02
+AssociationType: 10
+ReceivedFrameVlanTagOperTableMaxSize: 0
+InputTPID: 0x8100
+OutputTPID: 0x8100
+DsMode: 0
+ReceivedFrameVlanTaggingOperTable
+INDEX 0
+Filter Outer   : PRI 14,VID 4096, TPID 0
+Filter Inner   : PRI 14,VID 4096, TPID 0, EthType 0x00
+Treatment Outer   : PRI 15,VID 0, TPID 0, RemoveTags 3
+Treatment Inner   : PRI 15,VID 0, TPID 0
+INDEX 1
+Filter Outer   : PRI 15,VID 4096, TPID 0
+Filter Inner   : PRI 14,VID 4096, TPID 0, EthType 0x00
+Treatment Outer   : PRI 15,VID 0, TPID 0, RemoveTags 3
+Treatment Inner   : PRI 15,VID 0, TPID 0
+AssociatedMePoint: 0x601
+DscpToPbitMapping:
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+	0x000000
+=================================

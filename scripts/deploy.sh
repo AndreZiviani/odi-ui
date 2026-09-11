@@ -37,15 +37,30 @@ fi
 ASSETS=(schema/keys.tsv schema/meta.tsv schema/consumers.tsv web/*.html web/*.css web/*.js)
 
 echo "==> free space on the config partition"
-# What this actually needs, measured: every file that gets written, plus a
-# second copy of the binary, because it is staged as confd.new in the same
-# filesystem before being renamed over the live one. Plus headroom, because
-# jffs2 is log-structured -- overwriting a file does not free its old blocks
-# until garbage collection, so even a re-deploy of identical content can
-# transiently need the whole payload again.
+# What this actually needs, on jffs2 rather than on your disk.
+#
+# This used to sum `wc -c` and refused a deploy that fits three times over:
+# 244 KB estimated against 188 KB free, for a payload that really occupies
+# about 114 KB. /var/config is jffs2, which COMPRESSES on write, and summing
+# uncompressed sizes over-counts text by a factor of three.
+#
+# The model is measured, not assumed. Uploading a 29,000-byte confd to a stick
+# moved free space by exactly 16,384 bytes; that file gzips to 13,782, and
+# ceil(13782 / 4096) * 4096 is 16,384 — jffs2 compresses, then allocates whole
+# 4 KB erase blocks (`erasesize` from /proc/mtd). So: compress each file, round
+# it up to a block, add them up.
+#
+# gzip -6, not -9: that is zlib's default and what jffs2 uses, so the estimate
+# stays on the pessimistic side of the truth. The binary is counted twice
+# because it is staged as confd.new in the same filesystem before the rename,
+# and the headroom stays because jffs2 is log-structured — overwriting a file
+# does not free its old blocks until garbage collection, so even re-deploying
+# identical content can transiently need the payload again.
+BLOCK=4096
 NEED=0
 for f in "${ASSETS[@]}" build/confd build/confd; do
-	NEED=$((NEED + $(wc -c < "$f")))
+	z=$(gzip -6 -c "$f" | wc -c | tr -d ' ')
+	NEED=$((NEED + ((z + BLOCK - 1) / BLOCK) * BLOCK))
 done
 NEED_KB=$(((NEED + 1023) / 1024 + 32))
 
