@@ -260,6 +260,48 @@ a key reaches `omci_app`, and measurement for the rest. It is a **separate file
 from `schema/keys.tsv` on purpose**: that one is regenerated from a stick and
 would overwrite anything written by hand.
 
+## Uploading an image
+
+    POST /api/upload                         raw tarball as the body
+    POST /api/firmware  action=write&partition=N
+
+The Firmware tab used to hand out an `scp` command, on the grounds that a 3 MB
+image could not be held in the memory this device has. That was true of holding
+it; it was never true of moving it. The body is streamed straight to
+`/tmp/img.tar` in 64 KB pieces and is never in memory whole.
+
+**Raw bytes, not multipart.** `fetch(url, {body: file})` sends the file as the
+body with no boundary to find, so there is no parser here to get wrong.
+
+`read_request` gained two out-parameters for this — how much body arrived and
+how much was declared — and it now returns **as soon as the body is known not
+to fit**, rather than filling its buffer first. That is what makes the size
+guard a real pre-body check: a request declaring 20 MB is refused on its
+`Content-Length`, before a file is opened. Without that early return the read
+loop went on waiting for a body that was never coming, blocked for the full
+socket timeout, and the guard was never reached at all.
+
+Every other route treats `body_have < body_want` as `413` — the same answer
+`read_request` used to give itself, now given one layer up and sooner.
+
+The upload is placed **after** authentication and the cross-site check, so
+nothing unauthenticated can make this device write megabytes into the ramfs
+every other process shares. A short write means that filesystem filled up, and
+the partial file is removed rather than left there making it worse.
+
+Writing is a **separate** action, and only offered for the partition the stick
+is not running — the daemon refuses the running one by reading `sw_active`,
+because `fwu.sh` would too but finding that out after the erase has begun is not
+where anyone should learn it. It blocks for about eighty seconds and this server
+is serial, so nothing else is answered meanwhile. That is honest rather than
+unfortunate: a page that looked responsive during a flash would be inviting a
+second click.
+
+Integrity is not reimplemented here. `fwu_starter.sh` checks `fwu.sh` against
+the md5 inside the tar, and `fwu.sh` checks the kernel and rootfs md5s before it
+erases anything. The md5 this route reports is about the **transfer**, to
+compare with the one beside the image you built.
+
 ## Tools
 
     GET  /api/log     -> the kernel ring buffer, via klogctl

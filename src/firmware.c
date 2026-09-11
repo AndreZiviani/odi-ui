@@ -183,3 +183,39 @@ int nv_set(const char *key, const char *value)
 		return 0;
 	return code == 0;
 }
+
+/*
+ * Read one U-Boot variable.
+ *
+ * /api/firmware already emits every sw_* for the page, but a route that has to
+ * DECIDE on one needs it in C -- and asking the page to send back what it was
+ * told would let a caller choose its own answer.
+ */
+int nv_get(const char *key, char *out, unsigned long cap)
+{
+	static char *const argv[] = { "nv", "getenv", 0 };
+	char buf[4096];
+	unsigned long i = 0;
+
+	out[0] = 0;
+	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf)) <= 0)
+		return 0;
+
+	while (buf[i]) {
+		unsigned long ls = i, le = i, eq, k = 0;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		eq = ls;
+		while (eq < le && buf[eq] != '=')
+			eq++;
+		if (eq < le && spre(buf + ls, key) && (ls + str_len(key)) == eq) {
+			for (k = 0; eq + 1 + k < le && k + 1 < cap; k++)
+				out[k] = buf[eq + 1 + k];
+			out[k] = 0;
+			return 1;
+		}
+		i = (buf[le] == '\n') ? le + 1 : le;
+	}
+	return 0;
+}

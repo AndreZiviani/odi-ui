@@ -122,6 +122,19 @@ echo "3 packets transmitted, 3 packets received, 0% packet loss"
 echo "round-trip min/avg/max = 0.388/0.400/0.412 ms"
 PING
     chmod +x /bin/ping
+    # An nv stub, so the Firmware tab shows the partition state a stick has.
+    # Without it sw_active is unknown and every guard keyed on it opens up --
+    # which is how the Write button came to be offered for both partitions.
+    cat > /bin/nv <<"NV"
+#!/bin/sh
+case "$1 $2" in
+"getenv sw_active")  echo "sw_active=0" ;;
+"getenv "|"getenv")  printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=ODI-260910-6861b53\nsw_version1=V1.0-220923\n" ;;
+"setenv"*)           ;;
+esac
+exit 0
+NV
+    chmod +x /bin/nv
     exec qemu-mips-static build/confd 18080'
 sleep 2
 curl -s -o /dev/null -w "daemon: HTTP %{http_code}\n" -u admin:admin http://127.0.0.1:18080/

@@ -347,6 +347,18 @@ td .aside.bits .unknownbit { color: var(--fibre); }
    it so it does not read as body text. */
 a.fwbtn { display: inline-block; text-decoration: none; }
 .fwbtn.danger { color: var(--alarm); border-color: #4A2B29; }
+/* Upload progress. A bar rather than a percentage: three megabytes over a link
+   this device drives at its own pace takes long enough that a button which
+   just greys out reads as broken. */
+.progress {
+  height: 3px; background: var(--rule); border-radius: 2px;
+  margin: .5rem 0; max-width: 30rem; overflow: hidden;
+}
+.progress .fill { height: 3px; width: 0; background: var(--fibre); }
+#fw-upload-out { display: grid; gap: .25rem; font-size: .85rem; max-width: 62ch; }
+#fw-upload-out .good { color: var(--apc); }
+#fw-upload-out .bad  { color: var(--alarm); }
+#fw-upload-out .mono { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
 #fwout { display: grid; gap: .3rem; margin-top: 1rem; font-size: .85rem; max-width: 62ch; }
 #fwout .good { color: var(--apc); }
 #fwout .bad  { color: var(--alarm); }

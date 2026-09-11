@@ -5,7 +5,92 @@
  * does not come up reverts itself. Keeping it is a separate, deliberate act.
  */
 
-import { $, el, fail, get } from './dom.js';
+import { $, el, fail, get, bytes } from './dom.js';
+
+/*
+ * An image sitting in /tmp, if one has been uploaded this session. The device
+ * is not asked -- a stale /tmp/img.tar from some previous attempt is exactly
+ * what should NOT quietly become writable with one click.
+ */
+let UPLOADED = null;
+
+/*
+ * Upload. XHR rather than fetch, for the one thing fetch cannot do: report
+ * progress while the body is going out. Three megabytes over a link this
+ * device drives at its own pace is long enough that a button which simply
+ * greys out looks broken.
+ */
+function uploadImage() {
+  const out = $('#fw-upload-out');
+  const f = $('#fw-file').files && $('#fw-file').files[0];
+
+  out.textContent = '';
+  if (!f) { out.append(el('div', 'bad', 'Pick the tarball first.')); return; }
+
+  const btn = $('#fw-upload');
+  const bar = el('div', 'progress');
+  const fill = el('div', 'fill');
+
+  bar.append(fill);
+  out.append(el('div', null, `Uploading ${f.name} (${bytes(f.size)})…`));
+  out.append(bar);
+  btn.disabled = true;
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/upload');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) fill.style.width = Math.round((e.loaded / e.total) * 100) + '%';
+  };
+  xhr.onload = () => {
+    btn.disabled = false;
+    let j = {};
+    try { j = JSON.parse(xhr.responseText); } catch (e) { /* reported below */ }
+    if (!j.ok) {
+      out.append(el('div', 'bad', j.error || `upload failed: HTTP ${xhr.status}`));
+      return;
+    }
+    UPLOADED = { name: f.name, bytes: j.bytes, md5: j.md5 };
+    out.append(el('div', 'good', `${bytes(j.bytes)} received.`));
+    /* The device's own md5, to compare with the one beside the image you
+       built. The updater checks the kernel and rootfs md5s from inside the tar
+       before it erases anything, so this is about the transfer. */
+    if (j.md5) out.append(el('div', 'mono', 'md5 ' + j.md5));
+    renderFirmware();
+  };
+  xhr.onerror = () => {
+    btn.disabled = false;
+    out.append(el('div', 'bad', 'The upload did not complete.'));
+  };
+  xhr.send(f);
+}
+
+async function writeImage(part) {
+  const out = $('#fwout');
+
+  if (!confirm(`Write the uploaded image to partition ${part}?\n\n`
+      + 'This takes about eighty seconds, the page answers nothing while it '
+      + 'runs, and the stick must not lose power. The partition you are '
+      + 'running now is not touched.')) return;
+
+  out.textContent = '';
+  out.append(el('div', 'warn', `Writing partition ${part}. Do not reload.`));
+  try {
+    const r = await fetch('/api/firmware', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ action: 'write', partition: part }).toString(),
+    });
+    const j = await r.json();
+    if (j.output) out.append(el('pre', null, String(j.output).trim()));
+    out.append(el('div', j.ok ? 'good' : 'bad', j.ok
+      ? `Partition ${part} written. Press Try on it — a trial boots once, and `
+        + 'reverts by itself if the image does not come up.'
+      : (j.error || 'the updater reported a failure')));
+    if (j.ok) renderFirmware();
+  } catch (e) {
+    out.append(el('div', 'bad', String(e.message || e)));
+  }
+}
 
 async function renderFirmware() {
   const host = $('#parts');
@@ -56,6 +141,21 @@ async function renderFirmware() {
       const b = el('button', 'fwbtn', 'Try partition ' + p);
       b.onclick = () => fwAction('try', p,
         `Partition ${p} will boot once. If it fails, the stick returns to partition ${committed} on its own.`);
+      acts.append(b);
+    }
+    /*
+       Offered only for the partition this stick is NOT running. The daemon
+       refuses the running one as well -- fwu.sh would too -- but finding that
+       out after the erase has started is not where anyone should learn it.
+    */
+    /* `booted !== undefined` matters: with sw_active unreadable this offered to
+       write BOTH partitions, including the running one. The daemon refuses
+       that by reading sw_active itself, so nothing could have come of it -- but
+       an interface that offers a destructive action it cannot justify is one
+       nobody should trust the rest of. */
+    if (UPLOADED && booted !== undefined && p !== booted) {
+      const b = el('button', 'fwbtn danger', 'Write the uploaded image to ' + p);
+      b.onclick = () => writeImage(p);
       acts.append(b);
     }
     if (p !== committed && p === booted) {
@@ -156,4 +256,8 @@ async function fwAction(action, partition, warning) {
   }
 }
 
-export { renderFirmware };
+function wireFirmware() {
+  $('#fw-upload').onclick = uploadImage;
+}
+
+export { renderFirmware, wireFirmware };

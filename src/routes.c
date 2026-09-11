@@ -191,9 +191,10 @@ next:
 void serve(int conn)
 {
 	char *path, *method, *body, *query;
+	unsigned long body_have = 0, body_want = 0;
 	long n;
 
-	n = read_request(conn, req, sizeof(req));
+	n = read_request(conn, req, sizeof(req), &body_have, &body_want);
 	if (n == REQ_TOO_LARGE) {
 		respond(conn, "413 Payload Too Large", "text/plain", 0);
 		put_fd(conn, "request too large\n");
@@ -262,6 +263,107 @@ void serve(int conn)
 			put_fd(conn, "cross-site request refused\n");
 			return;
 		}
+	}
+
+	/*
+	 * The firmware upload, and the only route that reads past the request
+	 * buffer.
+	 *
+	 * It is placed here on purpose: after authentication and after the
+	 * cross-site check, so nothing unauthenticated can make this device
+	 * write 3 MB into the ramfs every other process shares. The body is
+	 * streamed straight to a file in 64 KB pieces and is never held whole
+	 * in memory -- which is what the Firmware tab used to say could not be
+	 * done, and the reason it handed out an scp command instead.
+	 *
+	 * Raw bytes, not multipart. `fetch(url, {body: file})` sends the file
+	 * as the body with no boundary to find, so there is no parser here to
+	 * get wrong.
+	 */
+	if (seq(path, "/api/upload") && seq(method, "POST")) {
+		long fd, wrote = 0;
+		unsigned long left;
+
+		if (!body_want || body_want > UPLOAD_MAX) {
+			respond(conn, "413 Payload Too Large", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"an image is a few MB; this was not\"}");
+			return;
+		}
+
+		fd = syscall3(__NR_open, (long)UPLOAD_PATH,
+			      O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (fd < 0) {
+			respond(conn, "500 Internal Server Error", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"could not open " UPLOAD_PATH "\"}");
+			return;
+		}
+
+		/* What already arrived with the headers, then the rest. */
+		if (body_have && write_all((int)fd, body, body_have) < 0)
+			wrote = -1;
+		else
+			wrote = (long)body_have;
+
+		left = body_want - body_have;
+		while (wrote >= 0 && left) {
+			unsigned long chunk = left < sizeof(filebuf) ? left : sizeof(filebuf);
+			long got = syscall3(__NR_read, conn, (long)filebuf, (long)chunk);
+
+			/* A peer that stops sending is bounded by SO_RCVTIMEO,
+			 * so this cannot hang the server indefinitely. */
+			if (got <= 0) { wrote = -1; break; }
+			if (write_all((int)fd, filebuf, (unsigned long)got) < 0) {
+				/* /tmp is ramfs and shared. A short write here
+				 * is the filesystem filling up, and leaving a
+				 * half-image behind would fill it further. */
+				wrote = -1;
+				break;
+			}
+			wrote += got;
+			left -= (unsigned long)got;
+		}
+		syscall3(__NR_close, fd, 0, 0);
+
+		if (wrote < 0 || (unsigned long)wrote != body_want) {
+			syscall3(__NR_unlink, (long)UPLOAD_PATH, 0, 0);
+			respond(conn, "500 Internal Server Error", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"the upload did not complete; "
+				     "the partial file has been removed\"}");
+			return;
+		}
+
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"ok\":true,\"bytes\":");
+		put_u32_fd(conn, (unsigned long)wrote);
+		/* The device's own md5, so it can be compared with the one
+		 * beside the image you built. fwu.sh checks the kernel and
+		 * rootfs md5s from inside the tar before it erases anything,
+		 * so this is about the transfer, not the contents. */
+		{
+			static char *const argv[] = { "md5sum", UPLOAD_PATH, 0 };
+			char out[128];
+			unsigned long i = 0;
+
+			put_fd(conn, ",\"md5\":\"");
+			if (run_to_buf(MD5SUM_PATH, argv, out, sizeof(out)) > 0) {
+				while (out[i] && out[i] != ' ' && out[i] != '\n')
+					i++;
+				put_json_str(conn, out, i);
+			}
+			put_fd(conn, "\"}");
+		}
+		return;
+	}
+
+	/*
+	 * Every other route wants its body whole. Before the upload existed
+	 * read_request refused an oversized one itself; now it reports one, and
+	 * this is where that becomes the same 413 it always was.
+	 */
+	if (body_want && body_have < body_want) {
+		respond(conn, "413 Payload Too Large", "text/plain", 0);
+		put_fd(conn, "request too large\n");
+		return;
 	}
 
 	/*
@@ -469,8 +571,14 @@ void serve(int conn)
 
 			/* Only ever 0 or 1. sw_tryactive == 2 is U-Boot's "no
 			 * trial pending" state, and writing it here would mean
-			 * silently doing nothing while reporting success. */
-			if ((seq(action, "try") || seq(action, "commit")) &&
+			 * silently doing nothing while reporting success.
+			 *
+			 * `write` belongs in this list and was missing from it,
+			 * so a partition of 9 went through to fwu_starter.sh --
+			 * which rejects it, but an argument this daemon has not
+			 * checked is one it is trusting the next program to. */
+			if ((seq(action, "try") || seq(action, "commit") ||
+			     seq(action, "write")) &&
 			    !(seq(part, "0") || seq(part, "1"))) {
 				respond(conn, "400 Bad Request", "application/json", 0);
 				put_fd(conn, "{\"error\":\"partition must be 0 or 1\"}");
@@ -491,6 +599,61 @@ void serve(int conn)
 					: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
 				return;
 			}
+			/*
+			 * Write the uploaded image to a partition.
+			 *
+			 * fwu_starter.sh extracts fwu.sh and md5.txt from the
+			 * tar, checks fwu.sh against its own md5, and only then
+			 * runs it -- and fwu.sh verifies the kernel and rootfs
+			 * md5s BEFORE erasing anything. So the integrity check
+			 * that matters is already in the image; this route does
+			 * not reimplement it.
+			 *
+			 * It blocks for about eighty seconds, and this server
+			 * is serial, so nothing else is answered meanwhile.
+			 * That is the honest behaviour for an operation you
+			 * must not interrupt: a page that looked responsive
+			 * during a flash would be inviting a second click.
+			 */
+			if (seq(action, "write")) {
+				char *argv[4];
+				long code = -1;
+
+				argv[0] = "fwu_starter.sh";
+				argv[1] = part;
+				argv[2] = UPLOAD_PATH;
+				argv[3] = 0;
+
+				/* Refuse to write the partition that is
+				 * running. fwu.sh would too, but finding that
+				 * out after the erase has started is not the
+				 * place to learn it. */
+				{
+					char act[8];
+
+					if (nv_get("sw_active", act, sizeof(act)) &&
+					    seq(act, part)) {
+						respond(conn, "400 Bad Request", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"that is the partition this stick is running\"}");
+						return;
+					}
+				}
+
+				if (run_to_buf_ex(FWU_STARTER, argv, status,
+						  sizeof(status), &code) < 0) {
+					respond(conn, "500 Internal Server Error", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"could not run the updater\"}");
+					return;
+				}
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, "{\"ok\":");
+				put_fd(conn, code == 0 ? "true" : "false");
+				put_fd(conn, ",\"output\":\"");
+				put_json_cstr(conn, status);
+				put_fd(conn, "\"}");
+				return;
+			}
+
 			if (seq(action, "reboot")) {
 				static char *const rb[] = { "sh", 0 };
 				static const char script[] =

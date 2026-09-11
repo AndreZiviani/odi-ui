@@ -140,6 +140,20 @@ done
 DIAG
 chmod +x /bin/diag
 
+# An nv stub. Without one sw_active is unknown, and the guard that refuses to
+# write the RUNNING partition has nothing to compare against -- so the check
+# below would pass whether that guard works or is absent.
+cat > /bin/nv <<'NV'
+#!/bin/sh
+case "$1 $2" in
+"getenv sw_active") echo "sw_active=0" ;;
+"getenv ") printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
+"getenv")  printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
+esac
+exit 0
+NV
+chmod +x /bin/nv
+
 cat > /bin/omcicli <<'OMCICLI'
 #!/bin/sh
 echo "ARGV: $*"
@@ -344,6 +358,73 @@ check "the OMCI feature bits are served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"confd":')"
+
+echo "== firmware upload"
+# The point of this route is that a 3 MB body reaches a file through a 16 KB
+# request buffer. So the check uses a REAL multi-megabyte body and compares
+# md5s end to end -- a small one would pass whether the streaming loop works or
+# the whole thing still fits in one read.
+dd if=/dev/urandom of=/tmp/fake.tar bs=1024 count=3072 2>/dev/null
+LOCAL_MD5=$(md5sum /tmp/fake.tar | cut -d" " -f1)
+UP=$(curl -s -u "$AUTH" -X POST --data-binary @/tmp/fake.tar \
+	-H 'Content-Type: application/octet-stream' \
+	"http://127.0.0.1:$PORT/api/upload")
+check "a 3 MB image uploads" yes "$(err "$UP" '"ok":true')"
+check "every byte arrives" yes "$(err "$UP" '"bytes":3145728')"
+check "and the file on disk is byte-identical" "$LOCAL_MD5" \
+	"$(md5sum /tmp/img.tar 2>/dev/null | cut -d' ' -f1)"
+check "the daemon reports that same md5" yes "$(err "$UP" "$LOCAL_MD5")"
+
+# The guard is on the DECLARED length, tested before the file is opened and
+# before a byte of body is read -- so /tmp cannot be filled by an upload that
+# announces itself as too big for it.
+#
+# Declared 20 MB, body sixteen bytes. Sending a real oversized body instead
+# made this flaky rather than wrong: the daemon rejects on the header and
+# closes while curl is still sending, so curl is reset mid-send and reports 000
+# instead of reading the 413. Separating the header from the body is what makes
+# the check test the guard rather than the timing.
+printf 'not an image at ' > /tmp/lie.bin
+check "an upload declaring more than the limit is refused" 413 \
+	"$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST \
+	   -H 'Content-Length: 20000000' -H 'Content-Type: application/octet-stream' \
+	   --data-binary @/tmp/lie.bin "http://127.0.0.1:$PORT/api/upload")"
+check "and it wrote nothing" no \
+	"$([ -f /tmp/img.tar ] && [ "$(wc -c < /tmp/img.tar)" -lt 3145728 ] && echo yes || echo no)"
+rm -f /tmp/lie.bin
+check "an empty upload is refused" 413 \
+	"$(code -u "$AUTH" -X POST -H 'Content-Type: application/octet-stream' \
+	   "http://127.0.0.1:$PORT/api/upload")"
+check "an upload needs the credential" 401 \
+	"$(code -X POST --data-binary @/tmp/fake.tar "http://127.0.0.1:$PORT/api/upload")"
+check "a cross-origin upload is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST \
+	   --data-binary @/tmp/fake.tar "http://127.0.0.1:$PORT/api/upload")"
+
+# Every OTHER route must still refuse a body it cannot hold whole. read_request
+# used to error on one itself; now it reports one, and this is what keeps that
+# from quietly becoming a truncated config write.
+#
+# 64 KB, not the 3 MB file: the daemon answers 413 and closes while the client
+# is still sending, so with a body that large curl is reset mid-send and never
+# reads the status at all. That is correct of the server and useless as an
+# assertion. This size is over the buffer and small enough that the send
+# finishes first, which tests the rule rather than TCP.
+dd if=/dev/urandom of=/tmp/big.bin bs=1024 count=64 2>/dev/null
+check "an oversized body on another route is still 413" 413 \
+	"$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST \
+	   --data-binary @/tmp/big.bin "http://127.0.0.1:$PORT/api/config")"
+# And nothing was written from the part of it that did arrive.
+check "and nothing from it was written" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" '"LAN_IP_ADDR":"192.168.1.1"')"
+rm -f /tmp/fake.tar /tmp/big.bin
+
+# The daemon refuses to write the partition it is running, independently of
+# whatever the page offers. The nv stub says sw_active=0.
+check "writing the running partition is refused" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'action=write&partition=0' "http://127.0.0.1:$PORT/api/firmware")" 'that is the partition this stick is running')"
+check "a bad partition is still refused" 400 \
+	"$(code -u "$AUTH" -X POST -d 'action=write&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
 
 echo "== tools"
 # Ping takes IPv4 literals and nothing else. Not fussiness: this server is

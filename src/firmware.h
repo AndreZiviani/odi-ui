@@ -12,5 +12,7 @@
 
 void emit_firmware_json(int fd);
 int nv_set(const char *key, const char *value);
+/* One U-Boot variable, by name. Returns 0 if it is not set. */
+int nv_get(const char *key, char *out, unsigned long cap);
 
 #endif /* CONFD_FIRMWARE_H */
