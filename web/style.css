@@ -282,6 +282,10 @@ td .aside.bits .unknownbit { color: var(--fibre); }
   border: 1px solid var(--rule); border-radius: 3px; cursor: pointer;
 }
 .fwbtn:hover { border-color: var(--fibre); }
+/* The backup is an <a download>, not a button: it is a plain GET and making
+   the browser fetch it is the whole implementation. Match the buttons around
+   it so it does not read as body text. */
+a.fwbtn { display: inline-block; text-decoration: none; }
 .fwbtn.danger { color: var(--alarm); border-color: #4A2B29; }
 #fwout { display: grid; gap: .3rem; margin-top: 1rem; font-size: .85rem; max-width: 62ch; }
 #fwout .good { color: var(--apc); }
