@@ -37,12 +37,14 @@ page.on('response', (r) => { if (r.status() >= 400) problems.push(`HTTP ${r.stat
 await page.goto(BASE + '/', { waitUntil: 'networkidle0', timeout: 30000 });
 await new Promise((r) => setTimeout(r, 1500));
 
-const tabs = ['status', 'config', 'advanced', 'firmware'];
+const tabs = ['status', 'config', 'advanced', 'services', 'omci', 'firmware'];
 for (const t of tabs) {
   await page.evaluate((tab) => {
     for (const b of document.querySelectorAll('nav button')) if (b.dataset.tab === tab) b.click();
   }, t);
-  await new Promise((r) => setTimeout(r, t === 'firmware' ? 1200 : 500));
+  /* The MIB tabs fork omcicli once per card, so they need longer than a
+     tab that only re-renders what is already loaded. */
+  await new Promise((r) => setTimeout(r, /firmware|services|omci/.test(t) ? 1800 : 500));
   await page.screenshot({ path: `/tmp/ui-${t}.png`, fullPage: true });
 }
 
@@ -54,6 +56,10 @@ const counts = await page.evaluate(() => ({
   flowSides: document.querySelectorAll('#flow .side').length,
   saveBarVisible: !document.querySelector('#savebar').hidden,
   saveBarDisplayed: getComputedStyle(document.querySelector('#savebar')).display,
+  meCards: document.querySelectorAll('#services-cards .me-card').length,
+  meRules: document.querySelectorAll('#services-cards .me-rule').length,
+  meTableOptions: document.querySelectorAll('#me-tables-list option').length,
+  meInstances: document.querySelectorAll('#me-out .me-inst').length,
   title: document.title,
 }));
 

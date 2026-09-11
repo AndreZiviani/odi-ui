@@ -1,0 +1,17 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ExtVlanTagOperCfgData
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+=================================
+EntityId: 0x02
+AssociationType: 2
+ReceivedFrameVlanTagOperTableMaxSize: 0
+InputTPID: 0x8100
+OutputTPID: 0x8100
+DsMode: 0
+ReceivedFrameVlanTaggingOperTable
+INDEX 0
+Filter Outer   : PRI 15,VID 4096, TPID 0
+Filter Inner   : PRI 8,VID 35, TPID 0, EthType 0x00
+Treatment Outer   : PRI 15,VID 0, TPID 0, RemoveTags 1
+Treatment Inner   : PRI 8,VID 1600, TPID 0
+=================================

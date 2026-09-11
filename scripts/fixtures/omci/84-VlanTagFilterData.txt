@@ -1,0 +1,15 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+VlanTagFilterData
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+=================================
+EntityID: 0x04
+FilterTbl[0]: PRI 0,CFI 0, VID 75
+FwdOp:  0x10
+NumOfEntries: 1
+=================================
+=================================
+EntityID: 0x05
+FilterTbl[0]: PRI 0,CFI 0, VID 1600
+FwdOp:  0x10
+NumOfEntries: 1
+=================================

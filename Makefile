@@ -35,7 +35,7 @@ CFLAGS  := -std=c99 -Os -Wall -Wextra \
 LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none -flto
 
 SRCS := src/start.S src/main.c src/routes.c src/http.c src/mib.c \
-        src/firmware.c src/status.c src/buffers.c
+        src/firmware.c src/status.c src/omci.c src/buffers.c
 HDRS := $(wildcard src/*.h)
 
 # One compiler invocation rather than per-object rules and a link step: there
