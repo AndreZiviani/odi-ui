@@ -162,7 +162,11 @@
     <div class="me-bar" id="me-dumps"></div>
     <div id="me-out"></div>
     <details>
-      <summary>Tables the running stack has registered</summary>
+      <summary>Every table this base registers</summary>
+      <p class="hint">Captured from a stick, not read live. Asking the device
+         costs the MIB service: <code>omcicli get tables</code> returns nothing
+         and leaves it unable to answer until <code>omci_app</code> is
+         restarted.</p>
       <pre id="me-tables"></pre>
     </details>
     <p class="hint">Nothing on this page writes. <code>omcicli mib set</code>

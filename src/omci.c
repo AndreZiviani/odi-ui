@@ -121,14 +121,24 @@ void emit_omci_json(int fd, const char *query)
 	}
 
 	/*
-	 * The registered table list, from the running stack rather than from
-	 * the image. /lib/omci/mib_*.so says what COULD be registered; only the
-	 * stack knows what is, and on a line that never reached O5 the
-	 * difference is the whole answer.
+	 * `omcicli get tables` is NOT reachable, and that is the point.
+	 *
+	 * It breaks the thing this whole route exists to read. Reproduced twice
+	 * from a freshly restarted omci_app on a stick: `mib get 84` answers,
+	 * `get tables` returns ZERO bytes, and every `mib get` after it returns
+	 * nothing until omci_app is restarted. `get sn`, `get devmode` and
+	 * `get cflag` are all harmless in the same test, so it is this one
+	 * command and not the `get` family, the call volume, or who forked it.
+	 *
+	 * It used to be offered here and the MIB tab called it on load, so
+	 * opening that tab disabled the device's own MIB diagnostics -- on a
+	 * page whose job is diagnosing a line. The table names are captured in
+	 * scripts/fixtures/omci/_tables-names.txt and shipped as data instead;
+	 * they change only with the base.
 	 */
 	if (seq(cmd, "tables")) {
-		argv[0] = "omcicli"; argv[1] = "get"; argv[2] = "tables"; argv[3] = 0;
-		emit_omcicli(fd, argv);
+		bad(fd, "refused: `omcicli get tables` wedges the MIB service on "
+			"this firmware until omci_app is restarted");
 		return;
 	}
 
