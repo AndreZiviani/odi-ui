@@ -18,6 +18,7 @@
     <button data-tab="advanced">All settings</button>
     <button data-tab="services">Services</button>
     <button data-tab="omci">MIB</button>
+    <button data-tab="tools">Tools</button>
     <button data-tab="firmware">Firmware</button>
   </nav>
   <form method="post" action="/api/logout"><button id="logout" type="submit">Sign out</button></form>
@@ -169,6 +170,31 @@
        service and it is rebuilt at every re-registration, so a change made here
        would survive one reboot and not the next. Settings that persist are on
        the Config tab.</p>
+  </section>
+
+  <section id="tools" hidden>
+    <h2>Kernel log</h2>
+    <p class="hint">The only log this device keeps. There is no syslog daemon in
+       the image and no <code>dmesg</code> in its busybox, so the switch and
+       OMCI complaints live in the kernel ring buffer until they scroll away.
+       Read without consuming it &mdash; <code>cat /proc/kmsg</code> would eat
+       the history and then block.
+       <button id="log-reload" class="fwbtn" type="button">Refresh</button></p>
+    <div id="log-out"></div>
+
+    <h2>Ping</h2>
+    <p class="hint">From the stick itself. In bridge mode that means the
+       management LAN and not much else &mdash; the stick has no route to the
+       internet &mdash; so what this actually answers is whether the management
+       path works in both directions, which is worth knowing when the page
+       loads but a scrape does not. IPv4 addresses only: with no route to a
+       resolver a name lookup would hang rather than fail, and this daemon
+       serves one request at a time.</p>
+    <div class="me-bar">
+      <label>Address <input id="ping-host" autocomplete="off" placeholder="192.168.1.254"></label>
+      <button id="ping-go" class="fwbtn" type="button">Ping</button>
+    </div>
+    <div id="ping-out"></div>
   </section>
 
   <section id="firmware" hidden>

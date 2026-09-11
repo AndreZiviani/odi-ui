@@ -36,6 +36,15 @@
  * below is from Realtek's own asm/unistd.h for this kernel (4000 + 328). */
 #define __NR_pipe2      4328
 #define __NR_nanosleep  4166
+/*
+ * klogctl(2). The kernel ring buffer is the only log this device keeps -- there
+ * is no syslogd and no dmesg applet -- and the obvious `cat /proc/kmsg` is the
+ * wrong way to it: that CONSUMES the buffer and blocks waiting for more, so a
+ * page refresh would eat the messages and then hang. Action 3, READ_ALL, copies
+ * the buffer without clearing it.
+ */
+#define __NR_syslog     4103
+#define SYSLOG_READ_ALL 3
 #define __NR_rt_sigaction 4194
 
 #define SIGPIPE 13
@@ -241,6 +250,19 @@ __attribute__((unused)) static long write_file(const char *path, const char *buf
 	if (n < 0 || (unsigned long)n != len)
 		return -1;
 	return syscall3(__NR_chmod, (long)path, mode, 0);
+}
+
+/*
+ * Read the kernel ring buffer without consuming it. Returns bytes, or negative.
+ */
+__attribute__((unused)) static long read_klog(char *buf, unsigned long cap)
+{
+	long n = syscall3(__NR_syslog, SYSLOG_READ_ALL, (long)buf, (long)(cap - 1));
+
+	if (n < 0)
+		return n;
+	buf[n] = 0;
+	return n;
 }
 
 /* Decimal formatting by hand: printf would drag in a libc we do not link, and

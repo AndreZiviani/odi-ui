@@ -41,6 +41,7 @@
 #define FLASH_PATH "/etc/scripts/flash"
 #define DIAG_PATH  "/bin/diag"
 #define OMCICLI_PATH "/bin/omcicli"
+#define PING_PATH    "/bin/ping"
 
 /* The image ships these; /etc/config wins so the UI can be iterated without a
  * reflash, exactly as the exporter binary can. */

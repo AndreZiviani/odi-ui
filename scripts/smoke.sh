@@ -25,7 +25,14 @@ PORT=18080
 AUTH='admin:s3cret'
 
 if [ "${IN_CONTAINER:-0}" != 1 ]; then
-	docker run --rm -v "$PWD":/src -w /src odi-ui-toolchain \
+	# --cap-add SYSLOG so /api/log can actually be tested. klogctl is refused
+	# in a default container (no CAP_SYSLOG, and the Docker VM sets
+	# dmesg_restrict=1), and without the capability that route answers "the
+	# kernel would not hand over its log buffer" here while working fine on
+	# a stick -- a check that always fails teaches nothing. The container
+	# reads the host VM's ring buffer; the assertion is only that bytes came
+	# back, and nothing is written to it.
+	docker run --rm --cap-add SYSLOG -v "$PWD":/src -w /src odi-ui-toolchain \
 		env IN_CONTAINER=1 scripts/smoke.sh
 	exit $?
 fi
@@ -337,6 +344,30 @@ check "the OMCI feature bits are served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"confd":')"
+
+echo "== tools"
+# Ping takes IPv4 literals and nothing else. Not fussiness: this server is
+# serial, so a hostname means a DNS lookup on a device with no route to a
+# resolver, and that hangs rather than failing -- taking the whole UI with it.
+# shellcheck disable=SC2016  # the $(id) case must reach the daemon unexpanded
+for bad in 'host=example.com' 'host=1.2.3' 'host=1.2.3.4.5' 'host=' \
+           'host=$(id)' 'host=1.2.3.4;id' 'nothost=1.2.3.4'; do
+	check "ping refuses $bad" 400 \
+		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/ping")"
+done
+check "ping accepts an IPv4 literal" 200 \
+	"$(code -u "$AUTH" -X POST -d 'host=127.0.0.1' "http://127.0.0.1:$PORT/api/ping")"
+# There is no /bin/ping in the toolchain container, which makes this the case
+# worth pinning: a missing binary must not read as "no reply", or it sends you
+# to look at the network instead of at the image.
+check "a missing ping says so, rather than 'no reply'" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'host=127.0.0.1' "http://127.0.0.1:$PORT/api/ping")" 'no ping in this image')"
+check "the kernel log comes back" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/log")" '"truncated"')"
+check "and it is not empty" yes \
+	"$([ "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/log" | wc -c)" -gt 200 ] && echo yes || echo no)"
+check "reading it twice gives the same buffer" yes \
+	"$([ "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/log")" = "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/log")" ] && echo yes || echo no)"
 
 echo "== the switch MAC table"
 # Its own route, not another line in the status scrape: the status buffer is

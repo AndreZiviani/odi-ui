@@ -17,7 +17,10 @@
 #   docker rm -f odi-ui-preview            -> stop it
 set -e
 docker rm -f odi-ui-preview >/dev/null 2>&1 || true
-docker run -d --name odi-ui-preview -p 18080:18080 \
+# --cap-add SYSLOG so the Tools tab has a kernel log to show: klogctl is
+# refused in a default container. It reads the host VM's buffer, which is not
+# what a stick would say but is the right SHAPE -- priority prefixes and all.
+docker run -d --name odi-ui-preview -p 18080:18080 --cap-add SYSLOG \
   -v "$PWD":/src -w /src odi-ui-toolchain bash -c '
     mkdir -p /etc/confd /etc/config /etc/scripts
     cp schema/*.tsv web/*.html web/*.css web/*.js /etc/confd/
@@ -104,6 +107,21 @@ esac
 exit 0
 OMCICLI
     chmod +x /bin/omcicli
+    # A ping stub. The container has no /bin/ping, and its networking is not
+    # the one a stick has, so this answers in the shape busybox ping does.
+    cat > /bin/ping <<"PING"
+#!/bin/sh
+while [ $# -gt 1 ]; do shift; done
+echo "PING $1 ($1): 56 data bytes"
+echo "64 bytes from $1: seq=0 ttl=64 time=0.412 ms"
+echo "64 bytes from $1: seq=1 ttl=64 time=0.388 ms"
+echo "64 bytes from $1: seq=2 ttl=64 time=0.401 ms"
+echo
+echo "--- $1 ping statistics ---"
+echo "3 packets transmitted, 3 packets received, 0% packet loss"
+echo "round-trip min/avg/max = 0.388/0.400/0.412 ms"
+PING
+    chmod +x /bin/ping
     exec qemu-mips-static build/confd 18080'
 sleep 2
 curl -s -o /dev/null -w "daemon: HTTP %{http_code}\n" -u admin:admin http://127.0.0.1:18080/

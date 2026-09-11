@@ -260,6 +260,29 @@ a key reaches `omci_app`, and measurement for the rest. It is a **separate file
 from `schema/keys.tsv` on purpose**: that one is regenerated from a stick and
 would overwrite anything written by hand.
 
+## Tools
+
+    GET  /api/log     -> the kernel ring buffer, via klogctl
+    POST /api/ping    host=<IPv4>
+
+**The log is the only one this device keeps.** There is no syslogd in the image
+and no `dmesg` applet in its busybox, so the switch and OMCI complaints live in
+the kernel ring buffer until they scroll away — `create ani vlan for mbcast
+fail` and `RT_ERR_RG_VLAN_USED_BY_SYSTEM`, the symptoms of an `OMCI_OLT_MODE`
+nobody should be using, arrive here and nowhere else.
+
+Read with `klogctl(SYSLOG_ACTION_READ_ALL)`, not `cat /proc/kmsg`. Reading that
+file **consumes** the buffer and then blocks waiting for more, so a page refresh
+would eat the history and hang a server that handles one request at a time.
+Priority prefixes (`<4>`) are coloured, and a continuation line with no prefix
+of its own inherits the level above it — which is how the `RT_ERR_` lines arrive.
+
+**Ping** is IPv4 literals only, and that is not fussiness. This server is
+serial, so a hostname means a DNS lookup on a device that in bridge mode has no
+route to a resolver: it would hang rather than fail, taking the whole UI with
+it. In bridge mode it reaches the management LAN and not much else, so what it
+actually answers is whether the management path works in both directions.
+
 ## Learned addresses
 
     GET /api/l2   -> diag l2-table get entry address valid
