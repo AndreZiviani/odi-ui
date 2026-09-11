@@ -15,12 +15,27 @@
 #define REQ_INCOMPLETE (-1)
 #define REQ_TOO_LARGE  (-2)
 
+/* A ceiling on a declared Content-Length, so the parse cannot wrap. Not a
+ * policy limit -- the upload route sets its own, much lower. */
+#define MAX_BODY  (32u * 1024u * 1024u)
+
 void respond(int fd, const char *status_line, const char *ctype,
 	     const char *extra);
 char *request_path(char *r, char **method);
 char *request_body(char *r);
 int header_copy(const char *r, const char *name, char *out, unsigned long cap);
-long read_request(int conn, char *buf, unsigned long cap);
+/*
+ * Read a request. Returns the bytes in `buf` (headers, plus as much of the body
+ * as fits), or a REQ_* code.
+ *
+ * `body_have` and `body_want` are what let one route stream a 3 MB firmware
+ * image through a 16 KB buffer while every other route keeps refusing anything
+ * that does not fit. A short body is no longer an error here -- it is reported,
+ * and the caller decides. Every route except the upload treats
+ * body_have < body_want as 413, which is exactly what this used to return.
+ */
+long read_request(int conn, char *buf, unsigned long cap,
+		  unsigned long *body_have, unsigned long *body_want);
 int same_origin(const char *r);
 int authorised(const char *r);
 /* Whether the credential came from the file or from the built-in default.

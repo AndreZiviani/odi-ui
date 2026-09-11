@@ -11,7 +11,7 @@ import { S, EDITS } from './state.js';
 import { renderStatus } from './status.js';
 import { renderConfig, renderAll } from './config.js';
 import { save, refreshSaveBar } from './save.js';
-import { renderFirmware } from './firmware.js';
+import { renderFirmware, wireFirmware } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
 import { wireRestore } from './restore.js';
@@ -38,6 +38,7 @@ $('#services-reload').onclick = () => renderServices(true);
 $('#pw-save').onclick = savePassword;
 $('#reset-go').onclick = resetConfig;
 wireRestore();
+wireFirmware();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. */
 $('#l2-load').onclick = renderL2;

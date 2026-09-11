@@ -23,6 +23,7 @@
 #define __NR_write 4004
 #define __NR_open  4005
 #define __NR_chmod 4015
+#define __NR_unlink 4010
 #define __NR_close 4006
 
 #define __NR_fork       4002

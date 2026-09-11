@@ -42,6 +42,18 @@
 #define DIAG_PATH  "/bin/diag"
 #define OMCICLI_PATH "/bin/omcicli"
 #define PING_PATH    "/bin/ping"
+#define MD5SUM_PATH  "/bin/md5sum"
+#define FWU_STARTER  "/etc/scripts/fwu_starter.sh"
+
+/*
+ * Where an uploaded image lands. /tmp is ramfs sharing ~27 MB with everything
+ * else running, and about 12.9 MB of that is actually free -- so a 3 MB image
+ * fits with room, and something much larger would not. UPLOAD_MAX is the guard:
+ * it refuses before writing rather than after filling the filesystem every
+ * other process on this device is also using.
+ */
+#define UPLOAD_PATH  "/tmp/img.tar"
+#define UPLOAD_MAX   (8u * 1024u * 1024u)
 
 /* The image ships these; /etc/config wins so the UI can be iterated without a
  * reflash, exactly as the exporter binary can. */

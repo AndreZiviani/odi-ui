@@ -129,18 +129,39 @@ int header_copy(const char *r, const char *name, char *out, unsigned long cap)
  * Returns the byte count, -1 if the peer gave up mid-request, -2 if it does not
  * fit.
  */
-long read_request(int conn, char *buf, unsigned long cap)
+long read_request(int conn, char *buf, unsigned long cap,
+		  unsigned long *body_have, unsigned long *body_want)
 {
 	unsigned long got = 0, hdr = 0, want = 0;
 	int have_hdr = 0;
+
+	*body_have = 0;
+	*body_want = 0;
 
 	for (;;) {
 		long n;
 		unsigned long i;
 
-		if (have_hdr && got >= hdr + want)
+		/*
+		 * Stop as soon as the whole body is in, OR as soon as it is
+		 * known it cannot be. The second case is what makes the upload
+		 * route's size guard a real pre-body check: without it this
+		 * went on filling the buffer first, so a request DECLARING
+		 * 20 MB while sending sixteen bytes blocked here for the full
+		 * socket timeout and the guard was never reached at all.
+		 *
+		 * It also means an oversized body on any other route is
+		 * refused the moment the headers are read, rather than after
+		 * 16 KB of it has been taken.
+		 */
+		if (have_hdr && (got >= hdr + want || hdr + want + 1 > cap)) {
+			*body_have = got - hdr;
+			*body_want = want;
 			return (long)got;
-		if (got + 1 >= cap)
+		}
+		/* The HEADERS not fitting is still fatal: there is no route
+		 * that wants a request line this daemon could not parse. */
+		if (!have_hdr && got + 1 >= cap)
 			return REQ_TOO_LARGE;
 
 		n = syscall3(__NR_read, conn, (long)(buf + got), cap - got - 1);
@@ -176,14 +197,16 @@ long read_request(int conn, char *buf, unsigned long cap)
 					break;
 				}
 				v = v * 10 + (unsigned long)(hdrbuf[k] - '0');
-				if (v > cap)
-					return REQ_TOO_LARGE;
+				/* Bound the arithmetic, not the route. The
+				 * upload has its own limit; this only stops a
+				 * declared length from wrapping. */
+				if (v > MAX_BODY) {
+					v = MAX_BODY + 1;
+					break;
+				}
 			}
 			want = v;
 		}
-		/* Reject an oversized body before reading it rather than after. */
-		if (hdr + want + 1 > cap)
-			return REQ_TOO_LARGE;
 	}
 }
 
