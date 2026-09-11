@@ -427,12 +427,32 @@ copy of what the image already carries; flash an image built from
 HTTP Basic, credentials in `/etc/config/confd.auth` as `user:password`:
 
 ```sh
-ssh admin@<stick> 'printf "admin:admin" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'
+ssh admin@<stick> 'printf "user:password" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'
 ```
 
-**With no credential file, confd refuses every request.** It never runs
-unauthenticated: an open config UI on the LAN is a worse outcome than no UI, and
-"it stopped working" is a much better failure than "it let anyone in".
+**With no credential file, confd answers to a built-in `admin` / `admin`** —
+the same credential `SUSER_NAME`/`SUSER_PASSWORD` ship with, and the ssh and
+telnet login on this stick.
+
+This used to be a refusal, which is the safer posture in the abstract and the
+wrong one here. `/etc/config` is precisely the partition a factory reset
+erases, so "no credential file" is the state of every freshly reset stick and
+of every stick flashed with an image that never had one written. Refusing left
+a config UI nobody could open, on a device whose remaining management paths are
+telnet and a 2007 dropbear that no current ssh client will talk to.
+
+The fallback is to a **weaker** credential, never to none. Every request is
+still checked, the comparison is still constant-time, a wrong password is still
+`401`, and a failure still costs a second. An empty file counts as absent for
+the same reason: truncating the file is how anyone clears a password, and
+treating the result as "accept nothing" would lock you out of the device you
+were changing the password on.
+
+And it is never invisible. `/api/firmware` reports `defaultauth`, and the page
+carries a banner in the masthead — on every tab, not in a panel one tab over —
+naming the command to fix it, until a real credential exists. A well-known
+default nobody can see is the same thing as no password; what makes this
+defensible is that you cannot miss it.
 
 ### Every request is checked, which the stock UI cannot say
 

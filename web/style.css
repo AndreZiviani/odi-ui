@@ -77,6 +77,18 @@ nav button:hover { color: var(--text); }
 nav button.on { color: var(--text); border-bottom-color: var(--fibre); }
 
 #err { color: var(--alarm); font-size: .85rem; grid-column: 1 / -1; }
+
+/* A built-in default nobody can see is the same thing as no password. This sits
+   in the masthead, on every tab, until a real credential is written -- not in a
+   panel one tab over that an operator has no reason to open. */
+#defaultauth {
+  grid-column: 1 / -1; margin: .6rem 0 0;
+  border-left: 2px solid var(--fibre); padding: .5rem .75rem;
+  color: var(--text); font-size: .85rem; background: var(--panel);
+}
+#defaultauth code {
+  font-family: var(--mono); font-size: .8rem; color: var(--fibre);
+}
 #logout {
   background: none; border: 1px solid var(--rule); border-radius: 3px;
   color: var(--muted); font: inherit; font-size: .8rem;
