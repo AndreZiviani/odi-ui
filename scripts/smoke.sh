@@ -33,7 +33,7 @@ fi
 # The daemon reads absolute paths. We are root in the container, so give it the
 # real ones rather than teaching it about a prefix it would only need for tests.
 mkdir -p /etc/confd /etc/config
-cp schema/keys.tsv schema/meta.tsv schema/consumers.tsv /etc/confd/
+cp schema/keys.tsv schema/meta.tsv schema/consumers.tsv schema/features.tsv /etc/confd/
 cp web/*.html web/*.css web/*.js /etc/confd/
 printf '%s' "$AUTH" > /etc/config/confd.auth
 chmod 600 /etc/config/confd.auth
@@ -218,6 +218,8 @@ check "an indexed table row keeps its address" yes \
 # image default. Asking for values first is what makes this test able to fail.
 check "defaults does not republish the values buffer" '{}' \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/defaults")"
+check "the OMCI feature bits are served" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"confd":')"
 

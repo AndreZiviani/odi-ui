@@ -445,6 +445,23 @@ void serve(int conn)
 		return;
 	}
 
+	if (seq(path, "/api/features")) {
+		static const char *col[] = { "mask", "bit", "feature", "module" };
+
+		/* The OMCI_CUSTOM_* bitmasks, decoded. Absent degrades to
+		 * showing the raw value, which is what every other tool for
+		 * this device does. */
+		if (read_file(FEAT_PATH_OVR, schema, sizeof(schema)) <= 0 &&
+		    read_file(FEAT_PATH, schema, sizeof(schema)) <= 0) {
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "[]");
+			return;
+		}
+		respond(conn, "200 OK", "application/json", 0);
+		emit_tsv_json(conn, schema, col, 4);
+		return;
+	}
+
 	if (seq(path, "/api/baseline")) {
 		static const char *col[] = { "name", "value" };
 

@@ -219,6 +219,10 @@ td input[type=text] { font-family: var(--mono); }
 td input.changed, td select.changed { border-color: var(--fibre); }
 td input.invalid { border-color: var(--alarm); }
 td .aside { color: var(--muted); font-size: .76rem; margin-top: .3rem; font-family: var(--mono); }
+/* A bitmask decode is a list, not an aside sentence; give the rows room and
+   mark the bits this image has no plugin for, because those do nothing. */
+td .aside.bits { display: grid; gap: .1rem; margin-top: .45rem; }
+td .aside.bits .unknownbit { color: var(--fibre); }
 
 /* --- save bar ----------------------------------------------------------- */
 

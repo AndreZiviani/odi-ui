@@ -43,14 +43,16 @@ async function refresh() {
 
 (async function init() {
   try {
-    let metaRows, consRows, baseRows;
-    [S.SCHEMA, S.VALUES, metaRows, consRows, S.DEFAULTS, baseRows] = await Promise.all([
+    let metaRows, consRows, baseRows, featRows;
+    [S.SCHEMA, S.VALUES, metaRows, consRows, S.DEFAULTS, baseRows, featRows] = await Promise.all([
       get('/api/schema'), get('/api/values'), get('/api/meta'),
       get('/api/consumers'), get('/api/defaults'), get('/api/baseline'),
+      get('/api/features'),
     ]);
     for (const m of metaRows) S.META[m.name] = m;
     for (const c of consRows) S.CONS[c.name] = c;
     for (const b of baseRows) S.BASELINE[b.name] = b.value;
+    for (const f of featRows) (S.FEATURES[f.mask] ||= []).push(f);
     renderAll();
   } catch (e) { fail(e); }
   await refresh();

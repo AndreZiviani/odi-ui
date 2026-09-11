@@ -94,6 +94,54 @@ registered table from live hardware and is how the rest get filled in &mdash;
 including the open question of whether this firmware takes a table name as well
 as a class id.
 
+## The OMCI_CUSTOM_* bitmasks, decoded
+
+`OMCI_CUSTOM_BDP`, `_RDP`, `_MCAST` and `_ME` are the four least documented
+settings on this device. The stick ships with `OMCI_CUSTOM_RDP=4` and upstream
+has an open issue from 2022 asking what that means, answered with "no
+information on this" (Anime4000/RTL960x#41, and #107 for the VEIP bit beside
+it).
+
+They were never opaque. Each bit loads one plugin, and the plugins name the bit
+in their own filenames:
+
+```
+lib/features/internal/rdp_00000004.so    OMCI_CUSTOM_RDP bit 0x4
+lib/modules/features/bdp_00000002.ko     OMCI_CUSTOM_BDP bit 0x2
+```
+
+while the feature itself is the function the module **defines**.
+`scripts/gen-features.py` reads that out of the ELF symbol table into
+`schema/features.tsv`, and the field on the config page decodes the value as you
+type it:
+
+```
+OMCI_CUSTOM_RDP  4        0x4      ignore_conn_uniNode_check
+OMCI_CUSTOM_BDP  258      0x2      ignore_ds_pbit
+                          0x100    cf_sfu_report_veip, force_veipRule_to_sfu
+```
+
+Three things that only fall out of doing it this way:
+
+- **A bit can carry more than one feature.** `me_00080000.so` defines both
+  `treat_cir_of_traffic_descriptor` and `force_meterType_of_trafficDesc`.
+- **A bit you set that this image has no plugin for does nothing**, and the page
+  says so rather than dropping it silently.
+- **The value is decimal.** `flash set` accepts nothing else, so `0x102` stores
+  zero. The help text says this now; it used to say "hex bitmask", which was
+  exactly backwards.
+
+Reading symbols rather than strings is what makes it exact. An earlier pass took
+the string sitting next to `feature_api_register` and reported `printf` as a
+feature, because a string table is not a call sequence.
+
+Regenerate when the base changes &mdash; the file describes the image it ships
+in, and `build-overlay.sh` copies it beside `keys.tsv`:
+
+```bash
+scripts/gen-features.py /path/to/unpacked/rootfs > schema/features.tsv
+```
+
 ## What a change costs
 
 `schema/consumers.tsv` records who reads each key and therefore what it takes

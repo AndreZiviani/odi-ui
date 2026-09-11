@@ -35,6 +35,10 @@ all) cat <<XML
   <Value Name="GPON_SN" Value="4F44490012345678"/>
   <Value Name="PON_VENDOR_ID" Value="ODI0"/>
   <Value Name="GPON_PLOAM_PASSWD" Value="31323334353637383930"/>
+  <Value Name="OMCI_CUSTOM_BDP" Value="258"/>
+  <Value Name="OMCI_CUSTOM_RDP" Value="4"/>
+  <Value Name="OMCI_CUSTOM_MCAST" Value="0"/>
+  <Value Name="OMCI_CUSTOM_ME" Value="65792"/>
 </Dir>
 <Dir Name="SW_PORT_TBL"> <!--index=1-->
   <Value Name="PVID" Value="1"/>
