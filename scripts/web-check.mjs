@@ -32,6 +32,14 @@ class El {
       contains: (c) => this.classList._s.has(c),
     };
   }
+  /* className and classList are the same thing in a real DOM, and el() in
+     dom.js sets className directly. Keeping them separate here meant
+     classList.contains() answered false for every class the page assigns,
+     which silently passed any test that only checked the happy path. */
+  get className() { return [...this.classList._s].join(' '); }
+  set className(v) {
+    this.classList._s = new Set(String(v).split(/\s+/).filter(Boolean));
+  }
   get textContent() { return this._text; }
   set textContent(v) { this._text = String(v); this.children = []; }
   append(...n) {
@@ -139,7 +147,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'restore', 'l2'];
+              'omci', 'services', 'mebrowser', 'restore', 'l2', 'tools'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -169,6 +177,28 @@ ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
 
 renderStatus(API['/api/status'].raw);
 ok(true, 'renderStatus runs against a diag capture');
+
+/* --- the kernel log ------------------------------------------------------- */
+const { renderLogLines } = await import(join(root, 'web', 'tools.js'));
+
+/* Real shape, from Anime4000/RTL960x#30: a <4> header followed by CONTINUATION
+   lines carrying no prefix of their own. Those inherit the last level seen --
+   otherwise the switch error under a warning renders as ordinary text. */
+const KLOG = [
+  '<4>',
+  '<4>create ani vlan for mbcast fail, ret = 65672',
+  '[WARNING] Return Error (0x10088:RT_ERR_RG_VLAN_USED_BY_SYSTEM) at line:18390',
+  '<6>eth0: link up',
+].join('\n');
+
+const logbox = doc.createElement('div');
+renderLogLines(KLOG, logbox);
+ok(logbox.children.length === 3, 'blank lines are dropped, real ones kept');
+ok(logbox.children[0].classList.contains('warn'), 'a <4> line is a warning');
+ok(logbox.children[1].classList.contains('warn'),
+   'a continuation line inherits the level above it');
+ok(!logbox.children[2].classList.contains('warn'), 'and a later <6> resets it');
+ok(!/^<\d>/.test(logbox.children[0].textContent), 'the priority prefix is not shown');
 
 /* --- the switch MAC table ------------------------------------------------- */
 const { parseL2 } = await import(join(root, 'web', 'l2.js'));

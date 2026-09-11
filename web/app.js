@@ -16,8 +16,9 @@ import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
 import { wireRestore } from './restore.js';
 import { renderL2 } from './l2.js';
+import { renderTools } from './tools.js';
 
-const TABS = ['status', 'config', 'advanced', 'services', 'omci', 'firmware'];
+const TABS = ['status', 'config', 'advanced', 'services', 'omci', 'tools', 'firmware'];
 for (const b of document.querySelectorAll('nav button')) {
   b.onclick = () => {
     for (const o of document.querySelectorAll('nav button')) o.classList.toggle('on', o === b);
@@ -28,6 +29,7 @@ for (const b of document.querySelectorAll('nav button')) {
        the status page has painted. */
     if (b.dataset.tab === 'services') renderServices();
     if (b.dataset.tab === 'omci') renderMeBrowser();
+    if (b.dataset.tab === 'tools') renderTools();
   };
 }
 $('#filter').oninput = (e) => renderConfig('#sections', S.SCHEMA, e.target.value);

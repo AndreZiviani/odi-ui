@@ -68,3 +68,35 @@ void emit_l2_json(int fd)
 	put_fd(fd, ((unsigned long)got + 1 >= sizeof(omci)) ? "true" : "false");
 	put_fd(fd, "}");
 }
+
+/*
+ * The kernel ring buffer.
+ *
+ * This device keeps no other log: there is no syslogd in the image and no
+ * dmesg applet in its busybox, so the only record of what the switch and the
+ * OMCI stack complained about is in here until it scrolls away. It is where
+ * `create ani vlan for mbcast fail` and `RT_ERR_RG_VLAN_USED_BY_SYSTEM` show
+ * up -- the symptoms of an OMCI_OLT_MODE nobody should be using -- and nothing
+ * in this UI looked at it before.
+ *
+ * klogctl rather than /proc/kmsg: reading that file consumes the buffer and
+ * then blocks waiting for more, so a page refresh would both eat the history
+ * and hang the server, which is single-threaded.
+ */
+void emit_log_json(int fd)
+{
+	long got = read_klog(omci, sizeof(omci));
+
+	if (got < 0) {
+		put_fd(fd, "{\"error\":\"the kernel would not hand over its log buffer\"}");
+		return;
+	}
+	put_fd(fd, "{\"raw\":\"");
+	put_json_cstr(fd, omci);
+	put_fd(fd, "\",\"truncated\":");
+	/* The ring buffer is usually smaller than this, but say so when it is
+	 * not: the OLDEST lines are what klogctl drops, so a silently short
+	 * answer looks like a device that has been quiet. */
+	put_fd(fd, ((unsigned long)got + 1 >= sizeof(omci)) ? "true" : "false");
+	put_fd(fd, "}");
+}

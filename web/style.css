@@ -94,6 +94,22 @@ nav button.on { color: var(--text); border-bottom-color: var(--fibre); }
   cursor: pointer; background: var(--fibre); color: var(--ink);
   border: 1px solid var(--fibre); border-radius: 3px; font-weight: 600;
 }
+/* The log is a terminal, so it looks like one: fixed height, scrolled to the
+   newest line, no wrapping games. Priority colouring carries the only
+   structure it has. */
+.log {
+  max-height: 26rem; overflow: auto; background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 3px; padding: .7rem .9rem;
+}
+.logline {
+  font-family: var(--mono); font-size: .76rem; line-height: 1.5;
+  color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.logline.warn { color: var(--fibre); }
+.logline.bad  { color: var(--alarm); }
+#ping-out { display: grid; gap: .3rem; font-size: .85rem; max-width: 62ch; }
+#ping-out .bad { color: var(--alarm); }
+
 h3.sub {
   font-size: .78rem; font-weight: 600; color: var(--text);
   margin: 2rem 0 .5rem;

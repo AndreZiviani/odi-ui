@@ -382,6 +382,75 @@ void serve(int conn)
 		return;
 	}
 
+	/*
+	 * Ping, from the stick.
+	 *
+	 * Proving the line from the ONU rather than from behind your router is
+	 * the one diagnostic the vendor UI has that this did not, and it
+	 * answers a question nothing else here can: whether the stick itself
+	 * reaches anything.
+	 *
+	 * IPv4 literals only, and that is not laziness. This server is
+	 * single-threaded and serial, so whatever ping does, every other
+	 * request waits for it -- and a hostname means a DNS lookup on a device
+	 * that, in bridge mode, has no route to a resolver. That lookup does
+	 * not fail fast, it hangs, and it would take the whole UI with it. A
+	 * literal cannot.
+	 *
+	 * Even so this blocks for a few seconds: three packets at one per
+	 * second, and nothing else is served meanwhile.
+	 */
+	if (seq(path, "/api/ping") && seq(method, "POST")) {
+		char host[64];
+		char *argv[6];
+		unsigned long i, digits = 0, dots = 0;
+		long got, code = -1;
+
+		if (!form_get(body, "host", host, sizeof(host))) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"host is required\"}");
+			return;
+		}
+		for (i = 0; host[i]; i++) {
+			if (host[i] >= '0' && host[i] <= '9') { digits++; continue; }
+			if (host[i] == '.') { dots++; continue; }
+			digits = 0;
+			break;
+		}
+		if (!digits || dots != 3 || i > 15) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"an IPv4 address, and only an IPv4 address\"}");
+			return;
+		}
+
+		argv[0] = "ping";
+		argv[1] = "-c";
+		argv[2] = "3";
+		argv[3] = host;
+		argv[4] = 0;
+
+		got = run_to_buf_ex(PING_PATH, argv, status, sizeof(status), &code);
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"ok\":");
+		put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+		put_fd(conn, ",\"output\":\"");
+		if (got > 0)
+			put_json_cstr(conn, status);
+		put_fd(conn, "\"");
+		/*
+		 * 127 is run_to_buf_ex's own "execve failed", not ping's. Worth
+		 * separating: without this a missing /bin/ping reads as "no
+		 * reply", which sends you to look at the network instead of at
+		 * the image.
+		 */
+		if (code == 127)
+			put_fd(conn, ",\"error\":\"no ping in this image\"");
+		else if (got < 0)
+			put_fd(conn, ",\"error\":\"could not run ping\"");
+		put_fd(conn, "}");
+		return;
+	}
+
 	if (seq(path, "/api/config") && seq(method, "POST")) {
 		handle_write(conn, body);
 		return;
@@ -618,6 +687,12 @@ void serve(int conn)
 	if (seq(path, "/api/status")) {
 		respond(conn, "200 OK", "application/json", 0);
 		emit_status_json(conn);
+		return;
+	}
+
+	if (seq(path, "/api/log")) {
+		respond(conn, "200 OK", "application/json", 0);
+		emit_log_json(conn);
 		return;
 	}
 
