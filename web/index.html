@@ -49,6 +49,12 @@
        performance-monitoring cycle clears the host side every fifteen minutes
        and leaves the fibre side alone.</p>
 
+    <h2>Learned addresses</h2>
+    <p class="hint">Which MAC addresses the switch has seen, and on which side.
+       The counters above say whether frames cross; this says who is crossing.
+       <button id="l2-load" class="fwbtn" type="button">Read the MAC table</button></p>
+    <div id="l2"></div>
+
     <h2>Transceiver</h2>
     <div class="env" id="env"></div>
 
@@ -70,6 +76,21 @@
     <p class="me-bar"><a class="fwbtn" href="/api/backup" download>Download a
        full config backup</a></p>
 
+    <h3 class="sub">Restore</h3>
+    <p class="hint">Pick a backup file. Nothing is written until you have seen
+       what differs. Values go through the same checks as the fields above, so
+       the SerDes keys stay refused and the identity keys need the tick box
+       &mdash; a backup restored onto a <em>different</em> stick would otherwise
+       overwrite the serial number and MAC key that line authenticates on.</p>
+    <div class="me-bar">
+      <label>Backup file <input id="restore-file" type="file" accept=".xml,text/xml,text/plain"></label>
+      <label class="inline"><input id="restore-identity" type="checkbox">
+        also restore identity keys</label>
+      <button id="restore-go" class="fwbtn" type="button">Write the differences</button>
+    </div>
+    <div id="restore-out"></div>
+
+    <h3 class="sub">Reset</h3>
     <p class="hint">Resetting puts the <strong>service</strong> configuration
        back to the image defaults &mdash; VLAN, management IP, device mode, the
        OMCI settings. It runs the vendor's own <code>flash default cs</code>,

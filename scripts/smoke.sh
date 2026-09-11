@@ -106,6 +106,33 @@ err() { case "$1" in *"$2"*) echo yes ;; *) echo "no: $1" ;; esac; }
 # so the stub ECHOES what it was given before printing a dump: that is what
 # makes "the entity id reaches the command" a check that can fail, rather than
 # an assumption. Real omcicli is not runnable here -- it talks to omci_app.
+# A stand-in for /bin/diag. It reads commands on stdin the way the real one
+# does, because that batching is the whole reason status is one fork rather
+# than seven -- and until now nothing here exercised it at all: /api/status and
+# /api/l2 were both untested, and a missing /bin/diag reads as "diag failed",
+# which is indistinguishable from a stick with a broken one.
+#
+# The l2-table reply is the REAL capture in scripts/fixtures/, not something
+# shaped to match the parser.
+cat > /bin/diag <<'DIAG'
+#!/bin/sh
+while read -r l; do
+	printf "RTK.0> %s\n" "$l"
+	case "$l" in
+	*"transceiver rx-power"*)    printf "  Rx Power          : -18.42 dBm\n" ;;
+	*"transceiver tx-power"*)    printf "  Tx Power          : 2.15 dBm\n" ;;
+	*"transceiver temperature"*) printf "  Temperature       : 45.50 C\n" ;;
+	*"transceiver voltage"*)     printf "  Voltage           : 3.28 V\n" ;;
+	*onu-state*)                 printf "  Operation State(O5)\n" ;;
+	*alarm-status*)              printf "  LOS Alarm         : clear\n" ;;
+	*"counter port all"*)        printf "Port: 0\n  ifInOctets : 1\nPort: 2\n  ifInOctets : 2\n" ;;
+	*l2-table*)                  cat /src/scripts/fixtures/l2-table.txt ;;
+	*)                           printf "  ok\n" ;;
+	esac
+done
+DIAG
+chmod +x /bin/diag
+
 cat > /bin/omcicli <<'OMCICLI'
 #!/bin/sh
 echo "ARGV: $*"
@@ -310,6 +337,23 @@ check "the OMCI feature bits are served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"confd":')"
+
+echo "== the switch MAC table"
+# Its own route, not another line in the status scrape: the status buffer is
+# 16 KB and the counter dump alone is 5.9 KB, so a few hundred learned
+# addresses would push the optics out of the response.
+check "the MAC table is read from diag" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/l2")" '78:54:2E:07:64:63')"
+check "and it is not truncated at this size" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/l2")" '"truncated":false')"
+# Never covered before, because there was no diag stub: the status scrape puts
+# every question in on one stdin and splits the answers on the prompt.
+check "the status scrape batches its commands" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status")" 'Operation State(O5)')"
+check "and every command in the batch answers" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status")" 'Rx Power')"
+check "it needs the credential" 401 \
+	"$(code "http://127.0.0.1:$PORT/api/l2")"
 
 echo "== resetting the service config"
 # flash default cs, not flash_eraseall: the hs store holds GPON_SN, MAC_KEY and

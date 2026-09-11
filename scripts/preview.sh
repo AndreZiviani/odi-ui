@@ -64,6 +64,7 @@ while read -r l; do
    *onu-state*)  printf "  Operation State(O5)\n" ;;
    *alarm-status*) printf "  LOS Alarm         : clear\n  LOF Alarm         : clear\n  LCDA Alarm        : clear\n  SF Alarm          : clear\n  SD Alarm          : clear\n  TF Alarm          : clear\n  DACT Alarm        : clear\n" ;;
    *"counter port all"*) printf "Port: 0\n  ifInOctets : 148392011\n  ifOutOctets : 91002233\n  dot1dTpPortInDiscards : 0\nPort: 2\n  ifInOctets : 91004410\n  ifOutOctets : 148390115\n  dot1dTpPortInDiscards : 0\n" ;;
+   *l2-table*) cat /src/scripts/fixtures/l2-table.txt ;;
    *) printf "  ok\n" ;;
   esac
 done

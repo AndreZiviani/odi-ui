@@ -260,6 +260,25 @@ a key reaches `omci_app`, and measurement for the rest. It is a **separate file
 from `schema/keys.tsv` on purpose**: that one is regenerated from a stick and
 would overwrite anything written by hand.
 
+## Learned addresses
+
+    GET /api/l2   -> diag l2-table get entry address valid
+
+The Forwarding counters say whether frames cross. This says *who* is crossing,
+and on which side each address was learned — port 2 faces the fibre, port 0 the
+SFP host — so an address that only ever appears on the host side never reached
+the line.
+
+Its own route rather than another line in the status scrape, and the reason is
+size: `status` is 16 KB and the counter dump alone is 5.9 KB, so a few hundred
+learned addresses would push the optics and the ONU state out of the response —
+breaking the page that is always on screen to improve one that is not.
+
+Parsed by zipping each MAC-shaped line against the header above it rather than
+by column position. `diag` has four different header layouts for this table
+depending on which lookup variant is asked for, and a positional parse would
+mis-label the columns for any of them without saying so.
+
 ## Status
 
 | phase | scope | |
@@ -354,6 +373,26 @@ It is served as a download rather than shown, because a page you have to
 remember to copy out of is not a backup, and it carries the identity keys in
 clear — which is the point of it, and why it needs the same credential as
 everything else.
+
+### Restoring a backup
+
+**No daemon route, deliberately.** The browser reads the file, parses it, and
+replays it through `/api/config` — the same path the Config tab writes through,
+which validates every value against the schema, refuses the SerDes keys, demands
+`_confirm=identity` for the nine the line authenticates on, and reads every
+write back.
+
+A dedicated restore endpoint taking a whole XML file would be a way around all
+of it, and the one key it would let through unchecked is `LAN_SDS_MODE` — the
+key that takes ssh, telnet and this page with it at once.
+
+It also makes a restore reviewable: the file is diffed against what the device
+holds and nothing is written until the differences are on screen. Keys that
+already match are not rewritten, because a restore reporting 184 writes tells
+you nothing about what actually changed. Identity keys are listed separately and
+left alone unless you tick the box — a backup restored onto a *different* stick
+would otherwise overwrite the serial number and MAC key that line authenticates
+on.
 
 ### Writing
 

@@ -139,7 +139,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser'];
+              'omci', 'services', 'mebrowser', 'restore', 'l2'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -169,6 +169,78 @@ ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
 
 renderStatus(API['/api/status'].raw);
 ok(true, 'renderStatus runs against a diag capture');
+
+/* --- the switch MAC table ------------------------------------------------- */
+const { parseL2 } = await import(join(root, 'web', 'l2.js'));
+const L2 = readFileSync(join(root, 'scripts/fixtures/l2-table.txt'), 'utf8');
+const l2rows = parseL2(L2);
+
+ok(l2rows.length === 2, 'every learned address is found across the LUT stanzas');
+ok(l2rows[0].MACAddress === '78:54:2E:07:64:63', 'the address is read');
+ok(l2rows[0].Spa === '2', 'the source port is zipped against its own header');
+ok(l2rows[0].Vid === '1' && l2rows[0].State === 'Auto',
+   'later columns line up too');
+/* The capture ends on a header with no row under it. A parser that assumed
+   a row always follows would invent an entry or throw. */
+ok(l2rows.every((r) => r.MACAddress), 'a header with no row under it yields no entry');
+
+/* SYNTHETIC, and deliberately not in scripts/fixtures/: no capture in hand
+   shows an address learned on the host side, and inventing one to put beside
+   the real ones is how a fixture stops being evidence. This exercises only the
+   port-number-to-side mapping. */
+const SYNTH = 'MACAddress        Spa Fid Age Vid  State  Ext  Hash\n'
+            + '02:00:00:00:00:01 0   0   1   1    Auto   0    SVL\n';
+ok(parseL2(SYNTH)[0].Spa === '0', 'a port-0 row parses the same way');
+/* The second stanza of each entry has its own header (CtagIf Auth DaBlock...)
+   and a row of words -- none of which is a MAC, so none of it may become an
+   entry of its own. */
+ok(!l2rows.some((r) => r.MACAddress === 'Dis'), 'the per-entry flag rows are not mistaken for addresses');
+ok(parseL2('').length === 0, 'no output yields no rows');
+
+/* --- restoring a backup --------------------------------------------------- */
+const { parseBackup, classify } = await import(join(root, 'web', 'restore.js'));
+
+/* The shape `flash all` prints: hs first, then cs, both wrapped in <Dir>, with
+   table rows distinguished only by an XML comment. */
+const BACKUP = `
+<Dir Name="HW_SETTING">
+  <Value Name="GPON_SN" Value="ODI012345678"/>
+  <Value Name="LAN_SDS_MODE" Value="4"/>
+</Dir>
+<Dir Name="MIB_TABLE">
+  <Value Name="LAN_IP_ADDR" Value="192.168.0.3"/>
+  <Value Name="VLAN_MANU_TAG_VID" Value="110"/>
+  <Value Name="OMCI_CUSTOM_RDP" Value="4"/>
+</Dir>
+<Dir Name="SW_PORT_TBL"> <!--index=1-->
+  <Value Name="PVID" Value="1"/>
+</Dir>`;
+
+const parsed = parseBackup(BACKUP);
+ok(parsed.get('GPON_SN') === 'ODI012345678', 'a backup parses to name/value pairs');
+ok(parsed.get('LAN_IP_ADDR') === '192.168.0.3', 'values from both stores are picked up');
+ok(parsed.size === 6, 'every Value element is read, comments and Dir nesting included');
+ok(parseBackup('not a backup at all').size === 0, 'a file that is not a backup yields nothing');
+
+/* VALUES has every key at '1', so everything in the backup differs. The point
+   under test is WHERE each key lands. */
+const plan = classify(parsed);
+ok(plan.refused.includes('LAN_SDS_MODE'),
+   'a SerDes key in a backup is refused, not restored');
+ok(!plan.change.some(([n]) => n === 'LAN_SDS_MODE'),
+   'and it never reaches the write list');
+ok(plan.identity.some(([n]) => n === 'GPON_SN'),
+   'identity keys are separated from ordinary ones');
+ok(plan.change.some(([n]) => n === 'LAN_IP_ADDR'),
+   'an ordinary key is queued for writing');
+ok(!plan.change.some(([n]) => n === 'GPON_SN'),
+   'and identity keys are not in that list unless asked for');
+
+/* A key already holding the backup's value must not be rewritten: a restore
+   that reports 184 writes tells you nothing about what actually changed. */
+const same = classify(parseBackup('<Value Name="LAN_IP_ADDR" Value="1"/>'));
+ok(same.same.includes('LAN_IP_ADDR') && same.change.length === 0,
+   'a value that already matches is not rewritten');
 
 /* --- the OMCI_CUSTOM_* bitmask decode ------------------------------------ */
 const { decodeMask } = await import(join(root, 'web', 'state.js'));
