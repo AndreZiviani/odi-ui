@@ -22,6 +22,7 @@
 #define __NR_read  4003
 #define __NR_write 4004
 #define __NR_open  4005
+#define __NR_chmod 4015
 #define __NR_close 4006
 
 #define __NR_fork       4002
@@ -217,6 +218,29 @@ __attribute__((unused)) static long read_file(const char *path, char *buf, unsig
 	syscall3(__NR_close, fd, 0, 0);
 	buf[got] = 0;
 	return (long)got;
+}
+
+/*
+ * Write a whole small file, then set its mode explicitly.
+ *
+ * The chmod is not redundant. open()'s mode argument applies only when the file
+ * is CREATED, so rewriting a credential file that already exists world-readable
+ * would leave it world-readable -- and the one caller here is exactly that
+ * case. Returns 0 on success, negative on error.
+ */
+__attribute__((unused)) static long write_file(const char *path, const char *buf,
+					       unsigned long len, long mode)
+{
+	long fd = syscall3(__NR_open, (long)path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+	long n;
+
+	if (fd < 0)
+		return fd;
+	n = write_all((int)fd, buf, len);
+	syscall3(__NR_close, fd, 0, 0);
+	if (n < 0 || (unsigned long)n != len)
+		return -1;
+	return syscall3(__NR_chmod, (long)path, mode, 0);
 }
 
 /* Decimal formatting by hand: printf would drag in a libc we do not link, and

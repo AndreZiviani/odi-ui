@@ -22,10 +22,10 @@
   </nav>
   <form method="post" action="/api/logout"><button id="logout" type="submit">Sign out</button></form>
   <span id="err" hidden></span>
-  <p id="defaultauth" hidden>This stick has no credential file, so the config UI
-     is answering to the built-in <code>admin</code> / <code>admin</code>.
-     Anyone who can reach it can change the line settings. Set your own:
-     <code id="authcmd"></code></p>
+  <p id="defaultauth" hidden>This config UI is on the built-in
+     <code>admin</code> / <code>admin</code>. Anyone who can reach it can change
+     the line settings.
+     <button id="gopassword" type="button">Set a password</button></p>
 </header>
 
 <main>
@@ -73,6 +73,21 @@
        backup first; it is the whole config store, identity included.</p>
     <p class="me-bar"><a class="fwbtn" href="/api/backup" download>Download a
        full config backup</a></p>
+
+    <h2>Config UI password</h2>
+    <p class="hint">The credential for this page only &mdash; not the SSH or
+       telnet login, and not anything the OLT sees. It is stored in
+       <code>/etc/config/confd.auth</code>, which is created here if it does not
+       exist yet, and it survives reflashing. A factory reset erases it, and the
+       page goes back to <code>admin</code> / <code>admin</code> until you set
+       one again.</p>
+    <div class="me-bar">
+      <label>Username <input id="pw-user" autocomplete="username" value="admin"></label>
+      <label>New password <input id="pw-pass" type="password"
+             autocomplete="new-password" placeholder="at least 4 characters"></label>
+      <button id="pw-save" type="button">Save password</button>
+    </div>
+    <div id="pw-out"></div>
   </section>
 
   <section id="advanced" hidden>
