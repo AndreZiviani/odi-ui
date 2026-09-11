@@ -86,6 +86,7 @@ const API = {
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
   '/api/firmware': {
     running: 'ODI-260910-6861b53', confd: 'test', mem: '26 MB', build: {},
+    defaultauth: false,
     env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2',
            sw_version0: 'ODI-260910-6861b53', sw_version1: 'V1.0-220923' },
   },

@@ -76,6 +76,22 @@
 #define DEFAULT_CS "/etc/config_default.xml"
 #define DEFAULT_HS "/etc/config_default_hs.xml"
 #define AUTH_PATH    "/etc/config/confd.auth"
+/*
+ * What confd uses when /etc/config/confd.auth is missing or empty.
+ *
+ * The UI used to refuse every request in that state. That is the safer posture
+ * in the abstract and the wrong one here: the config partition is exactly what
+ * a factory reset erases, and an image flashed onto a stick that has never had
+ * the file is not "secured", it is a config UI nobody can open -- on a device
+ * whose only other management paths are telnet and a 2007 dropbear.
+ *
+ * So it falls back, to the same credential every other service on this stick
+ * already uses: SUSER_NAME/SUSER_PASSWORD ship as admin/admin and that is the
+ * ssh and telnet login too. The fallback is never silently better than what it
+ * replaces, and it is never invisible -- /api/firmware reports which one is in
+ * use and the page says so on every tab until a real credential is written.
+ */
+#define DEFAULT_AUTH "admin:admin"
 
 /* Written by the image build: image=, base=, confd=, exporter=, built=.
  * One file naming every component, so "what is on this stick" is a single read

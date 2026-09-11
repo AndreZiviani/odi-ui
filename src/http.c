@@ -226,12 +226,54 @@ int same_origin(const char *r)
 }
 
 /*
- * HTTP Basic, against user:password in /etc/config/confd.auth.
+ * Load the expected credential into credbuf.
  *
- * If the file is missing or empty the daemon refuses every request rather than
- * running open. An unauthenticated config UI on the LAN is a worse outcome than
- * no config UI, and "it stopped working" is a far better failure than "it let
- * anyone in".
+ * /etc/config/confd.auth when it has content, DEFAULT_AUTH otherwise. Returns
+ * its length; sets *is_default when the fallback was used.
+ *
+ * A file that exists but is empty counts as absent. That is not pedantry: the
+ * obvious way to clear a password is to truncate the file, and treating the
+ * result as "no credential accepted" would lock the operator out of the device
+ * they were trying to change the password on.
+ */
+static long load_credential(int *is_default)
+{
+	long want = read_file(AUTH_PATH, credbuf, sizeof(credbuf));
+	unsigned long k;
+
+	if (want > 0) {
+		/* trim trailing newline/CR so an editor-written file works */
+		while (want > 0 && (credbuf[want - 1] == '\n' || credbuf[want - 1] == '\r'))
+			credbuf[--want] = 0;
+	}
+	if (want > 0) {
+		if (is_default)
+			*is_default = 0;
+		return want;
+	}
+
+	for (k = 0; DEFAULT_AUTH[k] && k + 1 < sizeof(credbuf); k++)
+		credbuf[k] = DEFAULT_AUTH[k];
+	credbuf[k] = 0;
+	if (is_default)
+		*is_default = 1;
+	return (long)k;
+}
+
+int auth_is_default(void)
+{
+	int def = 0;
+
+	load_credential(&def);
+	return def;
+}
+
+/*
+ * HTTP Basic, against user:password in /etc/config/confd.auth -- or against
+ * DEFAULT_AUTH when that file has never been written. See confd.h for why the
+ * fallback exists rather than a refusal, and note that it is a fallback to a
+ * WEAKER credential, not to none: every request is still checked, the
+ * comparison is still constant-time, and a failure still costs a second.
  */
 int authorised(const char *r)
 {
@@ -239,13 +281,8 @@ int authorised(const char *r)
 	unsigned long i = 0;
 	int diff = 0;
 
-	want = read_file(AUTH_PATH, credbuf, sizeof(credbuf));
+	want = load_credential(0);
 	if (want <= 0)
-		return 0;
-	/* trim trailing newline/CR so an editor-written file works */
-	while (want > 0 && (credbuf[want - 1] == '\n' || credbuf[want - 1] == '\r'))
-		credbuf[--want] = 0;
-	if (want == 0)
 		return 0;
 
 	if (!header_copy(r, "authorization", hdrbuf, sizeof(hdrbuf)))

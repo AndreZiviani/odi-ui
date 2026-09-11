@@ -20,7 +20,9 @@ cd "$(dirname "$0")/.."
 
 BIN=build/confd
 PORT=18080
-AUTH='admin:admin'
+# Deliberately NOT the built-in default: with both the same, every check below
+# passes whether the fallback works, is broken, or is ignored.
+AUTH='admin:s3cret'
 
 if [ "${IN_CONTAINER:-0}" != 1 ]; then
 	docker run --rm -v "$PWD":/src -w /src odi-ui-toolchain \
@@ -107,6 +109,39 @@ echo "== auth"
 check "no credential is refused"    401 "$(code "http://127.0.0.1:$PORT/api/schema")"
 check "wrong credential is refused" 401 "$(code -u admin:wrong "http://127.0.0.1:$PORT/api/schema")"
 check "right credential is served"  200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "the credential file is in force" false \
+	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
+
+# The fallback. A stick flashed with an image that has never had a credential
+# file written -- which is every stick after a factory reset, since
+# /etc/config IS the partition that gets erased -- must still be reachable.
+# It falls back to a WEAKER credential, never to none, so the refusals above
+# must all still hold with no file present.
+mv /etc/config/confd.auth /etc/config/confd.auth.kept
+check "with no file, the default credential works" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "with no file, no credential is still refused" 401 \
+	"$(code "http://127.0.0.1:$PORT/api/schema")"
+check "with no file, a wrong credential is still refused" 401 \
+	"$(code -u admin:wrong "http://127.0.0.1:$PORT/api/schema")"
+check "with no file, the file's credential no longer works" 401 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "the page is told the default is in force" true \
+	"$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
+
+# An empty file is how anyone clears a password, and treating it as "accept
+# nothing" would lock the operator out of the device they were changing it on.
+: > /etc/config/confd.auth
+check "an empty file falls back rather than locking out" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+
+# And a real credential must still WIN over the default once it exists,
+# otherwise the fallback would be a permanent second key.
+mv /etc/config/confd.auth.kept /etc/config/confd.auth
+check "a real credential overrides the default" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "and the default stops working once it does" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 
 echo "== request framing"
 # The bug: headers and body in separate segments made the body arrive empty,

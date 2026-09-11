@@ -120,7 +120,7 @@ fi
 
 if ! "${SSH[@]}" "[ -s /etc/config/confd.auth ]" 2>/dev/null; then
 	echo
-	echo "NOTE: /etc/config/confd.auth is missing, so confd refuses every request."
-	echo "That is deliberate -- it never runs unauthenticated. Create it with:"
+	echo "NOTE: /etc/config/confd.auth is missing, so confd is answering to its"
+	echo "      built-in admin/admin. The page says so until you set your own:"
 	echo "  ssh $HOST 'printf \"user:password\" > /etc/config/confd.auth'"
 fi

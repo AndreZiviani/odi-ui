@@ -33,6 +33,22 @@ $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
+/*
+ * Say so, loudly and everywhere, while the built-in credential is in force.
+ * The fallback exists so a freshly flashed stick is reachable at all; leaving
+ * it in place is a different decision, and one the operator has to be able to
+ * see they are making.
+ */
+async function checkAuth() {
+  try {
+    const fw = await get('/api/firmware');
+    if (!fw.defaultauth) return;
+    $('#authcmd').textContent =
+      `ssh admin@${location.hostname} 'printf "user:password" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'`;
+    $('#defaultauth').hidden = false;
+  } catch (e) { /* the banner is advisory; a failed read must not blank the page */ }
+}
+
 async function refresh() {
   try {
     const st = await get('/api/status');
@@ -55,6 +71,7 @@ async function refresh() {
     for (const f of featRows) (S.FEATURES[f.mask] ||= []).push(f);
     renderAll();
   } catch (e) { fail(e); }
+  await checkAuth();
   await refresh();
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is
      deliberately unhurried. */

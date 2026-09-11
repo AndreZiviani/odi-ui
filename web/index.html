@@ -22,6 +22,10 @@
   </nav>
   <form method="post" action="/api/logout"><button id="logout" type="submit">Sign out</button></form>
   <span id="err" hidden></span>
+  <p id="defaultauth" hidden>This stick has no credential file, so the config UI
+     is answering to the built-in <code>admin</code> / <code>admin</code>.
+     Anyone who can reach it can change the line settings. Set your own:
+     <code id="authcmd"></code></p>
 </header>
 
 <main>

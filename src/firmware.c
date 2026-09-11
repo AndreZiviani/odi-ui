@@ -115,6 +115,12 @@ next:
 	put_json_cstr(fd, BUILD_ID);
 	put_fd(fd, "\"");
 
+	/* Which credential is in force. A built-in default nobody can see is the
+	 * same thing as no password, so this is not decoration: it is what makes
+	 * the fallback in confd.h defensible. */
+	put_fd(fd, ",\"defaultauth\":");
+	put_fd(fd, auth_is_default() ? "true" : "false");
+
 	/* The build manifest, as an object. Emitted from the file rather than
 	 * parsed into known fields: the build writes key=value lines, and a new
 	 * component should appear here without a C change. */

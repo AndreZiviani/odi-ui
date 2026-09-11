@@ -21,7 +21,9 @@ docker run -d --name odi-ui-preview -p 18080:18080 \
   -v "$PWD":/src -w /src odi-ui-toolchain bash -c '
     mkdir -p /etc/confd /etc/config /etc/scripts
     cp schema/*.tsv web/*.html web/*.css web/*.js /etc/confd/
-    printf admin:admin > /etc/config/confd.auth
+    # No credential file on purpose: this is the state a freshly flashed or
+    # factory-reset stick is in, and the fallback plus its banner is exactly
+    # what wants looking at. Write one here to preview the other state.
     cat > /etc/scripts/flash <<"FLASH"
 #!/bin/sh
 case "$1" in
