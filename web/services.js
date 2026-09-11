@@ -16,7 +16,7 @@
  * people actually ask, and the operation byte is shown unread.
  */
 
-import { $, el } from './dom.js';
+import { $, el, get } from './dom.js';
 import { fetchMe, attr } from './omci.js';
 
 /*
@@ -84,6 +84,13 @@ function note(text, cls) {
 
 /* --- the six renderers --------------------------------------------------- */
 
+/*
+ * What the stick believes its versions are, from the U-Boot environment. Read
+ * alongside the MIB so the software-image card can compare the two: ME 7 is
+ * what the OLT was TOLD, and these are what the partitions actually hold.
+ */
+let ENV = {};
+
 function renderSwImage(box, dump) {
   const dl = el('dl', 'me-kv');
   for (const inst of dump.instances) {
@@ -100,6 +107,32 @@ function renderSwImage(box, dump) {
   box.append(note('This is the version string your ISP sees, and the only one '
     + 'they see. It comes from the image, not from this page — so if it has to '
     + 'keep matching the ONU you replaced, check it here after every flash.'));
+
+  /*
+   * The comparison that makes this card worth having. ME 7 is what the OLT was
+   * told; sw_version<n> is what the partition holds. On this base they are
+   * connected by chk_swver_fix.sh, which runs at boot and only when
+   * OMCI_OLT_MODE is neither 0 nor 21 -- so a difference is usually not a fault
+   * but that script deliberately standing down, and saying which is the whole
+   * point. "My OMCI software version resets at every boot" is the most-asked
+   * question about this device (Anime4000/RTL960x#30) and it is the same
+   * mechanism read from the other end.
+   */
+  const active = ENV.sw_active;
+  const held = ENV['sw_custom_version' + active] || ENV['sw_version' + active];
+  const told = dump.instances.map((i) => attr(i, 'Version')).filter(Boolean);
+
+  if (!held || !told.length) return;
+  if (told.some((v) => v === held)) {
+    box.append(note('Matches what partition ' + active + ' holds.'));
+    return;
+  }
+  box.append(note('Partition ' + active + ' holds “' + held + '”, which is not '
+    + 'what the OLT was told. That is normal when OMCI_OLT_MODE is 0 or 21: '
+    + 'chk_swver_fix.sh stands down and OMCI_SW_VER keeps whatever is stored. '
+    + 'Set sw_custom_version' + active + ' in the U-Boot environment to choose '
+    + 'the reported string outright — it survives reflashing, and it is the '
+    + 'answer to a version that resets at every boot.'));
 }
 
 function renderOlt(box, dump) {
@@ -218,6 +251,10 @@ async function renderServices(force) {
   loaded = true;
   host.textContent = '';
   host.append(el('p', 'hint', 'Reading the MIB…'));
+
+  /* Never let the firmware read take the page down: it is context for one
+     card, and the other five are worth rendering without it. */
+  try { ENV = (await get('/api/firmware')).env || {}; } catch (e) { ENV = {}; }
 
   const dumps = [];
   for (const c of CARDS) dumps.push(await fetchMe(c.me));

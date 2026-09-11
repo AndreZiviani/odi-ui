@@ -405,6 +405,35 @@ ssh admin@<stick> 'printf "admin:admin" > /etc/config/confd.auth; chmod 600 /etc
 unauthenticated: an open config UI on the LAN is a worse outcome than no UI, and
 "it stopped working" is a much better failure than "it let anyone in".
 
+### Every request is checked, which the stock UI cannot say
+
+The credential is verified on **every** request, in constant time, before the
+request is parsed at all. That is worth stating plainly because the vendor's
+`boa` does not do it. From Anime4000/RTL960x#84, a factory reset driven by two
+`curl` calls:
+
+```
+curl -X POST .../boaform/admin/formLogin --data-raw '...username=admin&password=admin...'
+curl -X POST .../boaform/formSaveConfig  --data-raw 'reset=Reset&submit-url=%2Fsaveconf.asp'
+```
+
+> How you can see - no tokens/etc are required to make a second request (WTF?
+> Security???) It's likely web server just whitelists your IP and accepts all
+> further admin request without authentication.
+
+Whatever `boa` is actually keying on, the erase went through without the second
+request carrying anything. The same shape here answers `401`.
+
+Two related properties fall out of the same design. The login is **not a
+session**, so nothing is left authenticated behind you and a second tool
+polling the device does not evict your shell &mdash; unlike the stock UI, which
+allows one login at a time, and unlike ssh on this stick, which allows one
+connection and made the upstream Prometheus collectors fight the operator for
+it. And a failed attempt **sleeps one second before answering**: the server is
+single-threaded and serial, so that is a hard global rate limit rather than a
+per-connection one. Measured without it, this device answers 319 guesses a
+second.
+
 ### There is no session
 
 HTTP Basic is stateless, so this is worth being explicit about:

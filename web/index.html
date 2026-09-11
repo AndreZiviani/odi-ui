@@ -34,6 +34,7 @@
     <h2>Registration</h2>
     <ol class="ladder" id="ladder"></ol>
     <p class="state-note" id="statenote"></p>
+    <p class="state-note" id="losnote" hidden></p>
 
     <h2>Forwarding</h2>
     <div class="flow" id="flow"></div>
@@ -123,6 +124,23 @@
        checks the md5 of both the kernel and the root filesystem before it
        erases anything, and streams each straight to flash, so it needs no
        scratch space beyond the tarball itself.</p>
+
+    <h2>What the OLT is told</h2>
+    <p class="hint">The version beside each partition is what the updater wrote
+       from that image. It is <em>not</em> automatically what your ISP sees: on
+       this base, <code>chk_swver_fix.sh</code> copies it into
+       <code>OMCI_SW_VER1/2</code> at every boot, but only when
+       <code>OMCI_OLT_MODE</code> is neither 0 nor 21. Setting
+       <code>sw_custom_version0</code> or <code>sw_custom_version1</code> in the
+       U&#8209;Boot environment makes the script prefer that string instead, and
+       it survives reflashing &mdash; which is the supported answer to
+       &ldquo;my OMCI software version resets at every boot&rdquo;. The widely
+       repeated answer, <code>OMCI_OLT_MODE=21</code>, is one that script&rsquo;s
+       own comment calls a hack that segfaults <code>checkomci</code>.</p>
+    <p class="hint">Nothing here writes it. Changing the version an ISP
+       authenticates against is a decision to make deliberately, from a shell,
+       on a line you can afford to lose:
+       <code>nv setenv sw_custom_version0 &lt;string&gt;</code>.</p>
 
     <h2>How a trial boot works</h2>
     <p class="hint">Trying a partition boots it <strong>once</strong>, with the
