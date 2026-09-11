@@ -1,0 +1,19 @@
+RTK.0> l2-table get entry address valid
+
+LUT address: 0x0008 (1K LUT)
+L2 Unicast table:
+MACAddress        Spa Fid Age Vid  State  Ext  Hash
+78:54:2E:07:64:63 2   0   6   1    Auto   0    SVL
+CtagIf Auth DaBlock SaBlock Arp
+Dis    Dis  Dis     Dis     Dis
+
+LUT address: 0x004c (1K LUT)
+L2 Unicast table:
+MACAddress        Spa Fid Age Vid  State  Ext  Hash
+F4:8C:EB:EB:67:0C 2   0   2   1    Auto   0    SVL
+CtagIf Auth DaBlock SaBlock Arp
+Dis    Dis  Dis     Dis     Dis
+
+LUT address: 0x0050 (1K LUT)
+L2 Unicast table:
+MACAddress        Spa Fid

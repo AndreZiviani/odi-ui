@@ -621,6 +621,12 @@ void serve(int conn)
 		return;
 	}
 
+	if (seq(path, "/api/l2")) {
+		respond(conn, "200 OK", "application/json", 0);
+		emit_l2_json(conn);
+		return;
+	}
+
 	/*
 	 * The OMCI MIB: what the OLT provisioned, as opposed to what we asked
 	 * for. Read-only, and allowlisted verb by verb inside -- see omci.c.

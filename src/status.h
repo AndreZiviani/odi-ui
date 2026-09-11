@@ -10,5 +10,6 @@
 #define CONFD_STATUS_H
 
 void emit_status_json(int fd);
+void emit_l2_json(int fd);
 
 #endif /* CONFD_STATUS_H */

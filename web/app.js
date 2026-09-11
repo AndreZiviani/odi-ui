@@ -14,6 +14,8 @@ import { save, refreshSaveBar } from './save.js';
 import { renderFirmware } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
+import { wireRestore } from './restore.js';
+import { renderL2 } from './l2.js';
 
 const TABS = ['status', 'config', 'advanced', 'services', 'omci', 'firmware'];
 for (const b of document.querySelectorAll('nav button')) {
@@ -33,6 +35,10 @@ $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
 $('#pw-save').onclick = savePassword;
 $('#reset-go').onclick = resetConfig;
+wireRestore();
+/* On demand, not on the poll: it is another diag fork and most visits to the
+   status page do not need it. */
+$('#l2-load').onclick = renderL2;
 $('#gopassword').onclick = () => { showTab('config'); $('#pw-pass').focus(); };
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
