@@ -120,6 +120,7 @@ const OMCI = {
   47: fx('47-MacBriPortCfgData-claro.txt'),
 };
 const OMCI_VERO_47 = fx('47-MacBriPortCfgData-vero.txt');
+const OMCI_CLARO_171 = fx('171-claro.txt');
 
 /*
  * ME 7 has no capture yet. The FRAME below is verified -- it is the one the two
@@ -344,6 +345,18 @@ const veroText = JSON.stringify(doc.querySelector('#services-cards'),
 ok(/carries the VEIP, not the physical port/.test(veroText),
    'Vero: the bridge carries the VEIP alone');
 OMCI[47] = fx('47-MacBriPortCfgData-claro.txt');
+
+/* Claro's real ME 171: most rows add no tag at all (treatment PRI 15, a 3-bit
+   field, so out of range and unspecified). Rendering those as "VLAN 0" is a
+   VLAN id nobody set, printed as though the OLT had set it -- which is what
+   the live page did until a stick showed it. */
+OMCI[171] = OMCI_CLARO_171;
+await renderServices(true);
+const c171 = JSON.stringify(doc.querySelector('#services-cards'),
+                            (k, v) => (k === 'classList' ? undefined : v));
+ok(/no tag added/.test(c171), 'an unset treatment reads as "no tag added"');
+ok(!/VLAN 0/.test(c171), 'and never as VLAN 0');
+OMCI[171] = fx('171-ExtVlanTagOperCfgData.txt');
 
 /* --- a MIB service that has stopped answering --------------------------- */
 const { unavailable } = await import(join(root, 'web', 'omci.js'));

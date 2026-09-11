@@ -207,17 +207,27 @@ function renderExtVlan(box, dump) {
     const fi = r['filter inner'] || {};
     const ti = r['treatment inner'] || {};
     const from = vidText(fi.VID);
-    const to = vidText(ti.VID);
+    /*
+       A treatment whose priority is 15 adds no tag at all. PRI is a 3-bit
+       field, so 15 is out of range and is the same "unspecified" sentinel
+       already read that way in a filter -- and on a live stick most rows carry
+       exactly that, which this rendered as "any VLAN -> VLAN 0". A VLAN id
+       nobody set, printed as if the OLT had set it, is the sort of confident
+       wrong answer this page exists to avoid.
+    */
+    const adds = priText(ti.PRI) !== 'any' || (ti.VID !== undefined && ti.VID !== '0');
+    const to = adds ? vidText(ti.VID) : null;
     const line = el('div', 'me-rule');
 
     line.append(el('span', 'me-from', from === 'any' ? 'any VLAN' : 'VLAN ' + from));
     line.append(el('span', 'me-arrow', '→'));
-    line.append(el('span', 'me-to', to === 'any' ? 'unchanged' : 'VLAN ' + to));
+    line.append(el('span', 'me-to', to === null ? 'no tag added'
+                                  : to === 'any' ? 'unchanged' : 'VLAN ' + to));
     if (fi.PRI && priText(fi.PRI) !== 'any')
       line.append(el('span', 'me-pri', 'priority ' + fi.PRI));
     list.append(line);
 
-    if (from !== 'any' && to !== 'any' && from !== to && translated === null)
+    if (from !== 'any' && to && to !== 'any' && from !== to && translated === null)
       translated = { from, to };
   }
   box.append(list);
