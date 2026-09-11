@@ -29,15 +29,20 @@ hundred lines instead of 88 handlers.
 
 ## Tabs
 
-- **Status** &mdash; optics, ONU state, alarms, switch-port counters.
-- **Config** &mdash; the 23 keys the line profiles in `odi-sandbox` actually
+- **Status** &mdash; optics, ONU state, alarms, switch-port counters, and the
+  MAC addresses the switch has learned.
+- **Config** &mdash; backup, restore, reset, the UI password, and the 23 keys
+  the line profiles in `odi-sandbox` actually
   carry. That set is an empirical answer to "what gets changed" rather than a
   guess, since it is exactly what provisioning a stick for an ISP line has
   needed.
-- **All settings** &mdash; all 184 keys, filterable.
+- **All settings** &mdash; all 184 keys, filterable, with the `OMCI_CUSTOM_*`
+  bitmasks decoded against this image.
 - **Services** &mdash; what the OLT actually provisioned, in sentences.
 - **MIB** &mdash; the same thing unedited, one managed entity at a time.
-- **Firmware** &mdash; the two partitions and the trial-boot slot.
+- **Tools** &mdash; the kernel ring buffer, and ping from the stick.
+- **Firmware** &mdash; both partitions, image upload and write, and the
+  one-shot trial boot.
 
 The Config/All settings split is a `common` column in the schema, so which keys
 are everyday ones is a data decision rather than something baked into the page.
@@ -847,13 +852,13 @@ src/main.c          listener and accept loop   (freestanding C, no libc)
 src/routes.c        dispatch, and the config write path
 src/http.c          request parsing, auth, the static-asset table
 src/mib.c           the schema, validation, flash reads and writes
-src/status.c        the diag scrape
+src/status.c        the diag scrape, the MAC table, the kernel log
 src/omci.c          the OMCI MIB read path
 src/firmware.c      partitions, the trial slot, the build manifest
 src/buffers.c       every static buffer, in one place
 src/util.h          base64, JSON escaping, small string helpers
 src/syscall.h       copied from sfp-exporter; fix it in both places
-web/                the UI: twelve ES modules, one page, one stylesheet
+web/                the UI: fifteen ES modules, one page, one stylesheet
 schema/keys.tsv     the keyspace, generated from a device
 schema/meta.tsv     curated help: labels, options, ranges, dependencies
 scripts/fixtures/   captured device output the checks run against
