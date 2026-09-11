@@ -313,6 +313,35 @@ can afford to lose whether `-s TBL.<new index>.<field>` creates, warns, or
 silently writes elsewhere; then decide. Nothing here should be built on a guess
 about that.
 
+### The backup, and the reset that is not here
+
+    GET /api/backup    -> both config stores as a file, identity included
+
+`flash_eraseall /dev/mtd3` is the standard factory reset for this device, and
+that partition is also where `GPON_SN`, `ELAN_MAC_ADDR` and `MAC_KEY` live.
+Erase it without those written down and the ONU never gets past O0: the reset
+meant to fix a stick is what ends it. Anime4000/RTL960x#84 has people doing
+exactly that, including one who ran it across mtd3, mtd4 and mtd5 and lost the
+device outright.
+
+So the backup is one click, served as a download rather than shown &mdash; a
+page you have to remember to copy out of is not a backup &mdash; and it carries
+the identity keys in clear, which is the point of it and why it needs the same
+credential as everything else.
+
+**There is no reset button, and that is a finding rather than an omission.**
+Working through it: confd's own credential lives in `/etc/config/confd.auth`,
+which is on the partition being erased, and confd refuses every request without
+it. A reset driven from this page would therefore destroy its own way back in.
+Restoring the credential and the identity keys afterwards is possible &mdash;
+read them first, erase, write them back, reboot &mdash; but it is an
+unrecoverable operation whose failure mode is a dead stick, and none of it has
+been tried on hardware. Shipping it on reasoning alone is not something this
+repo does.
+
+The defensible half is here. The bricking in those reports comes from erasing
+without a backup, not from lacking a button.
+
 ### Writing
 
     POST /api/config   key=value&key2=value2   -> per-key result, apply class,

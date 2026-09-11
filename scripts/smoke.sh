@@ -218,6 +218,14 @@ check "an indexed table row keeps its address" yes \
 # image default. Asking for values first is what makes this test able to fail.
 check "defaults does not republish the values buffer" '{}' \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/defaults")"
+# The backup is the precondition for the one irreversible thing anyone does to
+# this device, so it must contain the keys that cannot be regenerated.
+check "the backup carries the identity keys" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")" 'GPON_SN')"
+check "the backup is served as a download" yes \
+	"$(err "$(curl -si -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")" 'Content-Disposition: attachment')"
+check "the backup needs the credential" 401 \
+	"$(code "http://127.0.0.1:$PORT/api/backup")"
 check "the OMCI feature bits are served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \

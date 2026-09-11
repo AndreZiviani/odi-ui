@@ -487,6 +487,43 @@ void serve(int conn)
 		return;
 	}
 
+	/*
+	 * The whole config store, as a file.
+	 *
+	 * This exists because of what it prevents. `flash_eraseall /dev/mtd3`
+	 * is the standard factory-reset recipe for this device and it wipes the
+	 * config partition -- which is also where ELAN_MAC_ADDR and MAC_KEY
+	 * live. Without those the ONU never gets past O0, so the reset that was
+	 * meant to fix a stick ends it. Anime4000/RTL960x#84 has people doing
+	 * exactly that, including one who ran it across mtd3, mtd4 and mtd5 and
+	 * lost the device entirely.
+	 *
+	 * So: a backup you can take in one click, BEFORE, containing the values
+	 * you cannot regenerate. It is served as a download rather than shown,
+	 * because a page you have to remember to copy out of is not a backup.
+	 *
+	 * It carries the identity keys in clear. That is the point of it, and
+	 * it is why it needs the same credential as everything else.
+	 */
+	if (seq(path, "/api/backup")) {
+		if (load_values() < 0) {
+			respond(conn, "500 Internal Server Error", "text/plain", 0);
+			put_fd(conn, "flash failed\n");
+			return;
+		}
+		respond(conn, "200 OK", "text/plain; charset=utf-8",
+			"Content-Disposition: attachment; filename=\"odi-config-backup.xml\"\r\n");
+		put_fd(conn, "<!-- ODI DFP-34X-2C2 configuration backup.\n"
+			     "     Both stores, exactly as `flash all cs` and `flash all hs` print them.\n"
+			     "     Restore a key with:  flash set <NAME> <VALUE>\n"
+			     "     The ones you cannot regenerate are GPON_SN, ELAN_MAC_ADDR and\n"
+			     "     MAC_KEY: without them the ONU does not get past O0, and erasing\n"
+			     "     /dev/mtd3 is what takes them away.\n"
+			     "     confd build " BUILD_ID " -->\n");
+		write_all(conn, values, slen(values));
+		return;
+	}
+
 	if (seq(path, "/api/status")) {
 		respond(conn, "200 OK", "application/json", 0);
 		emit_status_json(conn);

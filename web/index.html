@@ -59,6 +59,16 @@
        uses. Changes are written one key at a time and read back; nothing is
        applied until you say so.</p>
     <div id="common"></div>
+
+    <h2>Before you change anything irreversible</h2>
+    <p class="hint">The standard factory reset for this device is
+       <code>flash_eraseall /dev/mtd3</code>, and that partition is also where
+       <code>GPON_SN</code>, <code>ELAN_MAC_ADDR</code> and <code>MAC_KEY</code>
+       live. Erase it without those written down and the ONU never gets past
+       O0 &mdash; the reset meant to fix a stick is what ends it. Take the
+       backup first; it is the whole config store, identity included.</p>
+    <p class="me-bar"><a class="fwbtn" href="/api/backup" download>Download a
+       full config backup</a></p>
   </section>
 
   <section id="advanced" hidden>
