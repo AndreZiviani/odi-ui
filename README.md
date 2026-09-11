@@ -448,11 +448,43 @@ the same reason: truncating the file is how anyone clears a password, and
 treating the result as "accept nothing" would lock you out of the device you
 were changing the password on.
 
-And it is never invisible. `/api/firmware` reports `defaultauth`, and the page
-carries a banner in the masthead — on every tab, not in a panel one tab over —
-naming the command to fix it, until a real credential exists. A well-known
-default nobody can see is the same thing as no password; what makes this
-defensible is that you cannot miss it.
+### Changing it, from the page
+
+    POST /api/password   user=...&password=...
+
+The Config tab has the field, and it **creates `/etc/config/confd.auth` if it
+is not there** — which is the whole point, because the state it fixes is the
+state of every factory-reset stick. Telling an operator to go and find an ssh
+client that still speaks to a 2007 dropbear is how the default stays in place
+forever.
+
+What authorises it is the credential already in force: `serve()` has checked it
+before the route runs and a cross-origin POST is already refused, so there is no
+second password prompt. That is the same standard as every other write here,
+including the ones that change what the OLT authenticates against.
+
+A credential that cannot be expressed in the file format is **refused, not
+rewritten** — no colon in the username, no newline in either half, 4 to 128
+characters. A mangled credential is one nobody can log in with, on a device
+where finding that out means a site visit. The file is written `0600`, with an
+explicit `chmod`: `open()`'s mode applies only when the file is created, so
+rewriting one that already exists world-readable would leave it that way.
+
+Afterwards the browser is still holding the **old** credential and will replay
+it into a `401`, so the page says to sign out and back in rather than letting a
+successful change look like a broken page.
+
+### Saying so is what makes it defensible
+
+`/api/firmware` reports `defaultauth`, and the masthead carries a banner on
+every tab — not in a panel one tab over — with a button that lands on the field,
+until the credential is no longer the default one.
+
+Note *default one*, not *no file*: a file containing `admin:admin` leaves you on
+the password everybody knows while making the warning disappear, which is the
+worst of both. The check compares the credential in force against the built-in
+one, so writing the default into the file changes nothing about what the page
+tells you.
 
 ### Every request is checked, which the stock UI cannot say
 

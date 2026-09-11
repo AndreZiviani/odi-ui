@@ -89,6 +89,14 @@ nav button.on { color: var(--text); border-bottom-color: var(--fibre); }
 #defaultauth code {
   font-family: var(--mono); font-size: .8rem; color: var(--fibre);
 }
+#defaultauth button {
+  margin-left: .5rem; padding: .2rem .7rem; font: inherit; font-size: .8rem;
+  cursor: pointer; background: var(--fibre); color: var(--ink);
+  border: 1px solid var(--fibre); border-radius: 3px; font-weight: 600;
+}
+#pw-out { display: grid; gap: .2rem; font-size: .85rem; max-width: 62ch; }
+#pw-out .good { color: var(--apc); }
+#pw-out .bad  { color: var(--alarm); }
 #logout {
   background: none; border: 1px solid var(--rule); border-radius: 3px;
   color: var(--muted); font: inherit; font-size: .8rem;

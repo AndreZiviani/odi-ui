@@ -27,6 +27,8 @@ int authorised(const char *r);
  * Reported to the page, because a well-known default that nobody can see is
  * the same thing as no password at all. */
 int auth_is_default(void);
+/* Write /etc/config/confd.auth. Returns 0 and sets *why on refusal. */
+int set_credential(const char *user, const char *pass, const char **why);
 unsigned long url_decode(const char *in, unsigned long i, char stop,
 			 char *out, unsigned long cap);
 int form_get(const char *body, const char *want, char *out, unsigned long cap);

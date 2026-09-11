@@ -6,7 +6,7 @@
  * any of this.
  */
 
-import { $, fail, get } from './dom.js';
+import { $, el, fail, get } from './dom.js';
 import { S, EDITS } from './state.js';
 import { renderStatus } from './status.js';
 import { renderConfig, renderAll } from './config.js';
@@ -31,6 +31,8 @@ for (const b of document.querySelectorAll('nav button')) {
 $('#filter').oninput = (e) => renderConfig('#sections', S.SCHEMA, e.target.value);
 $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
+$('#pw-save').onclick = savePassword;
+$('#gopassword').onclick = () => { showTab('config'); $('#pw-pass').focus(); };
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
 /*
@@ -42,11 +44,47 @@ $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $(
 async function checkAuth() {
   try {
     const fw = await get('/api/firmware');
-    if (!fw.defaultauth) return;
-    $('#authcmd').textContent =
-      `ssh admin@${location.hostname} 'printf "user:password" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'`;
-    $('#defaultauth').hidden = false;
+    $('#defaultauth').hidden = !fw.defaultauth;
   } catch (e) { /* the banner is advisory; a failed read must not blank the page */ }
+}
+
+const showTab = (name) => {
+  for (const b of document.querySelectorAll('nav button')) {
+    b.classList.toggle('on', b.dataset.tab === name);
+    if (b.dataset.tab === name) b.click();
+  }
+};
+
+/*
+ * Change the credential this page authenticates with, creating the file if it
+ * is not there. That last part is the point: the state this fixes is the state
+ * of every factory-reset stick, and an operator who has to find an ssh client
+ * that still speaks to a 2007 dropbear will leave the default in place.
+ */
+async function savePassword() {
+  const out = $('#pw-out');
+  const user = $('#pw-user').value.trim();
+  const pass = $('#pw-pass').value;
+
+  out.textContent = '';
+  try {
+    const r = await fetch('/api/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ user, password: pass }).toString(),
+    });
+    const j = await r.json();
+    if (!j.ok) { out.append(el('div', 'bad', j.error || 'refused')); return; }
+    out.append(el('div', 'good', 'Saved to /etc/config/confd.auth.'));
+    /* The browser still holds the OLD credential and will replay it on the
+       next request, which now answers 401. Saying nothing here turns a
+       successful change into what looks like a broken page. */
+    out.append(el('div', null,
+      'Your browser is still using the old one. Sign out, then sign back in as '
+      + user + '.'));
+    $('#pw-pass').value = '';
+    await checkAuth();
+  } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
 }
 
 async function refresh() {

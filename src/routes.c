@@ -291,6 +291,47 @@ void serve(int conn)
 		return;
 	}
 
+	/*
+	 * Set the config UI's own credential, creating the file if it is not
+	 * there.
+	 *
+	 * This is the way out of the built-in default, and it has to be here
+	 * rather than only in a runbook: the state it fixes is the state of
+	 * every factory-reset stick, and telling an operator to go and find an
+	 * ssh client that still speaks to a 2007 dropbear is how the default
+	 * stays in place forever.
+	 *
+	 * The current credential is what authorises it -- serve() has already
+	 * checked it, and a cross-origin POST is already refused -- so there is
+	 * no second password prompt here. That is the same standard as every
+	 * other write on this daemon, including the ones that change what the
+	 * OLT authenticates against.
+	 */
+	if (seq(path, "/api/password") && seq(method, "POST")) {
+		char user[96], pass[160];
+		const char *why = 0;
+
+		if (!form_get(body, "user", user, sizeof(user)) ||
+		    !form_get(body, "password", pass, sizeof(pass))) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"user and password are required\"}");
+			return;
+		}
+		if (!set_credential(user, pass, &why)) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"");
+			put_json_cstr(conn, why ? why : "refused");
+			put_fd(conn, "\"}");
+			return;
+		}
+		respond(conn, "200 OK", "application/json", 0);
+		/* The browser is still holding the OLD credential and will
+		 * replay it on the next request, which now answers 401. Saying
+		 * so is the difference between "it worked" and "it broke". */
+		put_fd(conn, "{\"ok\":true,\"note\":\"saved -- sign out and back in with the new credential\"}");
+		return;
+	}
+
 	if (seq(path, "/api/config") && seq(method, "POST")) {
 		handle_write(conn, body);
 		return;

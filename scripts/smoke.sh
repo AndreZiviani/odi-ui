@@ -92,6 +92,7 @@ check() {  # check <name> <expected> <actual>
 }
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+err() { case "$1" in *"$2"*) echo yes ;; *) echo "no: $1" ;; esac; }
 
 # A stand-in for /bin/omcicli. The route builds its argv from the query string,
 # so the stub ECHOES what it was given before printing a dump: that is what
@@ -111,6 +112,43 @@ check "wrong credential is refused" 401 "$(code -u admin:wrong "http://127.0.0.1
 check "right credential is served"  200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
 check "the credential file is in force" false \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
+
+# Changing the credential from the UI. This is the way out of the built-in
+# default, so it has to work on a stick that has no file at all -- the state
+# every factory-reset stick is in.
+echo "== setting the credential"
+mv /etc/config/confd.auth /etc/config/confd.auth.kept
+check "the default is reported while it is in force" true \
+	"$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
+check "a password can be set with no file present" yes \
+	"$(err "$(curl -s -u admin:admin -X POST -d 'user=op&password=hunter22' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+check "the file was created 0600" 600 \
+	"$(stat -c '%a' /etc/config/confd.auth 2>/dev/null)"
+check "the new credential works" 200 \
+	"$(code -u op:hunter22 "http://127.0.0.1:$PORT/api/schema")"
+check "the default stops working once one is set" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "and the default is no longer reported" false \
+	"$(curl -s -u op:hunter22 "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
+
+# A credential that cannot be expressed in the file format is REFUSED, not
+# quietly rewritten into one that can: a mangled credential is one nobody can
+# log in with, on a device where finding that out means a site visit.
+for bad in 'user=a:b&password=hunter22' 'user=&password=hunter22' \
+           'user=op&password=abc' 'user=op&password=' 'user=op' 'password=x'; do
+	check "refuses $bad" 400 \
+		"$(code -u op:hunter22 -X POST -d "$bad" "http://127.0.0.1:$PORT/api/password")"
+done
+check "a newline in the password is refused" 400 \
+	"$(code -u op:hunter22 -X POST -d 'user=op&password=one%0Atwo' "http://127.0.0.1:$PORT/api/password")"
+
+# Writing admin:admin into the file must NOT clear the warning: the question
+# the page answers is "is this stick on the credential everybody knows", and
+# a file containing the default is the worst of both.
+curl -s -u op:hunter22 -X POST -d 'user=admin&password=admin' "http://127.0.0.1:$PORT/api/password" >/dev/null
+check "a file holding the default still reports the default" true \
+	"$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
+mv /etc/config/confd.auth.kept /etc/config/confd.auth
 
 # The fallback. A stick flashed with an image that has never had a credential
 # file written -- which is every stick after a factory reset, since
@@ -192,7 +230,6 @@ check "no Origin still works (curl, scripts)" 200 \
 
 echo "== validation"
 post() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/config"; }
-err() { case "$1" in *"$2"*) echo yes ;; *) echo "no: $1" ;; esac; }
 
 check "a refused SerDes key is refused" yes \
 	"$(err "$(post 'LAN_SDS_MODE=4')" 'refused')"

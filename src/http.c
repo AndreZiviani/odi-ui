@@ -260,12 +260,83 @@ static long load_credential(int *is_default)
 	return (long)k;
 }
 
+/*
+ * Whether the credential in force IS the built-in default.
+ *
+ * Deliberately not "is the file missing": a file containing admin:admin leaves
+ * you on the default password while making the warning go away, which is the
+ * worst of both. The question the page needs answered is "is this stick on the
+ * credential everybody knows", and that is this.
+ */
 int auth_is_default(void)
 {
-	int def = 0;
+	long want = load_credential(0);
+	unsigned long i;
 
-	load_credential(&def);
-	return def;
+	for (i = 0; DEFAULT_AUTH[i]; i++)
+		if ((long)i >= want || credbuf[i] != DEFAULT_AUTH[i])
+			return 0;
+	return want == (long)i;
+}
+
+/*
+ * Write a new credential file.
+ *
+ * Constrained, not sanitised: a value that does not fit the file format is
+ * refused rather than rewritten into one that does. The file is one line of
+ * `user:password`, so the username cannot contain a colon and neither half can
+ * contain a newline -- a credential mangled on the way in is one nobody can
+ * log in with afterwards, on a device where "afterwards" may mean a site visit.
+ */
+int set_credential(const char *user, const char *pass, const char **why)
+{
+	unsigned long u = 0, p = 0, n = 0;
+
+	for (u = 0; user[u]; u++) {
+		if (user[u] == ':') {
+			*why = "the username cannot contain a colon";
+			return 0;
+		}
+		if (user[u] < 0x21 || user[u] > 0x7e) {
+			*why = "the username must be printable, with no spaces";
+			return 0;
+		}
+	}
+	if (!u || u > 64) {
+		*why = "the username must be 1 to 64 characters";
+		return 0;
+	}
+
+	for (p = 0; pass[p]; p++) {
+		if (pass[p] < 0x20 || pass[p] > 0x7e) {
+			*why = "the password must be printable ASCII";
+			return 0;
+		}
+	}
+	if (p < 4 || p > 128) {
+		*why = "the password must be 4 to 128 characters";
+		return 0;
+	}
+	if (u + 1 + p + 1 > sizeof(credbuf)) {
+		*why = "too long";
+		return 0;
+	}
+
+	for (n = 0; n < u; n++)
+		credbuf[n] = user[n];
+	credbuf[n++] = ':';
+	for (p = 0; pass[p]; p++)
+		credbuf[n++] = pass[p];
+	credbuf[n] = 0;
+
+	/* 0600: the file sits in /etc/config next to the device identity, and
+	 * this daemon is not the only thing that can read that directory. */
+	if (write_file(AUTH_PATH, credbuf, n, 0600) < 0) {
+		*why = "could not write /etc/config/confd.auth";
+		return 0;
+	}
+	*why = 0;
+	return 1;
 }
 
 /*
