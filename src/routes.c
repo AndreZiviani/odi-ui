@@ -332,6 +332,56 @@ void serve(int conn)
 		return;
 	}
 
+	/*
+	 * Reset the service configuration to the image defaults.
+	 *
+	 * NOT flash_eraseall /dev/mtd3, which is the recipe every thread gives
+	 * and the reason Anime4000/RTL960x#84 has people with dead sticks. That
+	 * erases the whole config partition: both MIB stores, the identity in
+	 * the hs store, this daemon's own credential file, and any override
+	 * binary living beside it.
+	 *
+	 * `flash default cs` is the vendor's own supported reset and it is
+	 * per-store. The split is exactly the one that matters here:
+	 *
+	 *   cs  118 keys  service config -- VLAN, LAN IP, DEVICE_TYPE, OMCI_*
+	 *   hs   62 keys  the hardware identity -- GPON_SN, MAC_KEY,
+	 *                 ELAN_MAC_ADDR, PON_VENDOR_ID
+	 *
+	 * So resetting cs gives back a clean service configuration and leaves
+	 * the values that cannot be regenerated alone. It rewrites
+	 * /var/config/lastgood.xml rather than erasing the partition, so files
+	 * there -- confd.auth, an overridden confd or metricsd -- survive it.
+	 *
+	 * hs is deliberately not reachable. The reset people want is the
+	 * service one; the one that ends sticks is the other.
+	 */
+	if (seq(path, "/api/reset") && seq(method, "POST")) {
+		static char *const argv[] = { "flash", "default", "cs", 0 };
+		char confirm[16];
+		long got, code = -1;
+
+		if (!form_get(body, "_confirm", confirm, sizeof(confirm)) ||
+		    !seq(confirm, "reset")) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"resend with _confirm=reset\"}");
+			return;
+		}
+
+		got = run_to_buf_ex(FLASH_PATH, argv, status, sizeof(status), &code);
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"ok\":");
+		put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+		/* The script's own words. It reports "Reset CS to default
+		 * configuration success." and it can also report FATAL ERROR
+		 * from its space check, and the caller should see which. */
+		put_fd(conn, ",\"output\":\"");
+		if (got > 0)
+			put_json_cstr(conn, status);
+		put_fd(conn, "\"}");
+		return;
+	}
+
 	if (seq(path, "/api/config") && seq(method, "POST")) {
 		handle_write(conn, body);
 		return;

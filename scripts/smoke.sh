@@ -66,6 +66,14 @@ XML
 set)
 	echo "$2=$3"
 	;;
+default)
+	# The real script rewrites /var/config/lastgood.xml from the built-in MIB
+	# defaults and says this. Only the cs store is ever asked for -- the route
+	# hardcodes it, and this refuses anything else so that stays testable.
+	[ "$2" = cs ] || { echo "Restore to default configurationg fail."; exit 1; }
+	echo "Reset CS to default configuration success."
+	echo "Please reboot system."
+	;;
 esac
 FLASH
 chmod +x /etc/scripts/flash
@@ -302,6 +310,26 @@ check "the OMCI feature bits are served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"confd":')"
+
+echo "== resetting the service config"
+# flash default cs, not flash_eraseall: the hs store holds GPON_SN, MAC_KEY and
+# ELAN_MAC_ADDR, and erasing the partition is what ends sticks in the field.
+check "a reset without the confirm is refused" 400 \
+	"$(code -u "$AUTH" -X POST "http://127.0.0.1:$PORT/api/reset")"
+check "a wrong confirm is refused" 400 \
+	"$(code -u "$AUTH" -X POST -d '_confirm=yes' "http://127.0.0.1:$PORT/api/reset")"
+check "a confirmed reset runs flash default cs" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d '_confirm=reset' "http://127.0.0.1:$PORT/api/reset")" 'Reset CS to default configuration success')"
+check "and reports it succeeded" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d '_confirm=reset' "http://127.0.0.1:$PORT/api/reset")" '"ok":true')"
+# The hs store is not reachable from here at all. The route hardcodes cs, so a
+# store parameter must not be able to steer it.
+check "the store cannot be steered to hs" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'store=hs&_confirm=reset' "http://127.0.0.1:$PORT/api/reset")" 'Reset CS to default')"
+check "a reset needs the credential" 401 \
+	"$(code -X POST -d '_confirm=reset' "http://127.0.0.1:$PORT/api/reset")"
+check "a cross-origin reset is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST -d '_confirm=reset' "http://127.0.0.1:$PORT/api/reset")"
 
 echo "== the OMCI MIB route"
 # Everything reaching omcicli comes off a query string, so the checks that

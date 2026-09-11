@@ -94,9 +94,13 @@ nav button.on { color: var(--text); border-bottom-color: var(--fibre); }
   cursor: pointer; background: var(--fibre); color: var(--ink);
   border: 1px solid var(--fibre); border-radius: 3px; font-weight: 600;
 }
-#pw-out { display: grid; gap: .2rem; font-size: .85rem; max-width: 62ch; }
-#pw-out .good { color: var(--apc); }
-#pw-out .bad  { color: var(--alarm); }
+#pw-out, #reset-out {
+  display: grid; gap: .2rem; font-size: .85rem; max-width: 62ch;
+}
+#pw-out .good, #reset-out .good { color: var(--apc); }
+#pw-out .bad,  #reset-out .bad  { color: var(--alarm); }
+#reset-out .warn { color: var(--fibre); }
+#reset-out pre { margin: .4rem 0 0; }
 #logout {
   background: none; border: 1px solid var(--rule); border-radius: 3px;
   color: var(--muted); font: inherit; font-size: .8rem;

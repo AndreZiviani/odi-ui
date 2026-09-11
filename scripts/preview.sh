@@ -33,7 +33,7 @@ all) cat <<XML
   <Value Name="VLAN_CFG_TYPE" Value="1"/>
   <Value Name="VLAN_MANU_MODE" Value="1"/>
   <Value Name="DEVICE_TYPE" Value="0"/>
-  <Value Name="LAN_IP_ADDR" Value="192.168.1.1"/>
+  <Value Name="LAN_IP_ADDR" Value="192.168.0.3"/>
   <Value Name="GPON_SN" Value="4F44490012345678"/>
   <Value Name="PON_VENDOR_ID" Value="ODI0"/>
   <Value Name="GPON_PLOAM_PASSWD" Value="31323334353637383930"/>
@@ -48,6 +48,7 @@ all) cat <<XML
 XML
 ;;
 set) echo "$2=$3" ;;
+default) echo "Reset CS to default configuration success."; echo "Please reboot system." ;;
 esac
 FLASH
     chmod +x /etc/scripts/flash

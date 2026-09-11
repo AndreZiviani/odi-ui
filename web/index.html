@@ -64,15 +64,33 @@
        applied until you say so.</p>
     <div id="common"></div>
 
-    <h2>Before you change anything irreversible</h2>
-    <p class="hint">The standard factory reset for this device is
-       <code>flash_eraseall /dev/mtd3</code>, and that partition is also where
-       <code>GPON_SN</code>, <code>ELAN_MAC_ADDR</code> and <code>MAC_KEY</code>
-       live. Erase it without those written down and the ONU never gets past
-       O0 &mdash; the reset meant to fix a stick is what ends it. Take the
-       backup first; it is the whole config store, identity included.</p>
+    <h2>Backup and reset</h2>
+    <p class="hint">The backup is both config stores, identity included. Take
+       one before anything you cannot undo.</p>
     <p class="me-bar"><a class="fwbtn" href="/api/backup" download>Download a
        full config backup</a></p>
+
+    <p class="hint">Resetting puts the <strong>service</strong> configuration
+       back to the image defaults &mdash; VLAN, management IP, device mode, the
+       OMCI settings. It runs the vendor's own <code>flash default cs</code>,
+       which rewrites the stored config rather than erasing the partition, so
+       <code>GPON_SN</code>, <code>MAC_KEY</code> and <code>ELAN_MAC_ADDR</code>
+       are untouched and so is this page's password. That is the difference
+       between this and <code>flash_eraseall /dev/mtd3</code>, the recipe every
+       forum thread gives, which takes all of it and is why people end up with
+       sticks that never get past O0.</p>
+    <p class="hint">It does clear the PLOAM password, which some lines
+       authenticate on, and it puts the management IP back to
+       <code>192.168.1.1</code> &mdash; so the page offers to restore that
+       before you reboot, which is the step that is easy to forget and hard to
+       undo. A backup downloads automatically before anything is written; the
+       reset does not start until your browser has the file. Takes effect at the
+       next reboot.</p>
+    <div class="me-bar">
+      <button id="reset-go" class="fwbtn danger" type="button">Back up, then
+        reset the service config</button>
+    </div>
+    <div id="reset-out"></div>
 
     <h2>Config UI password</h2>
     <p class="hint">The credential for this page only &mdash; not the SSH or

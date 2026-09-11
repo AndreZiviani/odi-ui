@@ -63,6 +63,8 @@ globalThis.Event = class { constructor(t) { this.type = t; } };
 globalThis.CustomEvent = globalThis.Event;
 globalThis.location = { hostname: 'stick.example', href: '/' };
 globalThis.setInterval = () => 0;
+globalThis.confirm = () => false;   /* the reset flow asks; nothing here clicks it */
+globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} };
 
 /* --- fixtures: the repo's own data, shaped as the API returns it --------- */
 function tsv(name, cols) {
