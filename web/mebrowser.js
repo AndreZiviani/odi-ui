@@ -15,7 +15,11 @@ import { $, el } from './dom.js';
 import { fetchOmci, fetchMe } from './omci.js';
 
 /*
- * The table names `omcicli get tables` reports, taken off a stick.
+ * The table names `omcicli get tables` reported, taken off a stick once.
+ *
+ * Captured rather than queried, because asking costs the MIB service: that
+ * command returns zero bytes and wedges omci_app's responder until it is
+ * restarted. See scripts/fixtures/omci/_tables-names.txt.
  *
  * NOT the /lib/omci/mib_*.so filenames, which is what this list used to be:
  * 23 of the 81 differ (`AuthSecMethod` against `Authen_Sec_Method`) and some
@@ -174,27 +178,13 @@ function renderMeBrowser() {
   $('#me-entity').onkeydown = (e) => { if (e.key === 'Enter') load(); };
 
   /*
-   * What the running stack registered, verbatim. It is in a details block
-   * rather than parsed into the picker on purpose: the picker's list comes from
-   * the image and is known-good, and nothing here has yet seen what
-   * `omcicli get tables` prints on a live stick.
+   * The device is deliberately NOT asked for its table list.
+   * `omcicli get tables` returns nothing and leaves the MIB service unable to
+   * answer anything until omci_app is restarted -- so this tab used to disable
+   * the diagnostics it exists to show, just by being opened. The names below
+   * came off a stick once and change only with the base.
    */
-  fetchOmci({ cmd: 'tables' }).then((d) => {
-    $('#me-tables').textContent = d.raw || d.error || '(no output)';
-
-    /* `TableId [7] Name: SWImage!` -- the runtime list replaces the built-in
-       one when it arrives, because this image is not necessarily the image
-       this list was taken from. */
-    const live = [...String(d.raw || '').matchAll(/^TableId\s*\[\d+\]\s*Name:\s*(.+?)!?\s*$/gm)]
-      .map((m) => m[1]);
-    if (!live.length) return;
-    for (const o of [...list.children]) if (!/^\d+$/.test(o.value)) o.remove();
-    for (const t of live) {
-      const o = el('option');
-      o.value = t;
-      list.append(o);
-    }
-  });
+  $('#me-tables').textContent = TABLES.join('\n');
 
   load();
 }

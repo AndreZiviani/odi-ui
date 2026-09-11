@@ -509,8 +509,14 @@ check "the entity id reaches the command" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&entity=0x04")" 'ARGV: mib get 84 0x04')"
 check "a table name is accepted too" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=VlanTagFilterData")" 'ARGV: mib get VlanTagFilterData')"
-check "the registered table list is read" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=tables")" 'ARGV: get tables')"
+# `omcicli get tables` is refused, not proxied. On a stick it returns zero
+# bytes and leaves the MIB service unable to answer until omci_app restarts --
+# so the route that exists to read the MIB must not be able to break it. The
+# names ship as data instead.
+check "get tables is refused, not run" 400 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=tables")"
+check "and the reason says why" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=tables")" 'wedges the MIB service')"
 check "an allowlisted dump is read" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=dump&what=srvflow")" 'ARGV: dump srvflow')"
 
