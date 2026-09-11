@@ -84,6 +84,11 @@ const API = {
   '/api/schema': SCHEMA, '/api/meta': META, '/api/consumers': CONS,
   '/api/values': VALUES, '/api/defaults': {}, '/api/baseline': [], '/api/features': FEAT,
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
+  '/api/firmware': {
+    running: 'ODI-260910-6861b53', confd: 'test', mem: '26 MB', build: {},
+    env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2',
+           sw_version0: 'ODI-260910-6861b53', sw_version1: 'V1.0-220923' },
+  },
 };
 
 /*
@@ -97,6 +102,21 @@ const OMCI = {
   84: readFileSync(join(root, 'scripts/fixtures/omci/84-VlanTagFilterData.txt'), 'utf8'),
   171: readFileSync(join(root, 'scripts/fixtures/omci/171-ExtVlanTagOperCfgData.txt'), 'utf8'),
 };
+
+/*
+ * ME 7 has no capture yet. The FRAME below is verified -- it is the one the two
+ * real fixtures use -- but the attribute names are assumed, so this exercises
+ * the comparison logic and NOT the claim that this firmware calls the attribute
+ * "Version". scripts/capture-omci.sh settles that; until it has run, this is
+ * labelled for what it is rather than filed beside the real captures.
+ */
+const ME7_SHAPED = [
+  'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', 'SWImage',
+  'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+  '=================================',
+  'EntityId: 0x0000', 'Version: V1.0-220923', 'IsActive: 1', 'IsCommitted: 1',
+  '=================================', '',
+].join('\n');
 globalThis.fetch = async (path) => {
   const [key, qs] = String(path).split('?');
   if (key === '/api/omci') {
@@ -195,6 +215,22 @@ const text = JSON.stringify(cards, (k, v) => (k === 'classList' ? undefined : v)
 ok(/VLAN 1600/.test(text), 'the translation card names the VLAN on the fibre');
 ok(/allows these VLANs on this line: 75, 1600/.test(text),
    'the filter card lists the VLANs the OLT permits');
+/* ME 7 has no fixture, so the card renders empty and must not claim a mismatch
+   against the U-Boot environment it cannot compare with. */
+ok(!/is not what the OLT was told/.test(text),
+   'no version mismatch is claimed when ME 7 returned nothing');
+
+/* Now with a software-image dump whose version is NOT what partition 0 holds:
+   the card must say so, because that difference is the whole mechanism behind
+   "my OMCI software version resets at every boot". */
+OMCI[7] = ME7_SHAPED;
+await renderServices(true);
+const text2 = JSON.stringify(doc.querySelector('#services-cards'),
+                             (k, v) => (k === 'classList' ? undefined : v));
+ok(/is not what the OLT was told/.test(text2),
+   'a version the active partition does not hold is reported as such');
+ok(/sw_custom_version0/.test(text2), 'and the fix names the right nv variable');
+delete OMCI[7];
 
 await import(join(root, 'web', 'app.js'));
 await new Promise((r) => setTimeout(r, 50));

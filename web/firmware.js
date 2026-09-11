@@ -28,7 +28,23 @@ async function renderFirmware() {
   for (const p of ['0', '1']) {
     const tr = el('tr');
     tr.append(el('td', null, 'Partition ' + p));
-    tr.append(el('td', null, env['sw_version' + p] || 'empty'));
+    /*
+       Two version strings per partition, and they are not the same thing.
+       sw_version<p> is written by the updater from the image's fwu_ver.
+       sw_custom_version<p> is an override the base's chk_swver_fix.sh prefers,
+       and it is the documented-nowhere answer to the most-asked question about
+       this device: how to stop OMCI_SW_VER reverting at every boot
+       (Anime4000/RTL960x#30). The thread's advice is OMCI_OLT_MODE=21, which
+       that same script calls "a hack" that "causes sigsegv of /bin/checkomci".
+    */
+    const vcell = el('td');
+    const custom = env['sw_custom_version' + p];
+    vcell.append(el('div', null, env['sw_version' + p] || 'empty'));
+    if (custom) {
+      vcell.append(el('div', 'aside', 'reported as ' + custom));
+      vcell.append(el('span', 'tag identity', 'custom version'));
+    }
+    tr.append(vcell);
 
     const st = el('td');
     if (p === committed) st.append(el('span', 'tag omci', 'kept'));

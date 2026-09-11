@@ -115,6 +115,28 @@ function renderStatus(raw) {
 
   const alarms = (s['gpon get alarm-status'] || '').split('\n').filter((l) => /Alarm /.test(l));
   const asserted = alarms.filter((l) => !/clear/i.test(l));
+
+  /*
+   * Loss of signal costs you more than the fibre. The stick reports RX_LOS on
+   * its SFP pins, and most hosts -- Mikrotik and Ubiquiti among them -- take
+   * that as "this transceiver has nothing to say" and disable the Ethernet
+   * side, so the management page goes with it. That is the single most common
+   * "my stick is bricked" report on this hardware, and it is not a fault in
+   * the stick: it is the host doing what a plain transceiver would want.
+   *
+   * Worth saying HERE, while the page is still reachable, because the moment
+   * it applies is the moment you cannot read it.
+   */
+  const los = $('#losnote');
+  const lost = asserted.some((l) => /\bLO[SF]\b/i.test(l));
+  los.hidden = !lost;
+  los.classList.toggle('bad', lost);
+  if (lost) {
+    los.textContent = 'Loss of signal. Note that most SFP hosts disable the '
+      + 'Ethernet side of the cage while a transceiver asserts RX_LOS, so this '
+      + 'page may become unreachable until the fibre is back — through the '
+      + 'host, not through the stick. A media converter reaches it either way.';
+  }
   const stat = (k, v, cls) => {
     const d = el('div');
     d.append(el('span', 'k', k), el('span', 'v' + (cls ? ' ' + cls : ''), v));
