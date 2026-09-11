@@ -1,0 +1,51 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+MacBriPortCfgData
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+=================================
+EntityID: 0x0005
+BridgeIdPtr: 0x0010
+PortNum: 1
+TPType: 11
+TPPointer: 0x0601
+PortPriority: 20
+PortPathCost: 200
+PortSpanTreeInd: 0
+EncapMethod: 1
+LanFCSInd: 0
+PortMacAddr: 0x000000000000
+OutboundTD: 0x0000
+InboundTD: 0x0000
+NumOfAllowedMac: 0
+=================================
+=================================
+EntityID: 0x0ffe
+BridgeIdPtr: 0x0010
+PortNum: 36
+TPType: 6
+TPPointer: 0x8ffe
+PortPriority: 20
+PortPathCost: 200
+PortSpanTreeInd: 0
+EncapMethod: 1
+LanFCSInd: 0
+PortMacAddr: 0x000000000000
+OutboundTD: 0x0000
+InboundTD: 0x0000
+NumOfAllowedMac: 0
+=================================
+=================================
+EntityID: 0x1002
+BridgeIdPtr: 0x0010
+PortNum: 2
+TPType: 3
+TPPointer: 0x1002
+PortPriority: 20
+PortPathCost: 200
+PortSpanTreeInd: 0
+EncapMethod: 1
+LanFCSInd: 0
+PortMacAddr: 0x000000000000
+OutboundTD: 0x0000
+InboundTD: 0x0000
+NumOfAllowedMac: 0
+=================================

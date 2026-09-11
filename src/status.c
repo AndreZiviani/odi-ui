@@ -51,13 +51,26 @@ void emit_status_json(int fd)
  */
 void emit_l2_json(int fd)
 {
-	static char *const argv[] = { "diag", 0 };
-	static const char script[] =
-		"l2-table get entry address valid\n"
-		"exit\n";
-	long got;
+	/*
+	 * ARGUMENTS, not stdin -- and this is not a style choice.
+	 *
+	 * Fed `l2-table get entry address valid` on stdin, diag never returns:
+	 * measured on a stick at 100% CPU in state R until killed, taking this
+	 * single-threaded daemon down with it because every other request then
+	 * queues behind a child that will not exit. The identical command as
+	 * argv returns immediately.
+	 *
+	 * emit_status_json above still batches on stdin and is right to: its
+	 * `pon get` / `gpon get` / `mib dump` commands all terminate that way,
+	 * and one invocation for seven questions is worth ~200 ms. The lesson
+	 * is per command, not general -- so a new diag command goes through
+	 * argv until it has been shown to terminate on stdin.
+	 */
+	static char *const argv[] = { "diag", "l2-table", "get", "entry",
+				      "address", "valid", 0 };
+	long got, code = -1;
 
-	got = run_script_to_buf(DIAG_PATH, argv, script, omci, sizeof(omci));
+	got = run_to_buf_ex(DIAG_PATH, argv, omci, sizeof(omci), &code);
 	if (got <= 0) {
 		put_fd(fd, "{\"error\":\"diag failed\"}");
 		return;

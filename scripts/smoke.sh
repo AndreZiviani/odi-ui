@@ -123,6 +123,12 @@ err() { case "$1" in *"$2"*) echo yes ;; *) echo "no: $1" ;; esac; }
 # shaped to match the parser.
 cat > /bin/diag <<'DIAG'
 #!/bin/sh
+# argv form first: the l2 route uses it because diag never returns when that
+# command is fed on stdin. If this stub only handled stdin, the route could go
+# back to stdin and the check would still pass.
+case "$1" in
+l2-table) cat /src/scripts/fixtures/l2-table.txt; exit 0 ;;
+esac
 while read -r l; do
 	printf "RTK.0> %s\n" "$l"
 	case "$l" in
@@ -456,6 +462,10 @@ echo "== the switch MAC table"
 # addresses would push the optics out of the response.
 check "the MAC table is read from diag" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/l2")" '78:54:2E:07:64:63')"
+# It must come from the ARGV path. diag spins forever when this command arrives
+# on stdin, which hung the whole daemon on a real stick.
+check "and via argv, not stdin" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/l2")" 'LUT address')"
 check "and it is not truncated at this size" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/l2")" '"truncated":false')"
 # Never covered before, because there was no diag stub: the status scrape puts

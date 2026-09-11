@@ -17,7 +17,7 @@
  */
 
 import { $, el, get } from './dom.js';
-import { fetchMe, attr } from './omci.js';
+import { fetchMe, attr, unavailable } from './omci.js';
 
 /*
  * The six tables worth a sentence, in the order someone diagnosing a dead link
@@ -31,6 +31,7 @@ const CARDS = [
   { me: '131', title: 'The OLT at the other end',       render: renderOlt },
   { me: '84',  title: 'VLANs this line allows',         render: renderVlanFilter },
   { me: '171', title: 'VLAN translation',               render: renderExtVlan },
+  { me: '47',  title: 'How this line is bridged',       render: renderBridge },
   { me: '262', title: 'Upstream containers (T-CONT)',   render: renderIds },
   { me: '268', title: 'GEM ports',                      render: renderIds },
 ];
@@ -95,8 +96,11 @@ function renderSwImage(box, dump) {
   const dl = el('dl', 'me-kv');
   for (const inst of dump.instances) {
     const ver = attr(inst, 'Version') || '(empty)';
-    const act = attr(inst, 'IsActive');
-    const com = attr(inst, 'IsCommitted');
+    /* `Active` and `Committed`, not `IsActive`/`IsCommitted` -- read off a
+       stick, after the preview stub had guessed the other spelling and this
+       card silently showed no tags at all. */
+    const act = attr(inst, 'Active');
+    const com = attr(inst, 'Committed');
     const tags = [];
     if (act === '1') tags.push('running');
     if (com === '1') tags.push('kept');
@@ -229,6 +233,70 @@ function renderExtVlan(box, dump) {
   }
 }
 
+/*
+ * What the OLT attached to the bridge.
+ *
+ * This is the difference between our two lines and it is structural rather
+ * than a state flag: Claro's bridge carries the physical Ethernet UNI *and*
+ * the VEIP, Vero's carries the VEIP alone. It is the question behind most
+ * of the VEIP threads upstream.
+ *
+ * The TP type is resolved by POINTER, not by a table of type numbers: each
+ * port's TPPointer is the entity id of a real managed entity on the same
+ * stick -- 0x0101 is the EthUni that ME 11 reports, 0x0601 the VEIP that ME
+ * 329 reports, and Claro's five `TPType 3` pointers are exactly the entity
+ * ids of its GEM interworking TPs. So the naming below is checked against
+ * the device rather than recalled from a specification.
+ */
+const TP_TYPES = {
+  1:  'physical Ethernet UNI',
+  3:  'GEM interworking TP',
+  11: 'VEIP',
+};
+
+function renderBridge(box, dump) {
+  const ports = [];
+
+  for (const inst of dump.instances) {
+    const type = attr(inst, 'TPType');
+    const ptr = attr(inst, 'TPPointer');
+
+    if (type === null) continue;
+    ports.push({ port: attr(inst, 'PortNum'), bridge: attr(inst, 'BridgeIdPtr'),
+                 type: Number(type), ptr });
+  }
+  if (!ports.length) {
+    box.append(note('No bridge ports. The OLT has not built a data path.'));
+    return;
+  }
+
+  const named = ports.filter((p) => TP_TYPES[p.type]);
+  const uni = named.some((p) => p.type === 1);
+  const veip = named.some((p) => p.type === 11);
+
+  if (uni || veip) {
+    box.append(el('p', 'me-lead', uni && veip
+      ? 'The bridge carries both the physical Ethernet UNI and the VEIP.'
+      : uni ? 'The bridge carries the physical Ethernet UNI.'
+            : 'The bridge carries the VEIP, not the physical port.'));
+  }
+
+  const t = el('table');
+  for (const p of ports) {
+    const tr = el('tr');
+
+    tr.append(el('td', 'mono', 'port ' + p.port));
+    tr.append(el('td', null, TP_TYPES[p.type] || 'type ' + p.type));
+    tr.append(el('td', 'mono', p.ptr || ''));
+    t.append(tr);
+  }
+  box.append(t);
+  box.append(note('Each row is a bridge port and what the OLT attached to it. '
+    + 'The pointer is the entity id of a managed entity on this stick, so it '
+    + 'can be looked up on the MIB tab; a type shown as a bare number is one '
+    + 'no capture here has pinned down.'));
+}
+
 /* T-CONTs and GEM ports: what exists, not what each one is set to. */
 function renderIds(box, dump) {
   const ids = dump.instances.map((i) => i.id).filter(Boolean);
@@ -275,8 +343,10 @@ async function renderServices(force) {
        one means the daemon could not ask, the other means the OLT provisioned
        nothing -- which on a line sitting in O5 is itself the diagnosis. Each
        renderer says what empty means for its own table. */
-    if (!dump.ok && dump.error)
-      card.append(note(dump.error, 'bad'));
+    const why = unavailable(dump);
+
+    if (why)
+      card.append(note(why, 'bad'));
     else
       c.render(card, dump);
 

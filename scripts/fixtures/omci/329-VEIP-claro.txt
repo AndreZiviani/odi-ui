@@ -1,0 +1,12 @@
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+VEIP
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+=================================
+EntityId: 0x0601
+AdminState: 0
+OperState: 0
+InterDomainName: 0x00000000000000000000000000000000000000000000000000
+TcpUdpPtr: 0x0000
+IansAssignPort: 0
+CustomizedSlotId: 0xff
+=================================
