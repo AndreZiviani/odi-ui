@@ -77,11 +77,12 @@ function tsv(name, cols) {
 const SCHEMA = tsv('keys.tsv', ['name', 'store', 'address', 'section', 'type', 'apply', 'writable', 'common']);
 const META = tsv('meta.tsv', ['name', 'label', 'help', 'options', 'depends', 'range']);
 const CONS = tsv('consumers.tsv', ['name', 'apply', 'readers']);
+const FEAT = tsv('features.tsv', ['mask', 'bit', 'feature', 'module']);
 const VALUES = Object.fromEntries(SCHEMA.map((r) => [r.name, '1']));
 
 const API = {
   '/api/schema': SCHEMA, '/api/meta': META, '/api/consumers': CONS,
-  '/api/values': VALUES, '/api/defaults': {}, '/api/baseline': [],
+  '/api/values': VALUES, '/api/defaults': {}, '/api/baseline': [], '/api/features': FEAT,
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
 };
 
@@ -130,6 +131,7 @@ S.SCHEMA = SCHEMA;
 S.VALUES = VALUES;
 for (const m of META) S.META[m.name] = m;
 for (const c of CONS) S.CONS[c.name] = c;
+for (const f of FEAT) (S.FEATURES[f.mask] ||= []).push(f);
 
 renderConfig('#sections', S.SCHEMA, '');
 ok(doc.querySelector('#sections').children.length > 0, 'the Advanced table renders rows');
@@ -144,6 +146,27 @@ ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
 
 renderStatus(API['/api/status'].raw);
 ok(true, 'renderStatus runs against a diag capture');
+
+/* --- the OMCI_CUSTOM_* bitmask decode ------------------------------------ */
+const { decodeMask } = await import(join(root, 'web', 'state.js'));
+
+/* 4 is what both of our sticks ship with, and what Anime4000/RTL960x#41 has
+   been asking about since 2022. The answer is one row of features.tsv. */
+const rdp = decodeMask('OMCI_CUSTOM_RDP', '4');
+ok(rdp && rdp.known.length === 1 && rdp.known[0].names[0] === 'ignore_conn_uniNode_check',
+   'OMCI_CUSTOM_RDP=4 decodes to ignore_conn_uniNode_check');
+/* 258 = 0x102: the SFU default, two bits, one of them served by two modules. */
+const bdp = decodeMask('OMCI_CUSTOM_BDP', '258');
+ok(bdp && bdp.known.length === 2, 'OMCI_CUSTOM_BDP=258 decodes to two bits');
+ok(bdp.known.some((b) => b.bit === 0x100 && b.names.length === 2),
+   'a bit carrying two plugins reports both');
+/* The value is decimal; a hex-looking string must not silently read as 0x. */
+ok(decodeMask('OMCI_CUSTOM_ME', '65536').known[0].names[0] === 'accept_invalid_pq_instance_id',
+   'OMCI_CUSTOM_ME=65536 is read as decimal');
+const unk = decodeMask('OMCI_CUSTOM_RDP', '8');
+ok(unk && unk.known.length === 0 && unk.unknown[0] === 8,
+   'a bit with no plugin in this image is reported, not dropped');
+ok(decodeMask('LAN_IP_ADDR', '1') === null, 'a key that is not a mask decodes to nothing');
 
 /* --- the ME parser, against captured device output ----------------------- */
 const { parseOmci, attr } = await import(join(root, 'web', 'omci.js'));

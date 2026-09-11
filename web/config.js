@@ -1,5 +1,5 @@
 /*
- * The Config and Advanced tables: one row per key, rendered from the schema.
+ * The Config and All-settings tables: one row per key, rendered from the schema.
  *
  * Adding a key to the device adds a row here with no code change -- the schema
  * is data, and meta.tsv is what turns a name into a labelled, explained,
@@ -7,7 +7,7 @@
  */
 
 import { $, el } from './dom.js';
-import { S, EDITS, provenance, applyOf, dependsUnmet } from './state.js';
+import { S, EDITS, provenance, applyOf, dependsUnmet, decodeMask } from './state.js';
 import { hexAscii, validateInput } from './validate.js';
 
 function renderValue(row, raw) {
@@ -70,11 +70,17 @@ function renderValue(row, raw) {
     if (row.type === 'int') input.inputMode = 'numeric';
   }
   input.dataset.name = row.name;
+  /* Anything else on this row that has to follow the field as it is typed
+     registers here, rather than adding a second listener: one handler means no
+     ordering to get wrong, and the DOM stub in scripts/web-check.mjs only has
+     to model the one. */
+  let follow = null;
   input.oninput = input.onchange = () => {
     const v = input.value;
     if (v === raw) EDITS.delete(row.name); else EDITS.set(row.name, v);
     input.classList.toggle('changed', v !== raw);
     validateInput(row, input);
+    if (follow) follow(v);
     /* An event, not an import of save.js: config renders the fields and save
        owns the bar, and importing each other would make that a cycle. */
     document.dispatchEvent(new Event('edits-changed'));
@@ -82,6 +88,34 @@ function renderValue(row, raw) {
   input.classList.toggle('changed', shown !== raw);
   validateInput(row, input);
   td.append(input);
+
+  /*
+     The OMCI_CUSTOM_* masks decode to the plugins the image will load. Shown
+     under the field and refreshed on every keystroke, because the whole point
+     is to see what a value DOES before saving it -- upstream has had an open
+     issue since 2022 asking what OMCI_CUSTOM_RDP=4 means, and the answer is one
+     line of text this device could always have printed. */
+  if (decodeMask(row.name, '0')) {
+    const box = el('div', 'aside bits');
+    const paint = (v) => {
+      const d = decodeMask(row.name, v);
+      box.textContent = '';
+      /* An empty key is not a malformed one. Several keys on both of our
+         sticks read back empty, and calling that "not a number" reads like a
+         fault in the page rather than an unset value. */
+      if (String(v ?? '').trim() === '') { box.append(el('div', null, 'not set')); return; }
+      if (!d) { box.append(el('div', null, 'not a number')); return; }
+      if (!d.n) { box.append(el('div', null, 'no features enabled')); return; }
+      for (const b of d.known)
+        box.append(el('div', null, '0x' + b.bit.toString(16) + '  ' + b.names.join(', ')));
+      for (const b of d.unknown)
+        box.append(el('div', 'unknownbit',
+          '0x' + b.toString(16) + '  no plugin in this image \u2014 does nothing'));
+    };
+    paint(shown);
+    follow = paint;
+    td.append(box);
+  }
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form
      beside the field it is stored in. */

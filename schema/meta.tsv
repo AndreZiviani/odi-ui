@@ -16,14 +16,14 @@ VLAN_CFG_TYPE	VLAN config mode	Selects which VLAN path omci_app takes. 1 gives `
 VLAN_MANU_MODE	Manual VLAN mode	Only read when VLAN config mode is 1. Mode 1 passes the VLAN ID and priority below to omci_app; any other value sends the 65535/255 sentinels instead, which means the VLAN ID is ignored.	0=0 — off|1=1 — tag using the VLAN ID below	VLAN_CFG_TYPE=1	
 VLAN_MANU_TAG_VID	Service VLAN ID	The C-VLAN the ONU tags upstream traffic with — your ISP's service VLAN. Used only when VLAN config mode is 1 AND manual VLAN mode is 1. If this or the priority is left empty, runomci.sh drops the whole -iot_ block and no VLAN configuration reaches omci_app at all.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	1-4094
 VLAN_MANU_TAG_PRI	VLAN priority	802.1p priority bits carried in the tag. Same gating as the VLAN ID, and equally must not be empty.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	0-7
-OMCI_CUSTOM_RDP	Routing datapath features	Hex bitmask, passed as `omci_app -cr`. Bit 0x4 suppresses the ME 171 uniNode association check; both of our sticks run 4. On the 2024 firmware that same bit also skips populating the resolved association, which stops the ONU forwarding at all.			
-OMCI_CUSTOM_BDP	Bridge datapath features	Hex bitmask, passed as `omci_app -cb`.			
-OMCI_CUSTOM_ME	Managed-entity features	Hex bitmask, passed as `omci_app -cme`.			
-OMCI_CUSTOM_MCAST	Multicast features	Hex bitmask, passed as `omci_app -cmc`.			
+OMCI_CUSTOM_RDP	Routing datapath features	Bitmask, DECIMAL -- `flash set` accepts nothing else. Passed as `omci_app -cr`. Each bit loads one plugin from lib/features; the field below decodes it. Bit 0x4 is `ignore_conn_uniNode_check`, which suppresses the ME 171 uniNode association check; both of our sticks run 4. On the 2024 firmware that same bit also skips populating the resolved association, which stops the ONU forwarding at all.			
+OMCI_CUSTOM_BDP	Bridge datapath features	Bitmask, DECIMAL. Passed as `omci_app -cb`. Each bit loads one plugin from lib/features; the field below decodes it against this image.			
+OMCI_CUSTOM_ME	Managed-entity features	Bitmask, DECIMAL. Passed as `omci_app -cme`. Bit 0x100 is `cf_apply_customized_veip_slot_id`, which is what makes OMCI_VEIP_SLOT_ID take effect at all -- set the slot id without this bit and nothing happens.			
+OMCI_CUSTOM_MCAST	Multicast features	Bitmask, DECIMAL. Passed as `omci_app -cmc`. Each bit loads one plugin from lib/features; the field below decodes it.			
 DUAL_MGMT_MODE	Dual management	1 starts omci_app with `-m enable_wq`.	0=0 — off|1=1 — enable_wq		
 OMCI_FAKE_OK	Acknowledge unsupported OMCI	Answers OK to OMCI operations the stack cannot actually satisfy. Some OLTs refuse to finish provisioning without it.	0=0 — off|1=1 — on		
 OMCI_OLT_MODE	OLT vendor profile	Read by boa, configd, led, mib and xmlconfig — and NOT by omci_app or checkomci. It does not affect provisioning, which was confirmed from the binaries rather than assumed.			
-OMCI_VEIP_SLOT_ID	VEIP slot	Passed to omci_app. 255 is the default here; the OLT bridges to the VEIP rather than the physical UNI on both of our lines.			
+OMCI_VEIP_SLOT_ID	VEIP slot	Passed to omci_app, and read as a single byte -- so the MSB of the entity id you want, 14 for 0x0e01, not the whole id. It does nothing on its own: bit 0x100 of OMCI_CUSTOM_ME loads `cf_apply_customized_veip_slot_id`, and without that bit the value is ignored. 255 is the default here; the OLT bridges to the VEIP rather than the physical UNI on both of our lines.			
 LAN_IP_ADDR	Management IP	The address this UI, SSH and telnet answer on. Changing it drops your session.			
 LAN_SUBNET	Management netmask				
 PON_MODE	PON type	Handed to the europa driver at boot by insert_europa.sh.	1=1 — GPON|2=2 — EPON		

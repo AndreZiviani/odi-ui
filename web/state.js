@@ -11,6 +11,8 @@
 
 const S = {
   SCHEMA: [], VALUES: {}, META: {}, CONS: {}, DEFAULTS: {}, BASELINE: {},
+  /* mask name -> [{ bit, feature, module }], from /api/features. */
+  FEATURES: {},
 };
 
 /* Pending edits, keyed by name. Kept out of the DOM so switching tabs or
@@ -65,4 +67,48 @@ function dependsUnmet(row) {
   return unmet.length ? unmet : null;
 }
 
-export { S, EDITS, provenance, applyOf, dependsUnmet };
+
+/*
+ * Decode an OMCI_CUSTOM_* value against the plugins the image actually ships.
+ *
+ * These four masks are the least documented settings on the device -- the stick
+ * arrives with OMCI_CUSTOM_RDP=4 and upstream has an open issue from 2022
+ * asking what that means. It is not a mystery: each bit loads one plugin from
+ * lib/features, the plugin's filename IS the bit, and the function it defines
+ * is the feature. schema/features.tsv is generated from the image's own ELF
+ * symbol tables, so this decode is read off the firmware rather than asserted.
+ *
+ * The value is DECIMAL. `flash set` accepts nothing else, which is worth
+ * knowing before you type 0x102 and watch it store 0.
+ *
+ * Bits with no plugin are reported rather than dropped: a bit set here that
+ * this image cannot load does nothing, and that is the useful thing to see.
+ */
+function decodeMask(name, value) {
+  const rows = S.FEATURES[name];
+  if (!rows || !rows.length) return null;
+
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const n = /^0[xX]/.test(raw) ? Number(raw) : Number(raw);
+  if (!Number.isInteger(n) || n < 0) return null;
+
+  const known = [];
+  const unknown = [];
+  let covered = 0;
+
+  for (let b = 0; b < 31; b++) {
+    const bit = 1 << b;
+    if (!(n & bit)) continue;
+    const hit = rows.filter((r) => Number(r.bit) === bit);
+    if (hit.length) {
+      known.push({ bit, names: hit.map((r) => r.feature) });
+      covered |= bit;
+    } else {
+      unknown.push(bit);
+    }
+  }
+  return { n, known, unknown, covered };
+}
+
+export { S, EDITS, provenance, applyOf, dependsUnmet, decodeMask };

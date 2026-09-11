@@ -54,6 +54,11 @@
 #define CONS_PATH_OVR   "/etc/config/confd/consumers.tsv"
 #define BASE_PATH       "/etc/confd/baseline.tsv"
 #define BASE_PATH_OVR   "/etc/config/confd/baseline.tsv"
+/* Which bit of each OMCI_CUSTOM_* mask loads which plugin, generated from the
+ * image's own lib/features by scripts/gen-features.py. Per-image, like the
+ * schema: a different base implements a different set. */
+#define FEAT_PATH       "/etc/confd/features.tsv"
+#define FEAT_PATH_OVR   "/etc/config/confd/features.tsv"
 
 /*
  * Two reference points for "is this value ours or the device's?".
