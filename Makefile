@@ -42,7 +42,19 @@ HDRS := $(wildcard src/*.h)
 # are eight inputs, the whole build takes under a second, and there is no
 # incremental case worth the machinery. Splitting into real translation units
 # was for the source, not for the build.
-$(BUILD)/confd: $(SRCS) $(HDRS) | $(BUILD)
+# BUILD_ID is compiled in, but it is a make VARIABLE -- make cannot see it
+# change, so with the sources untouched it will not rebuild and the binary keeps
+# whatever stamp it was last compiled with. sfp-exporter shipped exactly that: a
+# manifest naming one exporter version and a binary reporting another.
+#
+# Park the value in a file and depend on the file. FORCE runs the recipe every
+# time; `cmp` means the file -- and its mtime -- only moves when the value
+# actually differs.
+.PHONY: FORCE
+$(BUILD)/.build-id: FORCE | $(BUILD)
+	@printf '%s' '$(BUILD_ID)' | cmp -s - $@ 2>/dev/null || printf '%s' '$(BUILD_ID)' > $@
+
+$(BUILD)/confd: $(SRCS) $(HDRS) $(BUILD)/.build-id | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(filter %.S %.c,$^)
 	$(STRIP) $@
 
