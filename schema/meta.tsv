@@ -26,7 +26,7 @@ OMCI_OLT_MODE	OLT vendor profile	Read by boa, configd, led, mib and xmlconfig �
 OMCI_VEIP_SLOT_ID	VEIP slot	Passed to omci_app, and read as a single byte -- so the MSB of the entity id you want, 14 for 0x0e01, not the whole id. It does nothing on its own: bit 0x100 of OMCI_CUSTOM_ME loads `cf_apply_customized_veip_slot_id`, and without that bit the value is ignored. 255 is the default here; the OLT bridges to the VEIP rather than the physical UNI on both of our lines.			
 LAN_IP_ADDR	Management IP	The address this UI, SSH and telnet answer on. Changing it drops your session.			
 LAN_SUBNET	Management netmask				
-PON_MODE	PON type	Handed to the europa driver at boot by insert_europa.sh.	1=1 — GPON|2=2 — EPON		
+PON_MODE	PON type	Handed to the europa driver at boot by insert_europa.sh, and read by runsdk.sh to choose which stack starts. This key is not only yours: with PON detection on, pondetect rewrites it and reboots after about 24 seconds of light without PON sync, so a value that changed on its own came from there.	1=1 — GPON|2=2 — EPON		
 GPON_SN	ONU serial number	What the OLT authenticates. Four-character vendor prefix followed by eight hex digits. Lose it and the ONU will not come up on the line.			
 PON_VENDOR_ID	Vendor prefix	The first four characters of the serial number, and must match it.			
 MAC_KEY	MAC key	32 hex characters.			
@@ -49,6 +49,6 @@ DNS3	Tertiary DNS			DNS_MODE=1
 OMCI_LOGFILE	OMCI logging	Writes the decoded OMCI conversation with the OLT. 2 is the parsed form, landing in /tmp/omcilog.par — about 95 KB for a full registration. Reading that exchange is the only way to see what the OLT is actually asking for.	0=0 — off|1=1 — raw|2=2 — parsed		
 OMCI_LOGFILE_MASK	OMCI log filter	Which message types to log. 4294967295 logs everything.		OMCI_LOGFILE=2	
 OMCI_DBGLVL	OMCI debug level	Leave at 0. /tmp is an unbounded RAM disk on a device with about 1.5 MB free, so the debug level can exhaust memory; parsed message logging is bounded and is what you actually want.	0=0 — errors only|1=1 — errors|2=2 — warnings|3=3 — info|4=4 — debug (can exhaust memory)		
-PON_DETECT_ENABLE	PON detection	Read at boot by runsdk.sh, so a change needs a reboot.			
+PON_DETECT_ENABLE	PON detection	What `pondetect` does with the PON MAC, every two seconds. On: if the SerDes sees light but never achieves sync for about 24 seconds, it concludes the PON type is wrong, rewrites PON_MODE to the other one and hard-reboots -- so a stick that comes back as EPON after a fibre fault did that to itself. Off does not stop pondetect: it still resets the SerDes CDR on every unsynced sample, it just never touches the flash. Detection is skipped entirely while GPON_SN is the factory default RTKG11111111. Read at boot by runsdk.sh, so a change needs a reboot.	0=0 — off (CDR reset only, never rewrites PON_MODE)|1=1 — on (may rewrite PON_MODE and reboot)		
 FIBER_MODE	Fibre mode	Never writable here. Like the SerDes mode, getting it wrong can take the link down and with it every way into the device.			
 GPON_ONU_MODEL	ONU model	Reported to the OLT in the ONU-G managed entity.			
