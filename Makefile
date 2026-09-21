@@ -65,7 +65,7 @@ else
 
 RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(IMAGE)
 
-.PHONY: all confd image verify check smoke schema test clean help
+.PHONY: all confd image verify check smoke schema test clean help assets sums release
 
 all: confd verify check smoke
 
@@ -107,6 +107,24 @@ schema:
 
 test: verify check smoke
 	@echo "ok"
+
+# The release assets, in the layout the odi-oss image builder unpacks
+# (src/fetch-releases.sh): the web files and the four schema tables flat in
+# one tarball, the daemon beside it, and one SHA256SUMS over both. What the
+# workflow publishes on a v* tag is exactly this, so a tag cannot fail on
+# something `make release` would have caught locally.
+assets: | $(BUILD)
+	rm -rf $(BUILD)/assets && mkdir -p $(BUILD)/assets
+	cp web/* schema/*.tsv $(BUILD)/assets/
+	tar -C $(BUILD)/assets -czf $(BUILD)/confd-assets.tar.gz .
+
+sums: confd assets
+	$(RUN) sh -c 'cd $(BUILD) && sha256sum confd confd-assets.tar.gz > SHA256SUMS && cat SHA256SUMS'
+
+release: confd verify check smoke assets sums
+
+$(BUILD):
+	mkdir -p $@
 
 clean:
 	rm -rf $(BUILD)
