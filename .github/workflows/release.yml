@@ -1,0 +1,87 @@
+name: build
+
+# Every push and PR builds and gates confd, so a tag can never fail on
+# something an ordinary commit would have caught. Only a v* tag publishes.
+# Copied from sfp-exporter's workflow; the two projects release the same way.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed only by the release step below
+
+    steps:
+      # fetch-depth 0: BUILD_ID is `git describe --tags`, and a shallow
+      # checkout has no tags, so the published binary would say "unknown".
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build the cross-toolchain image
+        run: docker build -t odi-ui-toolchain .
+
+      - name: Build
+        run: make confd
+
+      # ELF32, big-endian MIPS, static, no INTERP, and the ISA audit.
+      - name: Verify ELF shape and instructions
+        run: make verify
+
+      # The data files against each other, and the web module graph.
+      - name: Check schema, assets and web modules
+        run: make check
+
+      # The daemon under qemu, talked to over HTTP: framing, auth, forms,
+      # every route. Needs CAP_SYSLOG in the container, which smoke.sh adds.
+      - name: Smoke
+        run: make smoke
+
+      - name: Assets and checksums
+        run: make assets sums
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: odi-ui-${{ github.sha }}
+          path: |
+            build/confd
+            build/confd-assets.tar.gz
+            build/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          generate_release_notes: true
+          files: |
+            build/confd
+            build/confd-assets.tar.gz
+            build/SHA256SUMS
+          body: |
+            `confd`, the web configuration UI for RTL9601-based GPON SFP ONU
+            sticks: a static big-endian MIPS binary, freestanding, plus the
+            web files and schema tables it serves.
+
+            | file | |
+            |---|---|
+            | `confd` | the daemon; run it as `confd [port]`, default 8080 |
+            | `confd-assets.tar.gz` | unpack to `/etc/confd` on the stick |
+
+            Verified in CI: ELF shape, instruction audit against the RLX5281,
+            the schema and asset consistency checks, and the HTTP smoke suite
+            under qemu. Check `SHA256SUMS` before installing anything.
