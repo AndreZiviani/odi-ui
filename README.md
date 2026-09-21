@@ -714,6 +714,24 @@ exposure `boa` already has, and telnet is open on `:23` regardless. Use a
 credential you do not reuse, and treat the upstream router as the real
 perimeter.
 
+## SSH keys
+
+Admin tab, "SSH keys": the public keys that log in as `root` over ssh without
+a password, one OpenSSH line each. The list is the file as it is, so a key
+added by hand shows up too, and Remove names the line number the server
+reported rather than re-sending the key.
+
+    GET  /api/sshkeys                    {"path":..., "keys":[{"i":0,"line":"ssh-ed25519 AAAA... comment"}]}
+    POST /api/sshkeys  key=<line>        append; shape-checked (type word, base64 blob, one printable line)
+    POST /api/sshkeys  delete=<i>        rewrite the file without line i
+
+The file is `/etc/config/dropbear.d/authorized_keys`, beside the dropbear
+host key on the jffs2 partition, so keys survive a reflash. It only does
+anything on an image whose dropbear is started with `-D /etc/config/dropbear.d`
+-- odi-oss does; the vendor image does not read it. Mode 600, written whole.
+Copying files to and from such an image is `scp -O` (dropbear speaks the
+legacy scp protocol only); see odi-oss `docs/ACCESS.md`.
+
 ## Safety
 
 `LAN_SDS_MODE`, `LAN_SPEED_MODE` and `FIBER_MODE` are marked `never` in the
