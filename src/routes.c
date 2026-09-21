@@ -409,6 +409,169 @@ void serve(int conn)
 	 * other write on this daemon, including the ones that change what the
 	 * OLT authenticates against.
 	 */
+	/*
+	 * SSH public keys for the device login.
+	 *
+	 * dropbear reads authorized_keys from the directory its -D names, and
+	 * the image starts it with -D /etc/config/dropbear.d, beside the host
+	 * key: the jffs2 partition, so a key survives a reflash the way the
+	 * host key does. One line per key, OpenSSH format, as ssh-keygen prints
+	 * it. GET lists them; POST with key=<line> appends one, POST with
+	 * delete=<index> removes one. The check on a new key is shape only --
+	 * type word, base64 blob, optional comment, one line -- because the
+	 * one failure that matters is a pasted line that is not a key at all,
+	 * and dropbear itself decides whether the blob decodes.
+	 */
+	if (seq(path, "/api/sshkeys")) {
+		static char keys[4096];
+		long n = read_file(SSHKEYS_PATH, keys, sizeof(keys) - 1);
+		unsigned long i, ls, idx;
+
+		if (n < 0)
+			n = 0;
+		keys[n] = 0;
+		if (seq(method, "POST")) {
+			char key[1024], del[8];
+
+			if (form_get(body, "delete", del, sizeof(del)) && del[0]) {
+				unsigned long want = 0, at = 0, out = 0;
+				int found = 0;
+
+				for (i = 0; del[i]; i++) {
+					if (del[i] < '0' || del[i] > '9')
+						break;
+					want = want * 10 + (unsigned long)(del[i] - '0');
+				}
+				/* Rewrite in place without the wanted line. */
+				for (ls = 0; ls < (unsigned long)n; ) {
+					unsigned long le = ls;
+
+					while (keys[le] && keys[le] != '\n')
+						le++;
+					if (keys[le] == '\n')
+						le++;
+					if (at == want) {
+						found = 1;
+					} else {
+						unsigned long k;
+
+						for (k = ls; k < le; k++)
+							keys[out++] = keys[k];
+					}
+					at++;
+					ls = le;
+				}
+				if (!found) {
+					respond(conn, "404 Not Found", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"no such key\"}");
+					return;
+				}
+				if (write_file(SSHKEYS_PATH, keys, out, 0600) < 0) {
+					respond(conn, "500 Internal Server Error", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"could not write authorized_keys\"}");
+					return;
+				}
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, "{\"ok\":true}");
+				return;
+			}
+			if (!form_get(body, "key", key, sizeof(key)) || !key[0]) {
+				respond(conn, "400 Bad Request", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"key is required\"}");
+				return;
+			}
+			/* Shape: <type> <base64> [comment], one line, printable. */
+			{
+				unsigned long t = 0, b, e;
+				int ok;
+
+				while (key[t] && key[t] != ' ')
+					t++;
+				ok = t > 4 && key[t] == ' ' &&
+				     ((key[0] == 's' && key[1] == 's' && key[2] == 'h' && key[3] == '-') ||
+				      (key[0] == 'e' && key[1] == 'c' && key[2] == 'd' && key[3] == 's' && key[4] == 'a') ||
+				      (key[0] == 's' && key[1] == 'k' && key[2] == '-'));
+				b = t + 1;
+				e = b;
+				while (ok && key[e] && key[e] != ' ') {
+					char c = key[e];
+
+					if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+					      (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '='))
+						ok = 0;
+					e++;
+				}
+				if (e - b < 16)
+					ok = 0;
+				for (i = 0; ok && key[i]; i++)
+					if (key[i] < 32 || key[i] > 126)
+						ok = 0;
+				if (!ok) {
+					respond(conn, "400 Bad Request", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"not an OpenSSH public key line (type, base64, optional comment)\"}");
+					return;
+				}
+			}
+			if ((unsigned long)n + str_len(key) + 2 > sizeof(keys) - 1) {
+				respond(conn, "400 Bad Request", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"authorized_keys is full\"}");
+				return;
+			}
+			if (n && keys[n - 1] != '\n')
+				keys[n++] = '\n';
+			for (i = 0; key[i]; i++)
+				keys[n++] = key[i];
+			keys[n++] = '\n';
+			{
+				static char *const mk[] = { "mkdir", "-p", SSHKEYS_DIR, 0 };
+				char junk[64];
+
+				run_to_buf("/bin/mkdir", mk, junk, sizeof(junk));
+			}
+			if (write_file(SSHKEYS_PATH, keys, (unsigned long)n, 0600) < 0) {
+				respond(conn, "500 Internal Server Error", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"could not write authorized_keys\"}");
+				return;
+			}
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "{\"ok\":true}");
+			return;
+		}
+		/* GET: one object per line, blank and comment lines skipped but
+		 * counted, so the index the page sends back to delete is the line
+		 * number in the file. */
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"path\":\"" SSHKEYS_PATH "\",\"keys\":[");
+		idx = 0;
+		{
+			int first = 1;
+
+			for (ls = 0; ls < (unsigned long)n; idx++) {
+				unsigned long le = ls;
+				char saved;
+
+				while (keys[le] && keys[le] != '\n')
+					le++;
+				saved = keys[le];
+				keys[le] = 0;
+				if (keys[ls] && keys[ls] != '#') {
+					if (!first)
+						put_fd(conn, ",");
+					first = 0;
+					put_fd(conn, "{\"i\":");
+					put_u32_fd(conn, idx);
+					put_fd(conn, ",\"line\":\"");
+					put_json_cstr(conn, keys + ls);
+					put_fd(conn, "\"}");
+				}
+				keys[le] = saved;
+				ls = saved ? le + 1 : le;
+			}
+		}
+		put_fd(conn, "]}");
+		return;
+	}
+
 	if (seq(path, "/api/password") && seq(method, "POST")) {
 		char user[96], pass[160];
 		const char *why = 0;

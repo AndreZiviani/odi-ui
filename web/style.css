@@ -29,6 +29,11 @@
 
 * { box-sizing: border-box; }
 
+/* The UA paints checkboxes, file pickers, select dropdowns and scrollbars
+   itself, and it paints them for a light page unless told otherwise -- which
+   is how a tick box came to sit on this background as a small white slab. */
+:root { color-scheme: dark; }
+
 /*
  * The `hidden` attribute has to beat an ID selector.
  *
@@ -115,7 +120,9 @@ h3.sub {
   margin: 2rem 0 .5rem;
 }
 .me-bar label.inline {
-  display: flex; align-items: center; gap: .4rem; align-self: center;
+  display: flex; align-items: center; gap: .45rem; align-self: end;
+  padding-bottom: .45rem; color: var(--text); font-size: .82rem;
+  white-space: nowrap; cursor: pointer;
 }
 /* The restore diff: three columns, was and will-be in mono so the change is
    readable at a glance rather than needing to be compared character by
@@ -145,11 +152,103 @@ h3.sub {
 #logout:hover { color: var(--text); border-color: var(--muted); }
 
 main { padding: 1.75rem 1.5rem 5rem; max-width: 76rem; }
+/* The hairline is the section device on this page -- .me-card already proved
+   it. Giving h2 the same rule makes a tab read as stacked panels instead of a
+   scroll of grey paragraphs, and costs no new vocabulary. */
 h2 {
   font-size: .78rem; font-weight: 600; color: var(--muted);
-  margin: 2.5rem 0 .9rem; letter-spacing: .01em;
+  margin: 2.6rem 0 .9rem; letter-spacing: .01em;
+  border-top: 1px solid var(--rule); padding-top: 1.3rem;
 }
+/* A rule across the very top of a tab separates it from nothing. */
+section > h2:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+
 .hint { color: var(--muted); font-size: .85rem; max-width: 62ch; margin: .2rem 0 1.4rem; }
+
+/*
+ * Four registers, four treatments.
+ *
+ * This page used to say everything in one costume -- muted, .85rem, 62ch --
+ * whether it was orienting you, instructing you, warning you, or explaining a
+ * quirk of the firmware. Undifferentiated prose has to be read in full to find
+ * the sentence that applies, which is why seven tabs of accurate writing felt
+ * like too much of it.
+ */
+
+/* Orientation. Exactly one per tab, and only where a tab needs one: Status
+   opens on the optical meters and Tools on its two headings, and neither is
+   improved by a line of prose above it. Set at text size because it is an
+   answer, not small print. */
+.deck { margin: 0 0 1.7rem; max-width: 52ch; font-size: 1rem; line-height: 1.5; }
+.deck code { font-family: var(--mono); font-size: .85rem; color: var(--fibre); }
+
+/* Instruction. Attached to the control it governs rather than floating above
+   the whole block, so it is read at the moment it applies. */
+.field-note { color: var(--muted); font-size: .82rem; max-width: 62ch; margin: .15rem 0 1.3rem; }
+.me-bar + .field-note { margin-top: -.75rem; }
+.field-note code { font-family: var(--mono); font-size: .76rem; }
+
+/* Consequence. The treatment is #defaultauth's, which already works: a left
+   rule and a panel ground at full text colour. Two severities and no third --
+   fibre means think first, alarm means you cannot take it back. */
+.consequence {
+  border-left: 2px solid var(--fibre); background: var(--panel);
+  padding: .65rem .9rem; margin: .2rem 0 1.3rem; max-width: 62ch;
+  font-size: .87rem; line-height: 1.5;
+}
+.consequence.grave { border-left-color: var(--alarm); }
+.consequence code { font-family: var(--mono); font-size: .78rem; color: var(--fibre); }
+
+/* The reset's two paragraphs were really a two-column fact, and as a fact it
+   reads in three seconds instead of forty. */
+.pairs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 2.5rem;
+  max-width: 62ch; margin: .2rem 0 1.2rem;
+}
+.pairs h4 {
+  margin: 0 0 .55rem; padding-bottom: .35rem; font-size: .72rem; font-weight: 600;
+  color: var(--muted); border-bottom: 1px solid var(--rule);
+}
+.pairs ul { margin: 0; padding: 0; list-style: none; display: grid; gap: .35rem; }
+.pairs li { font-size: .83rem; }
+.pairs code { font-family: var(--mono); font-size: .78rem; }
+.pairs .keeps li { color: var(--text); }
+.pairs .clears li { color: var(--muted); }
+
+/*
+ * Lore, and the popovers that reach it.
+ *
+ * The trigger is the term itself -- a dotted fibre underline, no icon, no
+ * question-mark bubble, no extra column. The page gains no furniture, and the
+ * affordance sits on the words you would have hovered anyway.
+ */
+.why-wrap { position: relative; display: inline; }
+.why {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0;
+  border-bottom: 1px dotted var(--fibre); cursor: help; text-align: left;
+}
+.why:hover { color: var(--text); }
+.why code { font-family: var(--mono); font-size: .78rem; }
+
+.pop {
+  position: absolute; left: 0; top: 1.75em; z-index: 10;
+  width: min(34rem, 80vw); padding: .75rem .9rem;
+  background: var(--panel); border: 1px solid var(--rule);
+  border-left: 2px solid var(--fibre); border-radius: 3px;
+  /* A popover floats over body text, so it needs real separation from what is
+     behind it -- the one place on this page a shadow earns its keep. */
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+}
+
+/* Rendered once, in the tab's own foot block: keyboard, print and anything
+   without a pointer reach every word the popovers hold. */
+.lore { margin-top: 3rem; border-top: 1px solid var(--rule); padding-top: 1.1rem; }
+.lore-item { max-width: 68ch; margin: 1.1rem 0 0; }
+.lore-item h4 { margin: 0 0 .3rem; font-size: .8rem; font-weight: 600; color: var(--text); }
+.lore-item p { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.55; }
+.lore-item code { font-family: var(--mono); font-size: .78rem; color: var(--fibre); }
+.pop .lore-item { margin: 0; }
+.pop .lore-item p { color: var(--text); font-size: .84rem; }
 
 /* --- the optical link: the hero ------------------------------------------ */
 
@@ -429,7 +528,6 @@ a.fwbtn { display: inline-block; text-decoration: none; }
    global `details { margin-top: 2.5rem }` spaces the block itself, and without
    this the note underneath sits flush against its summary. */
 #me-tables { margin-top: .6rem; }
-#omci > .hint:last-child { margin-top: 1.6rem; }
 
 /* --- the raw browser ----------------------------------------------------- */
 
@@ -438,12 +536,40 @@ a.fwbtn { display: inline-block; text-decoration: none; }
   margin-bottom: 1.2rem;
 }
 .me-bar label { display: grid; gap: .25rem; color: var(--muted); font-size: .78rem; }
-.me-bar input {
+
+/*
+ * Text fields only.
+ *
+ * This was a bare `.me-bar input`, so it also caught the restore tick box and
+ * the two file pickers: a checkbox given `min-width: 16rem` becomes a 16rem
+ * box with its own label stranded on the far side of it, which is what the
+ * Restore row looked like. A selector that matches every input in a bar is a
+ * selector that will keep finding controls it was not written for.
+ */
+.me-bar input:not([type="checkbox"]):not([type="file"]) {
   padding: .4rem .6rem; font: inherit; font-family: var(--mono); font-size: .85rem;
   background: var(--panel); color: var(--text);
   border: 1px solid var(--rule); border-radius: 3px; min-width: 16rem;
 }
 .me-bar #me-entity { min-width: 7rem; }
+
+.me-bar input[type="checkbox"] {
+  width: 1rem; height: 1rem; margin: 0; accent-color: var(--fibre); flex: 0 0 auto;
+}
+/* A file picker is a button plus a filename, so it is dressed as one: the
+   dashed edge says "drop target" without claiming to be one, and the button
+   half matches the .fwbtn beside it instead of arriving as a white slab. */
+.me-bar input[type="file"] {
+  padding: .3rem .5rem; font: inherit; font-size: .8rem; color: var(--muted);
+  background: var(--panel); border: 1px dashed var(--rule); border-radius: 3px;
+  min-width: 20rem; max-width: 100%;
+}
+.me-bar input[type="file"]::file-selector-button {
+  margin-right: .7rem; padding: .25rem .7rem; font: inherit; font-size: .8rem;
+  background: none; color: var(--text); cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 3px;
+}
+.me-bar input[type="file"]::file-selector-button:hover { border-color: var(--fibre); }
 .me-bar button {
   padding: .4rem .9rem; font: inherit; font-size: .85rem; cursor: pointer;
   background: none; color: var(--text);
@@ -464,4 +590,14 @@ a.fwbtn { display: inline-block; text-decoration: none; }
 @media (max-width: 46rem) {
   .me-bar input { min-width: 0; width: 100%; }
   .me-bar label { flex: 1 1 100%; }
+
+  /* Anchored to a term mid-sentence, a 34rem panel has nowhere to go on a
+     phone. Let it fall into the flow and push the paragraph down: always
+     legible, never half off the edge. */
+  .why-wrap { display: block; }
+  .pop {
+    position: static; width: auto; margin: .5rem 0 .2rem;
+    box-shadow: none;
+  }
+  .pairs { grid-template-columns: 1fr; gap: 1.2rem; }
 }
