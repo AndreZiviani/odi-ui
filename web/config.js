@@ -126,7 +126,13 @@ function renderValue(row, raw) {
   return td;
 }
 
-function renderConfig(hostSel, rows, filter) {
+/*
+ * `sections` off renders the rows bare, with no per-section heading. The Admin
+ * tab shows one schema section under a heading of its own -- "Device login"
+ * says more to an operator than the schema's internal name for it, and two
+ * headings stacked would just be the same word twice.
+ */
+function renderConfig(hostSel, rows, filter, sections = true) {
   const host = $(hostSel);
   host.textContent = '';
   const f = (filter || '').toLowerCase();
@@ -138,7 +144,7 @@ function renderConfig(hostSel, rows, filter) {
   }
 
   for (const name of Object.keys(bySection).sort()) {
-    host.append(el('h2', null, name));
+    if (sections) host.append(el('h2', null, name));
     const t = el('table');
     const head = el('tr');
     for (const h of ['Setting', 'Value', 'What it does']) head.append(el('th', null, h));
@@ -194,7 +200,12 @@ function renderConfig(hostSel, rows, filter) {
 }
 
 function renderAll() {
-  renderConfig('#common', S.SCHEMA.filter((r) => r.common === 'yes'), '');
+  /* The account keys are the device's own SSH and telnet login, not a line
+     setting, so they live on Admin beside the credential for this UI -- the
+     two are confused often enough that showing them apart is the point. */
+  const accounts = (r) => r.section === 'accounts';
+  renderConfig('#common', S.SCHEMA.filter((r) => r.common === 'yes' && !accounts(r)), '');
+  renderConfig('#accounts', S.SCHEMA.filter((r) => r.common === 'yes' && accounts(r)), '', false);
   renderConfig('#sections', S.SCHEMA, $('#filter').value);
 }
 

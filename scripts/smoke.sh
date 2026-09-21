@@ -243,6 +243,32 @@ check "a real credential overrides the default" 200 \
 check "and the default stops working once it does" 401 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 
+echo "== ssh keys"
+rm -f /etc/config/dropbear.d/authorized_keys
+check "no file lists no keys" '{"path":"/etc/config/dropbear.d/authorized_keys","keys":[]}' \
+	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")"
+check "a line that is not a key is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data-urlencode 'key=hello world' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "an empty key is refused" 400 \
+	"$(code -u "$AUTH" -X POST -d 'key=' "http://127.0.0.1:$PORT/api/sshkeys")"
+K1='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxJq2sL3o5p8Qh1u7v9wXyZaBcDeFgHiJkLmNoPqRsT laptop'
+K2='ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0m8v2xFakeKeyBlobForTheSmokeTest0123456789abcdefghijklmnopqrstuvwxyz desk'
+check "a key is added" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "and a second one" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K2" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "the file has both, one per line, mode 600" "2 600" \
+	"$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ') $(stat -c '%a' /etc/config/dropbear.d/authorized_keys)"
+check "the list carries both with their line numbers" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '{"i":0,"line":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxJq2sL3o5p8Qh1u7v9wXyZaBcDeFgHiJkLmNoPqRsT laptop"},{"i":1,"line":"ssh-rsa')"
+check "deleting the first leaves the second at line 0" yes \
+	"$(curl -s -u "$AUTH" -X POST -d 'delete=0' "http://127.0.0.1:$PORT/api/sshkeys" >/dev/null; err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '"keys":[{"i":0,"line":"ssh-rsa')"
+check "deleting a line that is not there is 404" 404 \
+	"$(code -u "$AUTH" -X POST -d 'delete=7' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "without a credential the keys are not readable" 401 \
+	"$(code "http://127.0.0.1:$PORT/api/sshkeys")"
+rm -f /etc/config/dropbear.d/authorized_keys
+
 echo "== request framing"
 # The bug: headers and body in separate segments made the body arrive empty,
 # and handle_write answered {"results":[],"apply":"none"} with no error at all.

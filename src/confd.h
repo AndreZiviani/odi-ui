@@ -89,6 +89,9 @@
 #define DEFAULT_CS "/etc/config_default.xml"
 #define DEFAULT_HS "/etc/config_default_hs.xml"
 #define AUTH_PATH    "/etc/config/confd.auth"
+/* dropbear -D names this directory; the image starts it that way. */
+#define SSHKEYS_DIR  "/etc/config/dropbear.d"
+#define SSHKEYS_PATH SSHKEYS_DIR "/authorized_keys"
 /*
  * What confd uses when /etc/config/confd.auth is missing or empty.
  *

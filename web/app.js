@@ -6,7 +6,7 @@
  * any of this.
  */
 
-import { $, el, fail, get } from './dom.js';
+import { $, el, fail, get, wireLore } from './dom.js';
 import { S, EDITS } from './state.js';
 import { renderStatus } from './status.js';
 import { renderConfig, renderAll } from './config.js';
@@ -18,7 +18,7 @@ import { wireRestore } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
 
-const TABS = ['status', 'config', 'advanced', 'services', 'omci', 'tools', 'firmware'];
+const TABS = ['status', 'config', 'advanced', 'services', 'omci', 'tools', 'admin', 'firmware'];
 for (const b of document.querySelectorAll('nav button')) {
   b.onclick = () => {
     for (const o of document.querySelectorAll('nav button')) o.classList.toggle('on', o === b);
@@ -30,19 +30,24 @@ for (const b of document.querySelectorAll('nav button')) {
     if (b.dataset.tab === 'services') renderServices();
     if (b.dataset.tab === 'omci') renderMeBrowser();
     if (b.dataset.tab === 'tools') renderTools();
+    if (b.dataset.tab === 'admin') renderSshKeys();
   };
 }
 $('#filter').oninput = (e) => renderConfig('#sections', S.SCHEMA, e.target.value);
 $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
 $('#pw-save').onclick = savePassword;
+$('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;
 wireRestore();
 wireFirmware();
+/* Every tab's markup is in the document from the start, hidden or not, so one
+   pass at boot wires the footnotes on all seven. */
+wireLore();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. */
 $('#l2-load').onclick = renderL2;
-$('#gopassword').onclick = () => { showTab('config'); $('#pw-pass').focus(); };
+$('#gopassword').onclick = () => { showTab('admin'); $('#pw-pass').focus(); };
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
 /*
@@ -94,6 +99,68 @@ async function savePassword() {
       + user + '.'));
     $('#pw-pass').value = '';
     await checkAuth();
+  } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
+}
+
+/*
+ * SSH public keys for the device login. The list is the file as it is, so a
+ * key added over ssh by hand shows up here too, and a delete names the line
+ * number the server reported rather than re-sending the key text.
+ */
+async function renderSshKeys() {
+  const box = $('#sshkeys');
+  box.textContent = '';
+  try {
+    const j = await get('/api/sshkeys');
+    if (!j.keys.length) { box.append(el('p', 'field-note', 'No keys yet: SSH accepts the root password only.')); return; }
+    const t = el('table', 'kv');
+    for (const k of j.keys) {
+      const tr = el('tr');
+      const parts = k.line.split(/\s+/);
+      const blob = parts[1] || '';
+      tr.append(el('td', null, parts[0] || ''));
+      tr.append(el('td', 'mono', blob.length > 24 ? blob.slice(0, 12) + '\u2026' + blob.slice(-8) : blob));
+      tr.append(el('td', null, parts.slice(2).join(' ')));
+      const del = el('button', null, 'Remove');
+      del.type = 'button';
+      del.onclick = () => delSshKey(k.i);
+      const td = el('td'); td.append(del); tr.append(td);
+      t.append(tr);
+    }
+    box.append(t);
+  } catch (e) { box.append(el('div', 'bad', String(e.message || e))); }
+}
+
+async function addSshKey() {
+  const out = $('#sshkey-out');
+  const key = $('#sshkey-new').value.trim();
+  out.textContent = '';
+  try {
+    const r = await fetch('/api/sshkeys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ key }).toString(),
+    });
+    const j = await r.json();
+    if (!j.ok) { out.append(el('div', 'bad', j.error || 'refused')); return; }
+    $('#sshkey-new').value = '';
+    out.append(el('div', 'good', 'Added. dropbear reads the file on every login; nothing to restart.'));
+    await renderSshKeys();
+  } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
+}
+
+async function delSshKey(i) {
+  const out = $('#sshkey-out');
+  out.textContent = '';
+  try {
+    const r = await fetch('/api/sshkeys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ delete: String(i) }).toString(),
+    });
+    const j = await r.json();
+    if (!j.ok) { out.append(el('div', 'bad', j.error || 'refused')); return; }
+    await renderSshKeys();
   } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
 }
 

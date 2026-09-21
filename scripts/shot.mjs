@@ -37,7 +37,7 @@ page.on('response', (r) => { if (r.status() >= 400) problems.push(`HTTP ${r.stat
 await page.goto(BASE + '/', { waitUntil: 'networkidle0', timeout: 30000 });
 await new Promise((r) => setTimeout(r, 1500));
 
-const tabs = ['status', 'config', 'advanced', 'services', 'omci', 'firmware'];
+const tabs = ['status', 'config', 'advanced', 'services', 'omci', 'tools', 'admin', 'firmware'];
 for (const t of tabs) {
   await page.evaluate((tab) => {
     for (const b of document.querySelectorAll('nav button')) if (b.dataset.tab === tab) b.click();
