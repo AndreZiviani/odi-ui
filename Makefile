@@ -113,10 +113,11 @@ test: verify check smoke
 # one tarball, the daemon beside it, and one SHA256SUMS over both. What the
 # workflow publishes on a v* tag is exactly this, so a tag cannot fail on
 # something `make release` would have caught locally.
+# Inside the container, like sums: build/ is created by the container as root,
+# so on Linux -- every CI runner -- the host user cannot write into it. macOS
+# maps the ownership and hides that.
 assets: | $(BUILD)
-	rm -rf $(BUILD)/assets && mkdir -p $(BUILD)/assets
-	cp web/* schema/*.tsv $(BUILD)/assets/
-	tar -C $(BUILD)/assets -czf $(BUILD)/confd-assets.tar.gz .
+	$(RUN) sh -c 'rm -rf $(BUILD)/assets && mkdir -p $(BUILD)/assets && cp web/* schema/*.tsv $(BUILD)/assets/ && tar -C $(BUILD)/assets -czf $(BUILD)/confd-assets.tar.gz .'
 
 sums: confd assets
 	$(RUN) sh -c 'cd $(BUILD) && sha256sum confd confd-assets.tar.gz > SHA256SUMS && cat SHA256SUMS'
