@@ -13,7 +13,42 @@ const S = {
   SCHEMA: [], VALUES: {}, META: {}, CONS: {}, DEFAULTS: {}, BASELINE: {},
   /* mask name -> [{ bit, feature, module }], from /api/features. */
   FEATURES: {},
+  /* name -> { apply, action, pair, reader, note }, from /api/settings: what
+     THIS image does with the key. Empty on an image without the table, and
+     then every key is offered as before. */
+  SETTINGS: {},
+  /* /api/firmware, for the switch files and the lan-ip override. */
+  FW: {},
 };
+
+/*
+ * The four apply classes, as the page labels them. The names are the ones
+ * docs/SETTINGS.md in odi-oss uses, so the doc and the page say the same word.
+ */
+const CLASS_LABEL = {
+  live: 'LIVE',
+  restart: 'SERVICE RESTART',
+  reboot: 'REBOOT',
+  internet: 'INTERRUPTS INTERNET',
+};
+/* The ones that ask before they act. */
+const CLASS_CONFIRMS = new Set(['reboot', 'internet']);
+
+/* Whether this image says which keys it reads. */
+function imageAware() {
+  return Object.keys(S.SETTINGS).length > 0;
+}
+
+/* The settings row for a key, or null: a key this image does not read. */
+function settingOf(name) {
+  return S.SETTINGS[name] || null;
+}
+
+/* The OLT identity keys, which omcid reports only while its switch is on. */
+const IDENTITY_SWITCH = 'omci-identity.on';
+function identitySwitchOn() {
+  return Boolean((S.FW.switches || {})[IDENTITY_SWITCH]);
+}
 
 /* Pending edits, keyed by name. Kept out of the DOM so switching tabs or
    re-filtering cannot silently drop a change the user has typed -- and read
@@ -52,9 +87,9 @@ function applyOf(row) {
 
 /*
  * Whether a key's `depends` condition holds. The firmware ignores some keys
- * unless others are set a particular way — VLAN_MANU_TAG_VID only reaches
- * omci_app when VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1, and otherwise a sentinel
- * is sent in its place. Saying so is more useful than showing a value that
+ * unless others are set a particular way — VLAN_MANU_TAG_VID is applied only
+ * when VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1, by omcid here as by omci_app on
+ * the stock firmware. Saying so is more useful than showing a value that
  * looks live and is not.
  */
 function dependsUnmet(row) {
@@ -111,4 +146,7 @@ function decodeMask(name, value) {
   return { n, known, unknown, covered };
 }
 
-export { S, EDITS, provenance, applyOf, dependsUnmet, decodeMask };
+export {
+  S, EDITS, provenance, applyOf, dependsUnmet, decodeMask,
+  CLASS_LABEL, CLASS_CONFIRMS, imageAware, settingOf, IDENTITY_SWITCH, identitySwitchOn,
+};

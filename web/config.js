@@ -7,12 +7,16 @@
  */
 
 import { $, el } from './dom.js';
-import { S, EDITS, provenance, applyOf, dependsUnmet, decodeMask } from './state.js';
+import {
+  S, EDITS, provenance, applyOf, dependsUnmet, decodeMask,
+  CLASS_LABEL, imageAware, settingOf, identitySwitchOn,
+} from './state.js';
 import { hexAscii, validateInput } from './validate.js';
 
-function renderValue(row, raw) {
+function renderValue(row, raw, readonly = false) {
   const td = el('td');
   const meta = S.META[row.name] || {};
+  const set = settingOf(row.name);
 
   /* What to PUT IN THE FIELD: the pending edit if there is one, otherwise the
      device value. `raw` stays the comparison baseline throughout.
@@ -27,8 +31,12 @@ function renderValue(row, raw) {
 
   /* Never-writable keys get no control at all. The refusal is enforced in the
      daemon twice over, but not offering the field is the honest presentation. */
-  if (row.writable === 'never') {
-    td.append(el('span', null, raw === '' ? '(empty)' : raw));
+  /* Nor do the stock keys, on an image that says which keys it reads, nor a
+     key that is written together with another one (LOID_OLD follows LOID). */
+  if (row.writable === 'never' || readonly || (set && set.pair)) {
+    const shownRo = EDITS.has(row.name) ? EDITS.get(row.name) : raw;
+    td.append(el('span', 'mono', shownRo === undefined ? '(not set)'
+      : shownRo === '' ? '(empty)' : shownRo));
     return td;
   }
 
@@ -132,7 +140,7 @@ function renderValue(row, raw) {
  * says more to an operator than the schema's internal name for it, and two
  * headings stacked would just be the same word twice.
  */
-function renderConfig(hostSel, rows, filter, sections = true) {
+function renderConfig(hostSel, rows, filter, sections = true, readonly = false) {
   const host = $(hostSel);
   host.textContent = '';
   const f = (filter || '').toLowerCase();
@@ -155,12 +163,19 @@ function renderConfig(hostSel, rows, filter, sections = true) {
       const k = el('td');
       k.append(el('div', 'label', meta.label || row.name));
       k.append(el('div', 'key', row.name));
+      const set = settingOf(row.name);
       if (row.writable === 'never') k.append(el('span', 'tag never', 'never'));
-      if (row.writable === 'identity') k.append(el('span', 'tag identity', 'identity'));
-      const ap = applyOf(row);
-      if (ap === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
-      if (ap === 'reboot') k.append(el('span', 'tag identity', 'needs reboot'));
-      if (meta.range) k.append(el('span', 'tag', meta.range));
+      if (row.writable === 'identity' && !readonly) k.append(el('span', 'tag identity', 'identity'));
+      if (imageAware()) {
+        /* The apply class this image gives the key: what saving it costs. */
+        if (set) k.append(el('span', 'tag cls-' + set.apply, CLASS_LABEL[set.apply] || set.apply));
+        else if (readonly) k.append(el('span', 'tag never', 'stock firmware only'));
+      } else {
+        const ap = applyOf(row);
+        if (ap === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
+        if (ap === 'reboot') k.append(el('span', 'tag identity', 'needs reboot'));
+      }
+      if (meta.range && !readonly) k.append(el('span', 'tag', meta.range));
       const prov = provenance(row, S.VALUES[row.name]);
       if (prov) {
         const t = el('span', 'tag ' + prov.cls, prov.label);
@@ -171,10 +186,22 @@ function renderConfig(hostSel, rows, filter, sections = true) {
       }
       tr.append(k);
 
-      tr.append(renderValue(row, S.VALUES[row.name]));
+      tr.append(renderValue(row, S.VALUES[row.name], readonly));
 
       const info = el('td', 'info');
       if (meta.help) info.append(el('div', 'help', meta.help));
+      if (set && set.note) info.append(el('div', 'help', set.note));
+      if (set && set.pair) {
+        info.append(el('div', 'opts', `Written with ${set.pair}: edit that one.`));
+      }
+      if (row.name === 'LAN_IP_ADDR' && S.FW.lanip_override) {
+        info.append(el('div', 'unmet', 'Ignored while /etc/config/lan-ip exists: '
+          + 'that file sets the address, with a /24 mask.'));
+      }
+      if (set && /omci-identity\.on/.test(set.reader) && !identitySwitchOn()) {
+        info.append(el('div', 'unmet', 'Not reported to the OLT now: the OLT '
+          + 'identity switch is off (above).'));
+      }
       const unmet = dependsUnmet(row);
       if (unmet) {
         info.append(el('div', 'unmet',
@@ -186,8 +213,12 @@ function renderConfig(hostSel, rows, filter, sections = true) {
       }
       /* Who reads the key. Useful even where the timing is unknown, and it is
          what the apply class was derived from. */
-      const rd = (S.CONS[row.name] || {}).readers;
+      const rd = imageAware() ? (set ? set.reader : '') : (S.CONS[row.name] || {}).readers;
       if (rd) info.append(el('div', 'opts', 'Read by: ' + rd.split(',').join(', ')));
+      if (readonly && !set && imageAware()) {
+        info.append(el('div', 'opts', 'Nothing on this image reads it. Kept for the '
+          + 'stock firmware in the other slot, and in every backup.'));
+      }
       if (prov && prov.was !== undefined) {
         info.append(el('div', 'opts',
           `${prov.from} was ${prov.was === '' ? '(empty)' : prov.was}`));
@@ -200,13 +231,29 @@ function renderConfig(hostSel, rows, filter, sections = true) {
 }
 
 function renderAll() {
-  /* The account keys are the device's own SSH and telnet login, not a line
-     setting, so they live on Admin beside the credential for this UI -- the
-     two are confused often enough that showing them apart is the point. */
+  const filter = $('#filter').value;
+
+  if (imageAware()) {
+    /* The keys this image reads, all of them editable on Config with their
+       apply class; everything else is the stock firmware own store, shown
+       read-only on its own tab and kept whole in backups and restores. */
+    renderConfig('#common', S.SCHEMA.filter((r) => settingOf(r.name)), '');
+    renderConfig('#sections', S.SCHEMA.filter((r) => !settingOf(r.name)), filter, true, true);
+    /* The device-login keys are the stock firmware accounts; this image
+       logs in as root with SSH keys, so the section is not offered. */
+    $('#device-login').hidden = true;
+    $('#advanced-deck').textContent = 'The keys only the stock firmware reads, '
+      + 'read-only. They stay in the store because the config partition is '
+      + 'shared with the other slot, and every backup and restore carries them.';
+    return;
+  }
+  /* No settings table: every key offered, as before it existed. The account
+     keys are the stock SSH login, so they live on Admin beside the credential
+     for this UI. */
   const accounts = (r) => r.section === 'accounts';
   renderConfig('#common', S.SCHEMA.filter((r) => r.common === 'yes' && !accounts(r)), '');
   renderConfig('#accounts', S.SCHEMA.filter((r) => r.common === 'yes' && accounts(r)), '', false);
-  renderConfig('#sections', S.SCHEMA, $('#filter').value);
+  renderConfig('#sections', S.SCHEMA, filter);
 }
 
 export { renderValue, renderConfig, renderAll };

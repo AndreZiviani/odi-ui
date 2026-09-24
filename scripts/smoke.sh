@@ -42,7 +42,7 @@ fi
 # The daemon reads absolute paths. We are root in the container, so give it the
 # real ones rather than teaching it about a prefix it would only need for tests.
 mkdir -p /etc/confd /etc/config
-cp schema/keys.tsv schema/meta.tsv schema/consumers.tsv schema/features.tsv /etc/confd/
+cp schema/keys.tsv schema/meta.tsv schema/consumers.tsv schema/features.tsv schema/settings.tsv /etc/confd/
 cp web/*.html web/*.css web/*.js /etc/confd/
 printf '%s' "$AUTH" > /etc/config/confd.auth
 chmod 600 /etc/config/confd.auth
@@ -341,8 +341,30 @@ echo "== apply classification"
 # the file entirely and call everything that was not restart:omci a reboot.
 check "a restart:omci key says so" yes \
 	"$(err "$(post 'VLAN_MANU_TAG_VID=110')" '"apply":"restart:omci"')"
-check "an untraced key is reported as untraced" yes \
+# settings.tsv, this image own table, decides what a write needs: the actions
+# the page runs (network) or offers (omci, reboot), and whether a key is read
+# by nothing here at all.
+check "an omcid key needs the omci action" yes \
+	"$(err "$(post 'VLAN_MANU_TAG_VID=110')" '"needs":["omci"]')"
+check "a management address needs the network action" yes \
+	"$(err "$(post 'LAN_IP_ADDR=192.168.1.1')" '"needs":["network"]')"
+check "and is no longer reported as untraced" yes \
+	"$(err "$(post 'LAN_IP_ADDR=192.168.1.1')" '"untraced":false')"
+check "a key only the stock firmware reads is reported as such" yes \
+	"$(err "$(post 'DNS1=1.1.1.1')" '"needs":[],"stock":true')"
+check "a batch reports every action it needs" yes \
+	"$(err "$(post 'LAN_IP_ADDR2=192.168.100.1&VLAN_MANU_TAG_PRI=0')" '"needs":["network","omci"]')"
+check "settings.tsv is served" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")" '"name":"LAN_ENABLE_IP2","apply":"live","action":"network"')"
+# Without the table, the old classification stands.
+mv /etc/confd/settings.tsv /tmp/settings.tsv.kept
+check "without settings.tsv an untraced key is reported as untraced" yes \
 	"$(err "$(post 'LAN_IP_ADDR=192.168.1.1')" '"untraced":true')"
+check "and no actions are listed" yes \
+	"$(err "$(post 'LAN_IP_ADDR=192.168.1.1')" '"needs":[]')"
+check "and /api/settings answers an empty list" '[]' \
+	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")"
+mv /tmp/settings.tsv.kept /etc/confd/settings.tsv
 check "an identity key needs confirmation" yes \
 	"$(err "$(post 'GPON_SN=ODI12345678')" '_confirm=identity')"
 check "an unknown key is refused" yes \
@@ -457,6 +479,66 @@ check "writing the running partition is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'action=write&partition=0' "http://127.0.0.1:$PORT/api/firmware")" 'that is the partition this stick is running')"
 check "a bad partition is still refused" 400 \
 	"$(code -u "$AUTH" -X POST -d 'action=write&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
+
+# A background write, as odi-oss fwu_starter.sh leaves it: the state and the
+# log are reported so the page can follow it.
+printf 'running 4242 1\n' > /tmp/fwu.state
+printf 'fwu: slot 1 -> kernel /dev/mtd6\nfwu: erasing /dev/mtd6\n' > /tmp/fwu.log
+check "a running write is reported" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"write":{"state":"running","pid":"4242","slot":"1","rc":""')"
+check "with the end of its log" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" 'erasing /dev/mtd6')"
+printf 'failed 4242 1 3\n' > /tmp/fwu.state
+check "and a failed one with its exit code" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"state":"failed","pid":"4242","slot":"1","rc":"3"')"
+rm -f /tmp/fwu.state /tmp/fwu.log
+check "no state file, no write field" no \
+	"$(case "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" in *'"write"'*) echo yes ;; *) echo no ;; esac)"
+
+echo "== applying"
+# /etc/scripts/apply.sh does the work on odi-oss; the stub echoes what it was
+# asked, so the argv the route builds is what is checked.
+cat > /etc/scripts/apply.sh <<'APPLY'
+#!/bin/sh
+echo "apply.sh: $1"
+[ "$1" = omci ] && [ -f /tmp/apply-fail ] && exit 1
+exit 0
+APPLY
+chmod +x /etc/scripts/apply.sh
+check "apply network runs apply.sh network" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=network' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: network')"
+check "apply omci runs apply.sh omci" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: omci')"
+touch /tmp/apply-fail
+check "a failing apply is reported as not applied" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":false')"
+rm -f /tmp/apply-fail
+check "an unknown action is refused" 400 \
+	"$(code -u "$AUTH" -X POST -d 'what=reboot' "http://127.0.0.1:$PORT/api/apply")"
+check "applying needs the credential" 401 \
+	"$(code -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")"
+check "a cross-origin apply is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")"
+rm -f /etc/scripts/apply.sh
+check "without apply.sh the network action is refused" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=network' "http://127.0.0.1:$PORT/api/apply")" 'reboot to apply')"
+
+echo "== switch files"
+check "the OLT identity switch starts off" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false}')"
+check "it can be turned on" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=1' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":true')"
+check "which creates the file" yes "$([ -f /etc/config/omci-identity.on ] && echo yes)"
+check "and is reported" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":true}')"
+check "and off again" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=0' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":false')"
+check "which removes it" no "$([ -f /etc/config/omci-identity.on ] && echo yes || echo no)"
+for bad in 'name=confd.auth&on=0' 'name=../confd.auth&on=0' 'name=omci-identity.on&on=2' 'name=omci-identity.on'; do
+	check "switch refuses $bad" 400 \
+		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/switch")"
+done
+check "the credential file survived every refusal" yes "$([ -f /etc/config/confd.auth ] && echo yes)"
 
 echo "== tools"
 # Ping takes IPv4 literals and nothing else. Not fussiness: this server is

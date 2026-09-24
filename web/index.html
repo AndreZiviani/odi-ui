@@ -15,7 +15,7 @@
   <nav>
     <button data-tab="status" class="on">Status</button>
     <button data-tab="config">Config</button>
-    <button data-tab="advanced">All settings</button>
+    <button data-tab="advanced">Stock keys</button>
     <button data-tab="services">Services</button>
     <button data-tab="omci">MIB</button>
     <button data-tab="tools">Tools</button>
@@ -65,9 +65,12 @@
          data-why="l-rates">Compare the rates, not the totals</button></span>.</p>
 
     <h2>Learned addresses</h2>
-    <p class="field-note">The counters above say whether frames cross. This says
-       who is crossing.</p>
-    <p class="me-bar"><button id="l2-load" class="fwbtn" type="button">Read the MAC table</button></p>
+    <p class="field-note">The counters above say whether frames cross. This would
+       say who is crossing: <strong>not yet</strong> on this image, whose switch
+       driver cannot read the learned-address table back. It needs a kernel
+       change, which is planned.</p>
+    <p class="me-bar"><button id="l2-load" class="fwbtn" type="button" disabled
+       title="Not yet: needs an L2 table readback in the kernel">Read the MAC table</button></p>
     <div id="l2"></div>
 
     <h2>Transceiver</h2>
@@ -91,17 +94,27 @@
   </section>
 
   <section id="config" hidden>
-    <p class="deck">The settings provisioning a line actually uses. Nothing is
-       written until you save.</p>
+    <p class="deck">Every setting this image reads. Nothing is written until you
+       save.</p>
+    <p class="field-note">Each one says what applying it costs:
+       <span class="tag cls-live">LIVE</span> takes effect at once;
+       <span class="tag cls-restart">SERVICE RESTART</span> restarts a daemon and
+       keeps the fibre service up;
+       <span class="tag cls-internet">INTERRUPTS INTERNET</span> is applied without
+       a reboot but drops the fibre service while the ONU ranges again;
+       <span class="tag cls-reboot">REBOOT</span> is read only at boot. The last
+       two ask before they act.</p>
+    <div id="identity-switch" hidden></div>
+    <div id="identity-out"></div>
     <div id="common"></div>
 
   </section>
 
   <section id="advanced" hidden>
-    <p class="deck">Every key the device stores.</p>
+    <p class="deck" id="advanced-deck">Every key the device stores.</p>
     <input id="filter" type="search" placeholder="Filter settings" autocomplete="off">
-    <p class="field-note">Where a key&rsquo;s consumer has been traced, the cost
-       of changing it is shown. Where it has not, assume a reboot.</p>
+    <p class="field-note">Backups and restores on the Admin tab carry every one of
+       these, whether or not this page offers it for editing.</p>
     <div id="sections"></div>
   </section>
 
@@ -152,9 +165,11 @@
       </div>
       <div class="lore-item" id="l-tables">
         <h4>The table list is a capture</h4>
-        <p>Asking the device for it costs the MIB service:
-           <code>omcicli get tables</code> returns nothing and leaves it unable
-           to answer anything until <code>omci_app</code> is restarted.</p>
+        <p>Asking the device for it costs the stock MIB service:
+           <code>omcicli get tables</code> returns nothing and leaves the stock
+           <code>omci_app</code> unable to answer anything until it is restarted.
+           This image&rsquo;s omcid answers it safely, but the refusal stays for
+           the stock slot.</p>
       </div>
     </details>
   </section>
@@ -162,9 +177,9 @@
   <section id="tools" hidden>
     <h2>Kernel log</h2>
     <p class="me-bar"><button id="log-reload" class="fwbtn" type="button">Refresh</button></p>
-    <p class="field-note">The only log this device keeps.
+    <p class="field-note">The kernel ring buffer.
        <span class="why-wrap"><button type="button" class="why"
-         data-why="l-klog">There is no syslog and no <code>dmesg</code> here</button></span>.</p>
+         data-why="l-klog">There is no syslog here</button></span>.</p>
     <div id="log-out"></div>
 
     <h2>Ping</h2>
@@ -181,11 +196,12 @@
     <details class="lore">
       <summary>Why this device behaves this way</summary>
       <div class="lore-item" id="l-klog">
-        <h4>The kernel ring buffer is the whole log</h4>
-        <p>There is no syslog daemon in the image and no <code>dmesg</code> in
-           its busybox, so the switch and OMCI complaints live in the ring buffer
-           until they scroll away. This reads it without consuming it &mdash;
-           <code>cat /proc/kmsg</code> would eat the history and then block.</p>
+        <h4>The kernel ring buffer, and the daemon logs beside it</h4>
+        <p>There is no syslog daemon in the image. The kernel complaints live in
+           the ring buffer until they scroll away, and this reads it without
+           consuming it &mdash; <code>cat /proc/kmsg</code> would eat the history
+           and then block. The daemons log to <code>/var/log/omcid.log</code> and
+           <code>/var/log/services.log</code>, in RAM, over SSH.</p>
       </div>
       <div class="lore-item" id="l-ping">
         <h4>Addresses only, never names</h4>
@@ -215,16 +231,17 @@
       <button id="pw-save" type="button">Save credentials</button>
     </div>
     <p class="field-note">This username and password sign you in to this UI and
-       nothing else &mdash; not the SSH or telnet login, and not anything the OLT
-       sees.
+       nothing else &mdash; not the SSH login, and not anything the OLT sees.
        <span class="why-wrap"><button type="button" class="why"
          data-why="l-cred">Where it is kept, and what erases it</button></span>.</p>
     <div id="pw-out"></div>
 
+    <div id="device-login">
     <h2>Device login</h2>
     <div id="accounts"></div>
-    <p class="field-note">The username and password for SSH and telnet on this
-       stick. Changing them here saves with everything else, on the Save bar.</p>
+    <p class="field-note">The username and password for SSH on this stick.
+       Changing them here saves with everything else, on the Save bar.</p>
+    </div>
 
     <h2>SSH keys</h2>
     <div id="sshkeys"></div>
@@ -235,6 +252,7 @@
     </div>
     <p class="field-note">Keys that log in as <code>root</code> over SSH without a
        password, one OpenSSH line each, as <code>ssh-keygen</code> prints them.
+       They are the way in on this image: its root password is fixed per build.
        Kept in <code>/etc/config/dropbear.d/authorized_keys</code>, beside the
        host key, so they survive a firmware reflash.</p>
     <div id="sshkey-out"></div>
@@ -263,29 +281,28 @@
       <div>
         <h4>Keeps</h4>
         <ul class="keeps">
-          <li><code>GPON_SN</code></li>
-          <li><code>MAC_KEY</code></li>
-          <li><code>ELAN_MAC_ADDR</code></li>
-          <li>this UI&rsquo;s sign-in</li>
+          <li>the management IP and the second address</li>
+          <li>the VLAN and the PLOAM password</li>
+          <li><code>GPON_SN</code>, <code>MAC_KEY</code>, <code>ELAN_MAC_ADDR</code></li>
+          <li>every key the defaults file does not name</li>
+          <li>this UI&rsquo;s sign-in and the SSH keys</li>
         </ul>
       </div>
       <div>
-        <h4>Clears</h4>
+        <h4>Resets</h4>
         <ul class="clears">
-          <li>VLAN and device mode</li>
-          <li>the OMCI settings</li>
-          <li>the PLOAM password</li>
-          <li>the management IP</li>
-          <li>the device login</li>
+          <li>the four LOID keys, emptied</li>
+          <li><code>DEVICE_TYPE</code>, <code>DUAL_MGMT_MODE</code> and the three
+              <code>OMCI_CUSTOM</code> masks, which only the stock firmware reads</li>
         </ul>
       </div>
     </div>
-    <p class="consequence grave">Some lines authenticate on that PLOAM password.
-       The management IP goes back to <code>192.168.1.1</code> &mdash; this page
-       offers to put yours back before you reboot, which is the step that is easy
-       to forget and hard to undo.</p>
+    <p class="consequence">The config store is shared with the stock firmware in
+       the other slot, so the reset keys are reset for it too.</p>
     <p class="field-note">A backup downloads first, and the reset does not start
-       until your browser has the file. Takes effect at the next reboot. This is
+       until your browser has the file. It merges the image defaults,
+       <code>/etc/config_default.xml</code>, into the service store; the LOID keys
+       then take effect when OMCI is applied. This is
        <span class="why-wrap"><button type="button" class="why"
          data-why="l-eraseall">not <code>flash_eraseall</code></button></span>.</p>
     <div class="me-bar">
@@ -305,8 +322,8 @@
       </div>
       <div class="lore-item" id="l-eraseall">
         <h4>Why this is not <code>flash_eraseall</code></h4>
-        <p>Reset runs the vendor&rsquo;s own <code>flash default cs</code>, which
-           rewrites the stored configuration rather than erasing the partition.
+        <p>Reset runs <code>flash default cs</code>, which rewrites the named keys
+           in the stored configuration rather than erasing the partition.
            <code>GPON_SN</code>, <code>MAC_KEY</code> and
            <code>ELAN_MAC_ADDR</code> survive it, and so does the credential
            this UI signs you in with. <code>flash_eraseall /dev/mtd3</code> &mdash; the recipe
@@ -329,8 +346,8 @@
     <!-- Above the table, not below it: firmware.js appends its own footer, the
          build panel and a Reboot button into #parts, so a note placed after it
          lands under the reboot button and reads as a caption for that. -->
-    <p class="field-note">The version beside each partition is what the updater
-       wrote from that image.
+    <p class="field-note">The running partition shows the image it runs; the other
+       shows what U-Boot records for it.
        <span class="why-wrap"><button type="button" class="why"
          data-why="l-swver">It is not automatically what your ISP sees</button></span>.</p>
     <div id="parts"></div>
@@ -348,9 +365,9 @@
          data-why="l-tmp">The image waits in RAM until then</button></span>.</p>
     <div id="fw-upload-out"></div>
 
-    <p class="consequence grave">Writing takes about eighty seconds, and this
-       page answers nothing at all while it runs. Do not reload, and do not power
-       the stick off.</p>
+    <p class="consequence grave">Writing takes about eighty seconds and runs on
+       the stick by itself: this page follows it, and closing the page does not
+       stop it. Do not power the stick off until it says written.</p>
     <details>
       <summary>Doing it from a shell instead</summary>
       <pre id="upload"></pre>
@@ -377,19 +394,13 @@
       </div>
       <div class="lore-item" id="l-swver">
         <h4>What the OLT is told about the version</h4>
-        <p>On this base <code>chk_swver_fix.sh</code> copies the partition
-           version into <code>OMCI_SW_VER1/2</code> at every boot, but only when
-           <code>OMCI_OLT_MODE</code> is neither 0 nor 21. Setting
-           <code>sw_custom_version0</code> or <code>sw_custom_version1</code> in
-           the U&#8209;Boot environment makes the script prefer that string
-           instead, and it survives reflashing &mdash; the supported answer to
-           &ldquo;my OMCI software version resets at every boot&rdquo;. The
-           widely repeated answer, <code>OMCI_OLT_MODE=21</code>, is one that
-           script&rsquo;s own comment calls a hack that segfaults
-           <code>checkomci</code>. Nothing on this page writes any of it:
-           changing the version an ISP authenticates against is a decision to
-           make from a shell, on a line you can afford to lose &mdash;
-           <code>nv setenv sw_custom_version0 &lt;string&gt;</code>.</p>
+        <p>On this image the OLT is told <code>0.0.0</code> for both software
+           images, whatever the partitions hold, unless the OLT identity switch on
+           the Config tab is on &mdash; then it is told <code>OMCI_SW_VER1</code>
+           for image 0 and <code>OMCI_SW_VER2</code> for image 1. Both keys are
+           shared with the stock firmware, which may rewrite them when it boots.
+           Changing what an ISP authenticates against is a decision to make on a
+           line you can afford to lose.</p>
       </div>
     </details>
   </section>
@@ -397,6 +408,7 @@
 
 <div id="savebar" hidden>
   <span id="savecount"></span>
+  <span id="saveclasses"></span>
   <label id="confirmwrap" hidden>
     <input type="checkbox" id="confirm">
     Change identity keys the line authenticates on: <span id="confirmwhat"></span>

@@ -44,6 +44,37 @@
 #define PING_PATH    "/bin/ping"
 #define MD5SUM_PATH  "/bin/md5sum"
 #define FWU_STARTER  "/etc/scripts/fwu_starter.sh"
+/*
+ * What fwu_starter.sh leaves behind on an image that writes in the background
+ * (odi-oss): the state, "running|ok|failed <pid> <slot> [rc]", and the flasher's
+ * own output. /api/firmware reports both so the page can follow a write
+ * without this daemon blocking for the eighty seconds it takes. Absent on an
+ * image whose fwu_starter.sh still blocks, and then the POST answer is final.
+ */
+#define FWU_STATE    "/tmp/fwu.state"
+#define FWU_LOG      "/tmp/fwu.log"
+/*
+ * How the image applies saved settings without a reboot (odi-oss
+ * /etc/scripts/apply.sh): `apply.sh network` re-applies the management
+ * addresses, live; `apply.sh omci` restarts the OMCI daemon and re-ranges the
+ * ONU, which interrupts the internet. Absent, "omci" falls back to restarting
+ * the stock omci_app, and "network" is refused.
+ */
+#define APPLY_PATH   "/etc/scripts/apply.sh"
+/* The override network.sh prefers over LAN_IP_ADDR; reported so the page can
+ * say the key is ignored while it exists. */
+#define LANIP_OVERRIDE "/etc/config/lan-ip"
+/*
+ * Switch files on the config partition that the UI may create and remove.
+ * An allowlist of exact names: the route that toggles them builds a path from
+ * a request, and nothing but these names may reach the filesystem.
+ *
+ *   omci-identity.on   report the OLT identity keys (OMCI_SW_VER1/2,
+ *                      GPON_ONU_MODEL, OMCC_VER, OMCI_VENDOR_PRODUCT_CODE) to
+ *                      the OLT. Off, omcid answers what it always has.
+ */
+#define SWITCH_DIR   "/etc/config/"
+#define SWITCH_OMCI_IDENTITY "omci-identity.on"
 
 /*
  * Where an uploaded image lands. /tmp is ramfs sharing ~27 MB with everything
@@ -67,6 +98,16 @@
 #define CONS_PATH_OVR   "/etc/config/confd/consumers.tsv"
 #define BASE_PATH       "/etc/confd/baseline.tsv"
 #define BASE_PATH_OVR   "/etc/config/confd/baseline.tsv"
+/*
+ * What THIS image does with each key: its apply class (live, restart, reboot,
+ * internet), the action that applies it (network, omci, reboot), the key it is
+ * written together with, who reads it, and a note. Per image like the schema:
+ * a key with no row here is one nothing on the image reads -- kept in the store
+ * and in backups for the stock firmware in the other slot, and not offered for
+ * editing. Absent altogether, every key is offered, as before this table.
+ */
+#define SETT_PATH       "/etc/confd/settings.tsv"
+#define SETT_PATH_OVR   "/etc/config/confd/settings.tsv"
 /* Which bit of each OMCI_CUSTOM_* mask loads which plugin, generated from the
  * image's own lib/features by scripts/gen-features.py. Per-image, like the
  * schema: a different base implements a different set. */

@@ -27,6 +27,7 @@ extern char req[16384];
 extern char schema[40960];
 extern char meta[16384];
 extern char cons[16384];
+extern char sett[8192];
 extern char values[24576];
 extern char status[16384];
 /*

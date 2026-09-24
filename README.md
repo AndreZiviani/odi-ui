@@ -31,21 +31,72 @@ hundred lines instead of 88 handlers.
 
 - **Status** &mdash; optics, ONU state, alarms, switch-port counters, and the
   MAC addresses the switch has learned.
-- **Config** &mdash; backup, restore, reset, the UI password, and the 23 keys
-  the line profiles in `odi-sandbox` actually
-  carry. That set is an empirical answer to "what gets changed" rather than a
-  guess, since it is exactly what provisioning a stick for an ISP line has
-  needed.
-- **All settings** &mdash; all 184 keys, filterable, with the `OMCI_CUSTOM_*`
-  bitmasks decoded against this image.
+- **Config** &mdash; on the odi-oss image, every key the image reads (21), each
+  labelled with what applying it costs, and the OLT identity switch; see "On the
+  odi-oss image" below. On a stock-based image, the 23 keys the line profiles in
+  `odi-sandbox` actually carry.
+- **Stock keys** (was *All settings*) &mdash; on odi-oss, the 163 keys only the
+  stock firmware reads, read-only, for inspecting what a backup carries. On a
+  stock-based image, all 184 keys, editable, with the `OMCI_CUSTOM_*` bitmasks
+  decoded.
 - **Services** &mdash; what the OLT actually provisioned, in sentences.
 - **MIB** &mdash; the same thing unedited, one managed entity at a time.
 - **Tools** &mdash; the kernel ring buffer, and ping from the stick.
 - **Firmware** &mdash; both partitions, image upload and write, and the
   one-shot trial boot.
+- **Admin** &mdash; the UI credential, SSH keys, backup, restore and reset.
 
-The Config/All settings split is a `common` column in the schema, so which keys
-are everyday ones is a data decision rather than something baked into the page.
+Which keys go where is data: `schema/settings.tsv` when the image has it, the
+`common` column in the schema when it does not.
+
+## On the odi-oss image
+
+odi-oss replaces the stock userland, and reads 21 of the 184 keys; the other
+163 are still in the store because the config partition is shared with the
+stock firmware in the other slot. `schema/settings.tsv` is that image's own
+answer to "what does this key do here": its apply class, the action that
+applies it, the key it is written with, who reads it, and why it costs what it
+does. Its presence is what switches the page into this mode; `docs/SETTINGS.md`
+in odi-oss is the prose version and the source of truth.
+
+| class | meaning | action | keys |
+|---|---|---|---|
+| **LIVE** | takes effect at once | `apply.sh network`, run straight after the save | `LAN_IP_ADDR`, `LAN_SUBNET`, `LAN_ENABLE_IP2`, `LAN_IP_ADDR2`, `LAN_SUBNET2` |
+| **SERVICE RESTART** | a daemon restarts, the fibre service stays up | -- | none today |
+| **INTERRUPTS INTERNET** | applied without a reboot, the fibre service drops meanwhile | `apply.sh omci`, offered as *Apply now* behind a confirmation | the four `VLAN_*`, `GPON_PLOAM_PASSWD`, the four `LOID*`, `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`, `OMCC_VER`, `OMCI_VENDOR_PRODUCT_CODE` |
+| **REBOOT** | read only at boot | *Reboot now*, behind a confirmation that names the slot it comes back on | `ELAN_MAC_ADDR`, `GPON_SN` |
+
+What the page does differently there:
+
+- **Only keys that work are editable.** A key with no settings row is shown on
+  the Stock keys tab, read-only. `/api/config` still accepts every schema key,
+  because a restore must write all of them back, and answers `"stock":true` for
+  a key nothing here reads.
+- **`/api/config` lists the actions a save needs**, `"needs":["network","omci",
+  "reboot"]`. The daemon still applies nothing on its own; the page runs the
+  live one and offers the other two.
+- **`LOID` is written with `LOID_OLD`** (and the password with its `_OLD`),
+  because the OLD value wins whenever the two differ, on omcid as on the stock
+  firmware; the `pair` column says so and the `_OLD` rows are read-only.
+- **The OLT identity switch.** omcid reports `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`,
+  `OMCC_VER` and `OMCI_VENDOR_PRODUCT_CODE` only while
+  `/etc/config/omci-identity.on` exists; off, it answers what it always has.
+  Both our sticks already store the stock values in all five, so reporting them
+  by default would change what both OLTs see. `POST /api/switch
+  name=omci-identity.on&on=1|0` toggles it (an allowlist of one name), and
+  `/api/firmware` reports it under `switches`.
+- **Firmware write runs in the background.** odi-oss `fwu_starter.sh` checks
+  the slot is the inactive one and `fwu.sh` against its md5, starts the flasher
+  detached, and returns; `/api/firmware` carries `write` (`state`, `slot`,
+  `rc`, and the tail of the flasher log) and the page follows it.
+- **Reset** merges `/etc/config_default.xml` into the service store: the LOID
+  keys and five stock-only keys go back to their defaults, nothing else moves.
+- **The MAC table is not read yet**: odi-oss `diag` has no L2-table command,
+  which needs a kernel readback first. The button is disabled and says so.
+
+    GET  /api/settings                  settings.tsv as JSON, [] when absent
+    POST /api/apply   what=network|omci -> apply.sh's own output and exit code
+    POST /api/switch  name=...&on=0|1   -> create or remove one allowlisted switch file
 
 ## The MIB tabs
 
@@ -213,6 +264,12 @@ and offers the two actions that matter:
 Writing `sw_commit` up front instead is what every runbook for this device used
 to say, and it makes an unproven image permanent before it has booted once.
 
+The version shown for the **running** partition is the image it runs, from
+`/etc/odi-build` (`image=`) or `/etc/version`; the U-Boot record
+`sw_version<p>` is shown beside it when they differ. odi-oss `fwu.sh` does not
+write that record unless asked, so on a trial it still names whatever the slot
+held before -- which is what the tab used to show as the running version.
+
 `sw_active` is U-Boot's own record of what it last booted and is never written
 here. Partitions other than 0 and 1 are refused — `sw_tryactive=2` is the
 bootloader's "no trial pending" state, so accepting it would mean doing nothing
@@ -313,10 +370,11 @@ the partial file is removed rather than left there making it worse.
 Writing is a **separate** action, and only offered for the partition the stick
 is not running — the daemon refuses the running one by reading `sw_active`,
 because `fwu.sh` would too but finding that out after the erase has begun is not
-where anyone should learn it. It blocks for about eighty seconds and this server
-is serial, so nothing else is answered meanwhile. That is honest rather than
-unfortunate: a page that looked responsive during a flash would be inviting a
-second click.
+where anyone should learn it. On a stock-based image it blocks for about
+eighty seconds and this server is serial, so nothing else is answered
+meanwhile. On odi-oss the starter returns at once and the flash runs detached,
+so the page polls `/api/firmware` for the state instead, and hides the write
+button while one is running.
 
 Integrity is not reimplemented here. `fwu_starter.sh` checks `fwu.sh` against
 the md5 inside the tar, and `fwu.sh` checks the kernel and rootfs md5s before it
@@ -349,6 +407,9 @@ actually answers is whether the management path works in both directions.
 ## Learned addresses
 
     GET /api/l2   -> diag l2-table get entry address valid
+
+Not on odi-oss yet: its diag has no L2-table command, and the switch driver
+needs a readback first. The page disables the button there and says so.
 
 The Forwarding counters say whether frames cross. This says *who* is crossing,
 and on which side each address was learned — port 2 faces the fibre, port 0 the
@@ -485,7 +546,8 @@ on.
     POST /api/config   key=value&key2=value2   -> per-key result, apply class,
                                                   and whether that class is a
                                                   traced fact or an assumption
-    POST /api/apply                            -> restart omci_app, no reboot
+    POST /api/apply   what=network|omci        -> apply.sh on odi-oss; without it,
+                                                  omci restarts omci_app
 
 A write carrying an `Origin` that does not match `Host` is refused with `403`;
 see "Cross-site writes are refused" below.
@@ -496,7 +558,9 @@ stop the others, and each gets its own verdict.
 
 Nothing is applied implicitly. The response says which apply class the changes
 need and the caller decides, because a config write on this device does nothing
-until `omci_app` restarts or the stick reboots.
+until the reader re-reads it: `omci_app` or omcid restarts, `network.sh`
+re-applies the addresses, or the stick reboots. On odi-oss it also lists the
+actions (`needs`) and whether any key is stock-only (`stock`).
 
 Refused regardless of what the schema says: `LAN_SDS_MODE`, `LAN_SPEED_MODE`,
 `FIBER_MODE`. Identity keys need `_confirm=identity` in the same body. Values
@@ -555,7 +619,12 @@ to be invisible — the daemon answering being a *different* build from the one
 the image ships, which means an override in `/etc/config` is in use.
 
 The binary reports the build it was made from, as `confd` in `/api/firmware` and
-in the Firmware tab's footer. An override at `/etc/config/confd/confd` beats the
+in the Firmware tab's footer. A release is built from its tag only:
+`scripts/check-stamp.sh` (run by `make release`, and by the workflow on a `v*`
+tag) refuses unless HEAD is exactly the tag, the tree is clean, and the binary
+carries that tag. v1.0.1 was published by hand before the workflow existed, from
+a tree still on v1.0.0 with the SSH-key change uncommitted, which is why that
+release reports itself as `v1.0.0-dirty`. An override at `/etc/config/confd/confd` beats the
 image's copy and survives reflashing, so which one is answering should be a
 question you can ask rather than one you have to go and look.
 
@@ -592,7 +661,8 @@ ssh admin@<stick> 'printf "user:password" > /etc/config/confd.auth; chmod 600 /e
 
 **With no credential file, confd answers to a built-in `admin` / `admin`** —
 the same credential `SUSER_NAME`/`SUSER_PASSWORD` ship with, and the ssh and
-telnet login on this stick.
+telnet login on the stock firmware. (odi-oss has no telnet, and logs in as root
+with SSH keys or a per-build password; the fallback is unchanged there.)
 
 This used to be a refusal, which is the safer posture in the abstract and the
 wrong one here. `/etc/config` is precisely the partition a factory reset
@@ -884,7 +954,14 @@ octets by standard and need not be printable; one that is not stays hex.
 
 ## Applying changes without a reboot
 
-Config is read **once at boot** — `/etc/runomci.sh` builds the whole `omci_app`
+**On odi-oss**, `/etc/scripts/apply.sh` does it, and `/api/apply` runs it:
+`network` re-applies both management addresses live, and `omci` deactivates the
+ONU, restarts omcid, and re-activates it so the OLT provisions every service
+again with the settings as they are now -- which is why that class is
+INTERRUPTS INTERNET. odi-oss `docs/SETTINGS.md` has the details and the
+measurements. The rest of this section is the stock firmware.
+
+On the stock firmware, config is read **once at boot** — `/etc/runomci.sh` builds the whole `omci_app`
 command line from MIB keys and never re-reads them — so a write does not take
 effect on its own. But a reboot is usually avoidable:
 

@@ -2,9 +2,11 @@
 # produced by gen-schema.py: that file is regenerated from a device and would
 # overwrite anything written here. Merged with it by name, in the browser.
 #
-# Everything below is sourced from the device itself — /etc/runomci.sh for how a
-# key reaches omci_app, and measurement for the rest. Where a claim is not
-# grounded it says so rather than guessing.
+# The rows for keys in settings.tsv describe what the odi-oss image does with
+# them. The rest describe the stock firmware -- /etc/runomci.sh for how a key
+# reaches omci_app, and measurement for the rest -- and are shown only in the
+# read-only stock-keys view. Where a claim is not grounded it says so rather
+# than guessing.
 #
 # options  value=label, separated by |
 # depends  KEY=VALUE, joined by &. When unmet the UI says the key is ignored,
@@ -12,10 +14,6 @@
 # range    min-max, inclusive
 name	label	help	options	depends	range
 DEVICE_TYPE	Device mode	Becomes `omci_app -t`. Anything outside the listed values falls back to bridge. Switching between HGU and SFU also needs a CS factory reset — this key alone leaves a stale WAN entry behind and the ONU keeps running as a router.	0=0 — SFU / bridge|1=1 — HGU / router|2=2 — hybrid		
-VLAN_CFG_TYPE	VLAN config mode	Selects which VLAN path omci_app takes. 1 gives `-iot_vt 1`; every other value gives `-iot_vt 0`, and the manual VLAN fields below are ignored entirely.	0=0 — transparent|1=1 — manual		
-VLAN_MANU_MODE	Manual VLAN mode	Only read when VLAN config mode is 1. Mode 1 passes the VLAN ID and priority below to omci_app; any other value sends the 65535/255 sentinels instead, which means the VLAN ID is ignored.	0=0 — off|1=1 — tag using the VLAN ID below	VLAN_CFG_TYPE=1	
-VLAN_MANU_TAG_VID	Service VLAN ID	The C-VLAN the ONU tags upstream traffic with — your ISP's service VLAN. Used only when VLAN config mode is 1 AND manual VLAN mode is 1. If this or the priority is left empty, runomci.sh drops the whole -iot_ block and no VLAN configuration reaches omci_app at all.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	1-4094
-VLAN_MANU_TAG_PRI	VLAN priority	802.1p priority bits carried in the tag. Same gating as the VLAN ID, and equally must not be empty.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	0-7
 OMCI_CUSTOM_RDP	Routing datapath features	Bitmask, DECIMAL -- `flash set` accepts nothing else. Passed as `omci_app -cr`. Each bit loads one plugin from lib/features; the field below decodes it. Bit 0x4 is `ignore_conn_uniNode_check`, which suppresses the ME 171 uniNode association check; both of our sticks run 4. On the 2024 firmware that same bit also skips populating the resolved association, which stops the ONU forwarding at all.			
 OMCI_CUSTOM_BDP	Bridge datapath features	Bitmask, DECIMAL. Passed as `omci_app -cb`. Each bit loads one plugin from lib/features; the field below decodes it against this image.			
 OMCI_CUSTOM_ME	Managed-entity features	Bitmask, DECIMAL. Passed as `omci_app -cme`. Bit 0x100 is `cf_apply_customized_veip_slot_id`, which is what makes OMCI_VEIP_SLOT_ID take effect at all -- set the slot id without this bit and nothing happens.			
@@ -24,24 +22,14 @@ DUAL_MGMT_MODE	Dual management	1 starts omci_app with `-m enable_wq`.	0=0 — of
 OMCI_FAKE_OK	Acknowledge unsupported OMCI	Answers OK to OMCI operations the stack cannot actually satisfy. Some OLTs refuse to finish provisioning without it.	0=0 — off|1=1 — on		
 OMCI_OLT_MODE	OLT vendor profile	Read by boa, configd, led, mib and xmlconfig — and NOT by omci_app or checkomci. It does not affect provisioning, which was confirmed from the binaries rather than assumed.			
 OMCI_VEIP_SLOT_ID	VEIP slot	Passed to omci_app, and read as a single byte -- so the MSB of the entity id you want, 14 for 0x0e01, not the whole id. It does nothing on its own: bit 0x100 of OMCI_CUSTOM_ME loads `cf_apply_customized_veip_slot_id`, and without that bit the value is ignored. 255 is the default here; the OLT bridges to the VEIP rather than the physical UNI on both of our lines.			
-LAN_IP_ADDR	Management IP	The address this UI, SSH and telnet answer on. Changing it drops your session.			
-LAN_SUBNET	Management netmask				
 PON_MODE	PON type	Handed to the europa driver at boot by insert_europa.sh, and read by runsdk.sh to choose which stack starts. This key is not only yours: with PON detection on, pondetect rewrites it and reboots after about 24 seconds of light without PON sync, so a value that changed on its own came from there.	1=1 — GPON|2=2 — EPON		
-GPON_SN	ONU serial number	What the OLT authenticates. Four-character vendor prefix followed by eight hex digits. Lose it and the ONU will not come up on the line.			
 PON_VENDOR_ID	Vendor prefix	The first four characters of the serial number, and must match it.			
 MAC_KEY	MAC key	32 hex characters.			
-ELAN_MAC_ADDR	UNI MAC address	eth0 comes up with this address.			
-GPON_ONU_MODEL	ONU model	Reported to the OLT in the ONU-G managed entity.			
-GPON_PLOAM_PASSWD	PLOAM password	Stored as the hex of an ASCII string, shown decoded above. Many OLTs authenticate on the serial number alone and leave this empty — one of ours does, the other uses it.			
 GPON_PLOAM_FORMAT	PLOAM format	1 on both of our lines.			
 SUSER_NAME	Admin username	The device login for SSH and telnet. Not this UI's password, which lives in /etc/config/confd.auth.			
 SUSER_PASSWORD	Admin password	The device login for SSH and telnet.			
 SW_PORT_TBL[0].PVID	Port 0 default VLAN	The VLAN untagged frames are placed in on the host-side switch port. Upstream issue #475 reports setting this to 0 as the fix for an ONU that registers but forwards nothing; both of our sticks run the shipped values and forward correctly, so it is recorded as untried rather than recommended.			
 SW_PORT_TBL[1].PVID	Port 1 default VLAN	As above, for the second switch port.			
-LAN_SUBNET	Management netmask	Netmask for the management address. Changing it drops your session along with the address.			
-LAN_ENABLE_IP2	Second management address	Whether the device answers on a second address as well.	0=0 — off|1=1 — on		
-LAN_IP_ADDR2	Second management IP	Only used when the second address is enabled.		LAN_ENABLE_IP2=1	
-LAN_SUBNET2	Second management netmask			LAN_ENABLE_IP2=1	
 DNS_MODE	DNS source	Whether the resolver addresses below are used or taken from the upstream connection.	0=0 — from upstream|1=1 — use the addresses below		
 DNS1	Primary DNS			DNS_MODE=1	
 DNS2	Secondary DNS			DNS_MODE=1	
@@ -51,4 +39,24 @@ OMCI_LOGFILE_MASK	OMCI log filter	Which message types to log. 4294967295 logs ev
 OMCI_DBGLVL	OMCI debug level	Leave at 0. /tmp is an unbounded RAM disk on a device with about 1.5 MB free, so the debug level can exhaust memory; parsed message logging is bounded and is what you actually want.	0=0 — errors only|1=1 — errors|2=2 — warnings|3=3 — info|4=4 — debug (can exhaust memory)		
 PON_DETECT_ENABLE	PON detection	What `pondetect` does with the PON MAC, every two seconds. On: if the SerDes sees light but never achieves sync for about 24 seconds, it concludes the PON type is wrong, rewrites PON_MODE to the other one and hard-reboots -- so a stick that comes back as EPON after a fibre fault did that to itself. Off does not stop pondetect: it still resets the SerDes CDR on every unsynced sample, it just never touches the flash. Detection is skipped entirely while GPON_SN is the factory default RTKG11111111. Read at boot by runsdk.sh, so a change needs a reboot.	0=0 — off (CDR reset only, never rewrites PON_MODE)|1=1 — on (may rewrite PON_MODE and reboot)		
 FIBER_MODE	Fibre mode	Never writable here. Like the SerDes mode, getting it wrong can take the link down and with it every way into the device.			
-GPON_ONU_MODEL	ONU model	Reported to the OLT in the ONU-G managed entity.			
+LAN_IP_ADDR	Management IP	The address SSH, this UI and the exporter answer on. Saving moves it at once, and this page with it: note the new address first, or turn on the second address below as a way back.			
+LAN_SUBNET	Management netmask	Netmask for the management address, applied with it.			
+LAN_ENABLE_IP2	Second management address	A second, fixed address beside the first (br0:2), for reaching the stick when the first is changed to something you cannot route to.	0=0 — off|1=1 — on		
+LAN_IP_ADDR2	Second management IP	Only used when the second address is on. Both our sticks store 192.168.100.1.		LAN_ENABLE_IP2=1	
+LAN_SUBNET2	Second management netmask			LAN_ENABLE_IP2=1	
+VLAN_CFG_TYPE	VLAN config mode	1 lets the manual VLAN below reach the services; any other value means no manual tag at all, whatever the VLAN ID says. Both our lines run 1.	0=0 — transparent|1=1 — manual		
+VLAN_MANU_MODE	Manual VLAN mode	Only read when VLAN config mode is 1. Mode 1 tags with the VLAN ID and priority below; any other value is no manual tag.	0=0 — off|1=1 — tag using the VLAN ID below	VLAN_CFG_TYPE=1	
+VLAN_MANU_TAG_VID	Service VLAN ID	The C-VLAN omcid adds upstream and removes downstream on the services the OLT provisions: your ISP service VLAN. Used only when VLAN config mode is 1 AND manual VLAN mode is 1, and only with a priority set too.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	1-4094
+VLAN_MANU_TAG_PRI	VLAN priority	802.1p priority bits carried in the tag. Same gating as the VLAN ID; an empty priority means no manual tag, as on the stock firmware.		VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1	0-7
+GPON_SN	ONU serial number	What the OLT authenticates. Four-character vendor prefix followed by eight hex digits. Lose it and the ONU will not come up on the line.			
+GPON_PLOAM_PASSWD	PLOAM password	Stored as the hex of an ASCII string, shown decoded above. Many OLTs authenticate on the serial number alone and leave this empty; one of our lines does, the other uses it.			
+ELAN_MAC_ADDR	UNI MAC address	The MAC of eth0, its host port and br0.			
+LOID	LOID	The logical ONU id a CTC-profile OLT asks for. Neither of our lines uses one. Cannot be cleared from here: the store refuses an empty value.			
+LOID_PASSWD	LOID password	The password that goes with the LOID.			
+LOID_OLD	LOID (in force)	The value omcid actually answers when it differs from LOID. Saving LOID writes this too.			
+LOID_PASSWD_OLD	LOID password (in force)	As above, for the password.			
+OMCI_SW_VER1	Software version, image 0	What the OLT is told image 0 runs (software image entity, 14 characters at most).			
+OMCI_SW_VER2	Software version, image 1	What the OLT is told image 1 runs.			
+GPON_ONU_MODEL	ONU model	The equipment id the OLT reads in ONU2-G (20 characters at most). The stock firmware reports IGD.			
+OMCC_VER	OMCC version	ONU2-G OMCC version, decimal. 128 (0x80) is what this image and the stock firmware report.			0-255
+OMCI_VENDOR_PRODUCT_CODE	Vendor product code	ONU2-G vendor product code, decimal. 15 is what this image and the stock firmware report.			0-65535

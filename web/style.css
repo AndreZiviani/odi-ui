@@ -368,6 +368,15 @@ td.info .unmet { margin-top: .45rem; color: var(--fibre); }
 .tag.never    { color: var(--alarm); border-color: #4A2B29; }
 .tag.identity { color: var(--fibre); border-color: #4A3E1E; }
 .tag.omci     { color: var(--apc);   border-color: #23453A; }
+/* The four apply classes. The two that ask before they act share the alarm
+   and fibre colours with the tags that already mean "careful". */
+.tag.cls-live     { color: var(--apc);   border-color: #23453A; }
+.tag.cls-restart  { color: var(--text);  border-color: var(--rule); }
+.tag.cls-internet { color: var(--alarm); border-color: #4A2B29; }
+.tag.cls-reboot   { color: var(--fibre); border-color: #4A3E1E; }
+button.apply.cls-internet, button.apply.cls-reboot { border-color: var(--alarm); }
+#saveclasses { color: var(--muted); font-size: .82rem; }
+#identity-switch .fwbtn { margin-left: .6rem; }
 
 td input[type=text], td select {
   width: 100%; padding: .35rem .5rem; font: inherit; font-size: .9rem;

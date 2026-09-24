@@ -25,6 +25,30 @@ static inline int seq(const char *a, const char *b)
 	return a[i] == b[i];
 }
 
+/* Copy at most cap - 1 bytes and terminate. */
+static inline void str_copy(char *dst, const char *src, unsigned long cap)
+{
+	unsigned long i = 0;
+
+	while (src[i] && i + 1 < cap) {
+		dst[i] = src[i];
+		i++;
+	}
+	dst[i] = 0;
+}
+
+/* Whether a path can be opened for reading: the one existence test a
+ * freestanding daemon with no stat wrapper needs. */
+static inline int file_exists(const char *path)
+{
+	long fd = syscall3(__NR_open, (long)path, O_RDONLY, 0);
+
+	if (fd < 0)
+		return 0;
+	syscall3(__NR_close, fd, 0, 0);
+	return 1;
+}
+
 /* Whether `s` starts with `p`. */
 static inline int spre(const char *s, const char *p)
 {

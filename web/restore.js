@@ -8,7 +8,7 @@
  * authenticates on, and reads every write back. A dedicated restore endpoint
  * taking a whole XML file would be a way around all of that, and the one key it
  * would let through unchecked is LAN_SDS_MODE -- which is the key that takes
- * ssh, telnet and this page with it.
+ * ssh and this page with it.
  *
  * It also means a restore is reviewable. The file is diffed against what the
  * device holds and nothing is written until the differences have been shown.
@@ -172,8 +172,10 @@ function wireRestore() {
         + 'alone. Tick the box above to include them — only do that when '
         + 'restoring onto the stick the backup came from.'));
 
-    out.append(line('warn', 'Nothing is applied until omci_app restarts or the '
-      + 'stick reboots. Use the Firmware tab to reboot.'));
+    out.append(line('warn', 'Written, not applied. Each restored key takes effect '
+      + 'the way its class on the Config tab says: the addresses at once when '
+      + 'you save them again there, the OMCI keys with Apply now, the rest at '
+      + 'the next reboot. Keys only the stock firmware reads change nothing here.'));
   };
 }
 

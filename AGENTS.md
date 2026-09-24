@@ -30,7 +30,7 @@ here.
                           firmware.c, status.c, omci.c, buffers.c, start.S
     web/                 the static page: app.js plus one module per tab
                           (status.js, config.js, l2.js, omci.js, ...)
-    schema/               keys.tsv, meta.tsv, consumers.tsv, features.tsv --
+    schema/               keys.tsv, meta.tsv, consumers.tsv, features.tsv, settings.tsv --
                           the data the UI is generated from
     scripts/              build/check/deploy tooling -- see below
     Dockerfile            the cross toolchain: gcc-mips-linux-gnu
@@ -66,7 +66,9 @@ container has no git history) and compiled in, reported by `confd` itself
 and shown in the Firmware tab -- this is how you tell an on-device override
 apart from what the flashed image actually ships. A shallow checkout breaks
 this silently by making every tag describe as `unknown`; CI always fetches
-full history.
+full history. Never publish a release by hand: `scripts/check-stamp.sh`
+refuses a binary whose stamp is not exactly the tag from a clean tree, and
+v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
 
 ## Coding rules
 
@@ -102,9 +104,12 @@ full history.
 - **Cross-site writes are refused**: a POST whose `Origin` does not match
   `Host` gets `403`. Do not relax this to make local testing easier.
 - **Nothing is applied implicitly.** A config write does nothing on the
-  device until `omci_app` restarts or it reboots; the API reports which
-  apply class a change needs and lets the caller decide. Do not have a
-  route restart or reboot on its own.
+  device until its reader re-reads it (omcid or `omci_app` restarts,
+  `apply.sh network`, or a reboot); the API reports which apply class and
+  which actions a change needs and lets the caller decide. Do not have a
+  route restart or reboot on its own. `schema/settings.tsv` is the image own
+  table of what each key costs; keep a key out of it unless the image reads
+  it, and keep its class matching its action (`make check` enforces both).
 - **The MIB browser must never be able to break the MIB service it
   displays.** `/api/omci` refuses `get tables` outright -- see "The MIB
   tabs" in the README for why. Any change to that route needs to preserve

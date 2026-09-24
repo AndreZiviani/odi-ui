@@ -9,8 +9,8 @@
 import { $, el, fail, get, wireLore } from './dom.js';
 import { S, EDITS } from './state.js';
 import { renderStatus } from './status.js';
-import { renderConfig, renderAll } from './config.js';
-import { save, refreshSaveBar } from './save.js';
+import { renderAll } from './config.js';
+import { save, refreshSaveBar, renderIdentitySwitch } from './save.js';
 import { renderFirmware, wireFirmware } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
@@ -33,7 +33,7 @@ for (const b of document.querySelectorAll('nav button')) {
     if (b.dataset.tab === 'admin') renderSshKeys();
   };
 }
-$('#filter').oninput = (e) => renderConfig('#sections', S.SCHEMA, e.target.value);
+$('#filter').oninput = () => renderAll();
 $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
 $('#pw-save').onclick = savePassword;
@@ -45,8 +45,10 @@ wireFirmware();
    pass at boot wires the footnotes on all seven. */
 wireLore();
 /* On demand, not on the poll: it is another diag fork and most visits to the
-   status page do not need it. */
-$('#l2-load').onclick = renderL2;
+   status page do not need it. Not on an image whose diag has no L2-table
+   command yet (odi-oss: it needs a kernel readback first) -- the button is
+   disabled in the page and says so. */
+if (!$('#l2-load').disabled) $('#l2-load').onclick = renderL2;
 $('#gopassword').onclick = () => { showTab('admin'); $('#pw-pass').focus(); };
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
@@ -59,6 +61,7 @@ $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $(
 async function checkAuth() {
   try {
     const fw = await get('/api/firmware');
+    S.FW = fw;
     $('#defaultauth').hidden = !fw.defaultauth;
   } catch (e) { /* the banner is advisory; a failed read must not blank the page */ }
 }
@@ -73,8 +76,8 @@ const showTab = (name) => {
 /*
  * Change the credential this page authenticates with, creating the file if it
  * is not there. That last part is the point: the state this fixes is the state
- * of every factory-reset stick, and an operator who has to find an ssh client
- * that still speaks to a 2007 dropbear will leave the default in place.
+ * of every factory-reset stick, and a credential that can only be set from a
+ * shell is one that stays at its default.
  */
 async function savePassword() {
   const out = $('#pw-out');
@@ -178,10 +181,12 @@ async function resetConfig() {
   const btn = $('#reset-go');
 
   out.textContent = '';
-  if (!confirm('Reset the service configuration to image defaults?\n\n'
-      + 'VLAN, management IP, device mode and the OMCI settings go back to '
-      + 'defaults, and the PLOAM password is cleared. The serial number, MAC '
-      + 'key and MAC address are NOT touched.\n\nA backup downloads first.')) return;
+  if (!confirm('Reset the service configuration to the image defaults?\n\n'
+      + 'The keys in /etc/config_default.xml go back to their defaults: the four '
+      + 'LOID keys are emptied, and DEVICE_TYPE, DUAL_MGMT_MODE and the three '
+      + 'OMCI_CUSTOM masks (read only by the stock firmware) are reset. The '
+      + 'management IP, the VLAN, the PLOAM password, the serial number and the '
+      + 'MAC keys are NOT touched.\n\nA backup downloads first.')) return;
 
   btn.disabled = true;
   try {
@@ -211,46 +216,13 @@ async function resetConfig() {
     const j = await p.json();
     if (j.output) out.append(el('pre', null, j.output.trim()));
     if (!j.ok) { out.append(el('div', 'bad', j.error || 'the reset reported a failure')); return; }
-    out.append(el('div', 'warn', 'Written. It takes effect at the next reboot.'));
-
-    /*
-     * The management IP is in the cs store, so the reset takes it back to
-     * 192.168.1.1 -- and on our lines that is off one stick's management
-     * subnet and collides with the other. The runbook's rule is to restore it
-     * BEFORE rebooting, which is a step that only works if you remember it, so
-     * offer it here with the old value already in hand.
-     */
-    const wasIp = S.VALUES.LAN_IP_ADDR;
-    if (wasIp && wasIp !== '192.168.1.1') {
-      out.append(el('div', 'warn', `The management IP was ${wasIp} and the reset `
-        + 'has set it back to 192.168.1.1. Put it back before rebooting, or this '
-        + 'stick comes up on an address you may not be able to reach.'));
-      const fix = el('button', 'fwbtn', `Restore the management IP to ${wasIp}`);
-      fix.type = 'button';
-      fix.onclick = async () => {
-        fix.disabled = true;
-        const w = await fetch('/api/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ LAN_IP_ADDR: wasIp }).toString(),
-        });
-        const wj = await w.json();
-        const r0 = (wj.results || [])[0] || {};
-        out.append(el('div', r0.ok ? 'good' : 'bad',
-          r0.ok ? `Management IP restored to ${r0.value}.`
-                : `Could not restore it: ${r0.error || 'unknown'}`));
-      };
-      out.append(fix);
-    }
-
-    const rb = el('button', 'fwbtn danger', 'Reboot now');
-    rb.type = 'button';
-    rb.onclick = () => fetch('/api/firmware', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'action=reboot',
-    });
-    out.append(rb);
+    S.VALUES = await get('/api/values');
+    renderAll();
+    /* Of the reset keys, only the LOID ones are read here, by omcid, and
+       they apply the way every omcid key does. */
+    out.append(el('div', 'warn', 'Written. The LOID keys take effect when OMCI is '
+      + 'applied (Apply now, on the Config tab save bar) or at the next reboot; the '
+      + 'rest are read only by the stock firmware.'));
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
     out.append(el('div', null, 'Nothing was reset.'));
@@ -269,17 +241,21 @@ async function refresh() {
 
 (async function init() {
   try {
-    let metaRows, consRows, baseRows, featRows;
-    [S.SCHEMA, S.VALUES, metaRows, consRows, S.DEFAULTS, baseRows, featRows] = await Promise.all([
-      get('/api/schema'), get('/api/values'), get('/api/meta'),
-      get('/api/consumers'), get('/api/defaults'), get('/api/baseline'),
-      get('/api/features'),
-    ]);
+    let metaRows, consRows, baseRows, featRows, settRows;
+    [S.SCHEMA, S.VALUES, metaRows, consRows, S.DEFAULTS, baseRows, featRows, settRows, S.FW] =
+      await Promise.all([
+        get('/api/schema'), get('/api/values'), get('/api/meta'),
+        get('/api/consumers'), get('/api/defaults'), get('/api/baseline'),
+        get('/api/features'), get('/api/settings').catch(() => []),
+        get('/api/firmware').catch(() => ({})),
+      ]);
     for (const m of metaRows) S.META[m.name] = m;
+    for (const r of settRows) S.SETTINGS[r.name] = r;
     for (const c of consRows) S.CONS[c.name] = c;
     for (const b of baseRows) S.BASELINE[b.name] = b.value;
     for (const f of featRows) (S.FEATURES[f.mask] ||= []).push(f);
     renderAll();
+    renderIdentitySwitch();
   } catch (e) { fail(e); }
   await checkAuth();
   await refresh();

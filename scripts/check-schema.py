@@ -54,6 +54,12 @@ def load(name, cols):
 keys = load("keys.tsv", 8)
 meta = load("meta.tsv", 6)
 cons = load("consumers.tsv", 3)
+sett = load("settings.tsv", 6)
+
+# settings.tsv, the image's own view. The classes are the four the page
+# labels; the actions are the three apply.sh and the reboot button perform.
+SETT_CLASSES = {"live", "restart", "internet", "reboot"}
+SETT_ACTIONS = {"network", "omci", "reboot"}
 
 names = {r[0] for r in keys}
 if not names:
@@ -81,6 +87,10 @@ for name, store, addr, section, typ, apply_, writable, common in keys:
 
 # --- meta.tsv --------------------------------------------------------------
 by_name = {r[0]: r for r in keys}
+meta_names = [r[0] for r in meta]
+for dup in sorted({n for n in meta_names if meta_names.count(n) > 1}):
+    # The browser keeps the last row, so the first is dead text nobody sees.
+    note(dup, "has more than one metadata row")
 for name, label, help_, options, depends, rng in meta:
     if name not in names:
         note(name, "has metadata but is not in the schema")
@@ -134,6 +144,31 @@ if cons and names - cons_names:
     missing = sorted(names - cons_names)
     note("consumers.tsv", f"{len(missing)} keys unclassified, e.g. {missing[:3]}")
 
+# --- settings.tsv ----------------------------------------------------------
+sett_names = [r[0] for r in sett]
+for name, apply_, action, pair, reader, note_ in sett:
+    if name not in names:
+        note(name, "is in settings.tsv but not in the schema")
+    elif by_name[name][6] == "never":
+        note(name, "is in settings.tsv but never writable")
+    if apply_ not in SETT_CLASSES:
+        note(name, f"settings apply {apply_!r} is not one of {sorted(SETT_CLASSES)}")
+    if action not in SETT_ACTIONS:
+        note(name, f"settings action {action!r} is not one of {sorted(SETT_ACTIONS)}")
+    # The class is what the page promises; the action is what it does. A key
+    # labelled live that needs a reboot, or the reverse, is a UI that lies.
+    if (apply_, action) not in {("live", "network"), ("internet", "omci"),
+                                ("reboot", "reboot")}:
+        note(name, f"class {apply_!r} does not match action {action!r}")
+    if pair and pair not in sett_names:
+        note(name, f"pair {pair!r} is not itself in settings.tsv")
+    if pair == name:
+        note(name, "is paired with itself")
+    if not reader or not note_:
+        note(name, "needs a reader and a note")
+if len(sett_names) != len(set(sett_names)):
+    note("settings.tsv", "a key appears twice")
+
 # --- report ----------------------------------------------------------------
 if problems:
     for p in problems:
@@ -142,4 +177,4 @@ if problems:
     sys.exit(1)
 
 print(f"consistent: {len(keys)} keys, {len(meta)} with guidance, "
-      f"{len(cons)} classified")
+      f"{len(cons)} classified, {len(sett)} used by this image")
