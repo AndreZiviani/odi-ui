@@ -65,7 +65,7 @@ else
 
 RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(IMAGE)
 
-.PHONY: all confd image verify check smoke schema test clean help assets sums release
+.PHONY: all confd image verify check smoke schema test clean help assets sums release stamp
 
 all: confd verify check smoke
 
@@ -122,7 +122,13 @@ assets: | $(BUILD)
 sums: confd assets
 	$(RUN) sh -c 'cd $(BUILD) && sha256sum confd confd-assets.tar.gz > SHA256SUMS && cat SHA256SUMS'
 
-release: confd verify check smoke assets sums
+# The stamp names the release, or nothing is published: HEAD exactly a v* tag,
+# a clean tree, and that tag compiled into build/confd. v1.0.1 shipped a
+# binary reporting v1.0.0-dirty because nothing checked.
+stamp: confd
+	scripts/check-stamp.sh
+
+release: confd stamp verify check smoke assets sums
 
 $(BUILD):
 	mkdir -p $@
