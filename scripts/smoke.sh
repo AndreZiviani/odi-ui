@@ -459,12 +459,13 @@ check "a cross-origin upload is refused" 403 \
 # used to error on one itself; now it reports one, and this is what keeps that
 # from quietly becoming a truncated config write.
 #
-# 64 KB, not the 3 MB file: the daemon answers 413 and closes while the client
-# is still sending, so with a body that large curl is reset mid-send and never
-# reads the status at all. That is correct of the server and useless as an
-# assertion. This size is over the buffer and small enough that the send
+# 20 KB, just over the 16 KB request buffer (src/buffers.h), not the 3 MB file:
+# the daemon answers 413 and closes while the client is still sending, so with
+# a large body curl is reset mid-send and never reads the status at all. That
+# is correct of the server and useless as an assertion. 64 KB still lost that
+# race on a CI runner (v1.0.2); 20 KB fits in the socket buffers, so the send
 # finishes first, which tests the rule rather than TCP.
-dd if=/dev/urandom of=/tmp/big.bin bs=1024 count=64 2>/dev/null
+dd if=/dev/urandom of=/tmp/big.bin bs=1024 count=20 2>/dev/null
 check "an oversized body on another route is still 413" 413 \
 	"$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST \
 	   --data-binary @/tmp/big.bin "http://127.0.0.1:$PORT/api/config")"
