@@ -49,6 +49,12 @@ jobs:
       - name: Smoke
         run: make smoke
 
+      # Only on a tag: the binary must carry exactly that tag as its build
+      # stamp, from a clean tree, or the release is not published.
+      - name: Check the version stamp
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: scripts/check-stamp.sh
+
       - name: Assets and checksums
         run: make assets sums
 
