@@ -5,6 +5,7 @@
 #include "confd.h"
 #include "http.h"
 #include "firmware.h"
+#include "buffers.h"
 
 /*
  * Boot selection.
@@ -22,6 +23,10 @@
  * sw_active is U-Boot's own record of what it last booted. It is written by the
  * bootloader on every boot and is never set here.
  */
+/* How much of the flasher's output /api/firmware carries: enough for the
+ * last dozen lines, which say where it is and whether it failed. */
+#define FWU_LOG_TAIL 1600
+
 void emit_firmware_json(int fd)
 {
 	static char *const argv[] = { "nv", "getenv", 0 };
@@ -114,6 +119,57 @@ next:
 	put_fd(fd, "},\"confd\":\"");
 	put_json_cstr(fd, BUILD_ID);
 	put_fd(fd, "\"");
+
+	/*
+	 * A background write, if fwu_starter.sh started one: its state line
+	 * split into fields, and the end of the flasher's output. The page
+	 * polls this while the state says running.
+	 */
+	{
+		char st[96];
+		long n = read_file(FWU_STATE, st, sizeof(st));
+
+		if (n > 0) {
+			unsigned long i = 0, f;
+			static const char *field[] = { "state", "pid", "slot", "rc" };
+
+			put_fd(fd, ",\"write\":{");
+			for (f = 0; f < 4; f++) {
+				unsigned long b;
+
+				while (st[i] == ' ')
+					i++;
+				b = i;
+				while (st[i] && st[i] != ' ' && st[i] != '\n')
+					i++;
+				if (f)
+					put_fd(fd, ",");
+				put_fd(fd, "\"");
+				put_fd(fd, field[f]);
+				put_fd(fd, "\":\"");
+				put_json_str(fd, st + b, i - b);
+				put_fd(fd, "\"");
+			}
+			put_fd(fd, ",\"log\":\"");
+			n = read_file(FWU_LOG, filebuf, sizeof(filebuf));
+			if (n > 0) {
+				/* The tail: the last lines are the ones that say
+				 * where it is and whether it failed. */
+				unsigned long from = (unsigned long)n > FWU_LOG_TAIL
+					? (unsigned long)n - FWU_LOG_TAIL : 0;
+
+				put_json_str(fd, filebuf + from, (unsigned long)n - from);
+			}
+			put_fd(fd, "\"}");
+		}
+	}
+
+	/* The switch files this UI may toggle, and the override that makes
+	 * LAN_IP_ADDR a dead letter while it exists. */
+	put_fd(fd, ",\"switches\":{\"" SWITCH_OMCI_IDENTITY "\":");
+	put_fd(fd, file_exists(SWITCH_DIR SWITCH_OMCI_IDENTITY) ? "true" : "false");
+	put_fd(fd, "},\"lanip_override\":");
+	put_fd(fd, file_exists(LANIP_OVERRIDE) ? "true" : "false");
 
 	/* Which credential is in force. A built-in default nobody can see is the
 	 * same thing as no password, so this is not decoration: it is what makes

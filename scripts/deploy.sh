@@ -38,8 +38,10 @@ fi
 # answers [] and the OMCI_CUSTOM_* fields decode to nothing at all. It was
 # added to build-overlay.sh and missed here, which is invisible until you look
 # at the page -- the decode degrades silently rather than erroring.
+# settings.tsv too, for the same reason: without it an odi-oss stick falls
+# back to offering every key as editable.
 ASSETS=(schema/keys.tsv schema/meta.tsv schema/consumers.tsv schema/features.tsv
-        web/*.html web/*.css web/*.js)
+        schema/settings.tsv web/*.html web/*.css web/*.js)
 
 echo "==> free space on the config partition"
 # What this actually needs, on jffs2 rather than on your disk.

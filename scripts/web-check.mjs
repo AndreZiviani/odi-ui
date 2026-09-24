@@ -88,15 +88,17 @@ const SCHEMA = tsv('keys.tsv', ['name', 'store', 'address', 'section', 'type', '
 const META = tsv('meta.tsv', ['name', 'label', 'help', 'options', 'depends', 'range']);
 const CONS = tsv('consumers.tsv', ['name', 'apply', 'readers']);
 const FEAT = tsv('features.tsv', ['mask', 'bit', 'feature', 'module']);
+const SETT = tsv('settings.tsv', ['name', 'apply', 'action', 'pair', 'reader', 'note']);
 const VALUES = Object.fromEntries(SCHEMA.map((r) => [r.name, '1']));
 
 const API = {
   '/api/schema': SCHEMA, '/api/meta': META, '/api/consumers': CONS,
   '/api/values': VALUES, '/api/defaults': {}, '/api/baseline': [], '/api/features': FEAT,
+  '/api/settings': SETT,
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
   '/api/firmware': {
     running: 'ODI-260910-6861b53', confd: 'test', mem: '26 MB', build: {},
-    defaultauth: false,
+    defaultauth: false, switches: { 'omci-identity.on': false }, lanip_override: false,
     env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2',
            sw_version0: 'ODI-260910-6861b53', sw_version1: 'V1.0-220923' },
   },
@@ -379,7 +381,63 @@ ok(/Sequence number/.test(attr(tod, 'ToDInfo') || ''),
    The card must say so and name the nv variable that fixes it. */
 ok(/is not what the OLT was told/.test(text),
    'a version the active partition does not hold is reported as such');
-ok(/sw_custom_version0/.test(text), 'and the fix names the right nv variable');
+ok(/OMCI_SW_VER1/.test(text) && /identity switch/.test(text),
+   'and the fix names the key and the switch that report it on this image');
+ok(!/sw_custom_version/.test(text), 'not the stock-only nv variable');
+
+/* --- this image own settings table --------------------------------------- */
+const state = await import(join(root, 'web', 'state.js'));
+const { withPairs } = await import(join(root, 'web', 'save.js'));
+const { EDITS } = state;
+const walk = (n, f) => { f(n); for (const c of n.children || []) walk(c, f); };
+const rowsOf = (host) => {
+  const out = [];
+  walk(host, (n) => { if (n.tagName === 'tr' && n.children[0] && n.children[0].tagName === 'td') out.push(n); });
+  return out;
+};
+const inputsOf = (host) => {
+  let n = 0;
+  walk(host, (x) => { if (x.tagName === 'input' || x.tagName === 'select') n++; });
+  return n;
+};
+const tagsOf = (host) => {
+  const out = [];
+  walk(host, (x) => { if (x.tagName === 'span' && x.classList.contains('tag')) out.push(x.textContent); });
+  return out;
+};
+
+for (const r of SETT) S.SETTINGS[r.name] = r;
+S.FW = API['/api/firmware'];
+ok(state.imageAware(), 'the settings table makes the page image-aware');
+renderAll();
+const common = doc.querySelector('#common');
+ok(rowsOf(common).length === SETT.length,
+   `Config shows exactly the ${SETT.length} keys this image reads`);
+const classTags = tagsOf(common).filter((t) => Object.values(state.CLASS_LABEL).includes(t));
+ok(classTags.length === SETT.length, 'and every one of them carries its apply class');
+ok(tagsOf(common).includes('INTERRUPTS INTERNET') && tagsOf(common).includes('LIVE')
+   && tagsOf(common).includes('REBOOT'), 'the classes are the ones SETTINGS.md names');
+const pairs = SETT.filter((r) => r.pair).length;
+ok(inputsOf(common) === SETT.length - pairs,
+   'every key is editable except the ones written with another (LOID_OLD)');
+const stock = doc.querySelector('#sections');
+ok(rowsOf(stock).length === SCHEMA.length - SETT.length,
+   'the stock keys are all on their own tab');
+ok(inputsOf(stock) === 0, 'and none of them can be edited there');
+ok(doc.querySelector('#device-login').hidden === true,
+   'the stock device-login section is not offered');
+
+EDITS.set('LOID', 'someone');
+const pw = withPairs([...EDITS.entries()]);
+ok(pw.some(([k, v]) => k === 'LOID_OLD' && v === 'someone'),
+   'saving LOID writes LOID_OLD too, since the OLD value wins');
+EDITS.clear();
+
+/* Without the table, the page is what it was: every key offered. */
+for (const k of Object.keys(S.SETTINGS)) delete S.SETTINGS[k];
+renderAll();
+ok(inputsOf(doc.querySelector('#sections')) > 100,
+   'with no settings table every key is editable, as before');
 
 await import(join(root, 'web', 'app.js'));
 await new Promise((r) => setTimeout(r, 50));

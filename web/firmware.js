@@ -6,6 +6,10 @@
  */
 
 import { $, el, fail, get, bytes } from './dom.js';
+import { CLASS_LABEL } from './state.js';
+
+/* How often the page asks how a background write is going. */
+const WRITE_POLL_MS = 3000;
 
 /*
  * An image sitting in /tmp, if one has been uploaded this session. The device
@@ -68,12 +72,12 @@ async function writeImage(part) {
   const out = $('#fwout');
 
   if (!confirm(`Write the uploaded image to partition ${part}?\n\n`
-      + 'This takes about eighty seconds, the page answers nothing while it '
-      + 'runs, and the stick must not lose power. The partition you are '
-      + 'running now is not touched.')) return;
+      + 'This takes about eighty seconds and the stick must not lose power '
+      + 'meanwhile. The partition you are running now is not touched, and '
+      + 'nothing boots the new one until you try it.')) return;
 
   out.textContent = '';
-  out.append(el('div', 'warn', `Writing partition ${part}. Do not reload.`));
+  out.append(el('div', 'warn', `Writing partition ${part}.`));
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -82,13 +86,55 @@ async function writeImage(part) {
     });
     const j = await r.json();
     if (j.output) out.append(el('pre', null, String(j.output).trim()));
-    out.append(el('div', j.ok ? 'good' : 'bad', j.ok
-      ? `Partition ${part} written. Press Try on it — a trial boots once, and `
-        + 'reverts by itself if the image does not come up.'
-      : (j.error || 'the updater reported a failure')));
-    if (j.ok) renderFirmware();
+    if (!j.ok) {
+      out.append(el('div', 'bad', j.error || 'the updater refused'));
+      return;
+    }
+    /* An image whose starter writes in the background leaves a state in
+       /api/firmware to follow; one whose starter blocks has already
+       finished, and its answer above is the whole story. */
+    await followWrite(part);
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
+  }
+}
+
+/* Poll a background write until it says ok or failed. One poll at a time:
+   a re-render while writing would otherwise start another. */
+async function followWrite(part) {
+  if (FOLLOWING) return;
+  FOLLOWING = true;
+  try { await followLoop(part); } finally { FOLLOWING = false; }
+  renderFirmware();
+}
+
+async function followLoop(part) {
+  const out = $('#fwout');
+  const log = el('pre', null, '');
+  out.append(log);
+  for (;;) {
+    let fw;
+    try { fw = await get('/api/firmware'); } catch (e) { fw = {}; }
+    const w = fw.write;
+    if (!w) {
+      out.append(el('div', 'good', `Partition ${part} written. Press Try on it — a `
+        + 'trial boots once, and reverts by itself if the image does not come up.'));
+      break;
+    }
+    log.textContent = String(w.log || '').trim();
+    if (w.state === 'ok') {
+      out.append(el('div', 'good', `Partition ${w.slot} written and read back. Press Try `
+        + 'on it — a trial boots once, and reverts by itself if the image does not '
+        + 'come up.'));
+      break;
+    }
+    if (w.state === 'failed') {
+      out.append(el('div', 'bad', `The write of partition ${w.slot} failed`
+        + (w.rc ? ` (exit ${w.rc})` : '') + '. The log above says whether it got as '
+        + 'far as erasing; the running partition was not touched.'));
+      break;
+    }
+    await new Promise((res) => setTimeout(res, WRITE_POLL_MS));
   }
 }
 
@@ -110,24 +156,29 @@ async function renderFirmware() {
   for (const h of ['Partition', 'Version', 'State']) head.append(el('th', null, h));
   t.append(head);
 
+  const writing = fw.write && fw.write.state === 'running';
   for (const p of ['0', '1']) {
     const tr = el('tr');
     tr.append(el('td', null, 'Partition ' + p));
     /*
-       Two version strings per partition, and they are not the same thing.
-       sw_version<p> is written by the updater from the image's fwu_ver.
-       sw_custom_version<p> is an override the base's chk_swver_fix.sh prefers,
-       and it is the documented-nowhere answer to the most-asked question about
-       this device: how to stop OMCI_SW_VER reverting at every boot
-       (Anime4000/RTL960x#30). The thread's advice is OMCI_OLT_MODE=21, which
-       that same script calls "a hack" that "causes sigsegv of /bin/checkomci".
+       The running partition shows what it runs: the image name from the build
+       manifest, or /etc/version. sw_version<p> in the U-Boot environment is
+       only what the updater last recorded there, and this image's fwu.sh
+       records nothing unless asked -- so on a trial of ours it still names the
+       stock firmware the slot held before, which is what this cell used to
+       show as the running version.
     */
     const vcell = el('td');
-    const custom = env['sw_custom_version' + p];
-    vcell.append(el('div', null, env['sw_version' + p] || 'empty'));
-    if (custom) {
-      vcell.append(el('div', 'aside', 'reported as ' + custom));
-      vcell.append(el('span', 'tag identity', 'custom version'));
+    const recorded = env['sw_version' + p];
+    if (p === booted) {
+      const running = (fw.build || {}).image || fw.running || recorded || 'unknown';
+      vcell.append(el('div', null, running));
+      if (recorded && recorded !== running) {
+        vcell.append(el('div', 'aside', 'U-Boot records ' + recorded));
+      }
+    } else {
+      vcell.append(el('div', null, recorded || 'empty'));
+      vcell.append(el('div', 'aside', 'as U-Boot records it'));
     }
     tr.append(vcell);
 
@@ -140,7 +191,8 @@ async function renderFirmware() {
     if (p !== committed) {
       const b = el('button', 'fwbtn', 'Try partition ' + p);
       b.onclick = () => fwAction('try', p,
-        `Partition ${p} will boot once. If it fails, the stick returns to partition ${committed} on its own.`);
+        `Partition ${p} will boot once, at the next reboot. If it fails, the stick `
+        + `returns to partition ${committed} on its own.`);
       acts.append(b);
     }
     /*
@@ -153,7 +205,7 @@ async function renderFirmware() {
        that by reading sw_active itself, so nothing could have come of it -- but
        an interface that offers a destructive action it cannot justify is one
        nobody should trust the rest of. */
-    if (UPLOADED && booted !== undefined && p !== booted) {
+    if (UPLOADED && booted !== undefined && p !== booted && !writing) {
       const b = el('button', 'fwbtn danger', 'Write the uploaded image to ' + p);
       b.onclick = () => writeImage(p);
       acts.append(b);
@@ -174,15 +226,15 @@ async function renderFirmware() {
      is not running, so they can be pasted without being adapted. */
   const other = booted === '0' ? '1' : '0';
   $('#upload').textContent = [
-    '# on your machine, in ~/git/odi-sandbox',
-    'make image                     # -> firmware/out/*.tar',
+    '# on your machine, in the odi-oss checkout',
+    'make image                     # -> out/image/<version>.tar',
     '',
-    'IMG=firmware/out/<image>.tar',
-    `cat "$IMG" | ssh admin@${location.hostname} 'cat > /tmp/img.tar'`,
-    `md5 -q "$IMG"; ssh admin@${location.hostname} 'md5sum /tmp/img.tar'`,
+    'IMG=out/image/<version>.tar',
+    `cat "$IMG" | ssh root@${location.hostname} 'cat > /tmp/img.tar'`,
+    `md5 -q "$IMG"; ssh root@${location.hostname} 'md5sum /tmp/img.tar'`,
     '',
-    `# writes partition ${other}, the one this stick is not running`,
-    `ssh admin@${location.hostname} '/etc/scripts/fwu_starter.sh ${other} /tmp/img.tar'`,
+    `# writes partition ${other}, the one this stick is not running, and waits`,
+    `ssh root@${location.hostname} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`,
   ].join('\n');
 
   const foot = el('p', 'hint');
@@ -222,16 +274,29 @@ async function renderFirmware() {
 
   if (fw.mem) $('#memtotal').textContent = fw.mem;
 
-  const rb = el('button', 'fwbtn danger', 'Reboot now');
+  if (writing) {
+    host.append(el('p', 'warn', `Partition ${fw.write.slot} is being written. `
+      + 'Do not reboot or power off until it finishes.'));
+    followWrite(fw.write.slot);
+  }
+
+  const trial = booted !== undefined && committed !== undefined && booted !== committed;
+  const rb = el('button', 'fwbtn danger', 'Reboot now — ' + CLASS_LABEL.reboot);
   rb.onclick = () => fwAction('reboot', '',
-    'The stick reboots. It will be unreachable for about a minute.');
+    'The stick reboots and the fibre service drops for about two minutes.'
+    + (trial ? ` This is a trial of partition ${booted}: the reboot comes back on `
+      + `partition ${committed}, the committed one, not on this image.` : ''));
   host.append(rb);
 }
+
+/* Set while a write is being followed, so a re-render does not start a
+   second poll loop. */
+let FOLLOWING = false;
 
 async function fwAction(action, partition, warning) {
   const out = $('#fwout');
   out.textContent = '';
-  if (!confirm(warning + '\n\nContinue?')) return;
+  if (!confirm((action === 'reboot' ? CLASS_LABEL.reboot + '\n\n' : '') + warning + '\n\nContinue?')) return;
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',

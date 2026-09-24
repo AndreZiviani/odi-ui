@@ -114,16 +114,16 @@ function renderSwImage(box, dump) {
 
   /*
    * The comparison that makes this card worth having. ME 7 is what the OLT was
-   * told; sw_version<n> is what the partition holds. On this base they are
-   * connected by chk_swver_fix.sh, which runs at boot and only when
-   * OMCI_OLT_MODE is neither 0 nor 21 -- so a difference is usually not a fault
-   * but that script deliberately standing down, and saying which is the whole
-   * point. "My OMCI software version resets at every boot" is the most-asked
-   * question about this device (Anime4000/RTL960x#30) and it is the same
-   * mechanism read from the other end.
+   * told; sw_version<n> is what U-Boot records for the partition. On this
+   * image omcid answers "0.0.0" unless the OLT identity switch is on, and then
+   * OMCI_SW_VER1 for image 0 and OMCI_SW_VER2 for image 1 -- so a difference
+   * is usually that switch being off, and saying which key sets it is the
+   * point. On the stock firmware the same question ("my OMCI software version
+   * resets at every boot", Anime4000/RTL960x#30) has another answer, because
+   * the stock image rewrites those keys itself.
    */
   const active = ENV.sw_active;
-  const held = ENV['sw_custom_version' + active] || ENV['sw_version' + active];
+  const held = ENV['sw_version' + active];
   const told = dump.instances.map((i) => attr(i, 'Version')).filter(Boolean);
 
   if (!held || !told.length) return;
@@ -131,12 +131,13 @@ function renderSwImage(box, dump) {
     box.append(note('Matches what partition ' + active + ' holds.'));
     return;
   }
+  const key = active === '1' ? 'OMCI_SW_VER2' : 'OMCI_SW_VER1';
   box.append(note('Partition ' + active + ' holds “' + held + '”, which is not '
-    + 'what the OLT was told. That is normal when OMCI_OLT_MODE is 0 or 21: '
-    + 'chk_swver_fix.sh stands down and OMCI_SW_VER keeps whatever is stored. '
-    + 'Set sw_custom_version' + active + ' in the U-Boot environment to choose '
-    + 'the reported string outright — it survives reflashing, and it is the '
-    + 'answer to a version that resets at every boot.'));
+    + 'what the OLT was told. That is expected here: omcid reports 0.0.0 '
+    + 'unless the OLT identity switch is on (Config), and then ' + key
+    + ' for this image. Set the key, turn the switch on and apply to choose '
+    + 'the reported string -- a change the OLT sees, so only on a line that '
+    + 'checks it.'));
 }
 
 function renderOlt(box, dump) {

@@ -27,6 +27,7 @@ static void handle_write(int conn, const char *body)
 	unsigned long i = 0;
 	int first = 1, confirm = 0;
 	int any_omci = 0, any_reboot = 0, any_untraced = 0;
+	int need_net = 0, any_stock = 0;
 
 	if (read_file(SCHEMA_PATH_OVR, schema, sizeof(schema)) <= 0 &&
 	    read_file(SCHEMA_PATH, schema, sizeof(schema)) <= 0) {
@@ -45,6 +46,12 @@ static void handle_write(int conn, const char *body)
 	if (read_file(CONS_PATH_OVR, cons, sizeof(cons)) <= 0 &&
 	    read_file(CONS_PATH, cons, sizeof(cons)) <= 0)
 		cons[0] = 0;
+	/* settings.tsv, when the image has one, is the authority on what a
+	 * write costs HERE: consumers.tsv was derived from the stock firmware,
+	 * whose readers this image does not run. */
+	if (read_file(SETT_PATH_OVR, sett, sizeof(sett)) <= 0 &&
+	    read_file(SETT_PATH, sett, sizeof(sett)) <= 0)
+		sett[0] = 0;
 
 	/* Identity keys need saying so explicitly. Losing GPON_SN or MAC_KEY
 	 * means the OLT stops authenticating the ONU, which is not something to
@@ -144,18 +151,34 @@ static void handle_write(int conn, const char *body)
 				char derived[32];
 				const char *a = apply;
 
-				if (tsv_field(cons, name, 1, derived, sizeof(derived)) &&
-				    derived[0] && !seq(derived, "unknown"))
-					a = derived;
+				if (sett[0]) {
+					/* Column 2 is the action. A key the
+					 * table does not name is read by
+					 * nothing on this image: it changes
+					 * the stock slot, and costs nothing
+					 * here. */
+					if (!tsv_field(sett, name, 2, derived, sizeof(derived)))
+						any_stock = 1;
+					else if (seq(derived, "network"))
+						need_net = 1;
+					else if (seq(derived, "omci"))
+						any_omci = 1;
+					else if (seq(derived, "reboot"))
+						any_reboot = 1;
+				} else {
+					if (tsv_field(cons, name, 1, derived, sizeof(derived)) &&
+					    derived[0] && !seq(derived, "unknown"))
+						a = derived;
 
-				if (seq(a, "restart:omci"))
-					any_omci = 1;
-				else if (seq(a, "reboot"))
-					any_reboot = 1;
-				else if (seq(a, "immediate"))
-					;              /* already in effect */
-				else
-					any_untraced = 1;
+					if (seq(a, "restart:omci"))
+						any_omci = 1;
+					else if (seq(a, "reboot"))
+						any_reboot = 1;
+					else if (seq(a, "immediate"))
+						;              /* already in effect */
+					else
+						any_untraced = 1;
+				}
 			}
 		} else {
 			/* The write reported success and the value did not
@@ -185,6 +208,30 @@ next:
 		put_fd(conn, "none");
 	put_fd(conn, "\",\"untraced\":");
 	put_fd(conn, (any_untraced && !any_reboot) ? "true" : "false");
+	/*
+	 * What applying the batch takes, one entry per action, for an image
+	 * with a settings table: "network" (live, apply.sh network), "omci"
+	 * (interrupts internet, apply.sh omci), "reboot". `stock` says some of
+	 * the keys are read by nothing here. The page runs or offers each; this
+	 * route applies nothing itself.
+	 */
+	put_fd(conn, ",\"needs\":[");
+	{
+		int first_need = 1;
+
+		if (need_net) {
+			put_fd(conn, "\"network\"");
+			first_need = 0;
+		}
+		if (any_omci && sett[0]) {
+			put_fd(conn, first_need ? "\"omci\"" : ",\"omci\"");
+			first_need = 0;
+		}
+		if (any_reboot && sett[0])
+			put_fd(conn, first_need ? "\"reboot\"" : ",\"reboot\"");
+	}
+	put_fd(conn, "],\"stock\":");
+	put_fd(conn, any_stock ? "true" : "false");
 	put_fd(conn, "}");
 }
 
@@ -602,21 +649,18 @@ void serve(int conn)
 	 *
 	 * NOT flash_eraseall /dev/mtd3, which is the recipe every thread gives
 	 * and the reason Anime4000/RTL960x#84 has people with dead sticks. That
-	 * erases the whole config partition: both MIB stores, the identity in
-	 * the hs store, this daemon's own credential file, and any override
-	 * binary living beside it.
+	 * erases the whole config partition: both stores, the identity in the
+	 * hs store, this daemon's own credential file, and any override binary
+	 * living beside it.
 	 *
-	 * `flash default cs` is the vendor's own supported reset and it is
-	 * per-store. The split is exactly the one that matters here:
-	 *
-	 *   cs  118 keys  service config -- VLAN, LAN IP, DEVICE_TYPE, OMCI_*
-	 *   hs   62 keys  the hardware identity -- GPON_SN, MAC_KEY,
-	 *                 ELAN_MAC_ADDR, PON_VENDOR_ID
-	 *
-	 * So resetting cs gives back a clean service configuration and leaves
-	 * the values that cannot be regenerated alone. It rewrites
-	 * /var/config/lastgood.xml rather than erasing the partition, so files
-	 * there -- confd.auth, an overridden confd or metricsd -- survive it.
+	 * `flash default cs` is per-store, and cs only. On the stock firmware it
+	 * is the vendor's reset of the whole service store; on odi-oss it merges
+	 * /etc/config_default.xml (ten keys: the LOIDs, DEVICE_TYPE,
+	 * DUAL_MGMT_MODE, the OMCI_CUSTOM masks) and leaves every other key as
+	 * it was, because the store is shared with the stock slot. Either way it
+	 * rewrites /var/config/lastgood.xml rather than erasing the partition,
+	 * so files there -- confd.auth, an overridden confd or metricsd -- and
+	 * the values that cannot be regenerated survive it.
 	 *
 	 * hs is deliberately not reachable. The reset people want is the
 	 * service one; the one that ends sticks is the other.
@@ -838,10 +882,91 @@ void serve(int conn)
 		}
 	}
 
+	/*
+	 * Apply saved settings, when the caller asks. `what` names the action
+	 * the write response listed: network (live) or omci (interrupts the
+	 * internet). The page asks for confirmation before omci; this route
+	 * does not second-guess it, but it never runs one the caller did not
+	 * name, and a save never triggers one by itself.
+	 *
+	 * The image's apply.sh does the work and says what it did. Without
+	 * one, omci falls back to restarting the stock omci_app, the only apply
+	 * a stock-based image has, and network is refused.
+	 */
 	if (seq(path, "/api/apply") && seq(method, "POST")) {
+		char what[16];
+		long code = -1, got;
+
+		if (!form_get(body, "what", what, sizeof(what)) || !what[0])
+			str_copy(what, "omci", sizeof(what));
+		if (!seq(what, "omci") && !seq(what, "network")) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network or omci\"}");
+			return;
+		}
+		if (file_exists(APPLY_PATH)) {
+			char *argv[3];
+
+			argv[0] = "apply.sh";
+			argv[1] = what;
+			argv[2] = 0;
+			got = run_to_buf_ex(APPLY_PATH, argv, status, sizeof(status), &code);
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "{\"ok\":");
+			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ",\"applied\":");
+			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ",\"output\":\"");
+			if (got > 0)
+				put_json_cstr(conn, status);
+			put_fd(conn, "\"}");
+			return;
+		}
 		respond(conn, "200 OK", "application/json", 0);
-		put_fd(conn, apply_omci() ? "{\"applied\":true}"
-					  : "{\"applied\":false,\"error\":\"omci_app did not come back\"}");
+		if (seq(what, "network")) {
+			put_fd(conn, "{\"ok\":false,\"applied\":false,"
+				     "\"error\":\"this image has no " APPLY_PATH "; reboot to apply\"}");
+			return;
+		}
+		put_fd(conn, apply_omci() ? "{\"ok\":true,\"applied\":true}"
+					  : "{\"ok\":false,\"applied\":false,\"error\":\"omci_app did not come back\"}");
+		return;
+	}
+
+	/*
+	 * Create or remove one switch file on the config partition, from the
+	 * allowlist in confd.h. Only the name is compared; the path is built
+	 * from the literal, never from the request.
+	 */
+	if (seq(path, "/api/switch") && seq(method, "POST")) {
+		char name[48], on[4];
+		static const char p_identity[] = SWITCH_DIR SWITCH_OMCI_IDENTITY;
+		const char *target = 0;
+
+		form_get(body, "name", name, sizeof(name));
+		if (!form_get(body, "on", on, sizeof(on)) ||
+		    !(seq(on, "0") || seq(on, "1"))) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"on must be 0 or 1\"}");
+			return;
+		}
+		if (seq(name, SWITCH_OMCI_IDENTITY))
+			target = p_identity;
+		if (!target) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"not a switch this UI sets\"}");
+			return;
+		}
+		if (seq(on, "1"))
+			write_file(target, "", 0, 0644);
+		else
+			syscall3(__NR_unlink, (long)target, 0, 0);
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"ok\":");
+		put_fd(conn, file_exists(target) == seq(on, "1") ? "true" : "false");
+		put_fd(conn, ",\"on\":");
+		put_fd(conn, file_exists(target) ? "true" : "false");
+		put_fd(conn, "}");
 		return;
 	}
 
@@ -928,6 +1053,23 @@ void serve(int conn)
 		values[n + m] = 0;
 		respond(conn, "200 OK", "application/json", 0);
 		emit_values_json(conn, values);
+		return;
+	}
+
+	if (seq(path, "/api/settings")) {
+		static const char *col[] = { "name", "apply", "action", "pair",
+					     "reader", "note" };
+
+		/* This image's own view of each key. Absent answers an empty
+		 * list, and the page then offers every key as it used to. */
+		if (read_file(SETT_PATH_OVR, sett, sizeof(sett)) <= 0 &&
+		    read_file(SETT_PATH, sett, sizeof(sett)) <= 0) {
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "[]");
+			return;
+		}
+		respond(conn, "200 OK", "application/json", 0);
+		emit_tsv_json(conn, sett, col, 6);
 		return;
 	}
 

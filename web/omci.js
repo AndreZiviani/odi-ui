@@ -132,21 +132,22 @@ async function fetchOmci(params) {
  * nothing at all, or prints its registered-table listing instead of the table
  * you asked for. Rendering either as "the OLT has not created any" is the most
  * misleading thing this page could say -- it reads as a provisioning fault on a
- * line that is carrying traffic. See the investigation notes: a long-running
- * omci_app stops servicing the request queue, and restarting it fixes it.
+ * line that is carrying traffic. Both were seen with the stock omci_app, which
+ * stops servicing its request queue after a long run; omcid has not shown it,
+ * but a daemon that is not running answers the same way.
  */
 function unavailable(dump) {
   if (!dump.ok) return dump.error || 'the MIB could not be read';
   const raw = String(dump.raw || '');
 
   if (!raw.trim())
-    return 'omcicli returned nothing. The MIB service stops answering on a '
-         + 'long-running omci_app; restarting it (/etc/runomci.sh) restores it '
-         + 'without touching the line.';
+    return 'omcicli returned nothing: the OMCI daemon is not answering. '
+         + 'Check that omcid is running (ps); starting it again is described '
+         + 'in the image docs (TOOLS.md, Restarting a daemon).';
   if (/^TableId\s*\[\d+\]\s*Name:/m.test(raw) && !dump.instances.length)
     return 'omcicli listed its tables instead of reading the one asked for, '
-         + 'which is how it fails when omci_app has stopped servicing the '
-         + 'request queue. Restarting omci_app (/etc/runomci.sh) restores it.';
+         + 'which is how the stock omci_app fails when it has stopped '
+         + 'servicing its request queue.';
   return null;
 }
 

@@ -18,8 +18,9 @@ import { fetchOmci, fetchMe } from './omci.js';
  * The table names `omcicli get tables` reported, taken off a stick once.
  *
  * Captured rather than queried, because asking costs the MIB service: that
- * command returns zero bytes and wedges omci_app's responder until it is
- * restarted. See scripts/fixtures/omci/_tables-names.txt.
+ * command returns zero bytes and wedges the stock omci_app responder until it
+ * is restarted. omcid answers it safely, but this page also runs against the
+ * stock daemon, so the refusal stays. See scripts/fixtures/omci/_tables-names.txt.
  *
  * NOT the /lib/omci/mib_*.so filenames, which is what this list used to be:
  * 23 of the 81 differ (`AuthSecMethod` against `Authen_Sec_Method`) and some
@@ -179,8 +180,8 @@ function renderMeBrowser() {
 
   /*
    * The device is deliberately NOT asked for its table list.
-   * `omcicli get tables` returns nothing and leaves the MIB service unable to
-   * answer anything until omci_app is restarted -- so this tab used to disable
+   * `omcicli get tables` returns nothing and leaves the stock MIB service unable
+   * to answer anything until omci_app is restarted -- so this tab used to disable
    * the diagnostics it exists to show, just by being opened. The names below
    * came off a stick once and change only with the base.
    */
