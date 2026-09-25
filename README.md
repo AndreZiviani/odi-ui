@@ -91,8 +91,11 @@ What the page does differently there:
   `rc`, and the tail of the flasher log) and the page follows it.
 - **Reset** merges `/etc/config_default.xml` into the service store: the LOID
   keys and five stock-only keys go back to their defaults, nothing else moves.
-- **The MAC table is not read yet**: odi-oss `diag` has no L2-table command,
-  which needs a kernel readback first. The button is disabled and says so.
+- **The MAC table is read on both firmwares.** odi-oss `diag` walks the
+  switch L2 table itself and answers the same `l2-table get entry address
+  valid` the stock diag does, under the stock header words; its rows also say
+  whether they are a learned address or a multicast group (`Type`, `Ports`),
+  and the page shows a group with its member ports.
 
     GET  /api/settings                  settings.tsv as JSON, [] when absent
     POST /api/apply   what=network|omci -> apply.sh's own output and exit code
@@ -408,8 +411,12 @@ actually answers is whether the management path works in both directions.
 
     GET /api/l2   -> diag l2-table get entry address valid
 
-Not on odi-oss yet: its diag has no L2-table command, and the switch driver
-needs a readback first. The page disables the button there and says so.
+Both firmwares answer it. The stock diag prints three stanzas per entry;
+odi-oss diag (`l2-table get all` in its own spelling) prints one header and a
+line per row, with two more columns, `Type` (`uc` learned, `mc` a multicast
+group) and `Ports` (a group member mask). The page reads either by zipping
+each row against the header above it, and lists a group with its members
+instead of a source port.
 
 The Forwarding counters say whether frames cross. This says *who* is crossing,
 and on which side each address was learned — port 2 faces the fibre, port 0 the

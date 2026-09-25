@@ -65,6 +65,10 @@ void emit_l2_json(int fd)
 	 * and one invocation for seven questions is worth ~200 ms. The lesson
 	 * is per command, not general -- so a new diag command goes through
 	 * argv until it has been shown to terminate on stdin.
+	 *
+	 * The odi-oss diag answers the same argv with its own listing (its
+	 * stock-spelling alias of `l2-table get all`), so one confd serves both
+	 * slots with this one command.
 	 */
 	static char *const argv[] = { "diag", "l2-table", "get", "entry",
 				      "address", "valid", 0 };
