@@ -615,7 +615,11 @@ make test                                   # ELF shape + ISA audit, data files,
 SSH_OPTS='-S /tmp/odi_ctl' scripts/deploy.sh admin@<stick> 8080
 ```
 
-Docker builds and runs everything; `make check` also needs the host's `python3`
+Docker builds and runs everything, in the shared freestanding toolchain image
+from [odi-toolchain](https://github.com/AndreZiviani/odi-toolchain), pinned by
+digest in `toolchain.env` and pulled on first use
+([`docs/BUILDING.md`](docs/BUILDING.md) has logging in while it is private and
+building it locally instead). `make check` also needs the host's `python3`
 and `node`, since it reads data files and loads the web modules and wants no
 cross-compiler. It runs on macOS.
 
