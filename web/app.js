@@ -45,9 +45,8 @@ wireFirmware();
    pass at boot wires the footnotes on all seven. */
 wireLore();
 /* On demand, not on the poll: it is another diag fork and most visits to the
-   status page do not need it. Not on an image whose diag has no L2-table
-   command yet (odi-oss: it needs a kernel readback first) -- the button is
-   disabled in the page and says so. */
+   status page do not need it. Both firmwares answer it: the stock diag, and
+   odi-oss diag from its own L2 table readback, under the same command. */
 if (!$('#l2-load').disabled) $('#l2-load').onclick = renderL2;
 $('#gopassword').onclick = () => { showTab('admin'); $('#pw-pass').focus(); };
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };

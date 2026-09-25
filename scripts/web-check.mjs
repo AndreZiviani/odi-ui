@@ -237,6 +237,23 @@ ok(parseL2(SYNTH)[0].Spa === '0', 'a port-0 row parses the same way');
 ok(!l2rows.some((r) => r.MACAddress === 'Dis'), 'the per-entry flag rows are not mistaken for addresses');
 ok(parseL2('').length === 0, 'no output yields no rows');
 
+/* odi-oss diag answers the same command with its own listing: one header,
+   one line per row, a summary line before and after. The rows are its golden
+   test's, not a capture -- scripts/fixtures/omci/README.md says so. */
+const { members } = await import(join(root, 'web', 'l2.js'));
+const L2OSS = readFileSync(join(root, 'scripts/fixtures/l2-table-odi-oss.txt'), 'utf8');
+const ossrows = parseL2(L2OSS);
+ok(ossrows.length === 3, 'odi-oss: every row is found, the summary lines are not');
+ok(ossrows[0].MACAddress === '78:54:2E:07:64:63' && ossrows[0].Spa === '2'
+   && ossrows[0].Vid === '1' && ossrows[0].Age === '6' && ossrows[0].State === 'Auto',
+   'odi-oss: the stock header words carry the same fields');
+ok(ossrows[1].Spa === '0', 'odi-oss: a host-side address');
+ok(ossrows[2].Type === 'mc' && ossrows[2].Ports === '0x1' && ossrows[2].State === 'Static',
+   'odi-oss: a multicast group is marked, with its member mask');
+ok(members('0x1') === 'host (port 0)', 'a member mask names the host side');
+ok(members('0x5') === 'host (port 0), fibre (port 2)', 'and each member, in port order');
+ok(members('0x0') === 'no ports', 'an empty mask says so');
+
 /* --- restoring a backup --------------------------------------------------- */
 const { parseBackup, classify } = await import(join(root, 'web', 'restore.js'));
 

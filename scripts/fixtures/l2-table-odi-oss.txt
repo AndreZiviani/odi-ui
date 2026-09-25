@@ -1,0 +1,6 @@
+L2 table: 1024 rows, IPv4 multicast looked up on MAC + VID/FID
+MACAddress        Spa Fid Age Vid  State  Ext Hash Type Ports Index
+78:54:2E:07:64:63 2   0   6   1    Auto   0   SVL  uc   -     0x008
+02:11:22:33:44:55 0   0   7   1    Auto   0   SVL  uc   -     0x04c
+01:00:5E:01:02:03 -   -   -   1    Static -   IVL  mc   0x1   0x3a1
+3 entries

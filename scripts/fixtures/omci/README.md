@@ -41,6 +41,18 @@ and using one of our own sticks' MAC addresses. That is the failure this
 directory exists to prevent, so the synthetic case now lives inline in
 `scripts/web-check.mjs`, labelled, where nobody can mistake it for a capture.
 
+## `../l2-table-odi-oss.txt`
+
+The same command answered by the odi-oss `diag` instead: its own L2 table
+listing, one header and one line per valid row, `Type` and `Ports` added for
+multicast groups. It is **not a capture from a stick**: it is the real odi-oss
+binary run under qemu against the fixed hardware answers of its golden test
+(odi-oss `src/diag/test/l2.golden`, the `l2-table get entry address valid`
+section, copied as is). The rows are that test's, and it says which: two
+learned hosts, one on each side (the PON-side row restates the first entry
+of the capture above), and a multicast group whose only member is the host
+side. Replace it with a real listing once one has been read off a stick.
+
 ## Captures from our own sticks (2026-09-11)
 
 | file | stick | why it is here |

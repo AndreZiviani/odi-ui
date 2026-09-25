@@ -9,9 +9,14 @@
  *
  * Parsed by finding MAC-shaped lines and splitting on whitespace against the
  * header above them, rather than by column position. diag prints this table in
- * several widths -- there are four different header lines in the binary,
- * depending on which variant of the lookup you ask for -- and a positional
- * parse would silently mis-label the columns for any of them.
+ * several widths -- the stock binary has four different header lines,
+ * depending on which variant of the lookup you ask for, and odi-oss prints one
+ * table under a single header of its own -- and a positional parse would
+ * silently mis-label the columns for any of them.
+ *
+ * odi-oss rows carry two more columns, Type (uc, mc) and Ports (the member
+ * mask of a multicast group). A multicast row was not learned anywhere: it is
+ * shown with its members instead of a source port.
  */
 
 import { $, el, get } from './dom.js';
@@ -24,7 +29,20 @@ const MAC = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
  * because "learned on 2" means nothing to a reader and "fibre" means
  * everything.
  */
-const PORTS = { 0: 'host', 2: 'fibre' };
+const PORTS = { 0: 'host', 2: 'fibre', 3: 'CPU' };
+
+function portName(p) {
+  return PORTS[p] ? `${PORTS[p]} (port ${p})` : 'port ' + p;
+}
+
+/* "0x5" -> "host (port 0), fibre (port 2)". */
+function members(mask) {
+  const m = parseInt(mask, 16);
+  if (!Number.isFinite(m)) return mask;
+  const out = [];
+  for (let p = 0; p < 4; p++) if (m & (1 << p)) out.push(portName(p));
+  return out.length ? out.join(', ') : 'no ports';
+}
 
 function parseL2(text) {
   const lines = String(text || '').split('\n');
@@ -61,6 +79,7 @@ async function renderL2() {
   if (d.error) { host.append(el('p', 'me-note bad', d.error)); return; }
 
   const rows = parseL2(d.raw);
+  const groups = rows.filter((r) => r.Type === 'mc').length;
   if (!rows.length) {
     host.append(el('p', 'hint', 'The switch has not learned any addresses. On a '
       + 'stick carrying traffic that is a finding in itself.'));
@@ -76,17 +95,21 @@ async function renderL2() {
       const spa = r.Spa;
 
       tr.append(el('td', 'mono', r.MACAddress));
-      tr.append(el('td', null, spa === undefined ? '—'
-        : (PORTS[spa] ? `${PORTS[spa]} (port ${spa})` : 'port ' + spa)));
+      if (r.Type === 'mc')
+        tr.append(el('td', null, 'group: ' + members(r.Ports)));
+      else
+        tr.append(el('td', null, spa === undefined || spa === '-' ? '—' : portName(spa)));
       tr.append(el('td', 'mono', r.Vid ?? '—'));
       tr.append(el('td', 'mono', r.Age ?? '—'));
       tr.append(el('td', null, r.State ?? '—'));
       t.append(tr);
     }
     host.append(t);
-    host.append(el('p', 'hint', rows.length + ' address'
-      + (rows.length === 1 ? '' : 'es') + ' learned. Addresses seen only on the '
-      + 'host side never reached the fibre.'));
+    const learned = rows.length - groups;
+    host.append(el('p', 'hint', learned + ' address'
+      + (learned === 1 ? '' : 'es') + ' learned'
+      + (groups ? `, ${groups} multicast group${groups === 1 ? '' : 's'}` : '')
+      + '. Addresses seen only on the host side never reached the fibre.'));
   }
 
   if (d.truncated)
@@ -99,4 +122,4 @@ async function renderL2() {
   host.append(det);
 }
 
-export { parseL2, renderL2 };
+export { parseL2, members, renderL2 };

@@ -65,12 +65,10 @@
          data-why="l-rates">Compare the rates, not the totals</button></span>.</p>
 
     <h2>Learned addresses</h2>
-    <p class="field-note">The counters above say whether frames cross. This would
-       say who is crossing: <strong>not yet</strong> on this image, whose switch
-       driver cannot read the learned-address table back. It needs a kernel
-       change, which is planned.</p>
-    <p class="me-bar"><button id="l2-load" class="fwbtn" type="button" disabled
-       title="Not yet: needs an L2 table readback in the kernel">Read the MAC table</button></p>
+    <p class="field-note">The counters above say whether frames cross. This says
+       who is crossing: every address the switch has learned, and the side it
+       learned it on. Read on demand, from the switch itself.</p>
+    <p class="me-bar"><button id="l2-load" class="fwbtn" type="button">Read the MAC table</button></p>
     <div id="l2"></div>
 
     <h2>Transceiver</h2>
