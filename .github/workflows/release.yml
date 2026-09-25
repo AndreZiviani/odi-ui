@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # needed only by the release step below
+      packages: read    # the toolchain image, while its package is private
 
     steps:
       # fetch-depth 0: BUILD_ID is `git describe --tags`, and a shallow
@@ -30,8 +31,15 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Build the cross-toolchain image
-        run: docker build -t odi-ui-toolchain .
+      # The toolchain image (toolchain.env) is pulled by digest from ghcr.io.
+      # Once the package is public this login is unnecessary and harmless;
+      # while it is private the pull needs it, and the package must grant
+      # this repository read access (package settings, Manage Actions access).
+      - name: Log in to ghcr.io (needed only while the toolchain package is private)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull the toolchain image
+        run: make image
 
       - name: Build
         run: make confd

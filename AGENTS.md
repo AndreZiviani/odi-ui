@@ -33,7 +33,8 @@ here.
     schema/               keys.tsv, meta.tsv, consumers.tsv, features.tsv, settings.tsv --
                           the data the UI is generated from
     scripts/              build/check/deploy tooling -- see below
-    Dockerfile            the cross toolchain: gcc-mips-linux-gnu
+    toolchain.env         the toolchain image (odi-toolchain freestanding), pinned by digest
+    scripts/toolchain-image.sh  prints (and pulls) it; docs/BUILDING.md has the details
     Makefile               every target below; re-enters itself with IN_CONTAINER=1
     .github/workflows/release.yml   build + gate on every push, publish on v* tags
 
@@ -90,8 +91,9 @@ v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
   `-march`, add FPU code, or assume a generic MIPS32 toolchain default is
   safe here.
   - `make verify` is the actual gate: ELF shape (ELF32, big-endian, MIPS,
-    static, no `PT_INTERP`, no `NEEDED`) plus the instruction audit against
-    the RLX5281's confirmed ISA. Run it after any codegen-affecting change,
+    static, no `PT_INTERP`, no `NEEDED`) plus the shared instruction audit
+    from the toolchain image (`isa-audit`, fatal; `isa-allowlist`, which
+    reports anything never executed on the hardware). Run it after any codegen-affecting change,
     not just after a normal edit.
 - **No apostrophes in shell-script comments.** A single quote inside a
   single-quoted inline block (e.g. `bash -c '...'`) silently terminates the

@@ -8,7 +8,14 @@
 # python3, because it checks data files and needs no cross-compiler. `make all`
 # and `make test` depend on it, so python3 is a host requirement too.
 
-IMAGE := odi-ui-toolchain
+# The toolchain container: the freestanding image from odi-toolchain, pinned
+# by digest in toolchain.env and pulled on first use; TOOLCHAIN_IMAGE
+# overrides it (scripts/toolchain-image.sh, docs/BUILDING.md). Exported so
+# scripts/smoke.sh runs in the same image.
+include toolchain.env
+TOOLCHAIN_IMAGE ?= $(TOOLCHAIN_IMAGE_PINNED)
+export TOOLCHAIN_IMAGE
+IMAGE := $(TOOLCHAIN_IMAGE)
 BUILD := build
 
 BUILD_ID ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
@@ -70,7 +77,7 @@ RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(IMAGE)
 all: confd verify check smoke
 
 image:
-	docker build -q -t $(IMAGE) . >/dev/null
+	@TOOLCHAIN_IMAGE='$(IMAGE)' scripts/toolchain-image.sh >/dev/null
 
 confd: image
 	$(RUN) make IN_CONTAINER=1 BUILD_ID='$(BUILD_ID)' $(BUILD)/confd

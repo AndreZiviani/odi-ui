@@ -32,7 +32,8 @@ if [ "${IN_CONTAINER:-0}" != 1 ]; then
 	# a stick -- a check that always fails teaches nothing. The container
 	# reads the host VM's ring buffer; the assertion is only that bytes came
 	# back, and nothing is written to it.
-	docker run --rm --cap-add SYSLOG -v "$PWD":/src -w /src odi-ui-toolchain \
+	IMAGE=$(scripts/toolchain-image.sh) || exit 1
+	docker run --rm --cap-add SYSLOG -v "$PWD":/src -w /src "$IMAGE" \
 		env IN_CONTAINER=1 scripts/smoke.sh
 	exit $?
 fi
