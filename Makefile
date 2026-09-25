@@ -26,7 +26,7 @@ CROSS := mips-linux-gnu-
 CC    := $(CROSS)gcc
 STRIP := $(CROSS)strip
 
-# Identical to sfp-exporter's, and for the same reasons: MIPS-I because the
+# Identical to odi-sfp-exporter's, and for the same reasons: MIPS-I because the
 # RLX5281 traps on much of MIPS32, big-endian, no FPU, no GOT, and freestanding
 # so nothing is quietly turned back into a libc call.
 CFLAGS  := -std=c99 -Os -Wall -Wextra \
@@ -51,7 +51,7 @@ HDRS := $(wildcard src/*.h)
 # was for the source, not for the build.
 # BUILD_ID is compiled in, but it is a make VARIABLE -- make cannot see it
 # change, so with the sources untouched it will not rebuild and the binary keeps
-# whatever stamp it was last compiled with. sfp-exporter shipped exactly that: a
+# whatever stamp it was last compiled with. odi-sfp-exporter shipped exactly that: a
 # manifest naming one exporter version and a binary reporting another.
 #
 # Park the value in a file and depend on the file. FORCE runs the recipe every
