@@ -615,7 +615,11 @@ make test                                   # ELF shape + ISA audit, data files,
 SSH_OPTS='-S /tmp/odi_ctl' scripts/deploy.sh admin@<stick> 8080
 ```
 
-Docker builds and runs everything; `make check` also needs the host's `python3`
+Docker builds and runs everything, in the shared freestanding toolchain image
+from [odi-toolchain](https://github.com/AndreZiviani/odi-toolchain), pinned by
+digest in `toolchain.env` and pulled on first use
+([`docs/BUILDING.md`](docs/BUILDING.md) has logging in while it is private and
+building it locally instead). `make check` also needs the host's `python3`
 and `node`, since it reads data files and loads the web modules and wants no
 cross-compiler. It runs on macOS.
 
@@ -997,7 +1001,7 @@ src/omci.c          the OMCI MIB read path
 src/firmware.c      partitions, the trial slot, the build manifest
 src/buffers.c       every static buffer, in one place
 src/util.h          base64, JSON escaping, small string helpers
-src/syscall.h       copied from sfp-exporter; fix it in both places
+src/syscall.h       copied from odi-sfp-exporter; fix it in both places
 web/                the UI: fifteen ES modules, one page, one stylesheet
 schema/keys.tsv     the keyspace, generated from a device
 schema/meta.tsv     curated help: labels, options, ranges, dependencies
@@ -1037,5 +1041,5 @@ Three deliberate choices worth keeping:
 ## Related
 
 - `~/git/odi-sandbox` — the firmware image, provisioning runbooks, line profiles
-- `~/git/sfp-exporter` — the Prometheus exporter and the freestanding runtime
+- `odi-sfp-exporter` — the Prometheus exporter and the freestanding runtime
 - `~/git/odi-sandbox/docs/superpowers/specs/2026-09-09-config-ui-design.md` — the design

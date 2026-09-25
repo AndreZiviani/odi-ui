@@ -16,12 +16,13 @@
 #   scripts/shot.mjs                       -> screenshots + console errors
 #   docker rm -f odi-ui-preview            -> stop it
 set -e
+IMAGE=$(scripts/toolchain-image.sh)
 docker rm -f odi-ui-preview >/dev/null 2>&1 || true
 # --cap-add SYSLOG so the Tools tab has a kernel log to show: klogctl is
 # refused in a default container. It reads the host VM's buffer, which is not
 # what a stick would say but is the right SHAPE -- priority prefixes and all.
 docker run -d --name odi-ui-preview -p 18080:18080 --cap-add SYSLOG \
-  -v "$PWD":/src -w /src odi-ui-toolchain bash -c '
+  -v "$PWD":/src -w /src "$IMAGE" bash -c '
     mkdir -p /etc/confd /etc/config /etc/scripts
     cp schema/*.tsv web/*.html web/*.css web/*.js /etc/confd/
     # No credential file on purpose: this is the state a freshly flashed or

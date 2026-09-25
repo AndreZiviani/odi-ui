@@ -8,7 +8,14 @@
 # python3, because it checks data files and needs no cross-compiler. `make all`
 # and `make test` depend on it, so python3 is a host requirement too.
 
-IMAGE := odi-ui-toolchain
+# The toolchain container: the freestanding image from odi-toolchain, pinned
+# by digest in toolchain.env and pulled on first use; TOOLCHAIN_IMAGE
+# overrides it (scripts/toolchain-image.sh, docs/BUILDING.md). Exported so
+# scripts/smoke.sh runs in the same image.
+include toolchain.env
+TOOLCHAIN_IMAGE ?= $(TOOLCHAIN_IMAGE_PINNED)
+export TOOLCHAIN_IMAGE
+IMAGE := $(TOOLCHAIN_IMAGE)
 BUILD := build
 
 BUILD_ID ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
@@ -19,7 +26,7 @@ CROSS := mips-linux-gnu-
 CC    := $(CROSS)gcc
 STRIP := $(CROSS)strip
 
-# Identical to sfp-exporter's, and for the same reasons: MIPS-I because the
+# Identical to odi-sfp-exporter's, and for the same reasons: MIPS-I because the
 # RLX5281 traps on much of MIPS32, big-endian, no FPU, no GOT, and freestanding
 # so nothing is quietly turned back into a libc call.
 CFLAGS  := -std=c99 -Os -Wall -Wextra \
@@ -44,7 +51,7 @@ HDRS := $(wildcard src/*.h)
 # was for the source, not for the build.
 # BUILD_ID is compiled in, but it is a make VARIABLE -- make cannot see it
 # change, so with the sources untouched it will not rebuild and the binary keeps
-# whatever stamp it was last compiled with. sfp-exporter shipped exactly that: a
+# whatever stamp it was last compiled with. odi-sfp-exporter shipped exactly that: a
 # manifest naming one exporter version and a binary reporting another.
 #
 # Park the value in a file and depend on the file. FORCE runs the recipe every
@@ -70,7 +77,7 @@ RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(IMAGE)
 all: confd verify check smoke
 
 image:
-	docker build -q -t $(IMAGE) . >/dev/null
+	@TOOLCHAIN_IMAGE='$(IMAGE)' scripts/toolchain-image.sh >/dev/null
 
 confd: image
 	$(RUN) make IN_CONTAINER=1 BUILD_ID='$(BUILD_ID)' $(BUILD)/confd
