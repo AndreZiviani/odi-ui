@@ -1001,7 +1001,7 @@ src/omci.c          the OMCI MIB read path
 src/firmware.c      partitions, the trial slot, the build manifest
 src/buffers.c       every static buffer, in one place
 src/util.h          base64, JSON escaping, small string helpers
-src/syscall.h       copied from sfp-exporter; fix it in both places
+src/syscall.h       copied from odi-sfp-exporter; fix it in both places
 web/                the UI: fifteen ES modules, one page, one stylesheet
 schema/keys.tsv     the keyspace, generated from a device
 schema/meta.tsv     curated help: labels, options, ranges, dependencies
@@ -1041,5 +1041,5 @@ Three deliberate choices worth keeping:
 ## Related
 
 - `~/git/odi-sandbox` — the firmware image, provisioning runbooks, line profiles
-- `~/git/sfp-exporter` — the Prometheus exporter and the freestanding runtime
+- `odi-sfp-exporter` — the Prometheus exporter and the freestanding runtime
 - `~/git/odi-sandbox/docs/superpowers/specs/2026-09-09-config-ui-design.md` — the design

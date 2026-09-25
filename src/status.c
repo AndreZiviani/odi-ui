@@ -9,7 +9,7 @@
 /*
  * Device status, in one diag invocation. diag costs ~32 ms to start and almost
  * nothing to run, so every question goes in on stdin at once; see
- * sfp-exporter's notes on the same trick.
+ * odi-sfp-exporter's notes on the same trick.
  */
 void emit_status_json(int fd)
 {

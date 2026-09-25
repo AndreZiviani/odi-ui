@@ -1,5 +1,5 @@
 /*
- * Started as a copy of ~/git/sfp-exporter/src/syscall.h and has since diverged:
+ * Started as a copy of odi-sfp-exporter/src/syscall.h and has since diverged:
  * confd needs a child's exit status (wait_exitcode, run_to_buf_ex) and the
  * MIPS socket-timeout constants, neither of which the exporter has any use for.
  *

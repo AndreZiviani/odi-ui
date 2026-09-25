@@ -2,7 +2,7 @@ name: build
 
 # Every push and PR builds and gates confd, so a tag can never fail on
 # something an ordinary commit would have caught. Only a v* tag publishes.
-# Copied from sfp-exporter's workflow; the two projects release the same way.
+# Copied from odi-sfp-exporter's workflow; the two projects release the same way.
 on:
   push:
     branches: [main]
