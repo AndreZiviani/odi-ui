@@ -247,15 +247,15 @@ function renderExtVlan(box, dump) {
 /*
  * What the OLT attached to the bridge.
  *
- * This is the difference between our two lines and it is structural rather
- * than a state flag: Claro's bridge carries the physical Ethernet UNI *and*
- * the VEIP, Vero's carries the VEIP alone. It is the question behind most
- * of the VEIP threads upstream.
+ * This can differ between lines and it is structural rather than a state
+ * flag: one OLT's bridge can carry the physical Ethernet UNI *and* the
+ * VEIP, another's just the VEIP alone. It is the question behind most of
+ * the VEIP threads upstream.
  *
  * The TP type is resolved by POINTER, not by a table of type numbers: each
  * port's TPPointer is the entity id of a real managed entity on the same
  * stick -- 0x0101 is the EthUni that ME 11 reports, 0x0601 the VEIP that ME
- * 329 reports, and Claro's five `TPType 3` pointers are exactly the entity
+ * 329 reports, and a bridge's `TPType 3` pointers are exactly the entity
  * ids of its GEM interworking TPs. So the naming below is checked against
  * the device rather than recalled from a specification.
  */
