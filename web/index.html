@@ -92,8 +92,7 @@
   </section>
 
   <section id="config" hidden>
-    <p class="deck">Every setting this image reads. Nothing is written until you
-       save.</p>
+    <div id="config-description"></div>
     <p class="field-note">Each one says what applying it costs:
        <span class="tag cls-live">LIVE</span> takes effect at once;
        <span class="tag cls-restart">SERVICE RESTART</span> restarts a daemon and
@@ -130,11 +129,10 @@
     <p class="deck">Every managed entity, unedited &mdash; exactly what
        <code>omcicli mib get</code> printed.</p>
     <div class="me-bar">
-      <label>Table or class id
-        <input id="me-pick" list="me-tables-list" autocomplete="off"
-               placeholder="84 or VlanTagFilterData">
+      <label>Managed entity
+        <select id="me-select"></select>
       </label>
-      <datalist id="me-tables-list"></datalist>
+      <label>or class id <input id="me-classid" autocomplete="off" placeholder="e.g. 84"></label>
       <label>Entity <input id="me-entity" autocomplete="off" placeholder="all"></label>
       <button id="me-go" type="button">Read</button>
     </div>
