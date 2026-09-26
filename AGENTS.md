@@ -1,20 +1,25 @@
 # AGENTS.md
 
 Guidance for any coding agent (or human) working in this repository. Read
-the top-level `README.md` first for what this project is and why it is built
-the way it is; this file is about how to work in it safely and correctly.
+the top-level `README.md` first for what this project is, and
+[`docs/DESIGN.md`](docs/DESIGN.md) for why it is built the way it is; this
+file is about how to work in it safely and correctly.
 
 ## What this is, and how it fits with the firmware image
 
 `odi-ui` builds `confd`, a small web configuration UI (daemon + static
 JS/HTML + a data-driven schema) that runs **on** an RTL9601-based GPON SFP
-ONU stick, alongside the vendor's own web server rather than replacing it.
-The device does no templating: `confd` serves a static page and a JSON API,
-and the browser renders forms generically from a schema file, so adding a
-configuration key is a data change, not a new C handler.
+ONU stick, part of the [odi-oss](https://github.com/AndreZiviani/odi-oss)
+firmware project. On the stock/OEM firmware `confd` runs alongside the
+vendor's own web server, on its own port, rather than replacing it; on the
+odi-oss image the vendor server is gone entirely and `confd` replaces it,
+serving on port 80. The device does no templating: `confd` serves a static
+page and a JSON API, and the browser renders forms generically from a schema
+file, so adding a configuration key is a data change, not a new C handler.
 
-This repo does not build a flashable firmware image. A separate, private
-firmware project consumes this repo's **releases** (the `confd` binary, a
+This repo does not build a flashable firmware image. The
+[odi-sandbox](https://github.com/AndreZiviani/odi-sandbox) firmware project
+consumes this repo's **releases** (the `confd` binary, a
 `confd-assets.tar.gz` bundle of the web files and schema tables, and
 `SHA256SUMS`, verified before use) rather than its source, and bakes them
 into a custom image alongside the stock vendor firmware and a metrics
@@ -114,7 +119,7 @@ v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
   it, and keep its class matching its action (`make check` enforces both).
 - **The MIB browser must never be able to break the MIB service it
   displays.** `/api/omci` refuses `get tables` outright -- see "The MIB
-  tabs" in the README for why. Any change to that route needs to preserve
+  tabs" in `docs/DESIGN.md` for why. Any change to that route needs to preserve
   the refusal and its smoke check.
 - Sizing anything written to the device's config partition is done from
   **measured, compressed size**, not `wc -c`: `/etc/config` is jffs2, which
