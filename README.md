@@ -30,6 +30,18 @@ generation, MIB vs config semantics, the OMCI feature bitmasks, firmware trial
 boot, authentication model, and more) and [`docs/API.md`](docs/API.md) for the
 HTTP API reference.
 
+## Screenshots
+
+From the qemu preview (`scripts/preview.sh`) with recorded fixtures; identifiers are placeholders.
+
+| Status | Config |
+|---|---|
+| ![Status page: optics, registration, forwarding counters, MAC table](docs/screenshots/ui-mactable.png) | ![Config page: every setting the image reads, with its apply cost](docs/screenshots/ui-config.png) |
+| **MIB browser** | **Firmware** |
+| ![MIB page: managed-entity picker and attribute table](docs/screenshots/ui-mib.png) | ![Firmware page: version and upload to the inactive slot](docs/screenshots/ui-firmware.png) |
+| **SSH keys** | **Phone width** |
+| ![Admin page: SSH key management](docs/screenshots/ui-sshkeys.png) | ![Status page at phone width](docs/screenshots/ui-overview-mobile.png) |
+
 ## Getting it
 
 Either download `confd`, `confd-assets.tar.gz` and `SHA256SUMS` from a
