@@ -9,13 +9,14 @@ Provenance matters, so each file says where it came from:
 
 | file | source |
 |---|---|
-| `84-VlanTagFilterData.txt` | posted by a user running `V1.0-220923` — the same base our sticks run — in Anime4000/RTL960x#282 |
+| `84-VlanTagFilterData.txt` | posted by a user running `V1.0-220923` — this repo's own base — in Anime4000/RTL960x#282 |
 | `171-ExtVlanTagOperCfgData.txt` | same thread, same stick |
 
 Add to these with `scripts/capture-omci.sh <user@stick>`, which dumps every
-registered table from a live stick. A capture from our own hardware is worth
-more than a capture from a thread: it is the same firmware *and* the same
-build, and it is the only way to confirm the tables this repo has not seen.
+registered table from a live stick. A capture from this device's own hardware
+is worth more than a capture from a thread: it is the same firmware *and* the
+same build, and it is the only way to confirm the tables this repo has not
+seen.
 
 Two things the fixtures already pin down, both of which a hand-written file
 would have got wrong:
@@ -53,7 +54,7 @@ learned hosts, one on each side (the PON-side row restates the first entry
 of the capture above), and a multicast group whose only member is the host
 side. Replace it with a real listing once one has been read off a stick.
 
-## Captures from our own sticks (2026-09-11)
+## Captures from this device's own sticks (2026-09-11)
 
 | file | stick | why it is here |
 |---|---|---|
@@ -66,6 +67,6 @@ side. Replace it with a real listing once one has been read off a stick.
 | `_tables-names.txt` | Claro | the 81 table names `omcicli get tables` reports, extracted from its `TableId [n] Name: X!` lines. **23 differ from the plugin filenames** (`AuthSecMethod` vs `Authen_Sec_Method`) and some contain spaces |
 
 `84-VlanTagFilterData.txt` and `171-ExtVlanTagOperCfgData.txt` remain the
-thread captures: both of our attempts to replace them with our own coincided
+thread captures: two attempts to replace them with fresh captures coincided
 with the MIB service wedging (see NOTES.md), and a fixture is worth having only
 when you know what it is.

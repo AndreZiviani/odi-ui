@@ -52,7 +52,7 @@ function renderValue(row, raw, readonly = false) {
     /* A value the device holds that is not in the option list must still be
        selectable, or opening the page would silently propose changing it.
        A key with NO value is a different case and gets said differently:
-       several read `GET fail` on both of our sticks, and rendering that as
+       several read `GET fail` on this hardware, and rendering that as
        "undefined (current, not a listed value)" reads like a fault in the page
        rather than an empty key. */
     if (raw === undefined || raw === '') {
@@ -108,8 +108,8 @@ function renderValue(row, raw, readonly = false) {
     const paint = (v) => {
       const d = decodeMask(row.name, v);
       box.textContent = '';
-      /* An empty key is not a malformed one. Several keys on both of our
-         sticks read back empty, and calling that "not a number" reads like a
+      /* An empty key is not a malformed one. Several keys read back empty
+         on this hardware, and calling that "not a number" reads like a
          fault in the page rather than an unset value. */
       if (String(v ?? '').trim() === '') { box.append(el('div', null, 'not set')); return; }
       if (!d) { box.append(el('div', null, 'not a number')); return; }
@@ -151,7 +151,11 @@ function renderConfig(hostSel, rows, filter, sections = true, readonly = false) 
     (bySection[row.section] ||= []).push(row);
   }
 
-  for (const name of Object.keys(bySection).sort()) {
+  for (const name of Object.keys(bySection).sort((a, b) => {
+    const ra = sectionRank(a);
+    const rb = sectionRank(b);
+    return ra !== rb ? ra - rb : a.localeCompare(b);
+  })) {
     if (sections) host.append(el('h2', null, name));
     const t = el('table');
     const head = el('tr');
@@ -230,8 +234,53 @@ function renderConfig(hostSel, rows, filter, sections = true, readonly = false) 
   }
 }
 
+/*
+ * The one-line "what is this tab" sentence, as a row rather than a floating
+ * paragraph -- same label/value/info columns as every setting below it, so
+ * it reads as the first field on the page instead of an odd aside. The value
+ * is real device data (which confd build is answering), not a placeholder.
+ */
+function renderConfigDescription() {
+  const host = $('#config-description');
+  host.textContent = '';
+  host.append(el('h2', null, 'Description'));
+  const t = el('table');
+  const head = el('tr');
+  for (const h of ['Setting', 'Value', 'What it does']) head.append(el('th', null, h));
+  t.append(head);
+  const tr = el('tr');
+  const k = el('td');
+  k.append(el('div', 'label', 'confd'));
+  k.append(el('div', 'key', 'build'));
+  tr.append(k);
+  const v = el('td');
+  v.append(el('span', 'mono', (S.FW && S.FW.confd) || 'unknown'));
+  tr.append(v);
+  const info = el('td', 'info');
+  info.append(el('div', 'help', 'Every setting this image reads. Nothing is '
+    + 'written until you save.'));
+  tr.append(info);
+  t.append(tr);
+  host.append(t);
+}
+
+/*
+ * The order a Config section heading is shown in: identity and the service
+ * the OLT actually cares about first (GPON, VLAN, OMCI feature bits), then
+ * whatever else this image reads, hardware last but one, and the network
+ * side of the box last -- not the alphabetical order the section names
+ * happen to sort into. A section this list does not name (the stock-only
+ * tab has a few more) sorts alphabetically after the named ones.
+ */
+const SECTION_ORDER = ['gpon', 'vlan', 'omci', 'other', 'hardware', 'lan'];
+function sectionRank(name) {
+  const i = SECTION_ORDER.indexOf(name);
+  return i === -1 ? SECTION_ORDER.length : i;
+}
+
 function renderAll() {
   const filter = $('#filter').value;
+  renderConfigDescription();
 
   if (imageAware()) {
     /* The keys this image reads, all of them editable on Config with their
@@ -256,4 +305,4 @@ function renderAll() {
   renderConfig('#sections', S.SCHEMA, filter);
 }
 
-export { renderValue, renderConfig, renderAll };
+export { renderValue, renderConfig, renderAll, renderConfigDescription };

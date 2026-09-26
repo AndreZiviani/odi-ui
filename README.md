@@ -81,8 +81,8 @@ What the page does differently there:
 - **The OLT identity switch.** omcid reports `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`,
   `OMCC_VER` and `OMCI_VENDOR_PRODUCT_CODE` only while
   `/etc/config/omci-identity.on` exists; off, it answers what it always has.
-  Both our sticks already store the stock values in all five, so reporting them
-  by default would change what both OLTs see. `POST /api/switch
+  A stick commonly ships with the stock values already stored in all five, so
+  reporting them by default would change what the OLT sees. `POST /api/switch
   name=omci-identity.on&on=1|0` toggles it (an allowlist of one name), and
   `/api/firmware` reports it under `switches`.
 - **Firmware write runs in the background.** odi-oss `fwu_starter.sh` checks
@@ -313,10 +313,11 @@ Re-capture after deliberately changing something you mean to keep, or the UI
 will keep flagging it. The script refuses to install a baseline of fewer than
 50 rows, since a truncated one silently marks everything as changed.
 
-Worth knowing what this turned up on our two sticks straight away: Claro
-differs from the image on exactly `OMCI_CUSTOM_BDP` and `OMCI_CUSTOM_ME`, while
-Vero matches all ten — because the image's defaults *are* Vero's values, the
-base having been rebuilt from its working configuration.
+Worth knowing what this turns up in practice: one stick can differ from the
+image on a couple of keys (`OMCI_CUSTOM_BDP` and `OMCI_CUSTOM_ME` are common
+ones) while another matches every one of the ten — because the image's
+defaults were rebuilt from one working configuration, not derived
+independently.
 
 ## Guided fields
 
@@ -478,7 +479,7 @@ exist is at best a warning — and a malformed table address is already known to
 exit 0 having written **a different entry** (see "Keeping the schema honest").
 
 Editing the fields of an existing row works today and is what the actual lead
-needed anyway: the upstream report matching the Vero symptom is fixed by
+needed anyway: the upstream report matching this symptom is fixed by
 setting `PVID` on the row that is already there, not by adding one.
 
 If this is ever genuinely needed, the honest order is: establish on a stick you

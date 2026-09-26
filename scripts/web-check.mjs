@@ -302,7 +302,7 @@ ok(same.same.includes('LAN_IP_ADDR') && same.change.length === 0,
 /* --- the OMCI_CUSTOM_* bitmask decode ------------------------------------ */
 const { decodeMask } = await import(join(root, 'web', 'state.js'));
 
-/* 4 is what both of our sticks ship with, and what Anime4000/RTL960x#41 has
+/* 4 is what the stock firmware ships with, and what Anime4000/RTL960x#41 has
    been asking about since 2022. The answer is one row of features.tsv. */
 const rdp = decodeMask('OMCI_CUSTOM_RDP', '4');
 ok(rdp && rdp.known.length === 1 && rdp.known[0].names[0] === 'ignore_conn_uniNode_check',
