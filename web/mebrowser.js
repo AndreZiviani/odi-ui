@@ -55,18 +55,18 @@ const TABLES = [
   'WANConfigCataDeti', 'ZTE ME243', 'ZteMcastTag', 'ZteSntp'
 ];
 
-/* The class ids people quote in threads, so the picker speaks both dialects. */
-const SHORTCUTS = [
-  ['84', 'VLAN tag filters (84)'],
-  ['171', 'Extended VLAN tagging (171)'],
-  ['7', 'Software images (7)'],
-  ['131', 'OLT-G (131)'],
-  ['262', 'T-CONT (262)'],
-  ['268', 'GEM port CTP (268)'],
-  ['47', 'MAC bridge port config (47)'],
-  ['11', 'PPTP Ethernet UNI (11)'],
-  ['329', 'VEIP (329)'],
-];
+/*
+ * Class ids confirmed against this device: from the captures in
+ * scripts/fixtures/omci/, and the G.988 class each is defined as in the
+ * README's "The MIB tabs" section. The rest of TABLES has no id confirmed
+ * against this hardware, so the picker offers the name alone rather than a
+ * guessed number -- omcicli takes a table name just as well as a class id.
+ */
+const CLASS_IDS = {
+  SWImage: 7, EthUni: 11, MacBriPortCfgData: 47, OltG: 131,
+  ExtVlanTagOperCfgData: 171, Tcont: 262, GemIwTp: 266, GemPortCtp: 268,
+  VlanTagFilterData: 84, VEIP: 329,
+};
 
 const DUMPS = [
   ['conn', 'Data path connections'],
@@ -132,7 +132,10 @@ function show(dump, asked) {
 }
 
 async function load() {
-  const me = String($('#me-pick').value || '').trim();
+  /* Either control selects what to query: a typed class id wins when
+     present, otherwise whatever the dropdown has picked. */
+  const typed = String($('#me-classid').value || '').trim();
+  const me = typed || String($('#me-select').value || '').trim();
   const entity = String($('#me-entity').value || '').trim();
 
   if (!me) return;
@@ -149,22 +152,19 @@ function renderMeBrowser() {
   if (wired) return;
   wired = true;
 
-  /* A datalist, not a select: the 81 names below are every table this image
-     can register, but omcicli also takes a bare class id and a thread will
-     always quote one this list does not have a name for. Offering the list
-     without refusing anything else is the only shape that serves both. */
-  const list = $('#me-tables-list');
-  for (const [v, label] of SHORTCUTS) {
-    const o = el('option', '', label);
-    o.value = v;
-    list.append(o);
-  }
+  /* A select, not a datalist: these are every table this image can register,
+     shown as "Name (class id)" where the id is confirmed and by name alone
+     otherwise. The class-id field beside it is the escape hatch for a class
+     a thread quotes that is not in this list, or that this base has not
+     registered anything under -- either control queries the same route. */
+  const sel = $('#me-select');
   for (const t of TABLES) {
-    const o = el('option');
-    o.value = t;
-    list.append(o);
+    const id = CLASS_IDS[t];
+    const o = el('option', '', id ? `${t} (${id})` : t);
+    o.value = id || t;
+    sel.append(o);
   }
-  $('#me-pick').value = '84';
+  sel.value = CLASS_IDS.VlanTagFilterData;
 
   const bar = $('#me-dumps');
   for (const [what, label] of DUMPS) {
@@ -175,7 +175,7 @@ function renderMeBrowser() {
   }
 
   $('#me-go').onclick = load;
-  $('#me-pick').onkeydown = (e) => { if (e.key === 'Enter') load(); };
+  $('#me-classid').onkeydown = (e) => { if (e.key === 'Enter') load(); };
   $('#me-entity').onkeydown = (e) => { if (e.key === 'Enter') load(); };
 
   /*

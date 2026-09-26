@@ -58,7 +58,7 @@ const counts = await page.evaluate(() => ({
   saveBarDisplayed: getComputedStyle(document.querySelector('#savebar')).display,
   meCards: document.querySelectorAll('#services-cards .me-card').length,
   meRules: document.querySelectorAll('#services-cards .me-rule').length,
-  meTableOptions: document.querySelectorAll('#me-tables-list option').length,
+  meTableOptions: document.querySelectorAll('#me-select option').length,
   meInstances: document.querySelectorAll('#me-out .me-inst').length,
   title: document.title,
 }));

@@ -272,9 +272,10 @@ async function doApply(ev, what) {
 /*
  * The OLT identity switch. omcid reports OMCI_SW_VER1/2, GPON_ONU_MODEL,
  * OMCC_VER and OMCI_VENDOR_PRODUCT_CODE only while /etc/config/omci-identity.on
- * exists: both our sticks already store the stock values in all five, so
- * honouring them by default would change what both OLTs see. Toggling it is
- * INTERRUPTS INTERNET, because it takes effect when OMCI is re-applied.
+ * exists: a stick commonly ships with the stock values already stored in
+ * all five, so honouring them by default would change what the OLT sees.
+ * Toggling it is INTERRUPTS INTERNET, because it takes effect when OMCI is
+ * re-applied.
  */
 function renderIdentitySwitch() {
   const host = $('#identity-switch');
