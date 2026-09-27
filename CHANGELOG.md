@@ -1,0 +1,104 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## Unreleased
+
+## v1.0.5 - 2026-09-25
+
+### Added
+- Pinned the shared `odi-toolchain` build image by digest instead of a
+  floating tag.
+
+### Changed
+- Reordered the config sections, added a MIB class picker, and swept the
+  deployment text for accuracy.
+- Relicensed the project GPL-2.0-only, matching the kernel it runs
+  alongside.
+
+## v1.0.4 - 2026-09-24
+
+### Added
+- Enabled the MAC table on odi-oss and show multicast groups in it.
+
+## v1.0.3 - 2026-09-24
+
+### Fixed
+- Corrected the smoke suite oversized-body check to send 20 KB instead of
+  64 KB.
+
+## v1.0.2 - 2026-09-24
+
+### Added
+- Added a release workflow and `make assets`/`make sums`/`make release`
+  targets, mirroring `sfp-exporter`.
+- `AGENTS.md`: guidance for coding agents working in this repo.
+- README: documented the SSH keys section (Admin tab, `/api/sshkeys`, the
+  key file and its `-D` contract).
+- odi-oss: show only the config keys the image actually reads, each with
+  its apply class.
+
+### Changed
+- `make assets` now runs inside the build container, since `build/` ends up
+  root-owned on Linux runners.
+
+### Fixed
+- A confd whose build stamp does not match its tag is now refused at
+  publish time, instead of shipping silently.
+
+## v1.0.1 - 2026-09-21
+
+### Added
+- SSH public keys for device login: `/api/sshkeys` (list, add, delete) and
+  an SSH keys block on the Admin page. Keys live in
+  `/etc/config/dropbear.d/authorized_keys`, paired with an odi-oss image
+  that starts dropbear with `-D` on that directory.
+
+## v1.0.0 - 2026-09-12
+
+First tagged release of `confd`, the web configuration UI for the ODI
+DFP-34X-2C2 (Realtek RTL9601D/RTL9602C): a freestanding, static, big-endian
+MIPS-I binary with no libc and no PIC.
+
+### Added
+- Read-only and then read-write configuration UI for the device, with
+  everyday and advanced config tabs, field-level guidance (labels, options,
+  ranges and dependencies), and a picker for OMCI ME classes.
+- Firmware tab: upload and write a firmware image from the page, and surface
+  the version chain, the `RX_LOS` trap, and the auth difference between
+  images.
+- OMCI MIB pages: a decoded Services view and a raw MIB view, plus decoding
+  of the `OMCI_CUSTOM_*` feature bitmasks from the image own symbol tables.
+- Tools tab: the kernel log, and ping from the stick.
+- Admin: set the config UI password from the page (creating the credential
+  file if needed), with a built-in `admin`/`admin` fallback when none
+  exists yet.
+- One-click config backup, and restore from a backup, from the page.
+- Reset the service configuration from the page, with an automatic backup
+  first.
+- Show the switch's learned addresses.
+- Serve the image build manifest, so the UI can show what it is actually
+  running.
+- `make verify` (ELF shape plus the RLX5281 instruction audit), `make check`
+  (the data files checked against each other) and `make smoke` (the daemon
+  run under qemu, 131 HTTP checks) as the non-device test gate.
+
+### Changed
+- Split the UI into modules served from an allowlist, and split `confd.c`
+  into translation units, then turned on LTO to recover the code size that
+  split cost.
+- Centred the tabs, dropped the hostname from the chrome, and documented
+  uploading an image.
+
+### Fixed
+- Made the request parser read a whole request and fail closed on anything
+  else it does not recognize.
+- Made `verify` and `BUILD_ID` real dependencies of the build, so a stale
+  build stamp can never ship.
+- Computed deploy space checks from the actual files against the jffs2
+  compressed layout, instead of raw byte counts, and stopped inventing
+  VLAN 0.
+- Fixed rendering bugs found by reading through the page, and stopped
+  `/api/l2` from hanging.

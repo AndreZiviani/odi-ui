@@ -61,6 +61,14 @@ here.
                     # exactly what CI runs on a tag
     make clean
 
+## Changelog
+
+Every change that affects users, the build, or the docs adds a bullet under
+`## Unreleased` in [`CHANGELOG.md`](CHANGELOG.md), in the same commit as the
+change itself -- not as a follow-up. A release then moves the `Unreleased`
+content into a new version section named after the tag (`## vX.Y.Z -
+YYYY-MM-DD`), leaving `Unreleased` empty for what comes next.
+
 ## Release process
 
 Every push and PR builds and gates the daemon (`make confd verify check
