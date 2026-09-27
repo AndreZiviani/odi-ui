@@ -61,6 +61,38 @@ jobs:
       - name: Assets and checksums
         run: make assets sums
 
+      # Prefer CHANGELOG.md's own section for this tag as the release body.
+      # Falls back to the hard-coded blurb below if the tag has no section
+      # there (e.g. a tag cut before a CHANGELOG.md entry was added for it).
+      - name: Extract changelog section
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          awk -v tag="$tag" '
+            $0 ~ "^## " tag "([[:space:]]|$)" {found=1; print; next}
+            found && /^## / {exit}
+            found {print}
+          ' CHANGELOG.md > release-notes.md
+          if [ -s release-notes.md ] && grep -qv '^[[:space:]]*$' release-notes.md; then
+            echo "Using CHANGELOG.md section for $tag"
+          else
+            echo "No CHANGELOG.md section for $tag, using fallback body"
+            cat > release-notes.md <<'EOF'
+          `confd`, the web configuration UI for RTL9601-based GPON SFP ONU
+          sticks: a static big-endian MIPS binary, freestanding, plus the
+          web files and schema tables it serves.
+
+          | file | |
+          |---|---|
+          | `confd` | the daemon; run it as `confd [port]`, default 8080 |
+          | `confd-assets.tar.gz` | unpack to `/etc/confd` on the stick |
+
+          Verified in CI: ELF shape, instruction audit against the RLX5281,
+          the schema and asset consistency checks, and the HTTP smoke suite
+          under qemu. Check `SHA256SUMS` before installing anything.
+          EOF
+          fi
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -81,16 +113,33 @@ jobs:
             build/confd
             build/confd-assets.tar.gz
             build/SHA256SUMS
-          body: |
-            `confd`, the web configuration UI for RTL9601-based GPON SFP ONU
-            sticks: a static big-endian MIPS binary, freestanding, plus the
-            web files and schema tables it serves.
+          body_path: release-notes.md
 
-            | file | |
-            |---|---|
-            | `confd` | the daemon; run it as `confd [port]`, default 8080 |
-            | `confd-assets.tar.gz` | unpack to `/etc/confd` on the stick |
+  changelog-check:
+    # PR-only: a non-docs/non-CI change must add a CHANGELOG.md entry in the
+    # same PR, unless the PR is labelled no-changelog.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-            Verified in CI: ELF shape, instruction audit against the RLX5281,
-            the schema and asset consistency checks, and the HTTP smoke suite
-            under qemu. Check `SHA256SUMS` before installing anything.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require a CHANGELOG.md entry for non-docs/non-CI changes
+        env:
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        run: |
+          if [ "$HAS_LABEL" = "true" ]; then
+            echo "no-changelog label set, skipping"
+            exit 0
+          fi
+          changed="$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+          non_docs_ci="$(printf '%s\n' "$changed" | grep -Ev '^(docs/|\.github/|README\.md$|CHANGELOG\.md$|LICENSE$)' || true)"
+          if [ -n "$non_docs_ci" ] && ! printf '%s\n' "$changed" | grep -qx 'CHANGELOG.md'; then
+            echo "This PR changes files outside docs/CI paths but does not update CHANGELOG.md."
+            echo "Add a bullet under \"## Unreleased\", or apply the no-changelog label if none is needed."
+            exit 1
+          fi
