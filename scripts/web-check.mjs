@@ -450,8 +450,9 @@ const hpRow = { name: 'NTP_SERVER', type: 'hostport' };
 const hp = (v) => valueProblem(hpRow, v);
 ok(!hp('pool.ntp.org') && !hp('10.0.0.1') && !hp('10.0.0.1:514') && !hp('a-b.c:65535'),
    'hostport accepts hostnames, IPv4 literals and host:port');
-ok(['a b', 'a"b', "a'b", 'h:0', 'h:70000', 'h:', ':1', '-h', 'h.', ''].every((v) => hp(v)),
-   'hostport rejects spaces, quotes, bad ports and empties');
+ok(['a b', 'a"b', "a'b", 'h:0', 'h:70000', 'h:', ':1', '-h', 'h.'].every((v) => hp(v)),
+   'hostport rejects spaces, quotes and bad ports');
+ok(!hp(''), 'hostport accepts empty: it clears the key');
 
 EDITS.set('LOID', 'someone');
 const pw = withPairs([...EDITS.entries()]);

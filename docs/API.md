@@ -17,7 +17,7 @@ reporting success.
                                           per-key result, apply class, and whether
                                           that class is a traced fact or an assumption;
                                           identity keys need `_confirm=identity`
-    POST /api/apply     what=network|omci
+    POST /api/apply     what=network|omci|syslog|ntp
                                           apply.sh on odi-oss; without it, `omci`
                                           restarts omci_app
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file

@@ -361,6 +361,12 @@ check "NTP_SERVER needs the ntp action" yes \
 	"$(err "$(post 'NTP_SERVER=pool.ntp.org')" '"needs":["ntp"]')"
 check "both together need both" yes \
 	"$(err "$(post 'SYSLOG_SERVER=logs.lan&NTP_SERVER=192.168.1.10:123')" '"needs":["syslog","ntp"]')"
+check "an empty SYSLOG_SERVER clears it (hostport keys only)" yes \
+	"$(err "$(post 'SYSLOG_SERVER=')" '"ok":true')"
+check "an empty NTP_SERVER clears it" yes \
+	"$(err "$(post 'NTP_SERVER=')" '"ok":true')"
+check "an empty stock key is still refused" yes \
+	"$(err "$(post 'LAN_IP_ADDR=')" 'cannot be cleared')"
 for bad in 'a b' 'a"b' "a'b" 'host:0' 'host:70000' 'host:' ':514' '-host' 'host.'; do
 	check "a bad host is refused: $bad" yes \
 		"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "SYSLOG_SERVER=$bad" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"

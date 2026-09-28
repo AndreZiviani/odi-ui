@@ -66,6 +66,11 @@ int type_ok(const char *type, const char *v)
 		 * read this value back out of the store into a command line. */
 		unsigned long hlen = 0, port = 0, pdigits = 0;
 
+		/* Empty clears the key (odi-oss flash removes it): remote
+		 * logging and NTP off. */
+		if (!v[0])
+			return 1;
+
 		for (i = 0; v[i] && v[i] != ':'; i++) {
 			char c = v[i];
 

@@ -567,7 +567,7 @@ Refused regardless of what the schema says: `LAN_SDS_MODE`, `LAN_SPEED_MODE`,
 are validated server-side against their type, not only in the browser, since a
 request need not come from the page.
 
-Clearing a key is rejected with a message saying why: `flash set` guards its set
+Clearing a key is rejected with a message saying why, except the `hostport` keys (`SYSLOG_SERVER`, `NTP_SERVER`), which odi-oss `flash` keeps in its own file and removes on an empty value. For the rest: `flash set` guards its set
 branch with `[ "$3" != "" ]`, so an empty value falls through to its usage text
 and exits 1 while looking like it worked.
 
