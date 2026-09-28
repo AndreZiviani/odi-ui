@@ -35,6 +35,7 @@ UPNP	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/scripts/udhcpc.sh,lib
 UPNP_EXT_ITF	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 SYSLOG_LOG_LEVEL	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 SYSLOG_DISPLAY_LEVEL	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
+SYSLOG_SERVER	unknown	
 SUSER_NAME	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 SUSER_PASSWORD	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 E8BDUSER_NAME	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
@@ -84,6 +85,7 @@ OMCI_LOGFILE_MASK	restart:omci	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/run
 REBOOT_TIME	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 DHCP_PORT_FILTER	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 NTP_EXT_ITF	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
+NTP_SERVER	unknown	
 FIBER_MODE	reboot	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/runsdk.sh
 RTK_DEVID_MANUFACTURER	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 RTK_DEVID_OUI	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
