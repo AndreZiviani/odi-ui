@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+- Schema entries for two new odi-oss-only config-store keys, `SYSLOG_SERVER`
+  (`host:port` of a remote syslog collector) and `NTP_SERVER` (`host` or
+  `host:port`, matching what busybox `ntpd -p` accepts). Both are optional
+  and ship with no default, so they are simply absent from the store until
+  someone sets one. Schema-only: neither key has a `settings.tsv` row yet, so
+  they are not offered on the editable Config tab and saving one does not
+  apply anything -- the SERVICE RESTART apply path (a daemon restart, no
+  OMCI interruption, no reboot) is intended but not wired up in this change.
+
 ### Fixed
 - Bounded every wait confd does on a forked child (`omcicli`, `diag`,
   `flash`, `apply.sh`, `fwu_starter.sh`, `nv`, `ping`, `md5sum`, `mkdir`) with
