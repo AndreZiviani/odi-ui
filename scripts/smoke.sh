@@ -355,6 +355,16 @@ check "a key only the stock firmware reads is reported as such" yes \
 	"$(err "$(post 'DNS1=1.1.1.1')" '"needs":[],"stock":true')"
 check "a batch reports every action it needs" yes \
 	"$(err "$(post 'LAN_IP_ADDR2=192.168.100.1&VLAN_MANU_TAG_PRI=0')" '"needs":["network","omci"]')"
+check "SYSLOG_SERVER needs the syslog action" yes \
+	"$(err "$(post 'SYSLOG_SERVER=10.0.0.5:514')" '"needs":["syslog"]')"
+check "NTP_SERVER needs the ntp action" yes \
+	"$(err "$(post 'NTP_SERVER=pool.ntp.org')" '"needs":["ntp"]')"
+check "both together need both" yes \
+	"$(err "$(post 'SYSLOG_SERVER=logs.lan&NTP_SERVER=192.168.1.10:123')" '"needs":["syslog","ntp"]')"
+for bad in 'a b' 'a"b' "a'b" 'host:0' 'host:70000' 'host:' ':514' '-host' 'host.'; do
+	check "a bad host is refused: $bad" yes \
+		"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "SYSLOG_SERVER=$bad" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
+done
 check "settings.tsv is served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")" '"name":"LAN_ENABLE_IP2","apply":"live","action":"network"')"
 # Without the table, the old classification stands.
@@ -511,6 +521,10 @@ check "apply network runs apply.sh network" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=network' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: network')"
 check "apply omci runs apply.sh omci" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: omci')"
+check "apply syslog runs apply.sh syslog" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=syslog' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: syslog')"
+check "apply ntp runs apply.sh ntp" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=ntp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: ntp')"
 touch /tmp/apply-fail
 check "a failing apply is reported as not applied" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":false')"
@@ -524,6 +538,9 @@ check "a cross-origin apply is refused" 403 \
 rm -f /etc/scripts/apply.sh
 check "without apply.sh the network action is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=network' "http://127.0.0.1:$PORT/api/apply")" 'reboot to apply')"
+
+check "without apply.sh the syslog action is refused, not turned into an omci restart" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=syslog' "http://127.0.0.1:$PORT/api/apply")" 'reboot to apply')"
 
 echo "== switch files"
 check "the OLT identity switch starts off" yes \

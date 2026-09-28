@@ -57,8 +57,9 @@
  * How the image applies saved settings without a reboot (odi-oss
  * /etc/scripts/apply.sh): `apply.sh network` re-applies the management
  * addresses, live; `apply.sh omci` restarts the OMCI daemon and re-ranges the
- * ONU, which interrupts the internet. Absent, "omci" falls back to restarting
- * the stock omci_app, and "network" is refused.
+ * ONU, which interrupts the internet; `apply.sh syslog` and `apply.sh ntp`
+ * kill the daemon so init respawns it with the stored setting. Absent, "omci"
+ * falls back to restarting the stock omci_app, and the others are refused.
  */
 #define APPLY_PATH   "/etc/scripts/apply.sh"
 

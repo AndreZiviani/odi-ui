@@ -58,6 +58,35 @@ int type_ok(const char *type, const char *v)
 			return 0;                  /* hex is whole bytes */
 		return want ? (i == want) : 1;
 	}
+	if (seq(type, "hostport")) {
+		/* host or host:port, the form busybox ntpd -p and syslogd -R
+		 * both take: an IPv4 literal or a hostname, letters, digits,
+		 * dots and hyphens, then an optional :1-65535. No spaces or
+		 * quotes, which is the point: svc-syslogd.sh and svc-ntpd.sh
+		 * read this value back out of the store into a command line. */
+		unsigned long hlen = 0, port = 0, pdigits = 0;
+
+		for (i = 0; v[i] && v[i] != ':'; i++) {
+			char c = v[i];
+
+			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			      (c >= '0' && c <= '9') || c == '.' || c == '-'))
+				return 0;
+			hlen++;
+		}
+		if (!hlen || hlen > 253 || v[0] == '.' || v[0] == '-' ||
+		    v[hlen - 1] == '.' || v[hlen - 1] == '-')
+			return 0;
+		if (v[i] == ':') {
+			for (i++; v[i]; i++) {
+				if (v[i] < '0' || v[i] > '9' || ++pdigits > 5)
+					return 0;
+				port = port * 10 + (unsigned long)(v[i] - '0');
+			}
+			return pdigits && port >= 1 && port <= 65535;
+		}
+		return 1;
+	}
 	if (seq(type, "string"))
 		return 1;
 

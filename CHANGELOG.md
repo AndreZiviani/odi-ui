@@ -7,14 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
-- Schema entries for two new odi-oss-only config-store keys, `SYSLOG_SERVER`
-  (`host:port` of a remote syslog collector) and `NTP_SERVER` (`host` or
-  `host:port`, matching what busybox `ntpd -p` accepts). Both are optional
-  and ship with no default, so they are simply absent from the store until
-  someone sets one. Schema-only: neither key has a `settings.tsv` row yet, so
-  they are not offered on the editable Config tab and saving one does not
-  apply anything -- the SERVICE RESTART apply path (a daemon restart, no
-  OMCI interruption, no reboot) is intended but not wired up in this change.
+- `SYSLOG_SERVER` and `NTP_SERVER` are set from the Config page (under
+  "other") and apply as SERVICE RESTART: after the save the page runs
+  `apply.sh syslog` / `apply.sh ntp` through `/api/apply`, which kills the
+  daemon so busybox init respawns it and it rereads the store. The run is
+  bounded by the same `APPLY_TIMEOUT_MS` as every other apply. The fibre
+  service is not touched. Both keys have a new `hostport` schema type
+  (IPv4 literal or hostname, optional `:port` 1-65535; no spaces or quotes),
+  checked by confd and by the page, and rows in `settings.tsv`.
+  `/api/apply` accepts `what=syslog` and `what=ntp`, and a save reports them
+  in `needs`. Note: confd refuses an empty value, so a key cannot be cleared
+  from the page.
 
 ### Fixed
 - Bounded every wait confd does on a forked child (`omcicli`, `diag`,

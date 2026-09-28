@@ -41,3 +41,5 @@ OMCC_VER	internet	omci		omcid, with omci-identity.on	ONU2-G OMCC version, decima
 OMCI_VENDOR_PRODUCT_CODE	internet	omci		omcid, with omci-identity.on	ONU2-G vendor product code, decimal. Otherwise 15, the captured default.
 ELAN_MAC_ADDR	reboot	reboot		network.sh	Needs a reboot: the MAC is set on eth0 and its host port with the links down, before br0 exists, and doing that live would cut every way in mid-change.
 GPON_SN	reboot	reboot		rcS gponsn	Needs a reboot: the kernel writes the serial into the PON MAC once, at the first activation of a boot, and has no way to rewrite it.
+SYSLOG_SERVER	restart	syslog		svc-syslogd.sh, apply.sh	The remote syslog collector, host or host:port. Applying restarts syslogd (init respawns it with the new address); the fibre service is not touched.
+NTP_SERVER	restart	ntp		svc-ntpd.sh, apply.sh	The NTP server, host or host:port. Applying restarts ntpd (init respawns it with the new server); the fibre service is not touched.

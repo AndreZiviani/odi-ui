@@ -74,7 +74,7 @@ in odi-oss is the prose version and the source of truth.
 | class | meaning | action | keys |
 |---|---|---|---|
 | **LIVE** | takes effect at once | `apply.sh network`, run straight after the save | `LAN_IP_ADDR`, `LAN_SUBNET`, `LAN_ENABLE_IP2`, `LAN_IP_ADDR2`, `LAN_SUBNET2` |
-| **SERVICE RESTART** | a daemon restarts, the fibre service stays up | -- | none today |
+| **SERVICE RESTART** | a daemon restarts, the fibre service stays up | `apply.sh syslog` / `apply.sh ntp`, run straight after the save (apply.sh kills the daemon, busybox init respawns it, bounded by `APPLY_TIMEOUT_MS`) | `SYSLOG_SERVER`, `NTP_SERVER` |
 | **INTERRUPTS INTERNET** | applied without a reboot, the fibre service drops meanwhile | `apply.sh omci`, offered as *Apply now* behind a confirmation | the four `VLAN_*`, `GPON_PLOAM_PASSWD`, the four `LOID*`, `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`, `OMCC_VER`, `OMCI_VENDOR_PRODUCT_CODE` |
 | **REBOOT** | read only at boot | *Reboot now*, behind a confirmation that names the slot it comes back on | `ELAN_MAC_ADDR`, `GPON_SN` |
 
