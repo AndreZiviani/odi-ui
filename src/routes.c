@@ -392,7 +392,8 @@ void serve(int conn)
 			unsigned long i = 0;
 
 			put_fd(conn, ",\"md5\":\"");
-			if (run_to_buf(MD5SUM_PATH, argv, out, sizeof(out)) > 0) {
+			if (run_to_buf(MD5SUM_PATH, argv, out, sizeof(out),
+				       MD5SUM_TIMEOUT_MS) > 0) {
 				while (out[i] && out[i] != ' ' && out[i] != '\n')
 					i++;
 				put_json_str(conn, out, i);
@@ -573,7 +574,8 @@ void serve(int conn)
 				static char *const mk[] = { "mkdir", "-p", SSHKEYS_DIR, 0 };
 				char junk[64];
 
-				run_to_buf("/bin/mkdir", mk, junk, sizeof(junk));
+				run_to_buf("/bin/mkdir", mk, junk, sizeof(junk),
+					  MKDIR_TIMEOUT_MS);
 			}
 			if (write_file(SSHKEYS_PATH, keys, (unsigned long)n, 0600) < 0) {
 				respond(conn, "500 Internal Server Error", "application/json", 0);
@@ -677,7 +679,8 @@ void serve(int conn)
 			return;
 		}
 
-		got = run_to_buf_ex(FLASH_PATH, argv, status, sizeof(status), &code);
+		got = run_to_buf_ex(FLASH_PATH, argv, status, sizeof(status), &code,
+				   FLASH_TIMEOUT_MS);
 		respond(conn, "200 OK", "application/json", 0);
 		put_fd(conn, "{\"ok\":");
 		put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
@@ -738,7 +741,8 @@ void serve(int conn)
 		argv[3] = host;
 		argv[4] = 0;
 
-		got = run_to_buf_ex(PING_PATH, argv, status, sizeof(status), &code);
+		got = run_to_buf_ex(PING_PATH, argv, status, sizeof(status), &code,
+				   PING_TIMEOUT_MS);
 		respond(conn, "200 OK", "application/json", 0);
 		put_fd(conn, "{\"ok\":");
 		put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
@@ -847,7 +851,8 @@ void serve(int conn)
 				}
 
 				if (run_to_buf_ex(FWU_STARTER, argv, status,
-						  sizeof(status), &code) < 0) {
+						  sizeof(status), &code,
+						  FWU_TIMEOUT_MS) < 0) {
 					respond(conn, "500 Internal Server Error", "application/json", 0);
 					put_fd(conn, "{\"ok\":false,\"error\":\"could not run the updater\"}");
 					return;
@@ -873,7 +878,8 @@ void serve(int conn)
 				 * already going down. */
 				respond(conn, "200 OK", "application/json", 0);
 				put_fd(conn, "{\"ok\":true,\"note\":\"rebooting\"}");
-				run_script_to_buf("/bin/sh", rb, script, out, sizeof(out));
+				run_script_to_buf("/bin/sh", rb, script, out, sizeof(out),
+						 REBOOT_TIMEOUT_MS);
 				return;
 			}
 			respond(conn, "400 Bad Request", "application/json", 0);
@@ -910,7 +916,8 @@ void serve(int conn)
 			argv[0] = "apply.sh";
 			argv[1] = what;
 			argv[2] = 0;
-			got = run_to_buf_ex(APPLY_PATH, argv, status, sizeof(status), &code);
+			got = run_to_buf_ex(APPLY_PATH, argv, status, sizeof(status), &code,
+					   APPLY_TIMEOUT_MS);
 			respond(conn, "200 OK", "application/json", 0);
 			put_fd(conn, "{\"ok\":");
 			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");

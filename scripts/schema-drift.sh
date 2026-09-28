@@ -28,7 +28,12 @@ HOST="${1:?usage: schema-drift.sh <user@host>}"
 SCHEMA="${SCHEMA:-schema/keys.tsv}"
 
 read -r -a SSH_EXTRA <<< "${SSH_OPTS:-}"
-SSH=(ssh -o StrictHostKeyChecking=accept-new "${SSH_EXTRA[@]}" "$HOST")
+# ConnectTimeout bounds the handshake; ServerAlive* bounds a session that
+# connected fine and then went quiet. No GNU timeout(1) on macOS to wrap this
+# in, so the bound is ssh's own.
+SSH=(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+	 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+	 "${SSH_EXTRA[@]}" "$HOST")
 
 [ -f "$SCHEMA" ] || { echo "no schema at $SCHEMA" >&2; exit 1; }
 

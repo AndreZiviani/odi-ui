@@ -129,6 +129,22 @@ v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
   displays.** `/api/omci` refuses `get tables` outright -- see "The MIB
   tabs" in `docs/DESIGN.md` for why. Any change to that route needs to preserve
   the refusal and its smoke check.
+- **Every wait on another process is bounded.** confd is single-threaded and
+  serial, so anything that blocks on a child blocks every OTHER request too,
+  not just the route that forked it (mirrors a hardware incident in the
+  sibling exporter, rc3, claro, 2026-09-28: a stuck omcid left a forked child
+  never answering, and a blind `read()` on it took the whole daemon down).
+  `run_to_buf()`, `run_to_buf_ex()` and `run_script_to_buf()` (`src/syscall.h`)
+  all take a `timeout_ms` and poll the child's pipe rather than block on it,
+  SIGKILL + reap on expiry (`drain_bounded()`/`kill_and_reap()`), and return a
+  distinguishable `-2` instead of a byte count so a timeout is never mistaken
+  for "ran and said nothing". Every new caller must pass a real bound (see the
+  `*_TIMEOUT_MS` constants in `src/confd.h`), sized to the slowest thing the
+  command legitimately does rather than to the common case, and let a timeout
+  surface through the route's normal `{"ok":false,"error":"..."}` shape
+  instead of inventing a new one. There is no libc `alarm()`/`select()` here --
+  this is `poll(2)` over the raw o32 syscall layer, which has no MIPS-specific
+  divergence (unlike the socket/IPC calls elsewhere in `src/syscall.h`).
 - Sizing anything written to the device's config partition is done from
   **measured, compressed size**, not `wc -c`: `/etc/config` is jffs2, which
   compresses on write and allocates in whole erase blocks. See

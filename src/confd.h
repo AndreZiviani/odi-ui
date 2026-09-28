@@ -61,6 +61,35 @@
  * the stock omci_app, and "network" is refused.
  */
 #define APPLY_PATH   "/etc/scripts/apply.sh"
+
+/*
+ * Every child confd forks goes through syscall.h's drain_bounded(), which
+ * SIGKILLs and reaps it past this many milliseconds of silence, instead of
+ * leaving the parent parked in read()/waitpid() forever. confd is
+ * single-threaded and serial: one wedged /bin/omcicli or /bin/diag would not
+ * just fail its own route, it would freeze every other request behind it,
+ * because the daemon never gets back to accept(). See AGENTS.md, "every wait
+ * is bounded", and odi-sfp-exporter's syscall.h for the hardware incident
+ * this mirrors (a respawn bug left omcid not answering its command queue,
+ * and a blind read() on a child talking to it never returned).
+ *
+ * Each bound is sized to the slowest thing the command legitimately does, not
+ * to the common case, so a merely slow command still finishes -- only one
+ * that is actually stuck gets killed.
+ */
+#define OMCICLI_TIMEOUT_MS 2000   /* omcicli mib/dump reads (omci.c) */
+#define DIAG_TIMEOUT_MS    3000   /* diag scrapes (status.c) */
+#define FLASH_TIMEOUT_MS   5000   /* flash get/set/all/default (mib.c, routes.c) */
+#define APPLY_TIMEOUT_MS  25000   /* apply.sh and the runomci.sh restart script:
+				   * up to a 15 s poll loop plus a 3 s settle
+				   * (mib.c apply_omci, routes.c /api/apply) */
+#define PING_TIMEOUT_MS    6000   /* `ping -c 3`, ~1 s per probe plus slack */
+#define FWU_TIMEOUT_MS     5000   /* fwu_starter.sh backgrounds the flasher
+				   * and returns almost at once */
+#define REBOOT_TIMEOUT_MS  3000   /* backgrounds the actual reboot and returns */
+#define MD5SUM_TIMEOUT_MS  3000   /* hashing the uploaded image */
+#define MKDIR_TIMEOUT_MS   2000   /* mkdir -p SSHKEYS_DIR */
+#define NV_TIMEOUT_MS      2000   /* /bin/nv getenv/setenv (firmware.c) */
 /* The override network.sh prefers over LAN_IP_ADDR; reported so the page can
  * say the key is ignored while it exists. */
 #define LANIP_OVERRIDE "/etc/config/lan-ip"

@@ -23,7 +23,14 @@ PORT="${2:-8080}"
 DEST=/etc/config/confd
 
 read -r -a SSH_EXTRA <<< "${SSH_OPTS:-}"
-SSH=(ssh -o StrictHostKeyChecking=accept-new "${SSH_EXTRA[@]}" "$HOST")
+# ConnectTimeout bounds the handshake; ServerAlive* bounds a session that
+# connected fine and then went quiet -- a stick can wedge mid-command as
+# easily as it can refuse a connection, and ssh has no default for either.
+# There is no GNU timeout(1) to wrap this in on macOS, which is what this
+# runs from, so the bound has to be ssh's own.
+SSH=(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+	 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+	 "${SSH_EXTRA[@]}" "$HOST")
 
 [ -f build/confd ] || { echo "no build/confd -- run 'make confd'" >&2; exit 1; }
 if ! file build/confd | grep -q "ELF 32-bit MSB executable, MIPS"; then

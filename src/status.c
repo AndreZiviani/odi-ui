@@ -24,7 +24,8 @@ void emit_status_json(int fd)
 		"mib dump counter port all\n"
 		"exit\n";
 
-	if (run_script_to_buf(DIAG_PATH, argv, script, status, sizeof(status)) <= 0) {
+	if (run_script_to_buf(DIAG_PATH, argv, script, status, sizeof(status),
+			      DIAG_TIMEOUT_MS) <= 0) {
 		put_fd(fd, "{\"error\":\"diag failed\"}");
 		return;
 	}
@@ -74,7 +75,7 @@ void emit_l2_json(int fd)
 				      "address", "valid", 0 };
 	long got, code = -1;
 
-	got = run_to_buf_ex(DIAG_PATH, argv, omci, sizeof(omci), &code);
+	got = run_to_buf_ex(DIAG_PATH, argv, omci, sizeof(omci), &code, DIAG_TIMEOUT_MS);
 	if (got <= 0) {
 		put_fd(fd, "{\"error\":\"diag failed\"}");
 		return;

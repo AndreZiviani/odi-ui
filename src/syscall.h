@@ -7,6 +7,14 @@
  * and a submodule for it would cost every clone more than the duplication does.
  * A fix to the SHARED parts -- the syscall stubs, read_file, close_inherited,
  * sig_ignore -- belongs in both. The additions above do not.
+ *
+ * The poll()-with-timeout drain (drain_bounded/kill_and_reap) is one of the
+ * shared parts, ported back from the exporter's own fix for the same failure
+ * mode: a child (omcicli, diag, flash, apply.sh) that stops answering used to
+ * leave run_to_buf_ex/run_script_to_buf parked in read()/waitpid() forever.
+ * confd is single-threaded and serial, so that hangs every OTHER route too,
+ * not just the one that forked the wedged child -- worse here than in the
+ * exporter, which at least degrades one metric at a time.
  */
 /*
  * Minimal o32 MIPS syscall layer, shared by the freestanding binaries here.
@@ -47,9 +55,24 @@
 #define __NR_syslog     4103
 #define SYSLOG_READ_ALL 3
 #define __NR_rt_sigaction 4194
+#define __NR_kill       4037
+#define __NR_poll       4188
 
 #define SIGPIPE 13
 #define SIG_IGN 1
+#define SIGKILL 9
+
+/* struct pollfd and POLLIN are the same shape/value on every Linux arch --
+ * poll(2) has no MIPS-specific divergence, unlike the socket/IPC calls
+ * elsewhere in this file. Confirmed against the same kernel headers used for
+ * the other constants here; see kb/systems/mips-o32-syscall-abi-traps.md for
+ * the ones that DO diverge. */
+struct pollfd {
+	int fd;
+	short events;
+	short revents;
+};
+#define POLLIN 0x0001
 
 #define __NR_socket     4183
 #define __NR_bind       4169
@@ -286,16 +309,6 @@ __attribute__((unused)) static void put_u32_fd(int fd, unsigned long v)
 }
 
 /*
- * Run a program with stdout redirected to a file, and wait for it. Used to
- * drive /bin/diag, whose values are not exposed through /proc.
- *
- * A file rather than a pipe on purpose: MIPS `pipe` returns its two descriptors
- * in $v0 and $v1, which the three-argument inline syscall cannot express. pipe2
- * would avoid that, but a temp file in /var costs nothing here and keeps the
- * child setup to open/dup2/execve.
- */
-__attribute__((unused))
-/*
  * Decode a waitpid status into an exit code: 0-255 for a normal exit, -1 for a
  * child killed by a signal or one that never exited at all.
  *
@@ -310,7 +323,73 @@ static long wait_exitcode(long status)
 }
 
 /*
- * Run a command and capture its output.
+ * SIGKILL a child that has gone silent and reap it. Every bounded wait below
+ * ends here on expiry, instead of leaving the parent parked in read() or
+ * waitpid() forever.
+ *
+ * confd is single-threaded and serial: one wedged child (see drain_bounded)
+ * does not just fail its own route, it freezes every OTHER request behind it,
+ * because the daemon never gets back to accept(). See AGENTS.md, "every wait
+ * is bounded".
+ */
+static void kill_and_reap(long pid)
+{
+	long status = 0;
+
+	syscall3(__NR_kill, pid, SIGKILL, 0);
+	syscall3(__NR_waitpid, pid, (long)&status, 0);
+}
+
+/*
+ * Drain a pipe into buf, bounded by timeout_ms of overall inactivity: each
+ * read is gated by poll() so a child that goes silent (not merely slow) is
+ * caught and killed instead of hung on forever.
+ *
+ * Found on hardware in the sibling exporter (odi-sfp-exporter, rc3, claro,
+ * 2026-09-28): omcid can stop answering its command queue after a respawn
+ * bug, and a child talking to it then never exits -- a blind read() never
+ * returns, so the single-threaded HTTP server never gets back to accept()
+ * and the whole daemon looks dead, even though it is merely stuck waiting on
+ * one child. Every child confd forks now goes through this bound.
+ *
+ * Returns bytes read; *timed_out is set separately because the caller cannot
+ * tell a timeout from a short answer from the byte count alone, and a
+ * timeout must not be reported to the browser as "the command ran and said
+ * nothing".
+ */
+static long drain_bounded(int fd, long pid, char *buf, unsigned long cap,
+			  int timeout_ms, int *timed_out)
+{
+	unsigned long got = 0;
+
+	*timed_out = 0;
+	while (got + 1 < cap) {
+		struct pollfd pfd;
+		long pr, n;
+
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+		pr = syscall3(__NR_poll, (long)&pfd, 1, timeout_ms);
+		if (pr <= 0) {
+			/* 0: timed out with nothing ready. <0: poll itself
+			 * failed -- treat the same way rather than spin. */
+			*timed_out = 1;
+			kill_and_reap(pid);
+			break;
+		}
+		n = syscall3(__NR_read, fd, (long)(buf + got), cap - got - 1);
+		if (n <= 0)
+			break;		/* EOF: the child is done, not stuck */
+		got += (unsigned long)n;
+	}
+	buf[got] = 0;
+	return (long)got;
+}
+
+/*
+ * Run a command and capture its output, bounded by timeout_ms of overall
+ * inactivity.
  *
  * A pipe, not a temporary file. The file version needed a writable directory,
  * and the one it used (/var/exp) was created by the dev-time helper script but
@@ -320,12 +399,14 @@ static long wait_exitcode(long status)
  * for two instances to collide on.
  */
 static long run_to_buf_ex(const char *path, char *const argv[],
-			  char *buf, unsigned long cap, long *exitcode)
+			  char *buf, unsigned long cap, long *exitcode,
+			  int timeout_ms)
 {
 	int fds[2];
 	long pid;
 	long status = 0;
-	unsigned long got = 0;
+	long got;
+	int timed_out;
 
 	if (exitcode)
 		*exitcode = -1;
@@ -359,21 +440,21 @@ static long run_to_buf_ex(const char *path, char *const argv[],
 	 * waitpid(). diag's output is a few hundred bytes against 64 KB, so it
 	 * would not bite today — which is exactly how it would survive to bite
 	 * someone later. */
-	while (got + 1 < cap) {
-		long n = syscall3(__NR_read, fds[0], (long)(buf + got),
-				  cap - got - 1);
-
-		if (n <= 0)
-			break;
-		got += (unsigned long)n;
-	}
-	buf[got] = 0;
+	got = drain_bounded(fds[0], pid, buf, cap, timeout_ms, &timed_out);
 
 	syscall3(__NR_close, fds[0], 0, 0);
-	syscall3(__NR_waitpid, pid, (long)&status, 0);
+	if (!timed_out) {
+		syscall3(__NR_waitpid, pid, (long)&status, 0);
+		if (exitcode)
+			*exitcode = wait_exitcode(status);
+		return got;
+	}
+	/* Already SIGKILLed and reaped by drain_bounded. -2 is a distinguishable
+	 * sentinel: the caller must not read a timeout as "ran and said
+	 * nothing" (byte count 0) or as any ordinary exit code. */
 	if (exitcode)
-		*exitcode = wait_exitcode(status);
-	return (long)got;
+		*exitcode = -2;
+	return -2;
 }
 
 /*
@@ -383,9 +464,10 @@ static long run_to_buf_ex(const char *path, char *const argv[],
  * from success by byte count alone.
  */
 __attribute__((unused)) static long run_to_buf(const char *path, char *const argv[],
-					       char *buf, unsigned long cap)
+					       char *buf, unsigned long cap,
+					       int timeout_ms)
 {
-	return run_to_buf_ex(path, argv, buf, cap, 0);
+	return run_to_buf_ex(path, argv, buf, cap, 0, timeout_ms);
 }
 
 /*
@@ -404,12 +486,15 @@ __attribute__((unused)) static long run_to_buf(const char *path, char *const arg
  * another process startup.
  */
 __attribute__((unused)) static long run_script_to_buf(const char *path, char *const argv[],
-			      const char *script, char *buf, unsigned long cap)
+			      const char *script, char *buf, unsigned long cap,
+			      int timeout_ms)
 {
 	int in[2], out[2];
 	long pid;
 	long status = 0;
-	unsigned long got = 0, wrote = 0, slen = 0;
+	long got;
+	int timed_out;
+	unsigned long wrote = 0, slen = 0;
 
 	while (script[slen])
 		slen++;
@@ -465,23 +550,18 @@ __attribute__((unused)) static long run_script_to_buf(const char *path, char *co
 	}
 	syscall3(__NR_close, in[1], 0, 0);
 
-	/* Drain before waiting, for the same reason run_to_buf does: the other
-	 * order deadlocks as soon as the child outgrows the pipe buffer. Here
-	 * that is a live risk rather than a theoretical one — the mib counter
-	 * dump alone is 5.9 KB. */
-	while (got + 1 < cap) {
-		long n = syscall3(__NR_read, out[0], (long)(buf + got),
-				  cap - got - 1);
-
-		if (n <= 0)
-			break;
-		got += (unsigned long)n;
-	}
-	buf[got] = 0;
+	/* Drain before waiting, for the same reason run_to_buf_ex does: the
+	 * other order deadlocks as soon as the child outgrows the pipe buffer.
+	 * Here that is a live risk rather than a theoretical one — the mib
+	 * counter dump alone is 5.9 KB. Bounded the same way: a script that
+	 * hangs (a wedged omci_app, a `diag` left reading stdin) must not take
+	 * the whole daemon down with it. */
+	got = drain_bounded(out[0], pid, buf, cap, timeout_ms, &timed_out);
 
 	syscall3(__NR_close, out[0], 0, 0);
-	syscall3(__NR_waitpid, pid, (long)&status, 0);
-	return (long)got;
+	if (!timed_out)
+		syscall3(__NR_waitpid, pid, (long)&status, 0);
+	return timed_out ? -2 : got;	/* -2: distinguishable from "ran, said nothing" */
 }
 
 #endif /* ODI_SYSCALL_H */

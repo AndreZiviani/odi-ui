@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Fixed
+- Bounded every wait confd does on a forked child (`omcicli`, `diag`,
+  `flash`, `apply.sh`, `fwu_starter.sh`, `nv`, `ping`, `md5sum`, `mkdir`) with
+  a per-command timeout: past it the child is SIGKILLed and reaped instead of
+  leaving the daemon parked in `read()`/`waitpid()` forever, which would
+  freeze every other request behind it (confd is single-threaded). Mirrors a
+  fix in the sibling `odi-sfp-exporter` for the same failure mode (a stuck
+  `omcid` left a child never answering). Also bounded the host-side
+  `scripts/deploy.sh`, `capture-omci.sh`, `capture-baseline.sh` and
+  `schema-drift.sh` ssh sessions with `ConnectTimeout`/`ServerAlive*`, which
+  had none.
+
 ## v1.0.5 - 2026-09-25
 
 ### Added

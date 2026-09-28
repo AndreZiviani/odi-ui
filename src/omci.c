@@ -72,12 +72,22 @@ static void emit_omcicli(int fd, char *const argv[])
 {
 	long got, code = -1;
 
-	got = run_to_buf_ex(OMCICLI_PATH, argv, omci, sizeof(omci), &code);
-	if (got < 0) {
+	got = run_to_buf_ex(OMCICLI_PATH, argv, omci, sizeof(omci), &code,
+			    OMCICLI_TIMEOUT_MS);
+	/*
+	 * -1 is "never ran at all" (pipe2/fork failed) and has no output worth
+	 * showing. -2 is OMCICLI_TIMEOUT_MS firing: the child DID run, omci was
+	 * killed for going silent, and whatever it printed before then is still
+	 * in `omci` -- so that case falls through to the ordinary 200 response
+	 * below, and the code check further down reports the timeout.
+	 */
+	if (got == -1) {
 		respond(fd, "500 Internal Server Error", "application/json", 0);
 		put_fd(fd, "{\"error\":\"could not run omcicli\"}");
 		return;
 	}
+	if (got < 0)
+		got = 0;
 
 	respond(fd, "200 OK", "application/json", 0);
 	put_fd(fd, "{\"raw\":\"");
@@ -89,11 +99,20 @@ static void emit_omcicli(int fd, char *const argv[])
 	 * 127 is run_to_buf_ex's own "execve failed", not omcicli's. Saying so
 	 * separates "this image has no omcicli" from "omcicli did not like the
 	 * arguments", which are fixed in completely different places.
+	 *
+	 * -2 is the OMCICLI_TIMEOUT_MS bound firing: omcicli was killed for not
+	 * answering, most likely because omci_app itself is wedged (see
+	 * odi-sfp-exporter's own notes on the same respawn bug). Reported
+	 * separately so a stuck OMCI daemon shows as exactly that instead of as
+	 * "omcicli refused the request", which would send you to look at the
+	 * arguments instead of at omci_app.
 	 */
 	if (code == 0) {
 		put_fd(fd, ",\"ok\":true}");
 	} else if (code == 127) {
 		put_fd(fd, ",\"ok\":false,\"error\":\"no omcicli in this image\"}");
+	} else if (code == -2) {
+		put_fd(fd, ",\"ok\":false,\"error\":\"omcicli timed out; omci_app may be stuck\"}");
 	} else {
 		put_fd(fd, ",\"ok\":false,\"error\":\"omcicli refused the request\"}");
 	}

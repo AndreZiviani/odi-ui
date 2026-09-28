@@ -91,7 +91,7 @@ void emit_firmware_json(int fd)
 	}
 	put_fd(fd, " MB\",\"env\":{");
 
-	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf)) > 0) {
+	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0) {
 		while (buf[i]) {
 			unsigned long ls = i, le = i, eq;
 
@@ -235,7 +235,7 @@ int nv_set(const char *key, const char *value)
 	 * came up on the old image, and the natural conclusion was that the new
 	 * image had failed its trial.
 	 */
-	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code) < 0)
+	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code, NV_TIMEOUT_MS) < 0)
 		return 0;
 	return code == 0;
 }
@@ -254,7 +254,7 @@ int nv_get(const char *key, char *out, unsigned long cap)
 	unsigned long i = 0;
 
 	out[0] = 0;
-	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf)) <= 0)
+	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf), NV_TIMEOUT_MS) <= 0)
 		return 0;
 
 	while (buf[i]) {

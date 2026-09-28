@@ -27,7 +27,12 @@ set -euo pipefail
 HOST="${1:?usage: capture-baseline.sh <user@host>}"
 
 read -r -a SSH_EXTRA <<< "${SSH_OPTS:-}"
-SSH=(ssh -o StrictHostKeyChecking=accept-new "${SSH_EXTRA[@]}" "$HOST")
+# ConnectTimeout bounds the handshake; ServerAlive* bounds a session that
+# connected fine and then went quiet. No GNU timeout(1) on macOS to wrap this
+# in, so the bound is ssh's own.
+SSH=(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+	 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+	 "${SSH_EXTRA[@]}" "$HOST")
 
 DEST=/etc/config/confd/baseline.tsv
 

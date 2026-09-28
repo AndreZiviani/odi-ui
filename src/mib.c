@@ -335,7 +335,7 @@ int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 	argv[3] = (char *)value;
 	argv[4] = 0;
 
-	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf)) <= 0)
+	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf), FLASH_TIMEOUT_MS) <= 0)
 		return 0;
 
 	/* flash echoes "KEY=value" from its own xmlconfig -g when it is done. */
@@ -379,7 +379,8 @@ int apply_omci(void)
 	char buf[256];
 	unsigned long i;
 
-	if (run_script_to_buf("/bin/sh", argv, script, buf, sizeof(buf)) <= 0)
+	if (run_script_to_buf("/bin/sh", argv, script, buf, sizeof(buf),
+			      APPLY_TIMEOUT_MS) <= 0)
 		return 0;
 	for (i = 0; buf[i]; i++)
 		if (spre(buf + i, "APPLIED"))
@@ -398,10 +399,11 @@ long load_values(void)
 	static char *const hs[] = { "flash", "all", "hs", 0 };
 	long a, b;
 
-	a = run_to_buf(FLASH_PATH, cs, values, sizeof(values));
+	a = run_to_buf(FLASH_PATH, cs, values, sizeof(values), FLASH_TIMEOUT_MS);
 	if (a <= 0)
 		return -1;
-	b = run_to_buf(FLASH_PATH, hs, values + a, sizeof(values) - (unsigned long)a);
+	b = run_to_buf(FLASH_PATH, hs, values + a, sizeof(values) - (unsigned long)a,
+		       FLASH_TIMEOUT_MS);
 	return b < 0 ? a : a + b;
 }
 
