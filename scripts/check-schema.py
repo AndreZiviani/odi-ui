@@ -24,7 +24,7 @@ WRITABLE = {"yes", "never", "identity"}
 # anything else -- so a typo here is a key that cannot be written at all, which
 # is the safe direction but still a bug, and one nothing else would report.
 # Keep the two in step: adding a type means adding it in both places.
-TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "string"}
+TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "hostport", "string"}
 
 problems = []
 
@@ -59,7 +59,7 @@ sett = load("settings.tsv", 6)
 # settings.tsv, the image's own view. The classes are the four the page
 # labels; the actions are the three apply.sh and the reboot button perform.
 SETT_CLASSES = {"live", "restart", "internet", "reboot"}
-SETT_ACTIONS = {"network", "omci", "reboot"}
+SETT_ACTIONS = {"network", "omci", "syslog", "ntp", "reboot"}
 
 names = {r[0] for r in keys}
 if not names:
@@ -158,7 +158,8 @@ for name, apply_, action, pair, reader, note_ in sett:
     # The class is what the page promises; the action is what it does. A key
     # labelled live that needs a reboot, or the reverse, is a UI that lies.
     if (apply_, action) not in {("live", "network"), ("internet", "omci"),
-                                ("reboot", "reboot")}:
+                                ("reboot", "reboot"), ("restart", "syslog"),
+                                ("restart", "ntp")}:
         note(name, f"class {apply_!r} does not match action {action!r}")
     if pair and pair not in sett_names:
         note(name, f"pair {pair!r} is not itself in settings.tsv")

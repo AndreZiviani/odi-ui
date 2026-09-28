@@ -27,7 +27,7 @@ static void handle_write(int conn, const char *body)
 	unsigned long i = 0;
 	int first = 1, confirm = 0;
 	int any_omci = 0, any_reboot = 0, any_untraced = 0;
-	int need_net = 0, any_stock = 0;
+	int need_net = 0, any_stock = 0, need_syslog = 0, need_ntp = 0;
 
 	if (read_file(SCHEMA_PATH_OVR, schema, sizeof(schema)) <= 0 &&
 	    read_file(SCHEMA_PATH, schema, sizeof(schema)) <= 0) {
@@ -161,6 +161,10 @@ static void handle_write(int conn, const char *body)
 						any_stock = 1;
 					else if (seq(derived, "network"))
 						need_net = 1;
+					else if (seq(derived, "syslog"))
+						need_syslog = 1;
+					else if (seq(derived, "ntp"))
+						need_ntp = 1;
 					else if (seq(derived, "omci"))
 						any_omci = 1;
 					else if (seq(derived, "reboot"))
@@ -221,6 +225,14 @@ next:
 
 		if (need_net) {
 			put_fd(conn, "\"network\"");
+			first_need = 0;
+		}
+		if (need_syslog) {
+			put_fd(conn, first_need ? "\"syslog\"" : ",\"syslog\"");
+			first_need = 0;
+		}
+		if (need_ntp) {
+			put_fd(conn, first_need ? "\"ntp\"" : ",\"ntp\"");
 			first_need = 0;
 		}
 		if (any_omci && sett[0]) {
@@ -900,14 +912,15 @@ void serve(int conn)
 	 * a stock-based image has, and network is refused.
 	 */
 	if (seq(path, "/api/apply") && seq(method, "POST")) {
-		char what[16];
+		char what[16];   /* "network", "omci", "syslog" or "ntp" */
 		long code = -1, got;
 
 		if (!form_get(body, "what", what, sizeof(what)) || !what[0])
 			str_copy(what, "omci", sizeof(what));
-		if (!seq(what, "omci") && !seq(what, "network")) {
+		if (!seq(what, "omci") && !seq(what, "network") &&
+		    !seq(what, "syslog") && !seq(what, "ntp")) {
 			respond(conn, "400 Bad Request", "application/json", 0);
-			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network or omci\"}");
+			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network, omci, syslog or ntp\"}");
 			return;
 		}
 		if (file_exists(APPLY_PATH)) {
@@ -930,7 +943,7 @@ void serve(int conn)
 			return;
 		}
 		respond(conn, "200 OK", "application/json", 0);
-		if (seq(what, "network")) {
+		if (!seq(what, "omci")) {
 			put_fd(conn, "{\"ok\":false,\"applied\":false,"
 				     "\"error\":\"this image has no " APPLY_PATH "; reboot to apply\"}");
 			return;

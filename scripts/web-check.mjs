@@ -444,6 +444,15 @@ ok(inputsOf(stock) === 0, 'and none of them can be edited there');
 ok(doc.querySelector('#device-login').hidden === true,
    'the stock device-login section is not offered');
 
+/* The two SERVICE RESTART keys are editable and validate as host[:port]. */
+ok(tagsOf(common).includes('SERVICE RESTART'), 'SYSLOG_SERVER / NTP_SERVER carry SERVICE RESTART');
+const hpRow = { name: 'NTP_SERVER', type: 'hostport' };
+const hp = (v) => valueProblem(hpRow, v);
+ok(!hp('pool.ntp.org') && !hp('10.0.0.1') && !hp('10.0.0.1:514') && !hp('a-b.c:65535'),
+   'hostport accepts hostnames, IPv4 literals and host:port');
+ok(['a b', 'a"b', "a'b", 'h:0', 'h:70000', 'h:', ':1', '-h', 'h.', ''].every((v) => hp(v)),
+   'hostport rejects spaces, quotes, bad ports and empties');
+
 EDITS.set('LOID', 'someone');
 const pw = withPairs([...EDITS.entries()]);
 ok(pw.some(([k, v]) => k === 'LOID_OLD' && v === 'someone'),

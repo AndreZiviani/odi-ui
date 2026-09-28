@@ -7,6 +7,7 @@
  * each one according to its class:
  *
  *   LIVE                  network: applied straight after the save
+ *   SERVICE RESTART       syslog, ntp: the daemon restarts straight after the save
  *   INTERRUPTS INTERNET   omci: offered as "Apply now", behind a confirmation
  *   REBOOT                reboot: offered as "Reboot now", behind a confirmation
  *
@@ -166,6 +167,9 @@ async function followUp(res, written, out) {
       out.append(applyButton('live', 'Apply the addresses now', () => applyNetwork(out, true)));
     }
   }
+  for (const [what, daemon] of [['syslog', 'syslogd'], ['ntp', 'ntpd']]) {
+    if (needs.includes(what)) await applyService(out, what, daemon);
+  }
   if (needs.includes('omci')) {
     out.append(el('div', 'warn', 'Saved. These keys take effect when OMCI is '
       + 'restarted and the OLT provisions the ONU again.'));
@@ -224,6 +228,21 @@ async function applyNetwork(out, moves) {
     /* The address moving under the request is one way this ends. */
     out.append(el('div', 'warn', 'No answer: if the address changed, the page '
       + `is now at http://${S.VALUES.LAN_IP_ADDR}/.`));
+  }
+}
+
+/* SERVICE RESTART: apply.sh kills the daemon, init respawns it with the new
+   setting. Nothing to confirm, the fibre service is not touched. */
+async function applyService(out, what, daemon) {
+  try {
+    const r = await fetch('/api/apply', form({ what }));
+    const res = await r.json();
+    if (res.output) out.append(el('pre', null, String(res.output).trim()));
+    out.append(el('div', res.ok ? 'good' : 'bad', res.ok
+      ? `${daemon} restarted with the new setting.`
+      : `Saved, but ${daemon} was not restarted: ` + (res.error || 'see above')));
+  } catch (e) {
+    out.append(el('div', 'bad', String(e.message || e)));
   }
 }
 

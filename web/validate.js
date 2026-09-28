@@ -38,6 +38,14 @@ function valueProblem(row, raw) {
       return 'must be four numbers 0\u2013255 separated by dots';
     }
   }
+  if (row.type === 'hostport') {
+    const m = /^([A-Za-z0-9.-]+)(?::(\d{1,5}))?$/.exec(raw);
+    if (!m || /^[.-]|[.-]$/.test(m[1]) || m[1].length > 253
+        || (m[2] !== undefined && (Number(m[2]) < 1 || Number(m[2]) > 65535))) {
+      return 'must be a host or host:port: letters, digits, dots and hyphens, '
+        + 'port 1\u201365535, no spaces or quotes';
+    }
+  }
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';
   }

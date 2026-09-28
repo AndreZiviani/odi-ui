@@ -36,7 +36,7 @@ UPNP	cs	UPNP	other	int	unknown	yes	no
 UPNP_EXT_ITF	cs	UPNP_EXT_ITF	other	int	unknown	yes	no
 SYSLOG_LOG_LEVEL	cs	SYSLOG_LOG_LEVEL	other	int	unknown	yes	no
 SYSLOG_DISPLAY_LEVEL	cs	SYSLOG_DISPLAY_LEVEL	other	int	unknown	yes	no
-SYSLOG_SERVER	cs	SYSLOG_SERVER	other	string	unknown	yes	no
+SYSLOG_SERVER	cs	SYSLOG_SERVER	other	hostport	unknown	yes	no
 SUSER_NAME	cs	SUSER_NAME	accounts	string	unknown	yes	yes
 SUSER_PASSWORD	cs	SUSER_PASSWORD	accounts	string	unknown	yes	yes
 E8BDUSER_NAME	cs	E8BDUSER_NAME	accounts	string	unknown	yes	no
@@ -86,7 +86,7 @@ OMCI_LOGFILE_MASK	cs	OMCI_LOGFILE_MASK	omci	int	restart:omci	yes	no
 REBOOT_TIME	cs	REBOOT_TIME	other	int	unknown	yes	no
 DHCP_PORT_FILTER	cs	DHCP_PORT_FILTER	dhcp	int	unknown	yes	no
 NTP_EXT_ITF	cs	NTP_EXT_ITF	other	int	unknown	yes	no
-NTP_SERVER	cs	NTP_SERVER	other	string	unknown	yes	no
+NTP_SERVER	cs	NTP_SERVER	other	hostport	unknown	yes	no
 FIBER_MODE	cs	FIBER_MODE	other	int	unknown	never	no
 RTK_DEVID_MANUFACTURER	cs	RTK_DEVID_MANUFACTURER	hardware	string	unknown	yes	no
 RTK_DEVID_OUI	cs	RTK_DEVID_OUI	hardware	string	unknown	yes	no
