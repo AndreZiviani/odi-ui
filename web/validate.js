@@ -28,6 +28,8 @@ function rangeBad(row, raw) {
  * after it.
  */
 function valueProblem(row, raw) {
+  /* hostport keys (SYSLOG_SERVER, NTP_SERVER) are odi-only and empty clears them. */
+  if (row.type === 'hostport' && raw === '') return null;
   if (raw === '' || raw === undefined) {
     return 'cannot be empty \u2014 flash set refuses to clear a key';
   }

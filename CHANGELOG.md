@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.0.8 - 2026-09-28
+
+### Fixed
+- `SYSLOG_SERVER` and `NTP_SERVER` can be cleared from the Config page: an empty
+  value is accepted for `hostport` keys, by confd and by the page. Needs
+  odi-oss v1.0.8 or later, whose `flash` stores these two keys in
+  `/etc/config/odi.conf` and removes the key on an empty value. Other keys still
+  refuse an empty value.
+
 ## v1.0.7 - 2026-09-28
 
 ### Added
