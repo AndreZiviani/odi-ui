@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.0.7 - 2026-09-28
+
 ### Added
 - `SYSLOG_SERVER` and `NTP_SERVER` are set from the Config page (under
   "other") and apply as SERVICE RESTART: after the save the page runs
@@ -18,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `/api/apply` accepts `what=syslog` and `what=ntp`, and a save reports them
   in `needs`. Note: confd refuses an empty value, so a key cannot be cleared
   from the page.
+
+## v1.0.6 - 2026-09-28
 
 ### Fixed
 - Bounded every wait confd does on a forked child (`omcicli`, `diag`,
