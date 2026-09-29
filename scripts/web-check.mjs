@@ -73,6 +73,7 @@ const doc = {
   addEventListener: () => {},
   dispatchEvent: () => true,
 };
+doc.documentElement = { dataset: {} };
 globalThis.document = doc;
 globalThis.Event = class { constructor(t) { this.type = t; } };
 globalThis.CustomEvent = globalThis.Event;
@@ -649,6 +650,58 @@ for (const k of Object.keys(S.SETTINGS)) delete S.SETTINGS[k];
 renderAll();
 ok(inputsOf('#sections') > 100,
    'with no settings table every key is editable, as before');
+
+/* The theme toggle: default follows the browser, a click sets data-theme on
+   <html>, persists it, and flips the label; storage that throws is survived. */
+{
+  const dom = await import(join(root, 'web', 'dom.js'));
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  globalThis.matchMedia = () => ({ matches: false, addEventListener: () => {} });
+  const btn = doc.querySelector('#themetoggle');
+  let click;
+  btn.addEventListener = (ev, fn) => { if (ev === 'click') click = fn; };
+  ok(!doc.documentElement.dataset.theme && dom.currentTheme() === 'dark',
+     'theme: no choice made follows the browser (dark here)');
+  dom.wireTheme();
+  ok(btn.getAttribute('aria-label') === 'Switch to light mode', 'theme: label names the mode it switches to');
+  ok(doc.querySelector('#ico-sun').getAttribute('hidden') === null && doc.querySelector('#ico-moon').getAttribute('hidden') !== null,
+     'theme: in dark mode the sun is shown');
+  click();
+  ok(doc.documentElement.dataset.theme === 'light' && store.get(dom.THEME_KEY) === 'light',
+     'theme: a click sets data-theme and persists it');
+  ok(btn.getAttribute('aria-label') === 'Switch to dark mode' && doc.querySelector('#ico-moon').getAttribute('hidden') === null && doc.querySelector('#ico-sun').getAttribute('hidden') !== null,
+     'theme: the label and icon follow the choice');
+  click();
+  ok(doc.documentElement.dataset.theme === 'dark' && store.get(dom.THEME_KEY) === 'dark',
+     'theme: a second click goes back');
+  globalThis.localStorage = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+  let threw = false;
+  try { click(); } catch (e) { threw = true; }
+  ok(!threw && doc.documentElement.dataset.theme === 'light', 'theme: works with storage blocked');
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  const head = html.slice(0, html.indexOf('</head>'));
+  ok(/<script>[^<]*localStorage\.getItem\("odi-theme"\)[^<]*<\/script>/.test(head) &&
+     head.indexOf('localStorage') < head.indexOf('style.css'),
+     'theme: an inline script in the head sets the attribute before the stylesheet');
+  ok(dom.THEME_KEY === 'odi-theme', 'theme: the head script and dom.js use one storage key');
+  const css = readFileSync(join(root, 'web', 'style.css'), 'utf8');
+  ok(/:root\[data-theme="light"\]\s*\{/.test(css) && /:root:not\(\[data-theme="dark"\]\)/.test(css),
+     'theme: style.css lets data-theme override the media query');
+  delete doc.documentElement.dataset.theme;
+}
+
+/* Receive and transmit are read at the same size, weight and unit styling. */
+{
+  const css = readFileSync(join(root, 'web', 'style.css'), 'utf8');
+  const rules = [...css.matchAll(/([^{}]*\.m-read[^{}]*)\{([^}]*)\}/g)].map((m) => [m[1].trim(), m[2].trim()]);
+  const forMeter = (sel) => rules.filter(([s]) => s.split(',').some((x) => x.includes(sel)));
+  ok(forMeter('#rx').length === 0 && forMeter('#tx').length === 0,
+     'readout: no rule sizes receive or transmit differently');
+  ok(rules.filter(([s]) => /\.m-read \.num\b/.test(s)).length === 1 &&
+     rules.filter(([s]) => /\.m-read \.unit\b/.test(s)).length === 1,
+     'readout: one rule for the number and one for the unit, shared by both meters');
+}
 
 await import(join(root, 'web', 'app.js'));
 await new Promise((r) => setTimeout(r, 50));

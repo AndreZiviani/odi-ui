@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+- A light/dark toggle at the top right of the header, next to Sign out: a sun
+  or a moon (inline SVG, no fetch) for the mode it switches to. The page still
+  follows the browser's colour scheme until you pick; the pick is kept in
+  localStorage (`odi-theme`) and applied from the head before first paint, so
+  it does not flash. It works with storage blocked, for the page only.
+
+### Changed
+- Receive is now read at the same size as Transmit (44 px at most, was 52 px):
+  one size, weight and unit style for both readouts.
+
 ## v1.1.1 - 2026-09-29
 
 ### Changed

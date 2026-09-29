@@ -26,6 +26,45 @@ async function get(path) {
   return r.json();
 }
 
+/*
+ * Light or dark. The page follows prefers-color-scheme until the user picks
+ * one; the pick is data-theme on <html> (which style.css lets override the
+ * media query) and is kept in localStorage under THEME_KEY. index.html reads it
+ * back in the head, before first paint. Storage can be absent or throw, and
+ * then the choice lasts for the page only.
+ */
+const THEME_KEY = 'odi-theme';
+const currentTheme = () => {
+  const t = document.documentElement.dataset.theme;
+  if (t === 'light' || t === 'dark') return t;
+  return typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches
+    ? 'light' : 'dark';
+};
+function paintThemeToggle() {
+  const to = currentTheme() === 'dark' ? 'light' : 'dark';
+  const b = $('#themetoggle');
+  b.setAttribute('aria-label', 'Switch to ' + to + ' mode');
+  b.setAttribute('title', 'Switch to ' + to + ' mode');
+  /* setAttribute, not .hidden: an SVG element has no hidden property. */
+  for (const [id, on] of [['#ico-sun', to === 'light'], ['#ico-moon', to === 'dark']]) {
+    if (on) $(id).removeAttribute('hidden'); else $(id).setAttribute('hidden', '');
+  }
+}
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* not persisted */ }
+  paintThemeToggle();
+}
+function wireTheme() {
+  $('#themetoggle').addEventListener('click', () => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
+  /* Until a pick is made the icon has to follow the browser too. */
+  if (typeof matchMedia === 'function') {
+    const mq = matchMedia('(prefers-color-scheme: light)');
+    if (mq.addEventListener) mq.addEventListener('change', paintThemeToggle);
+  }
+  paintThemeToggle();
+}
+
 const bytes = (n) => {
   n = Number(n || 0);
   const u = ['B', 'kB', 'MB', 'GB', 'TB'];
@@ -37,4 +76,4 @@ const bytes = (n) => {
   return (i ? n.toFixed(n < 10 ? 2 : 1) : String(Math.round(n * 100) / 100)) + ' ' + u[i];
 };
 
-export { $, el, fail, get, bytes };
+export { $, el, fail, get, bytes, currentTheme, setTheme, wireTheme, THEME_KEY };
