@@ -39,10 +39,14 @@ From the qemu preview (`scripts/preview.sh`) with recorded fixtures; identifiers
 | Status | Config |
 |---|---|
 | ![Status: receive and transmit levels on the class B+ window, registration, transceiver, forwarding](docs/screenshots/ui-status.png) | ![Config, VLAN subtab: each setting with its apply cost, and the save bar](docs/screenshots/ui-config.png) |
-| **OMCI services** | **Firmware** |
-| ![OMCI services: what the OLT provisioned, one card per managed entity](docs/screenshots/ui-services.png) | ![Firmware: both partitions, what each holds, and the stock-firmware warning](docs/screenshots/ui-firmware.png) |
-| **Light theme** | **Phone width** |
-| ![Status page in the light theme](docs/screenshots/ui-status-light.png) | ![Config at phone width, stacked rows](docs/screenshots/ui-config-mobile.png) |
+| **Learned addresses** | **OMCI services** |
+| ![Forwarding rates and the MAC table the switch learned, with a multicast group](docs/screenshots/ui-mactable.png) | ![OMCI services: what the OLT provisioned, one card per managed entity](docs/screenshots/ui-services.png) |
+| **Firmware** | **Trial boot** |
+| ![Firmware: both partitions, what each holds, and the stock-firmware warning](docs/screenshots/ui-firmware.png) | ![A trial boot: the banner on every page, with Commit to this image](docs/screenshots/ui-trial.png) |
+| **What committing means** | **Light theme** |
+| ![Firmware during a trial, with the What committing means disclosure open](docs/screenshots/ui-committing.png) | ![Status page in the light theme](docs/screenshots/ui-status-light.png) |
+| **Phone width** | |
+| ![Config at phone width, stacked rows and the save bar](docs/screenshots/ui-config-mobile.png) | |
 
 ## Getting it
 

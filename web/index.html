@@ -40,7 +40,7 @@
        as U-Boot would boot another partition next. Not dismissible. -->
   <div id="trialbanner" class="trial" role="status" hidden>
     <p><strong>Trial boot.</strong> <span id="trial-what"></span></p>
-    <button id="trial-keep" class="primary" type="button">Keep this image</button>
+    <button id="trial-commit" class="primary" type="button">Commit to this image</button>
     <div id="trial-out"></div>
   </div>
 </header>
@@ -202,6 +202,19 @@
     <!-- Firmware -->
     <div class="sub" id="s-firmware" role="tabpanel" aria-labelledby="st-system-firmware" data-sub="firmware">
       <div id="parts"></div>
+      <details class="more" id="commit-why">
+        <summary>What committing means</summary>
+        <p>U-Boot boots the <strong>committed</strong> partition by default, every
+           time: the one marked Committed above (<code>sw_commit</code>).</p>
+        <p>A trial boot is one-shot. Trying a partition boots it once; the next
+           reboot, whether the image came up or not, returns to the committed
+           partition.</p>
+        <p>Committing makes the running image the default, so it is what every
+           later reboot comes back to.</p>
+        <p>A committed image that later fails keeps booting itself: there is no
+           trial left to fall back from. Check that it registers and carries
+           traffic before you commit to it.</p>
+      </details>
 
       <section class="block">
         <h2>Load a new image</h2>
@@ -216,9 +229,9 @@
           <summary>How a trial boot works</summary>
           <p>Trying a partition boots it <strong>once</strong>, with the hardware
              watchdog armed. If the image does not come up, the stick returns by
-             itself to whichever partition is kept &mdash; no console, no
+             itself to whichever partition is committed &mdash; no console, no
              intervention. A trial that boots fine still reverts at the next
-             reboot, so keeping it is a separate decision you make after seeing
+             reboot, so committing to it is a separate decision you make after seeing
              it work.</p>
           <p>Writing takes about eighty seconds and runs on the stick by itself:
              this page follows it, and closing the page does not stop it. Do not

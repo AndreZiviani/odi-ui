@@ -2,7 +2,7 @@
  * The Firmware tab: which partition is which, and the one-shot trial boot.
  *
  * sw_tryactive boots a partition ONCE with the watchdog armed, so an image that
- * does not come up reverts itself. Keeping it is a separate, deliberate act.
+ * does not come up reverts itself. Committing it is a separate, deliberate act.
  */
 
 import { $, el, fail, get, bytes } from './dom.js';
@@ -17,6 +17,7 @@ const WRITE_POLL_MS = 3000;
  * what should NOT quietly become writable with one click.
  */
 let UPLOADED = null;
+let COMMIT_WHY = null;
 
 /*
  * Upload. XHR rather than fetch, for the one thing fetch cannot do: report
@@ -196,7 +197,7 @@ async function renderFirmware() {
     head.append(el('h2', null, 'Partition ' + p));
     const tags = el('span', 'slot-tags');
     if (p === booted) tags.append(el('span', 'tag live', 'Running'));
-    if (p === committed) tags.append(el('span', 'tag', 'Kept'));
+    if (p === committed) tags.append(el('span', 'tag', 'Committed'));
     if (p === pending && pending !== '2') tags.append(el('span', 'tag warn', 'Trial pending'));
     head.append(tags);
     card.append(head);
@@ -226,20 +227,20 @@ async function renderFirmware() {
         + '. Writing replaces it, and you lose it as a fallback.'));
     }
     /* Try only the slot you are NOT running: a trial of the running one
-       boots what is already up. Keeping the running slot is the same act
-       as the trial banner Keep this image, and goes through the same code. */
+       boots what is already up. Committing the running slot is the same act
+       as the trial banner Commit to this image, and goes through the same code. */
     if (p !== committed && p !== booted) {
       const b = el('button', null, 'Try partition ' + p);
       b.type = 'button';
       b.onclick = () => fwAction('try', p,
         `Partition ${p} will boot once, at the next reboot. If it fails, the stick `
-        + `returns to partition ${committed} on its own.`);
+        + `returns to partition ${committed}, the committed one, on its own.`);
       acts.append(b);
     }
     if (p !== committed && p === booted) {
-      const b = el('button', 'primary', 'Keep this image');
+      const b = el('button', 'primary', 'Commit to partition ' + p);
       b.type = 'button';
-      b.onclick = () => keepRunning();
+      b.onclick = () => commitRunning();
       acts.append(b);
     }
     /*
@@ -263,6 +264,11 @@ async function renderFirmware() {
     grid.append(card);
   }
   host.append(grid);
+  /* The explanation sits right under the partitions it is about. It is
+     static markup in index.html, held here because the host is rebuilt on
+     every render and would otherwise drop it. */
+  COMMIT_WHY = COMMIT_WHY || $('#commit-why');
+  if (COMMIT_WHY) host.append(COMMIT_WHY);
 
   /* Spell the commands out with this stick's own address and the partition it
      is not running, so they can be pasted without being adapted. */
@@ -354,7 +360,7 @@ async function fwAction(action, partition, warning) {
         `Partition ${partition} is armed for one boot. Reboot to try it; if it ` +
         `does not come up the stick returns here on its own.`));
     } else if (action === 'commit') {
-      out.append(el('div', 'good', `Partition ${partition} is now the one it boots.`));
+      out.append(el('div', 'good', `Committed: partition ${partition} is now the one it boots.`));
     } else {
       out.append(el('div', 'warn', 'Rebooting. This page will stop responding.'));
     }
@@ -395,32 +401,34 @@ function renderTrial() {
   const holds = { odi: 'an odi-oss image', stock: 'the stock firmware', other: 'an image that is not odi-oss',
                   unknown: 'an image this page cannot identify' }[k.kind];
   const rec = env['sw_version' + back];
+  /* Generic on purpose: no claim about what the other slot holds. It is not
+     always the stock firmware, and System > Firmware says what it is. */
   $('#trial-what').textContent = main !== run
-    ? `This image, on partition ${run}, is not kept: the next reboot returns to partition ${back}, `
-      + `which holds ${holds}${rec ? ' (U-Boot records ' + rec + ')' : ''}.`
-    : `Partition ${run} is kept in the active U-Boot copy, but the fallback copy still names `
-      + `partition ${back} (${holds}). If the active copy is ever lost, the stick boots that.`;
+    ? `This image (partition ${run}) is not committed. The next reboot returns to partition ${back}.`
+    : `Partition ${run} is committed in the active U-Boot copy, but the fallback copy still names `
+      + `partition ${back}. If the active copy is ever lost, the stick boots that.`;
 
-  const keep = $('#trial-keep');
-  keep.hidden = main === run;
-  keep.onclick = () => keepRunning();
+  const commit = $('#trial-commit');
+  commit.hidden = main === run;
+  commit.onclick = () => commitRunning();
 }
 
 /*
- * Keep the running image: sw_commit to the running slot. One path, used by
+ * Commit to the running image: sw_commit to the running slot. One path, used by
  * the trial banner and by the running slot on the Firmware subtab, so the
  * two cannot drift into saying or doing different things.
  */
-async function keepRunning() {
+async function commitRunning() {
   const env = (S.FW || {}).env || {};
   const run = env.sw_active;
   const back = env.sw_commit;
   const out = $('#trial-out');
   out.textContent = '';
   if (run === undefined) return;
-  if (!confirm(`Keep partition ${run}?\n\nIt becomes the one the stick boots from now on`
-      + (back !== undefined && back !== run ? `, instead of partition ${back}.` : '.'))) return;
-  const btn = $('#trial-keep');
+  if (!confirm(`Commit to partition ${run}?\n\nIt becomes the one the stick boots by default`
+      + (back !== undefined && back !== run ? `, instead of partition ${back}.` : '.')
+    + ' If it later fails to come up, the stick keeps booting it: there is no trial to fall back from.')) return;
+  const btn = $('#trial-commit');
   btn.disabled = true;
   try {
     const r = await fetch('/api/firmware', {
@@ -429,11 +437,11 @@ async function keepRunning() {
       body: 'action=commit&partition=' + encodeURIComponent(run),
     });
     const res = await r.json();
-    if (!res.ok) { out.append(el('div', 'bad', res.error || 'not kept')); return; }
+    if (!res.ok) { out.append(el('div', 'bad', res.error || 'not committed')); return; }
     S.FW = await get('/api/firmware');
     renderTrial();
     if (!$('#trialbanner').hidden) {
-      out.append(el('div', null, 'Kept in the active copy. confd writes only that one; '
+      out.append(el('div', null, 'Committed in the active copy. confd writes only that one; '
         + `over SSH, nv setenv -c <copy> sw_commit ${run} makes the fallback agree.`));
     }
     if (!$('#p-system').hidden) await renderFirmware();

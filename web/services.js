@@ -33,7 +33,7 @@ const CARDS = [
   { me: '171', title: 'VLAN translation',               render: renderExtVlan },
   { me: '47',  title: 'How this line is bridged',       render: renderBridge },
   { me: '262', title: 'Upstream containers (T-CONT)',   render: renderIds, onu: true,
-    key: 'AllocID', what: 'allocation id' },
+    key: 'AllocID', what: 'allocation id', unassigned: [255, 65535] },
   { me: '268', title: 'GEM ports',                      render: renderIds, key: 'PortID', what: 'GEM port id' },
 ];
 /*
@@ -112,7 +112,7 @@ function renderSwImage(box, dump) {
     const com = Number(attr(inst, 'Committed'));
     const tags = [];
     if (act === 1) tags.push('running');
-    if (com === 1) tags.push('kept');
+    if (com === 1) tags.push('committed');
     dl.append(el('dt', '', 'Image ' + (inst.id || '?')),
               el('dd', '', ver + (tags.length ? ' (' + tags.join(', ') + ')' : '')));
   }
@@ -320,14 +320,35 @@ function renderBridge(box, dump) {
    identifier a support thread asks for is the allocation or port id, not the
    entity id, so that is what is listed when the dump carries it. */
 function renderIds(box, dump, card) {
-  const ids = dump.instances.map((i) => {
+  const vals = dump.instances.map((i) => {
     const v = card && card.key ? attr(i, card.key) : null;
-    return v !== null && v !== '' && Number.isFinite(Number(v)) ? String(Number(v)) : i.id;
-  }).filter(Boolean);
-  const n = ids.length;
-  box.append(el('p', 'me-lead', n + ' provisioned'
-    + (card && card.key && dump.instances.some((i) => attr(i, card.key) !== null)
-      ? ', by ' + card.what : '') + ': ' + ids.join(', ')));
+    return v !== null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null;
+  });
+  /*
+     The ONU creates every T-CONT it has at MIB reset, with no Alloc-ID; the
+     OLT assigns one to each T-CONT it uses. G.988 (9.2.2) gives 255 as "no
+     Alloc-ID assigned" on G.984 GPON, and 65535 on the later PON families.
+     Counting those as provisioned turned five T-CONTs into sixteen.
+  */
+  const free = new Set(card && card.unassigned || []);
+  const used = [];
+  let spare = 0;
+  dump.instances.forEach((inst, i) => {
+    if (vals[i] === null) used.push(inst.id);
+    else if (free.has(vals[i])) spare++;
+    else used.push(String(vals[i]));
+  });
+  const by = card && card.key && vals.some((v) => v !== null) ? ', by ' + card.what : '';
+  if (!used.length) {
+    box.append(el('p', 'me-lead', 'None assigned'));
+  } else {
+    box.append(el('p', 'me-lead', used.length + (free.size ? ' assigned' : ' provisioned')
+      + by + ': ' + used.join(', ')));
+  }
+  if (spare) {
+    box.append(note(spare + ' unassigned: created by the ONU, not given an '
+      + card.what + ' by the OLT.'));
+  }
 }
 
 /* --- the page ------------------------------------------------------------ */

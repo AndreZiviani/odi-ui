@@ -376,7 +376,7 @@ ok(/allows these VLANs on this line: 75, 1600/.test(text),
 
 /* Captured from our own sticks, so these assert what the DEVICE says. */
 ok(/ODI|V1\.0-220923/.test(text), 'the software-image card shows a version');
-ok(/running/.test(text) && /kept/.test(text),
+ok(/running/.test(text) && /committed/.test(text),
    'Active and Committed are read -- the card assumed IsActive/IsCommitted and showed neither');
 ok(/HWTC/.test(text), 'the OLT vendor code is decoded from its hex word');
 ok(/carries both the physical Ethernet UNI and the VEIP/.test(text),
@@ -458,6 +458,25 @@ const noneText = JSON.stringify(doc.querySelector('#services-cards'),
 ok(/The MIB holds none/.test(noneText), 'a good empty read of an OLT-created table says none');
 Object.assign(OMCI, SAVED);
 
+/* T-CONTs the OLT never assigned carry Alloc-ID 255 (G.988 9.2.2), and a
+   live claro stick has eleven of them beside five in use. SYNTHETIC, in the
+   odi-oss dump shape, with that stick's five Alloc-IDs. */
+{
+  const rows = [282, 794, 1050, 1306, 538, ...Array(11).fill(255)];
+  OMCI[262] = rows.map((a, i) => `262 Tcont ${32768 + i}\n    AllocID                  ${a.toString(16).padStart(4, '0')}\n`).join('')
+    + rows.length + ' rows\n';
+  await renderServices(true);
+  const tc = textOf(doc.querySelector('#services-cards'));
+  ok(/5 assigned, by allocation id: 282, 794, 1050, 1306, 538/.test(tc), 'only T-CONTs with an Alloc-ID are counted as assigned');
+  ok(/11 unassigned/.test(tc) && !/16 provisioned/.test(tc), 'and Alloc-ID 255 is counted as unassigned');
+  OMCI[262] = SAVED[262];
+}
+{
+  const { bytes } = await import(join(root, 'web', 'dom.js'));
+  ok(bytes(123.456789) === '123.46 B' && bytes(12345.678) === '12.3 kB' && bytes(1234.5) === '1.23 kB',
+     'a rate never shows more than two decimals');
+}
+
 /* --- the kernel log, as odi-oss writes it -------------------------------- */
 const oss = doc.createElement('div');
 const rOss = renderLogLines('<12>rcS: alive 517.79 s, free 13912 kB\nodi_wdt: alive at 492 s\n<11>rcS: omcid died\n', oss);
@@ -487,9 +506,11 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
               slots: { 1: { kernel: 'Linux Kernel Image', built: 1663932999 } } };
   renderTrial();
   ok(bar.hidden === false, 'a trial boot raises the banner');
-  ok(/returns to partition 1, which holds the stock firmware/.test(doc.querySelector('#trial-what').textContent),
-     'and says where the next reboot goes, and what that slot holds');
-  ok(doc.querySelector('#trial-keep').hidden === false, 'with the Keep action');
+  const what = doc.querySelector('#trial-what').textContent;
+  ok(/This image \(partition 0\) is not committed\. The next reboot returns to partition 1\./.test(what),
+     'and says where the next reboot goes');
+  ok(!/stock|holds/.test(what), 'without claiming what the other slot holds');
+  ok(doc.querySelector('#trial-commit').hidden === false, 'with the Commit action');
   st.S.FW = { env: { sw_active: '0', sw_commit: '0' }, fallback: { sw_commit: '1' }, slots: {} };
   renderTrial();
   ok(bar.hidden === false && /fallback copy still names partition 1/.test(doc.querySelector('#trial-what').textContent),
@@ -517,7 +538,8 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   let t = await fwText({ ...trialFW, exe: '/bin/confd' });
   ok(!/override/.test(t), 'a local build (confd=local) run from /bin/confd is not called an override');
   ok(!/Try partition/.test(t), 'mid-trial, neither slot offers Try: one is running, the other is what the next boot is anyway');
-  ok(/Keep this image/.test(t), 'the running, uncommitted slot offers Keep this image');
+  ok(/Commit to partition 1/.test(t) && !/Keep/.test(t), 'the running, uncommitted slot offers Commit to partition 1');
+  ok(/Committed/.test(t) && !/Kept/.test(t), 'and the committed slot is badged Committed');
   t = await fwText({ ...trialFW, exe: '/etc/config/confd/confd' });
   ok(/override in \/etc\/config is in use/.test(t), 'a confd run from /etc/config is an override');
   t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd' });
