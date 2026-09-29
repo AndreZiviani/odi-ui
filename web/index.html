@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>ODI DFP-34X-2C2</title>
+<!-- Set the theme before first paint, or a chosen theme flashes the other one.
+     Storage may be blocked; then the page follows the browser. -->
+<script>try{var t=localStorage.getItem("odi-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="/style.css">
 <!-- Suppress the browser's automatic /favicon.ico request: the daemon serves
      only what web_assets[] lists, so it answers 404 on every page load. -->
@@ -34,6 +37,10 @@
   </nav>
   <div class="top-end">
     <a class="authchip" id="authchip" href="#system/access" hidden>Default password</a>
+    <button id="themetoggle" class="quiet themetoggle" type="button" aria-label="Switch to light mode" title="Switch to light mode">
+      <svg id="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg id="ico-moon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
     <form method="post" action="/api/logout"><button id="logout" class="quiet" type="submit">Sign out</button></form>
   </div>
   <!-- A trial boot: shown on every view, in the sticky header, for as long

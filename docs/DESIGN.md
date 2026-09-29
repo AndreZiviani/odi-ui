@@ -894,7 +894,9 @@ glance, and know what a change costs before making it. The receive level is
 the one loud thing on the page; everything else is quiet on purpose.
 
 Colour is taken from the objects the stick is plugged into, on a cool slate
-ground (`#151C24` dark, `#EDF1F4` light, following `prefers-color-scheme`),
+ground (`#151C24` dark, `#EDF1F4` light, following `prefers-color-scheme` until
+the header toggle picks one: `data-theme` on `<html>`, kept in localStorage as
+`odi-theme`, set from the head before first paint),
 and each colour means one thing everywhere:
 
 | colour | from | means |

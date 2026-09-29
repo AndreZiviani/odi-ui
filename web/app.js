@@ -6,7 +6,7 @@
  * any of this.
  */
 
-import { $, el, fail, get } from './dom.js';
+import { $, el, fail, get, wireTheme } from './dom.js';
 import { S, EDITS } from './state.js';
 import { renderStatus } from './status.js';
 import { renderAll } from './config.js';
@@ -127,6 +127,7 @@ $('#pw-save').onclick = savePassword;
 $('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;
 wireRestore();
+wireTheme();
 wireFirmware();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. Both firmwares answer it: the stock diag, and

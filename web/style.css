@@ -53,8 +53,11 @@
   --readout: "Readout", var(--mono);
   --r: 6px;
 }
+/* Light tokens, twice: once for a browser that asks for light when the user
+   has not chosen, once for an explicit choice. A dark choice on a light
+   browser is the :root block above, which the media query then skips. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     color-scheme: light;
     --bg: #EDF1F4;
     --surface: #FFFFFF;
@@ -70,6 +73,22 @@
     --blue-ink: #2358AA;
     --red-ink: #AE2B2B;
   }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #EDF1F4;
+  --surface: #FFFFFF;
+  --well: #E3E9EE;
+  --field: #FFFFFF;
+  --line: #D2DAE1;
+  --line-2: #B4C0CB;
+  --ink: #141E28;
+  --ink-2: #455362;
+  --ink-3: #5B6876;
+  --yellow-ink: #775900;
+  --green-ink: #0F6E45;
+  --blue-ink: #2358AA;
+  --red-ink: #AE2B2B;
 }
 
 * { box-sizing: border-box; }
@@ -129,6 +148,10 @@ p { margin: 0 0 10px; }
   border: 1px solid color-mix(in srgb, var(--yellow) 55%, transparent); border-radius: 999px; padding: 2px 10px;
 }
 .top-end form { margin: 0; }
+/* The theme toggle: an icon button the size of a tap target. It shows the
+   theme it switches TO, and the label says so. */
+button.themetoggle { padding: 0; width: 36px; height: 36px; justify-content: center; }
+button.themetoggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* The trial banner is part of the sticky header, full width, and drawn as
    a band rather than a boxed callout, so it can never be mistaken for the
@@ -335,9 +358,8 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .m-verdict { font-size: 13px; font-weight: 600; color: var(--state); }
 .m-verdict::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; }
 .m-read { display: flex; align-items: baseline; gap: 10px; margin: 2px 0 12px; }
-.m-read .num { font: 700 clamp(38px, 4.6vw, 52px)/1 var(--readout); letter-spacing: -0.02em; color: var(--ink); }
+.m-read .num { font: 700 clamp(32px, 3.8vw, 44px)/1 var(--readout); letter-spacing: -0.02em; color: var(--ink); }
 .m-read .unit { font: 700 16px var(--readout); color: var(--ink-3); }
-#tx .m-read .num { font-size: clamp(32px, 3.8vw, 44px); }
 
 .instrument { position: relative; padding-bottom: 36px; }
 .scale { position: relative; height: 30px; border-radius: 3px; background: var(--well); border: 1px solid var(--line); }
