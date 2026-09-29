@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.2.0 - 2026-09-29
+
 ### Added
 - Config rows for the keys odi-oss added: `ONU_HW_VERSION` (ONU hardware
   version, the ONU-G version some OLTs whitelist; at most 14 printable ASCII
