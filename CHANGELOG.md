@@ -20,6 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The receive readout is smaller (52 px at most, was 76), closer to transmit
   (44 px), so it leads the Status page without dominating it.
 
+- Screenshots retaken, with three new ones: `ui-mactable.png` (forwarding
+  and learned addresses), `ui-trial.png` (the trial banner) and
+  `ui-committing.png` (Firmware during a trial, the commit explanation open).
+  The file names are stable; odi-oss links to them.
+
 ### Fixed
 - Forwarding rates show at most two decimals; below 1 kB/s they printed the
   raw float.
