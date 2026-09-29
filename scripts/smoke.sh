@@ -371,8 +371,45 @@ for bad in 'a b' 'a"b' "a'b" 'host:0' 'host:70000' 'host:' ':514' '-host' 'host.
 	check "a bad host is refused: $bad" yes \
 		"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "SYSLOG_SERVER=$bad" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
 done
+# omcid reloads on SIGHUP: a VLAN key is class live and rebuilt in place, an
+# identity key re-registers the ONU. Both are the omci action; `interrupts`
+# says which, so the page applies the first at once and asks before the second.
+check "a VLAN key needs omci, and does not interrupt" yes \
+	"$(err "$(post 'VLAN_MANU_TAG_VID=120')" '"needs":["omci"],"stock":false,"interrupts":false')"
+check "transparent mode is a listed value and does not interrupt" yes \
+	"$(err "$(post 'VLAN_MANU_MODE=0')" '"ok":true,"value":"0"')"
+check "an identity key needs omci and interrupts" yes \
+	"$(err "$(post 'OMCC_VER=128')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "a batch of VLAN and identity keys interrupts" yes \
+	"$(err "$(post 'VLAN_MANU_TAG_PRI=0&OMCC_VER=128')" '"interrupts":true')"
+check "ONU_HW_VERSION is written and interrupts" yes \
+	"$(err "$(post 'ONU_HW_VERSION=HW-2.1')" '"ok":true,"value":"HW-2.1"')"
+check "ONU_HW_VERSION needs omci" yes \
+	"$(err "$(post 'ONU_HW_VERSION=HW-2.1')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "an empty ONU_HW_VERSION clears it" yes \
+	"$(err "$(post 'ONU_HW_VERSION=')" '"ok":true')"
+check "an ONU_HW_VERSION of 14 characters passes" yes \
+	"$(err "$(post 'ONU_HW_VERSION=12345678901234')" '"ok":true')"
+for bad in '123456789012345' 'a"b' 'a&b' 'a<b'; do
+	check "a bad ONU_HW_VERSION is refused: $bad" yes \
+		"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "ONU_HW_VERSION=$bad" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
+done
+check "a non-ASCII ONU_HW_VERSION is refused" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "ONU_HW_VERSION=caf$(printf '\303\251')" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
+check "OLT_SW_DOWNLOAD reject is written and needs nothing" yes \
+	"$(err "$(post 'OLT_SW_DOWNLOAD=reject')" '"needs":[],"stock":false,"interrupts":false')"
+check "OLT_SW_DOWNLOAD accept is written" yes \
+	"$(err "$(post 'OLT_SW_DOWNLOAD=accept')" '"ok":true,"value":"accept"')"
+check "OLT_SW_DOWNLOAD outside accept and reject is refused" yes \
+	"$(err "$(post 'OLT_SW_DOWNLOAD=maybe')" 'not one of the values')"
+check "OMCI_UNKNOWN_ME_OK is written and interrupts" yes \
+	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=1')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "OMCI_UNKNOWN_ME_OK outside 0 and 1 is refused" yes \
+	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=2')" 'not one of the values')"
 check "settings.tsv is served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")" '"name":"LAN_ENABLE_IP2","apply":"live","action":"network"')"
+check "the VLAN keys are live and applied by omci" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")" '"name":"VLAN_MANU_TAG_VID","apply":"live","action":"omci"')"
 # Without the table, the old classification stands.
 mv /etc/confd/settings.tsv /tmp/settings.tsv.kept
 check "without settings.tsv an untraced key is reported as untraced" yes \

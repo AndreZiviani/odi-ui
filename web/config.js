@@ -24,7 +24,8 @@ import { hexAscii, validateInput } from './validate.js';
 const GROUPS = {
   line: ['GPON_SN', 'GPON_PLOAM_PASSWD', 'LOID', 'LOID_PASSWD', 'LOID_OLD', 'LOID_PASSWD_OLD'],
   vlan: ['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI'],
-  identity: ['OMCI_VENDOR_PRODUCT_CODE', 'GPON_ONU_MODEL', 'OMCI_SW_VER1', 'OMCI_SW_VER2', 'OMCC_VER'],
+  identity: ['OMCI_VENDOR_PRODUCT_CODE', 'GPON_ONU_MODEL', 'ONU_HW_VERSION', 'OMCI_SW_VER1', 'OMCI_SW_VER2', 'OMCC_VER',
+    'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK'],
   network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
   services: ['SYSLOG_SERVER', 'NTP_SERVER'],
 };
@@ -115,7 +116,7 @@ function renderValue(row, raw, readonly = false) {
     input.spellcheck = false;
     input.autocomplete = 'off';
     if (row.type === 'int') input.inputMode = 'numeric';
-    if (row.type !== 'string' && row.type !== 'hostport') input.classList.add('mono');
+    if (row.type !== 'string' && row.type !== 'hostport' && row.type !== 'ascii14') input.classList.add('mono');
     if (meta.range) input.placeholder = meta.range.replace('-', '–');
   }
   input.id = 'f-' + row.name;

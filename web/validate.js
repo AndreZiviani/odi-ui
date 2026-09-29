@@ -28,8 +28,9 @@ function rangeBad(row, raw) {
  * after it.
  */
 function valueProblem(row, raw) {
-  /* hostport keys (SYSLOG_SERVER, NTP_SERVER) are odi-only and empty clears them. */
-  if (row.type === 'hostport' && raw === '') return null;
+  /* hostport keys (SYSLOG_SERVER, NTP_SERVER) and ascii14 (ONU_HW_VERSION) are
+     odi-only and empty clears them. */
+  if ((row.type === 'hostport' || row.type === 'ascii14') && raw === '') return null;
   if (raw === '' || raw === undefined) {
     return 'cannot be empty \u2014 flash set refuses to clear a key';
   }
@@ -47,6 +48,12 @@ function valueProblem(row, raw) {
       return 'must be a host or host:port: letters, digits, dots and hyphens, '
         + 'port 1\u201365535, no spaces or quotes';
     }
+  }
+  if (row.type === 'ascii14' && !/^[\x20-\x7e]{1,14}$/.test(raw)) {
+    return 'at most 14 printable ASCII characters';
+  }
+  if (row.type === 'ascii14' && /["<&]/.test(raw)) {
+    return 'a quote, < or & cannot be stored';
   }
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';

@@ -86,6 +86,9 @@ REBOOT_TIME	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 DHCP_PORT_FILTER	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 NTP_EXT_ITF	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 NTP_SERVER	unknown	
+ONU_HW_VERSION	unknown	
+OLT_SW_DOWNLOAD	unknown	
+OMCI_UNKNOWN_ME_OK	unknown	
 FIBER_MODE	reboot	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/runsdk.sh
 RTK_DEVID_MANUFACTURER	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 RTK_DEVID_OUI	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig

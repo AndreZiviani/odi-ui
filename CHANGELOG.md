@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Config rows for the keys odi-oss added: `ONU_HW_VERSION` (ONU hardware
+  version, the ONU-G version some OLTs whitelist; at most 14 printable ASCII
+  characters, empty removes the key; INTERRUPTS INTERNET), `OLT_SW_DOWNLOAD`
+  (Firmware pushed by the ISP: accept answers and discards the image, reject
+  refuses it, nothing is ever installed; LIVE, read at each download step) and
+  `OMCI_UNKNOWN_ME_OK` (answer unknown entities with success; off by default,
+  the risk stated in the help; INTERRUPTS INTERNET), all on the OLT identity
+  subtab. New schema type `ascii14` for the first, the only odi-only key that
+  can be cleared besides the `hostport` ones, and settings action `none` for a
+  live key with nothing to run.
+- `/api/config` answers `"interrupts"` beside `"needs"`: whether the `omci`
+  action drops the fibre service (false when every key of the batch is LIVE).
 - A light/dark toggle at the top right of the header, next to Sign out: a sun
   or a moon (inline SVG, no fetch) for the mode it switches to. The page still
   follows the browser's colour scheme until you pick; the pick is kept in
@@ -14,6 +26,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it does not flash. It works with storage blocked, for the page only.
 
 ### Changed
+- The four VLAN keys (`VLAN_CFG_TYPE`, `VLAN_MANU_MODE`, `VLAN_MANU_TAG_VID`,
+  `VLAN_MANU_TAG_PRI`) are LIVE now, not INTERRUPTS INTERNET: odi-oss omcid
+  rereads the store on SIGHUP and rebuilds the bridge connections in place,
+  with the ONU staying in O5, so a save applies them at once with no
+  confirmation. The action stays `omci`, since `apply.sh omci` is what sends
+  the signal; a batch that also carries an identity key still offers *Apply
+  now* behind the confirmation, which now says omcid clears its MIB and
+  re-ranges the ONU rather than restarts. `GPON_SN` moves from REBOOT to
+  INTERRUPTS INTERNET with the same action: the odi-oss driver now rewrites
+  the serial into the PON MAC while the ONU is deactivated, which is what the
+  re-registration does. It is not verified on a stick yet.
+- `VLAN_MANU_MODE` reads "1 — Stick tags" and "0 — Router tags
+  (transparent)", and its help says who tags the service in each.
 - Receive is now read at the same size as Transmit (44 px at most, was 52 px):
   one size, weight and unit style for both readouts.
 

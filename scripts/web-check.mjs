@@ -621,7 +621,7 @@ ok(tagsOf(common).includes('Service restart'), 'SYSLOG_SERVER / NTP_SERVER carry
    meta.tsv and settings.tsv were written apart, and the page used to print
    the syslog and NTP explanations twice over, and "re-ranges" on every VLAN
    row twice. */
-const { splitHelp } = await import(join(root, 'web', 'config.js'));
+const { splitHelp, GROUPS } = await import(join(root, 'web', 'config.js'));
 for (const r of SETT) {
   const m = META.find((x) => x.name === r.name) || {};
   const h = splitHelp(m.help, r.note);
@@ -638,6 +638,26 @@ ok(!hp('pool.ntp.org') && !hp('10.0.0.1') && !hp('10.0.0.1:514') && !hp('a-b.c:6
 ok(['a b', 'a"b', "a'b", 'h:0', 'h:70000', 'h:', ':1', '-h', 'h.'].every((v) => hp(v)),
    'hostport rejects spaces, quotes and bad ports');
 ok(!hp(''), 'hostport accepts empty: it clears the key');
+const hwv = (v) => valueProblem({ name: 'ONU_HW_VERSION', type: 'ascii14' }, v);
+ok(!hwv('HW-2.1') && !hwv('12345678901234') && !hwv(''),
+   'ascii14 accepts up to 14 printable characters, and empty (it clears the key)');
+ok(['123456789012345', 'a"b', 'a<b', 'a&b', 'caf\u00e9', 'a\tb'].every((v) => hwv(v)),
+   'ascii14 rejects 15 characters, a quote, < and &, and anything outside printable ASCII');
+{
+  const setting = (n) => SETT.find((r) => r.name === n);
+  ok(['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI']
+    .every((n) => setting(n) && setting(n).apply === 'live' && setting(n).action === 'omci'),
+  'the four VLAN keys are live and applied by omci');
+  ok(setting('OLT_SW_DOWNLOAD').apply === 'live' && setting('OLT_SW_DOWNLOAD').action === 'none',
+    'OLT_SW_DOWNLOAD is live with nothing to apply');
+  ok(['ONU_HW_VERSION', 'OMCI_UNKNOWN_ME_OK', 'GPON_SN'].every((n) => setting(n).apply === 'internet' && setting(n).action === 'omci'),
+    'the hardware version, unknown-entity answers and serial number re-register the ONU');
+  const mode = META.find((x) => x.name === 'VLAN_MANU_MODE');
+  ok(mode.options === '1=1 \u2014 Stick tags|0=0 \u2014 Router tags (transparent)',
+    'VLAN_MANU_MODE offers stick tags and router tags (transparent)');
+  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK'].every((n) => GROUPS.identity.includes(n)),
+    'the new OLT-facing keys sit on the OLT identity subtab');
+}
 
 EDITS.set('LOID', 'someone');
 const pw = withPairs([...EDITS.entries()]);

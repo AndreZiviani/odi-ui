@@ -87,6 +87,9 @@ REBOOT_TIME	cs	REBOOT_TIME	other	int	unknown	yes	no
 DHCP_PORT_FILTER	cs	DHCP_PORT_FILTER	dhcp	int	unknown	yes	no
 NTP_EXT_ITF	cs	NTP_EXT_ITF	other	int	unknown	yes	no
 NTP_SERVER	cs	NTP_SERVER	other	hostport	unknown	yes	no
+ONU_HW_VERSION	cs	ONU_HW_VERSION	omci	ascii14	unknown	yes	no
+OLT_SW_DOWNLOAD	cs	OLT_SW_DOWNLOAD	omci	string	unknown	yes	no
+OMCI_UNKNOWN_ME_OK	cs	OMCI_UNKNOWN_ME_OK	omci	int	unknown	yes	no
 FIBER_MODE	cs	FIBER_MODE	other	int	unknown	never	no
 RTK_DEVID_MANUFACTURER	cs	RTK_DEVID_MANUFACTURER	hardware	string	unknown	yes	no
 RTK_DEVID_OUI	cs	RTK_DEVID_OUI	hardware	string	unknown	yes	no
