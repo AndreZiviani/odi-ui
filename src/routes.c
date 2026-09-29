@@ -1182,6 +1182,12 @@ void serve(int conn)
 		return;
 	}
 
+	/* The diagnostics bundle, redacted by the image script; see status.c. */
+	if (seq(path, "/api/diag")) {
+		emit_diag_bundle(conn);
+		return;
+	}
+
 	if (seq(path, "/api/log")) {
 		respond(conn, "200 OK", "application/json", 0);
 		emit_log_json(conn);

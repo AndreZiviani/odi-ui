@@ -425,6 +425,44 @@ check "the backup is served as a download" yes \
 	"$(err "$(curl -si -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")" 'Content-Disposition: attachment')"
 check "the backup needs the credential" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/backup")"
+
+echo "== diagnostics bundle"
+# /api/diag runs the image /etc/scripts/diag-bundle.sh and streams the file it
+# names. The real script is odi-oss; this stub stands in for its contract:
+# argv[1] is the output path, exit 0 means the file is there. Its mode comes
+# from a file because confd hands a child no environment.
+check "no bundle script answers 501" 501 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/diag")"
+mkdir -p /tmp/diag-src/odi-diag
+echo "stub bundle" > /tmp/diag-src/odi-diag/MANIFEST.txt
+tar -czf /tmp/diag-stub.tar.gz -C /tmp/diag-src odi-diag
+cat > /etc/scripts/diag-bundle.sh <<'STUB'
+#!/bin/sh
+case "$(cat /tmp/diag-stub.mode 2>/dev/null)" in
+fail) echo "diag-bundle: the bundle came to 3000000 bytes, over BUNDLE_MAX" >&2; exit 1 ;;
+esac
+cp /tmp/diag-stub.tar.gz "$1" && echo "$1"
+STUB
+chmod +x /etc/scripts/diag-bundle.sh
+echo ok > /tmp/diag-stub.mode
+check "the bundle needs the credential" 401 \
+	"$(code "http://127.0.0.1:$PORT/api/diag")"
+hdr=$(curl -s -u "$AUTH" -D - -o /tmp/diag-got.tar.gz "http://127.0.0.1:$PORT/api/diag")
+check "the bundle is served as a download" yes \
+	"$(err "$hdr" 'Content-Disposition: attachment; filename="odi-diag.tar.gz"')"
+check "the bundle is gzip" yes "$(err "$hdr" 'Content-Type: application/gzip')"
+check "the bundle arrives byte for byte" "$(md5sum < /tmp/diag-stub.tar.gz)" \
+	"$(md5sum < /tmp/diag-got.tar.gz)"
+check "the bundle file is removed after serving" gone \
+	"$([ -e /tmp/odi-diag.tar.gz ] && echo present || echo gone)"
+echo fail > /tmp/diag-stub.mode
+check "a failed bundle answers 500" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/diag")"
+check "a failed bundle says why" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/diag")" 'over BUNDLE_MAX')"
+rm -f /etc/scripts/diag-bundle.sh /tmp/diag-stub.mode /tmp/diag-stub.tar.gz /tmp/diag-got.tar.gz
+rm -rf /tmp/diag-src
+
 check "the OMCI feature bits are served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \

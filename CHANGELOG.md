@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+- `GET /api/diag` and a "Download a diagnostics bundle" button on the Admin
+  tab: confd runs the image `/etc/scripts/diag-bundle.sh` (odi-oss), which
+  collects logs, the previous boot ramlog, dmesg, slot variables, an exporter
+  scrape and the config with every secret redacted, and streams the tar.gz it
+  wrote (up to 2 MiB, then removed). Bounded at 60 s
+  (`DIAG_BUNDLE_TIMEOUT_MS`); a failure or timeout is a 500 carrying the
+  script message, an image without the script a 501. Needs an odi-oss image
+  that ships `diag-bundle.sh`. Covered by `make smoke` against a stub script.
+
 ## v1.0.8 - 2026-09-28
 
 ### Fixed

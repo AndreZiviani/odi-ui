@@ -118,3 +118,70 @@ void emit_log_json(int fd)
 	put_fd(fd, ((unsigned long)got + 1 >= sizeof(omci)) ? "true" : "false");
 	put_fd(fd, "}");
 }
+
+/*
+ * GET /api/diag: the diagnostics bundle, as a download.
+ *
+ * The image script does all the collecting and all the redacting, and
+ * writes DIAG_BUNDLE_OUT; this runs it, bounded, and streams the file. A
+ * failure is an HTTP error with the script own message, never a 200 with a
+ * partial archive: a browser saves whatever a 200 carries. Without the
+ * script (a stock slot, an older odi-oss) the route answers 501.
+ *
+ * Streamed in filebuf-sized chunks, capped at DIAG_BUNDLE_MAX, and the
+ * file is removed afterwards so the next request cannot be handed a stale
+ * one. The socket has SO_SNDTIMEO (main.c), so a client that stops reading
+ * cannot hold the daemon either.
+ */
+void emit_diag_bundle(int fd)
+{
+	static char *const argv[] = { "diag-bundle.sh", DIAG_BUNDLE_OUT, 0 };
+	long got, code = -1, in;
+	unsigned long sent = 0;
+
+	if (!file_exists(DIAG_BUNDLE_SCRIPT)) {
+		respond(fd, "501 Not Implemented", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"this image has no " DIAG_BUNDLE_SCRIPT "\"}");
+		return;
+	}
+
+	got = run_to_buf_ex(DIAG_BUNDLE_SCRIPT, argv, status, sizeof(status), &code,
+			    DIAG_BUNDLE_TIMEOUT_MS);
+	if (got == -2 || code != 0) {
+		syscall3(__NR_unlink, (long)DIAG_BUNDLE_OUT, 0, 0);
+		respond(fd, "500 Internal Server Error", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"");
+		put_fd(fd, got == -2 ? "diag-bundle.sh did not finish in time"
+				     : "diag-bundle.sh failed");
+		put_fd(fd, "\",\"output\":\"");
+		if (got > 0)
+			put_json_cstr(fd, status);
+		put_fd(fd, "\"}");
+		return;
+	}
+
+	in = syscall3(__NR_open, (long)DIAG_BUNDLE_OUT, O_RDONLY, 0);
+	if (in < 0) {
+		respond(fd, "500 Internal Server Error", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"diag-bundle.sh wrote no " DIAG_BUNDLE_OUT "\"}");
+		return;
+	}
+
+	respond(fd, "200 OK", "application/gzip",
+		"Content-Disposition: attachment; filename=\"odi-diag.tar.gz\"\r\n");
+	while (sent < DIAG_BUNDLE_MAX) {
+		unsigned long want = sizeof(filebuf);
+		long n;
+
+		if (want > DIAG_BUNDLE_MAX - sent)
+			want = DIAG_BUNDLE_MAX - sent;
+		n = syscall3(__NR_read, in, (long)filebuf, (long)want);
+		if (n <= 0)
+			break;
+		if (write_all(fd, filebuf, (unsigned long)n) != n)
+			break;		/* the client went away, or stopped reading */
+		sent += (unsigned long)n;
+	}
+	syscall3(__NR_close, in, 0, 0);
+	syscall3(__NR_unlink, (long)DIAG_BUNDLE_OUT, 0, 0);
+}

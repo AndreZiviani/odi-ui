@@ -12,5 +12,6 @@
 void emit_status_json(int fd);
 void emit_l2_json(int fd);
 void emit_log_json(int fd);
+void emit_diag_bundle(int fd);
 
 #endif /* CONFD_STATUS_H */
