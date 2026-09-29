@@ -898,10 +898,12 @@ button is deepened to `#2E6BC6` so white text on it passes too.
 Three deliberate choices worth keeping:
 
 - **Optical power is drawn on a scale, not printed as a number.** The window on
-  the scale is the class B+ range the optics is specified for, and two
+  the scale is the class B+ range the optics is specified for (the ONU figures
+  in ITU-T G.984.2 Amendment 1: launch +0.5 to +5 dBm, receive -27 to -8 dBm), and two
   dimension lines under it give the margin to each edge (sensitivity and
   overload for receive), the way a power meter shows it. A reading in the
-  window but within 3 dB of an edge is flagged; one outside it says by how
+  window but in its outer 16% at either end (about 3 dB of the 19 dB receive
+  window, 0.7 dB of the 4.5 dB launch window) is flagged; one outside it says by how
   much. So &minus;23.01 dBm is judged rather than merely reported.
 - **O1 to O5 is rendered as a ladder.** It is the one thing on the page that is
   genuinely a sequence &mdash; an ONU climbs it on every registration &mdash; so

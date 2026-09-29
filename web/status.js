@@ -35,14 +35,26 @@ const num = (s, re) => { const m = re.exec(s || ''); return m ? m[1] : null; };
  * datasheet uses: sensitivity is the weakest light the receiver still
  * decodes, overload the strongest.
  */
+/*
+ * The windows are the ONU figures for optical budget class B+ in ITU-T
+ * G.984.2 Amendment 1: mean launched power +0.5 to +5 dBm, receiver
+ * sensitivity -27 dBm, overload -8 dBm. (The OLT side of B+ differs --
+ * +1.5 to +5 launched, -28 sensitivity -- and is not what this stick is.)
+ */
 const OPTICS = {
   rx: { name: 'Receive', lo: -30, hi: -4, winLo: -27, winHi: -8,
         loName: 'sensitivity', hiName: 'overload', note: 'Class B+ receive window' },
   tx: { name: 'Transmit', lo: -3, hi: 8, winLo: 0.5, winHi: 5,
         loName: 'minimum', hiName: 'maximum', note: 'Class B+ launch power' },
 };
-/* Below this much margin to either edge, a reading in the window is flagged. */
-const TIGHT_DB = 3;
+/*
+ * "Near the edge" is the outer 16% of the window at each end, not a fixed
+ * figure: about 3 dB of the 19 dB receive window, about 0.7 dB of the
+ * 4.5 dB launch window. A fixed 3 dB was more than half the launch window,
+ * so a healthy +2.15 dBm transmitter read as marginal on every stick.
+ */
+const TIGHT_SHARE = 0.16;
+const tight = (spec) => (spec.winHi - spec.winLo) * TIGHT_SHARE;
 
 /* A real minus sign, not a hyphen: the readout face draws the two differently. */
 const signed = (v, d) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
@@ -57,7 +69,7 @@ function meter(hostSel, spec, value) {
   if (value !== null) {
     const m = Math.min(value - spec.winLo, spec.winHi - value);
     if (value < spec.winLo || value > spec.winHi) { verdict = 'bad'; say = 'Out of window'; }
-    else if (m < TIGHT_DB) { verdict = 'warn'; say = 'Near the edge'; }
+    else if (m < tight(spec)) { verdict = 'warn'; say = 'Near the edge'; }
     else { verdict = 'ok'; say = 'In window'; }
   }
   host.className = 'meter v-' + verdict;
@@ -115,8 +127,8 @@ function meter(hostSel, spec, value) {
       dim(spec.winHi, value, `${(-toHi).toFixed(1)} dB over ${spec.hiName}`, 'over');
       label = `${signed(value, 2)} dBm, ${(-toHi).toFixed(1)} dB over the ${spec.hiName} edge.`;
     } else {
-      dim(spec.winLo, value, `${toLo.toFixed(1)} dB to ${spec.loName}`, toLo < TIGHT_DB ? 'tight' : '');
-      dim(value, spec.winHi, `${toHi.toFixed(1)} dB to ${spec.hiName}`, toHi < TIGHT_DB ? 'tight' : '');
+      dim(spec.winLo, value, `${toLo.toFixed(1)} dB to ${spec.loName}`, toLo < tight(spec) ? 'tight' : '');
+      dim(value, spec.winHi, `${toHi.toFixed(1)} dB to ${spec.hiName}`, toHi < tight(spec) ? 'tight' : '');
       label = `${signed(value, 2)} dBm: ${toLo.toFixed(1)} dB above ${spec.loName}, `
         + `${toHi.toFixed(1)} dB below ${spec.hiName}.`;
     }
@@ -226,4 +238,4 @@ function renderStatus(raw) {
   renderFlow(s['mib dump counter port all'] || '');
 }
 
-export { renderStatus };
+export { renderStatus, OPTICS, tight };

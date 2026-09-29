@@ -20,7 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   confirmations. Subtabs count their unsaved changes.
 - The receive and transmit levels are drawn as instruments: the reading on the
   class B+ window, with the margin to each edge as dimension lines, and a
-  verdict (in window, near the edge, out of window). A header pill repeats the
+  verdict (in window, near the edge, out of window). Near the edge is the
+  outer 16% of each window (about 3 dB receive, 0.7 dB transmit); the windows
+  are the ONU class B+ figures from ITU-T G.984.2 Amendment 1. A header pill repeats the
   ONU state and receive level on every view.
 - New palette from the fibre world (singlemode yellow, APC green, UPC blue,
   alarm red on cool slate), with a light theme following

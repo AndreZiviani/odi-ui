@@ -199,6 +199,21 @@ ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
 renderStatus(API['/api/status'].raw);
 ok(true, 'renderStatus runs against a diag capture');
 
+/* The near-edge band scales with the window. A fixed 3 dB was more than half
+   the 4.5 dB launch window and flagged a healthy +2.15 dBm transmitter. */
+{
+  const { OPTICS, tight } = await import(join(root, 'web', 'status.js'));
+  ok(Math.abs(tight(OPTICS.tx) - 0.72) < 0.01 && Math.abs(tight(OPTICS.rx) - 3.04) < 0.01,
+     'near the edge is 16% of each window: 0.72 dB tx, 3.04 dB rx');
+  const tx = (v) => `RTK.0> pon get transceiver tx-power\n  Tx Power : ${v} dBm\n`;
+  renderStatus(tx('2.15'));
+  ok(doc.querySelector('#tx').className === 'meter v-ok', 'a +2.15 dBm transmitter is in window, not near the edge');
+  renderStatus(tx('0.9'));
+  ok(doc.querySelector('#tx').className === 'meter v-warn', 'and +0.9 dBm, 0.4 dB off the minimum, is near it');
+  renderStatus(tx('0.2'));
+  ok(doc.querySelector('#tx').className === 'meter v-bad', 'and +0.2 dBm is out of the window');
+}
+
 /* --- the kernel log ------------------------------------------------------- */
 const { renderLogLines } = await import(join(root, 'web', 'tools.js'));
 
