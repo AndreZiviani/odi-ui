@@ -64,6 +64,18 @@
 #define APPLY_PATH   "/etc/scripts/apply.sh"
 
 /*
+ * The diagnostics bundle (odi-oss /etc/scripts/diag-bundle.sh): the image
+ * collects it, redacts every secret and writes one tar.gz; GET /api/diag only
+ * runs the script and streams what it wrote. The collection lives in the
+ * image because it is the image that knows its own logs, /proc files and
+ * secret keys. DIAG_BUNDLE_MAX matches the script own BUNDLE_MAX: a larger
+ * file is refused, not served in part.
+ */
+#define DIAG_BUNDLE_SCRIPT "/etc/scripts/diag-bundle.sh"
+#define DIAG_BUNDLE_OUT    "/tmp/odi-diag.tar.gz"
+#define DIAG_BUNDLE_MAX    (2u * 1024u * 1024u)
+
+/*
  * Every child confd forks goes through syscall.h's drain_bounded(), which
  * SIGKILLs and reaps it past this many milliseconds of silence, instead of
  * leaving the parent parked in read()/waitpid() forever. confd is
@@ -91,6 +103,10 @@
 #define MD5SUM_TIMEOUT_MS  3000   /* hashing the uploaded image */
 #define MKDIR_TIMEOUT_MS   2000   /* mkdir -p SSHKEYS_DIR */
 #define NV_TIMEOUT_MS      2000   /* /bin/nv getenv/setenv (firmware.c) */
+#define DIAG_BUNDLE_TIMEOUT_MS 60000 /* diag-bundle.sh: about 20 steps of
+				   * busybox timeout 5 s each plus a 10 s
+				   * exporter scrape at worst; seconds in
+				   * practice (status.c) */
 /* The override network.sh prefers over LAN_IP_ADDR; reported so the page can
  * say the key is ignored while it exists. */
 #define LANIP_OVERRIDE "/etc/config/lan-ip"

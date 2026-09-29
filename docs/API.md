@@ -36,6 +36,13 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
     POST /api/ping       host=<IPv4>      literals only, no DNS
     GET  /api/l2                         `diag l2-table get entry address valid`
                                           (stock and odi-oss, different column sets)
+    GET  /api/diag                       the diagnostics bundle, a tar.gz download:
+                                          runs the image /etc/scripts/diag-bundle.sh
+                                          (odi-oss; it collects and redacts) and
+                                          streams what it wrote, up to 2 MiB.
+                                          500 with {"ok":false,"error","output"}
+                                          when the script fails or passes 60 s;
+                                          501 on an image without the script
 
 ## Firmware
 
