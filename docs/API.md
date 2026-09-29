@@ -49,7 +49,14 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
     POST /api/upload                     raw tarball as the body (not multipart)
     POST /api/firmware   action=write&partition=N
     GET  /api/firmware                    partitions, versions, build manifest,
-                                          `defaultauth`, `switches`, write progress
+                                          `defaultauth`, `switches`, write progress;
+                                          `env` (the sw_* of `nv getenv`),
+                                          `fallback` (the sw_* of `nv fallback`, the
+                                          other environment copy; empty on stock nv),
+                                          `slots` ({"0":{"kernel":..., "built":<unix>}},
+                                          from each kernel partition's uImage header;
+                                          {} when it cannot be read)
+    POST /api/firmware   action=try|commit|reboot&partition=N
 
 ## Backup and reset
 

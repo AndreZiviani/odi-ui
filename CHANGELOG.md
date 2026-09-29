@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`DIAG_BUNDLE_TIMEOUT_MS`); a failure or timeout is a 500 carrying the
   script message, an image without the script a 501. Needs an odi-oss image
   that ships `diag-bundle.sh`. Covered by `make smoke` against a stub script.
+- `/api/firmware` reports `slots`, each kernel partition's uImage name and
+  build time (read from the mtd device found by name in `/proc/mtd`; `{}` when
+  it cannot be read), and `fallback`, the sw_* of `nv fallback`, the other copy
+  of the redundant U-Boot environment (empty on the stock `nv`). What a slot
+  holds can then be told from the slot itself rather than from `sw_version<p>`.
 
 ## v1.0.8 - 2026-09-28
 

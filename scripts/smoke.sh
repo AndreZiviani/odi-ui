@@ -467,6 +467,10 @@ check "the OMCI feature bits are served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/features")" '"feature":"ignore_conn_uniNode_check"')"
 check "the build id is reported" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"confd":')"
+# No /proc/mtd here, so neither slot can be read: each must come back empty,
+# never guessed, and the object must still be valid JSON around it.
+check "an unreadable slot is reported empty, not guessed" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"slots":{"0":{},"1":{}}')"
 
 echo "== firmware upload"
 # The point of this route is that a 3 MB body reaches a file through a 16 KB
