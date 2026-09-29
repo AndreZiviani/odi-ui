@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.1.1 - 2026-09-29
+
 ### Changed
 - "Keep" is now "Commit" everywhere: the trial banner offers Commit to this
   image, the running slot Commit to partition N, the default slot is badged
