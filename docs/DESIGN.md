@@ -95,8 +95,10 @@ chip in the header on every other view.
 A **trial boot** is a different thing and looks it: a full-width band in the
 sticky header, on every view, for as long as U-Boot would boot another
 partition next -- `sw_commit`, in either copy of the redundant environment,
-naming a slot other than the running one. It says where the next reboot goes
-and what that slot holds, and offers *Keep this image*, which is the existing
+naming a slot other than the running one. It says only that this image is
+not committed and which partition the next reboot returns to -- what that
+partition holds is on System > Firmware, not claimed in the band, since it is
+not always the stock firmware -- and offers *Commit to this image*, which is the existing
 `action=commit` (`nv setenv sw_commit <slot>`). It cannot be dismissed. The
 commit writes only the winning environment copy; when only the fallback copy
 disagrees the band says so, and says how to make it agree over SSH.
@@ -333,13 +335,13 @@ scripts/classify-apply.py /path/to/squashfs-root schema/keys.tsv > schema/consum
 
 ## Firmware
 
-Shows both partitions, their versions, which one is kept and which is running,
+Shows both partitions, their versions, which one is committed and which is running,
 and offers the two actions that matter:
 
 - **Try** arms `sw_tryactive`, which boots that partition **once** with the
   hardware watchdog armed. If the image does not come up, the stick returns by
-  itself to whichever partition is kept — no console, no intervention.
-- **Keep** writes `sw_commit`, and is a separate decision made *after* seeing
+  itself to whichever partition is committed — no console, no intervention.
+- **Commit** writes `sw_commit`, and is a separate decision made *after* seeing
   the trial work. A trial that boots fine still reverts on the next reboot.
 
 Writing `sw_commit` up front instead is what every runbook for this device used
@@ -362,7 +364,10 @@ overwritten: the kernel name, its build date and what U-Boot records.
 
 Try is offered only for the slot the stick is not running, and only when that
 slot is not already the committed one; the running, uncommitted slot offers
-*Keep this image*, the same code path as the trial band. The page calls the
+*Commit to partition N*, the same code path as the trial band's *Commit to this
+image*. "What committing means", under the partitions, says which partition
+U-Boot boots by default, that a trial is one-shot, and that a committed image
+which later fails keeps booting itself. The page calls the
 answering confd an override by the path it was started from (`exe`, argv[0]:
 `/etc/config/confd/` for a `scripts/deploy.sh` install, `/bin/confd` for the
 image copy), never by comparing build ids: a local image build stamps

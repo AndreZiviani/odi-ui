@@ -31,7 +31,10 @@ const bytes = (n) => {
   const u = ['B', 'kB', 'MB', 'GB', 'TB'];
   let i = 0;
   while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
-  return (i ? n.toFixed(n < 10 ? 2 : 1) : String(n)) + ' ' + u[i];
+  /* At most two decimals at any scale. A rate is a byte count over a
+     fractional interval, so below 1 kB it used to print the float whole
+     (123.456789 B/s). */
+  return (i ? n.toFixed(n < 10 ? 2 : 1) : String(Math.round(n * 100) / 100)) + ' ' + u[i];
 };
 
 export { $, el, fail, get, bytes };

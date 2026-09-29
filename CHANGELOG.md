@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+- "Keep" is now "Commit" everywhere: the trial banner offers Commit to this
+  image, the running slot Commit to partition N, the default slot is badged
+  Committed, and the confirmations say what committing means. System >
+  Firmware explains it under the partitions (What committing means): U-Boot
+  boots the committed partition by default, a trial is one-shot, committing
+  makes the running image the default, and a committed image that later fails
+  keeps booting itself.
+- The trial banner no longer says what the other partition holds (it is not
+  always the stock firmware): "This image (partition 1) is not committed. The
+  next reboot returns to partition 0." System > Firmware shows what each holds.
+- The receive readout is smaller (52 px at most, was 76), closer to transmit
+  (44 px), so it leads the Status page without dominating it.
+
+### Fixed
+- Forwarding rates show at most two decimals; below 1 kB/s they printed the
+  raw float.
+- OMCI > Services: T-CONTs with Alloc-ID 255 (G.988: no Alloc-ID assigned on
+  G.984; 65535 on later PONs) are counted as unassigned, not provisioned, so
+  a line with five in use reads "5 assigned: 282, 794, 1050, 1306, 538" and
+  "11 unassigned" instead of "16 provisioned".
+
 ## v1.1.0 - 2026-09-29
 
 ### Changed
