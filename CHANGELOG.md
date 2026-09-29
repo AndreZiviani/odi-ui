@@ -55,6 +55,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The Firmware view names what each slot holds from that, not from U-Boot
   `sw_version<p>`, and when the other slot holds the stock firmware it says that
   writing replaces it and loses it as a fallback, and asks a second time.
+- System > Logs & tools carries the diagnostics bundle download
+  (`/api/diag`, from the diagnostics change).
 - Kernel log: heartbeat lines (`rcS: alive`, `odi_wdt: alive`) are hidden by
   default and counted, with a checkbox to show them; levels render as words.
 
