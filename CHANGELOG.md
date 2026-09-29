@@ -75,6 +75,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Kernel log: `<12>`-style userland priority prefixes (facility and level) are
   stripped and the level read from the low three bits; the stale "there is no
   syslog here" note is replaced.
+- Firmware: an override is recognised by the path the running confd was started
+  from (`/api/firmware` now reports `exe`), not by comparing build ids, so a local
+  build (`confd=local` in `/etc/odi-build`) is no longer called an override.
+  Try is offered only on the slot not running; the running, uncommitted slot
+  offers Keep this image, the same action as the trial banner.
 - The Reboot button reads "Reboot" with its cost badge, not "Reboot now —
   REBOOT"; the SSH key Remove button matches the other buttons.
 

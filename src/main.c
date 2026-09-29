@@ -10,6 +10,7 @@
 
 #include "confd.h"
 #include "routes.h"
+#include "firmware.h"
 
 static unsigned long parse_u16(const char *s, unsigned long fallback)
 {
@@ -31,6 +32,9 @@ int main(int argc, char **argv)
 {
 	unsigned long port = parse_u16(argc > 1 ? argv[1] : 0, DEFAULT_PORT);
 	long one = 1;
+
+	if (argc > 0 && argv[0])
+		confd_exe = argv[0];
 
 	/*
 	 * Ignore SIGPIPE, or the first client to hang up mid-response kills the

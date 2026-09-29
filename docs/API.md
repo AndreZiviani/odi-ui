@@ -55,7 +55,8 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           other environment copy; empty on stock nv),
                                           `slots` ({"0":{"kernel":..., "built":<unix>}},
                                           from each kernel partition's uImage header;
-                                          {} when it cannot be read)
+                                          {} when it cannot be read);
+                                          `exe`, the path this confd was started from
     POST /api/firmware   action=try|commit|reboot&partition=N
 
 ## Backup and reset

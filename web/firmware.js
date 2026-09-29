@@ -225,7 +225,10 @@ async function renderFirmware() {
         + (k.kind === 'stock' ? 'the stock firmware' : 'an image that is not odi-oss')
         + '. Writing replaces it, and you lose it as a fallback.'));
     }
-    if (p !== committed) {
+    /* Try only the slot you are NOT running: a trial of the running one
+       boots what is already up. Keeping the running slot is the same act
+       as the trial banner Keep this image, and goes through the same code. */
+    if (p !== committed && p !== booted) {
       const b = el('button', null, 'Try partition ' + p);
       b.type = 'button';
       b.onclick = () => fwAction('try', p,
@@ -234,10 +237,9 @@ async function renderFirmware() {
       acts.append(b);
     }
     if (p !== committed && p === booted) {
-      const b = el('button', null, 'Keep partition ' + p);
+      const b = el('button', 'primary', 'Keep this image');
       b.type = 'button';
-      b.onclick = () => fwAction('commit', p,
-        `Partition ${p} becomes the one the stick boots from now on.`);
+      b.onclick = () => keepRunning();
       acts.append(b);
     }
     /*
@@ -300,14 +302,24 @@ async function renderFirmware() {
     if (key in b) kv.append(el('dt', null, key === 'confd' ? 'Config UI' : key[0].toUpperCase() + key.slice(1)),
       el('dd', 'mono', b[key]));
   }
-  kv.append(el('dt', null, 'Answering'), el('dd', 'mono', 'confd ' + (fw.confd || 'unknown')));
+  kv.append(el('dt', null, 'Answering'),
+    el('dd', 'mono', 'confd ' + (fw.confd || 'unknown') + (fw.exe ? ', ' + fw.exe : '')));
   bl.append(kv);
+  /*
+     An override is decided by WHERE the running confd came from, not by
+     comparing build ids: a local build stamps the manifest `confd=local`,
+     which matches no id, and the page used to call the image own /bin/confd
+     an override on every such build. scripts/deploy.sh installs an override
+     in /etc/config/confd/ (which is /var/config), and only an image that
+     ships its own confd -- one with a manifest -- can be overridden.
+  */
+  const override = /^\/(etc|var)\/config\//.test(fw.exe || '');
   if (!Object.keys(b).length) {
     bl.append(el('p', 'hint', 'No /etc/odi-build in this image, so it predates build manifests.'));
-  } else if (b.confd && fw.confd && b.confd !== fw.confd) {
+  } else if (override) {
     bl.append(el('p', 'callout warn',
-      `The config UI answering is build ${fw.confd}, but this image ships ` +
-      `${b.confd}: an override in /etc/config is being used.`));
+      `The config UI answering runs from ${fw.exe}, not the copy this image ships: `
+      + 'an override in /etc/config is in use, and it survives reflashing.'));
   }
   host.append(bl);
 
@@ -391,30 +403,43 @@ function renderTrial() {
 
   const keep = $('#trial-keep');
   keep.hidden = main === run;
-  keep.onclick = async () => {
-    const out = $('#trial-out');
-    out.textContent = '';
-    if (!confirm(`Keep partition ${run}?\n\nIt becomes the one the stick boots from now on, `
-        + `instead of partition ${back}.`)) return;
-    keep.disabled = true;
-    try {
-      const r = await fetch('/api/firmware', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'action=commit&partition=' + encodeURIComponent(run),
-      });
-      const res = await r.json();
-      if (!res.ok) { out.append(el('div', 'bad', res.error || 'not kept')); return; }
-      S.FW = await get('/api/firmware');
-      renderTrial();
-      if (!$('#trialbanner').hidden) {
-        out.append(el('div', null, 'Kept in the active copy. confd writes only that one; '
-          + `over SSH, nv setenv -c <copy> sw_commit ${run} makes the fallback agree.`));
-      }
-    } catch (e) {
-      out.append(el('div', 'bad', String(e.message || e)));
-    } finally { keep.disabled = false; }
-  };
+  keep.onclick = () => keepRunning();
+}
+
+/*
+ * Keep the running image: sw_commit to the running slot. One path, used by
+ * the trial banner and by the running slot on the Firmware subtab, so the
+ * two cannot drift into saying or doing different things.
+ */
+async function keepRunning() {
+  const env = (S.FW || {}).env || {};
+  const run = env.sw_active;
+  const back = env.sw_commit;
+  const out = $('#trial-out');
+  out.textContent = '';
+  if (run === undefined) return;
+  if (!confirm(`Keep partition ${run}?\n\nIt becomes the one the stick boots from now on`
+      + (back !== undefined && back !== run ? `, instead of partition ${back}.` : '.'))) return;
+  const btn = $('#trial-keep');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/firmware', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=commit&partition=' + encodeURIComponent(run),
+    });
+    const res = await r.json();
+    if (!res.ok) { out.append(el('div', 'bad', res.error || 'not kept')); return; }
+    S.FW = await get('/api/firmware');
+    renderTrial();
+    if (!$('#trialbanner').hidden) {
+      out.append(el('div', null, 'Kept in the active copy. confd writes only that one; '
+        + `over SSH, nv setenv -c <copy> sw_commit ${run} makes the fallback agree.`));
+    }
+    if (!$('#p-system').hidden) await renderFirmware();
+  } catch (e) {
+    out.append(el('div', 'bad', String(e.message || e)));
+  } finally { btn.disabled = false; }
 }
 
 export { renderFirmware, wireFirmware, slotKind, renderTrial };

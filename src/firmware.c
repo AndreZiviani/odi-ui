@@ -27,6 +27,8 @@
  * last dozen lines, which say where it is and whether it failed. */
 #define FWU_LOG_TAIL 1600
 
+const char *confd_exe = "";
+
 /*
  * What each slot actually holds, read off its kernel partition.
  *
@@ -240,6 +242,8 @@ void emit_firmware_json(int fd)
 	}
 	put_fd(fd, "},\"confd\":\"");
 	put_json_cstr(fd, BUILD_ID);
+	put_fd(fd, "\",\"exe\":\"");
+	put_json_cstr(fd, confd_exe);
 	put_fd(fd, "\"");
 
 	/*

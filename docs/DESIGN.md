@@ -360,6 +360,14 @@ action -- "Partition 1 holds the stock firmware. Writing replaces it, and you
 lose it as a fallback." -- and the write asks a second time, naming what gets
 overwritten: the kernel name, its build date and what U-Boot records.
 
+Try is offered only for the slot the stick is not running, and only when that
+slot is not already the committed one; the running, uncommitted slot offers
+*Keep this image*, the same code path as the trial band. The page calls the
+answering confd an override by the path it was started from (`exe`, argv[0]:
+`/etc/config/confd/` for a `scripts/deploy.sh` install, `/bin/confd` for the
+image copy), never by comparing build ids: a local image build stamps
+`confd=local`, which matches no id.
+
 The version shown for the **running** partition is the image it runs, from
 `/etc/odi-build` (`image=`) or `/etc/version`; the U-Boot record
 `sw_version<p>` is shown beside it when they differ. odi-oss `fwu.sh` does not

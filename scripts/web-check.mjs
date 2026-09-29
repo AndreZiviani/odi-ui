@@ -503,6 +503,28 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   st.S.FW = keepFW;
 }
 
+/* --- the Firmware subtab ------------------------------------------------ */
+{
+  const { renderFirmware } = await import(join(root, 'web', 'firmware.js'));
+  const keep = API['/api/firmware'];
+  const fwText = async (fw) => {
+    API['/api/firmware'] = fw;
+    await renderFirmware();
+    return textOf(doc.querySelector('#parts'));
+  };
+  const trialFW = { env: { sw_active: '1', sw_commit: '0', sw_tryactive: '2' }, fallback: {},
+                    slots: {}, build: { image: 'v1.0.8', confd: 'local' }, confd: 'v1.0.8-dirty' };
+  let t = await fwText({ ...trialFW, exe: '/bin/confd' });
+  ok(!/override/.test(t), 'a local build (confd=local) run from /bin/confd is not called an override');
+  ok(!/Try partition/.test(t), 'mid-trial, neither slot offers Try: one is running, the other is what the next boot is anyway');
+  ok(/Keep this image/.test(t), 'the running, uncommitted slot offers Keep this image');
+  t = await fwText({ ...trialFW, exe: '/etc/config/confd/confd' });
+  ok(/override in \/etc\/config is in use/.test(t), 'a confd run from /etc/config is an override');
+  t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd' });
+  ok(/Try partition 0/.test(t) && !/Try partition 1/.test(t), 'committed, Try is offered on the other slot only');
+  API['/api/firmware'] = keep;
+}
+
 /* --- indented continuation lines ----------------------------------------- */
 const tod = parseOmci(OMCI[131]).instances[0];
 ok(!tod.groups.length, 'ME 131 ToDInfo sub-lines do not become sub-tables');
