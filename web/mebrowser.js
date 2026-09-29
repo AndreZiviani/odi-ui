@@ -79,8 +79,11 @@ let wired = false;
 
 function renderTable(host, dump) {
   if (!dump.instances.length) {
-    host.append(el('p', 'hint', 'No instances. The table is registered but the '
-      + 'OLT has not created anything in it.'));
+    /* Not "the OLT created none": omcid has answered 0 rows for entities
+       the ONU always has, so an empty answer is only what the MIB said. */
+    host.append(el('p', 'hint', dump.rows === 0
+      ? 'The MIB answered 0 rows for this table.'
+      : 'No instances in this dump.'));
     return;
   }
   for (const inst of dump.instances) {
@@ -116,7 +119,7 @@ function show(dump, asked) {
   }
 
   host.append(el('p', 'me-src', dump.name
-    ? asked + ' — the device calls this ' + dump.name
+    ? asked + ', which the device calls ' + dump.name
     : asked));
 
   if (dump.truncated)
@@ -168,7 +171,7 @@ function renderMeBrowser() {
 
   const bar = $('#me-dumps');
   for (const [what, label] of DUMPS) {
-    const b = el('button', '', label);
+    const b = el('button', 'chip', label);
     b.type = 'button';
     b.onclick = () => loadDump(what, label);
     bar.append(b);

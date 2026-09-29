@@ -28,25 +28,78 @@ hundred lines instead of 88 handlers.
 
 ## Tabs
 
-- **Status** &mdash; optics, ONU state, alarms, switch-port counters, and the
-  MAC addresses the switch has learned.
-- **Config** &mdash; on the odi-oss image, every key the image reads (21), each
-  labelled with what applying it costs, and the OLT identity switch; see "On the
-  odi-oss image" below. On a stock-based image, the 23 keys the line profiles in
-  `odi-sandbox` actually carry.
-- **Stock keys** (was *All settings*) &mdash; on odi-oss, the 163 keys only the
-  stock firmware reads, read-only, for inspecting what a backup carries. On a
-  stock-based image, all 184 keys, editable, with the `OMCI_CUSTOM_*` bitmasks
-  decoded.
-- **Services** &mdash; what the OLT actually provisioned, in sentences.
-- **MIB** &mdash; the same thing unedited, one managed entity at a time.
-- **Tools** &mdash; the kernel ring buffer, and ping from the stick.
-- **Firmware** &mdash; both partitions, image upload and write, and the
-  one-shot trial boot.
-- **Admin** &mdash; the UI credential, SSH keys, backup, restore and reset.
+Four sections, each with subtabs. The location hash names the pair
+(`#config/vlan`, `#system/logs`), so a view can be linked, reloaded and
+navigated back to; the names the page used before the regrouping
+(`#firmware`, `#admin`, ...) still land on their new place. Both levels are
+ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
 
-Which keys go where is data: `schema/settings.tsv` when the image has it, the
-`common` column in the schema when it does not.
+- **Status** &mdash; the receive and transmit levels as instruments (see "The
+  look"), the registration ladder, the transceiver, forwarding rates, and the
+  MAC addresses the switch has learned. A pill in the header repeats the ONU
+  state and the receive level on every view.
+- **Config** &mdash; grouped by what someone changing the line thinks about,
+  not by the schema section a key lives in:
+  - *Line* &mdash; `GPON_SN`, the PLOAM password, the four LOID keys;
+  - *VLAN* &mdash; the four `VLAN_*` keys;
+  - *OLT identity* &mdash; the identity switch, and the five keys it gates;
+  - *Network* &mdash; both management addresses and the UNI MAC;
+  - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
+  - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
+    stock firmware reads, read-only, for inspecting what a backup carries. On a
+    stock-based image this subtab is *All keys*: all 184, editable, with the
+    `OMCI_CUSTOM_*` bitmasks decoded.
+
+  The grouping is a table in `web/config.js` (`GROUPS`); a key it does not name
+  still appears, under the subtab its schema section maps to, or under *Other*.
+  On a stock-based image the editable subtabs hold the 23 keys the line
+  profiles in `odi-sandbox` carry.
+- **OMCI** &mdash; *Services*, what the OLT actually provisioned, in sentences;
+  and *MIB browser*, the same thing unedited, one managed entity at a time.
+- **System** &mdash; *Firmware* (both partitions, what each one holds, image
+  upload and write, the one-shot trial boot); *Access* (this page's
+  credential, SSH keys); *Backup &amp; reset*; *Logs &amp; tools* (the kernel
+  log, ping).
+
+Which keys are editable is data: `schema/settings.tsv` when the image has it,
+the `common` column in the schema when it does not.
+
+### Settings rows
+
+A row is the label, one line of help, and a *Details* disclosure on the left;
+the control and its cost on the right (stacked, control first, on a phone). The
+one line is the first sentence of the `meta.tsv` help, which says what the key
+is. The rest of that help, the `settings.tsv` note (why it costs what it does),
+the accepted values, who reads it and what it used to be are behind *Details*.
+A sentence already said is not said again: the two files were written apart
+and the page used to print several explanations twice. What is wrong *now* --
+a key the firmware is ignoring, a key the identity switch is not reporting --
+stays visible.
+
+### The cost of a change, drawn the same way everywhere
+
+The four apply classes are the core information of this UI, so they have one
+visual language: a badge with one to four bars, rising with what the change
+costs, in the class colour (green LIVE, blue SERVICE RESTART, yellow
+INTERRUPTS INTERNET, red REBOOT). The same badge is beside each key, in the
+sticky save bar (`3 changes`, then `2 interrupts internet`, `1 live`), on the
+buttons that apply a change, and the same bar count heads the confirmation
+dialogs. A subtab label carries the number of unsaved changes on it.
+
+### The two banners
+
+The default-credential notice is loud on Status and System &rsaquo; Access,
+where it is about what you are looking at, and a small *Default password*
+chip in the header on every other view.
+
+A **trial boot** is a different thing and looks it: a full-width band in the
+sticky header, on every view, for as long as U-Boot would boot another
+partition next -- `sw_commit`, in either copy of the redundant environment,
+naming a slot other than the running one. It says where the next reboot goes
+and what that slot holds, and offers *Keep this image*, which is the existing
+`action=commit` (`nv setenv sw_commit <slot>`). It cannot be dismissed. The
+commit writes only the winning environment copy; when only the fallback copy
+disagrees the band says so, and says how to make it agree over SSH.
 
 ## Two images, two relationships to `boa`
 
@@ -81,7 +134,7 @@ in odi-oss is the prose version and the source of truth.
 What the page does differently there:
 
 - **Only keys that work are editable.** A key with no settings row is shown on
-  the Stock keys tab, read-only. `/api/config` still accepts every schema key,
+  the Stock keys subtab, read-only. `/api/config` still accepts every schema key,
   because a restore must write all of them back, and answers `"stock":true` for
   a key nothing here reads.
 - **`/api/config` lists the actions a save needs**, `"needs":["network","omci",
@@ -125,6 +178,23 @@ nothing passes" threads turn on.
 - which VLANs the line permits
 - whether the OLT is translating a VLAN, and which of the two to tag
 - what upstream containers and GEM ports exist
+
+Each card is in one of four states and says only what it knows: *reading*;
+*could not read* (the daemon failed, answered nothing, or answered `0 rows` for
+an entity the ONU always creates itself &mdash; the software images, the OLT-G,
+the T-CONTs); *none* (a good read of a table the OLT fills, holding nothing);
+or the rows, in sentences. odi-oss omcid has answered `0 rows` for the
+ONU-created entities, and the page used to relay that as "the OLT has not
+created any", a definite and wrong statement about a line carrying traffic.
+
+omcid prints the vendor format only for the classes something on the stick
+parses (256, 131, 84, 171). Every other class comes out in its own shape,
+from `cli_row` in odi-oss `src/omci/respond/show.c`: a `268 GemPortCtp 1`
+header per row, `    PortID   0fff` attribute lines of raw bytes, and a
+`N rows` count. The parser reads both, and turns the bytes into what the
+vendor dump would have printed &mdash; a number as `0x..`, a string as its
+text &mdash; so the cards need no second code path. The GEM port card used to
+miss this shape entirely.
 
 **MIB** runs `omcicli mib get` and shows exactly what it printed &mdash; which is
 what a support thread means when it asks you to post `omcicli mib get 84`. The
@@ -275,6 +345,29 @@ and offers the two actions that matter:
 Writing `sw_commit` up front instead is what every runbook for this device used
 to say, and it makes an unproven image permanent before it has booted once.
 
+**What each slot holds is read off the slot**, not off U-Boot. `/api/firmware`
+reports `slots`: the name and build time from the uImage header at the start of
+each kernel partition (`k0`, `k1`, found by name in `/proc/mtd`, 64 bytes read
+from the mtd device). The stock V1.0-220923 base names its kernel `Linux Kernel
+Image`; odi-oss adds the kernel line, `Linux Kernel Image 6.18`. The header is
+written by the flash itself, so it cannot drift from the image, where
+`sw_version<p>` is only what the last updater chose to record: on a live stick
+it named an odi-oss build for the slot that held the stock firmware.
+
+Writing the other slot stays available whatever it holds. When it holds the
+stock firmware (or anything that is not odi-oss) the slot says so beside the
+action -- "Partition 1 holds the stock firmware. Writing replaces it, and you
+lose it as a fallback." -- and the write asks a second time, naming what gets
+overwritten: the kernel name, its build date and what U-Boot records.
+
+Try is offered only for the slot the stick is not running, and only when that
+slot is not already the committed one; the running, uncommitted slot offers
+*Keep this image*, the same code path as the trial band. The page calls the
+answering confd an override by the path it was started from (`exe`, argv[0]:
+`/etc/config/confd/` for a `scripts/deploy.sh` install, `/bin/confd` for the
+image copy), never by comparing build ids: a local image build stamps
+`confd=local`, which matches no id.
+
 The version shown for the **running** partition is the image it runs, from
 `/etc/odi-build` (`image=`) or `/etc/version`; the U-Boot record
 `sw_version<p>` is shown beside it when they differ. odi-oss `fwu.sh` does not
@@ -392,17 +485,23 @@ compare with the one beside the image you built.
 
 ## Tools
 
-**The log is the only one this device keeps.** There is no syslogd in the image
-and no `dmesg` applet in its busybox, so the switch and OMCI complaints live in
-the kernel ring buffer until they scroll away — `create ani vlan for mbcast
-fail` and `RT_ERR_RG_VLAN_USED_BY_SYSTEM`, the symptoms of an `OMCI_OLT_MODE`
-nobody should be using, arrive here and nowhere else.
+**The kernel log.** The switch and OMCI complaints live in the kernel ring
+buffer until they scroll away &mdash; `create ani vlan for mbcast fail` and
+`RT_ERR_RG_VLAN_USED_BY_SYSTEM`, the symptoms of an `OMCI_OLT_MODE` nobody
+should be using, arrive there. The odi-oss boot scripts write to it too, and
+the image forwards syslog to `SYSLOG_SERVER` when one is set, which is the way
+to keep daemon logs.
 
 Read with `klogctl(SYSLOG_ACTION_READ_ALL)`, not `cat /proc/kmsg`. Reading that
 file **consumes** the buffer and then blocks waiting for more, so a page refresh
 would eat the history and hang a server that handles one request at a time.
-Priority prefixes (`<4>`) are coloured, and a continuation line with no prefix
-of its own inherits the level above it — which is how the `RT_ERR_` lines arrive.
+The priority prefix is never shown: the kernel writes a bare level (`<4>`), a
+userland line written to `/dev/kmsg` carries its facility too (`<12>` is
+user.warning), so the level is the low three bits and is rendered as a word in
+its own column. A continuation line with no prefix of its own inherits the
+level above it &mdash; which is how the `RT_ERR_` lines arrive. The once-a-minute
+`rcS: alive` and `odi_wdt: alive` heartbeats are most of the buffer on a
+healthy stick; they are hidden by default, counted, and one tick away.
 
 **Ping** is IPv4 literals only, and that is not fussiness. This server is
 serial, so a hostname means a DNS lookup on a device that in bridge mode has no
@@ -600,7 +699,7 @@ were changing the password on.
 
 ### Changing it, from the page
 
-The Config tab has the field, and it **creates `/etc/config/confd.auth` if it
+System > Access has the field, and it **creates `/etc/config/confd.auth` if it
 is not there** — which is the whole point, because the state it fixes is the
 state of every factory-reset stick. Telling an operator to go and find an ssh
 client that still speaks to a 2007 dropbear is how the default stays in place
@@ -624,9 +723,10 @@ successful change look like a broken page.
 
 ### Saying so is what makes it defensible
 
-`/api/firmware` reports `defaultauth`, and the masthead carries a banner on
-every tab — not in a panel one tab over — with a button that lands on the field,
-until the credential is no longer the default one.
+`/api/firmware` reports `defaultauth`, and the page says so until the
+credential is no longer the default one: a banner with a button that lands on
+the field, on Status and on System &rsaquo; Access, and a *Default password*
+chip in the header on every other view.
 
 Note *default one*, not *no file*: a file containing `admin:admin` leaves you on
 the password everybody knows while making the warning disappear, which is the
@@ -704,7 +804,7 @@ perimeter.
 
 ## SSH keys
 
-Admin tab, "SSH keys": the public keys that log in as `root` over ssh without
+System > Access, "SSH keys": the public keys that log in as `root` over ssh without
 a password, one OpenSSH line each. The list is the file as it is, so a key
 added by hand shows up too, and Remove names the line number the server
 reported rather than re-sending the key.
@@ -775,29 +875,49 @@ scripts/            build verification, schema drift, deploy
 
 Nothing is fetched from a CDN. The stick has no route to the internet, so
 anything loaded from one renders an unstyled page exactly when you need it
-most — which rules out webfonts and is why the type is a system stack with the
-personality carried by large tabular numerals.
+most. Body type is the system stack, zero bytes on flash, with tabular numerals
+everywhere a figure appears. The one exception is the readout face, embedded in
+`style.css` rather than fetched: B612 Bold, the typeface Airbus drew for
+cockpit displays, subset to the glyphs a readout needs (digits, the minus sign,
+`. , + %`, `dBm`, `°C`, `V`) &mdash; 2.4 KB of woff2, SIL Open Font License.
+Monospace is for raw values only (MIB dumps, keys, hex), never for labels.
 
 ## The look
 
-Styled as test equipment rather than as a dashboard, because that is what this
-is: a fibre-optic line terminal whose measured values *are* the interface.
-Structure comes from rules and space, not cards and shadows.
+A field instrument for one fibre line: see that the line is healthy at a
+glance, and know what a change costs before making it. The receive level is
+the one loud thing on the page; everything else is quiet on purpose.
 
-The two accents are taken from the objects the stick is plugged into —
-singlemode jacket yellow `#E8B931` and APC connector green `#35B37E`, on cool
-slate.
+Colour is taken from the objects the stick is plugged into, on a cool slate
+ground (`#151C24` dark, `#EDF1F4` light, following `prefers-color-scheme`),
+and each colour means one thing everywhere:
+
+| colour | from | means |
+|---|---|---|
+| `#E8B923` yellow | singlemode jacket | signal and light; INTERRUPTS INTERNET |
+| `#1F9D6B` green | APC connector | healthy; LIVE |
+| `#3B7DD8` blue | UPC connector | interactive; SERVICE RESTART |
+| `#D64545` red | alarm | REBOOT; anything destructive |
+
+Text uses a lighter (dark theme) or darker (light theme) tint of each, chosen
+for WCAG AA against both the page and the badge ground; the blue of a primary
+button is deepened to `#2E6BC6` so white text on it passes too.
 
 Three deliberate choices worth keeping:
 
-- **Optical power is drawn on a scale, not printed as a number.** The band
-  behind the needle is the class B+ window the optics is specified for, so
-  −23.01 dBm is judged rather than merely reported.
+- **Optical power is drawn on a scale, not printed as a number.** The window on
+  the scale is the class B+ range the optics is specified for (the ONU figures
+  in ITU-T G.984.2 Amendment 1: launch +0.5 to +5 dBm, receive -27 to -8 dBm), and two
+  dimension lines under it give the margin to each edge (sensitivity and
+  overload for receive), the way a power meter shows it. A reading in the
+  window but in its outer 16% at either end (about 3 dB of the 19 dB receive
+  window, 0.7 dB of the 4.5 dB launch window) is flagged; one outside it says by how
+  much. So &minus;23.01 dBm is judged rather than merely reported.
 - **O1 to O5 is rendered as a ladder.** It is the one thing on the page that is
-  genuinely a sequence — an ONU climbs it on every registration — so it is the
-  one place numbering earns its keep.
+  genuinely a sequence &mdash; an ONU climbs it on every registration &mdash; so
+  it is the one place numbering earns its keep.
 - **Forwarding shows throughput, not totals.** `omci_app` clears port 0's
   counters every performance-monitoring interval while port 2 runs free, so the
-  running totals diverge wildly — 14 GB against 58 MB on a stick forwarding
-  perfectly — and side by side that reads as a fault. Rates between refreshes
+  running totals diverge wildly &mdash; 14 GB against 58 MB on a stick forwarding
+  perfectly &mdash; and side by side that reads as a fault. Rates between refreshes
   mirror to within 0.1%, which is the actual test.

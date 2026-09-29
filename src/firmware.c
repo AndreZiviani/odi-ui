@@ -27,13 +27,135 @@
  * last dozen lines, which say where it is and whether it failed. */
 #define FWU_LOG_TAIL 1600
 
+const char *confd_exe = "";
+
+/*
+ * What each slot actually holds, read off its kernel partition.
+ *
+ * U-Boot sw_version<p> is only what the last updater chose to record there:
+ * odi-oss fwu.sh records nothing unless asked, and the stock one records
+ * whatever its tarball says. On a live stick it named an odi-oss build for
+ * the slot holding the stock firmware. The uImage header in k<p> is written
+ * by the flash itself, so it cannot drift from the image: its name field
+ * ("Linux Kernel Image" on the stock base, "Linux Kernel Image 6.18" on
+ * odi-oss) and its build time are what the page judges a slot by.
+ *
+ * 64 bytes, read with read(2) from the mtd character device: no child, no
+ * wait on another process, nothing to bound. The partition index comes from
+ * /proc/mtd by name, never assumed.
+ */
+static int mtd_index(const char *mtds, const char *name)
+{
+	unsigned long i = 0;
+
+	while (mtds[i]) {
+		unsigned long ls = i, q;
+
+		while (mtds[i] && mtds[i] != '\n')
+			i++;
+		/* mtd4: 00148000 00010000 "k0" */
+		if (spre(mtds + ls, "mtd")) {
+			for (q = ls; q < i && mtds[q] != '"'; q++)
+				;
+			if (q < i && spre(mtds + q + 1, name)
+			    && mtds[q + 1 + str_len(name)] == '"') {
+				int n = 0;
+
+				for (q = ls + 3; mtds[q] >= '0' && mtds[q] <= '9'; q++)
+					n = n * 10 + (mtds[q] - '0');
+				return n;
+			}
+		}
+		if (mtds[i] == '\n')
+			i++;
+	}
+	return -1;
+}
+
+static void emit_slot(int fd, const char *mtds, char p)
+{
+	char part[3] = { 'k', p, 0 };
+	char dev[16] = "/dev/mtd";
+	unsigned char h[65];
+	int idx = mtd_index(mtds, part);
+	unsigned long n = 8, k;
+	unsigned long t;
+
+	put_fd(fd, "\"");
+	write_all(fd, &p, 1);
+	put_fd(fd, "\":{");
+	if (idx < 0 || idx > 99)
+		goto done;
+	if (idx >= 10)
+		dev[n++] = (char)('0' + idx / 10);
+	dev[n++] = (char)('0' + idx % 10);
+	dev[n] = 0;
+	if (read_file(dev, (char *)h, sizeof(h)) != 64)
+		goto done;
+	/* IH_MAGIC, big-endian: anything else is not a uImage, and saying
+	 * nothing is more honest than a guess. */
+	if (h[0] != 0x27 || h[1] != 0x05 || h[2] != 0x19 || h[3] != 0x56)
+		goto done;
+	t = ((unsigned long)h[8] << 24) | ((unsigned long)h[9] << 16)
+	  | ((unsigned long)h[10] << 8) | h[11];
+	for (k = 32; k < 64 && h[k] >= 0x20 && h[k] < 0x7f; k++)
+		;
+	put_fd(fd, "\"kernel\":\"");
+	put_json_str(fd, (const char *)h + 32, k - 32);
+	put_fd(fd, "\",\"built\":");
+	{
+		char num[12];
+		unsigned long m = 0;
+
+		if (!t)
+			num[m++] = '0';
+		while (t) {
+			num[m++] = (char)('0' + t % 10);
+			t /= 10;
+		}
+		while (m)
+			write_all(fd, &num[--m], 1);
+	}
+done:
+	put_fd(fd, "}");
+}
+
+/* The sw_* lines of an `nv getenv` / `nv fallback` dump, as JSON members. */
+static void emit_sw_pairs(int fd, const char *buf)
+{
+	unsigned long i = 0;
+	int first = 1;
+
+	while (buf[i]) {
+		unsigned long ls = i, le = i, eq;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		if (!spre(buf + ls, "sw_"))
+			goto next;
+		eq = ls;
+		while (eq < le && buf[eq] != '=')
+			eq++;
+		if (eq == le)
+			goto next;
+		if (!first)
+			put_fd(fd, ",");
+		first = 0;
+		put_fd(fd, "\"");
+		put_json_str(fd, buf + ls, eq - ls);
+		put_fd(fd, "\":\"");
+		put_json_str(fd, buf + eq + 1, le - eq - 1);
+		put_fd(fd, "\"");
+next:
+		i = (buf[le] == '\n') ? le + 1 : le;
+	}
+}
+
 void emit_firmware_json(int fd)
 {
 	static char *const argv[] = { "nv", "getenv", 0 };
 	char buf[4096];
 	char ver[128];
-	unsigned long i = 0;
-	int first = 1;
 
 	respond(fd, "200 OK", "application/json", 0);
 	put_fd(fd, "{\"running\":\"");
@@ -90,34 +212,38 @@ void emit_firmware_json(int fd)
 		}
 	}
 	put_fd(fd, " MB\",\"env\":{");
+	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0)
+		emit_sw_pairs(fd, buf);
+	/*
+	 * The OTHER copy of the redundant environment: what U-Boot uses if the
+	 * winning copy is ever left invalid, which an interrupted setenv is how
+	 * it happens. A plain setenv writes only the winning copy, so a trial
+	 * can leave the two disagreeing about sw_commit, and a page that says
+	 * "the next reboot returns to slot N" needs both answers. odi-oss nv
+	 * prints it for `nv fallback`; the stock nv prints its usage text, which
+	 * carries no sw_ line, so this is empty there rather than wrong.
+	 */
+	put_fd(fd, "},\"fallback\":{");
+	{
+		static char *const fargv[] = { "nv", "fallback", 0 };
 
-	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0) {
-		while (buf[i]) {
-			unsigned long ls = i, le = i, eq;
+		if (run_to_buf("/bin/nv", fargv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0)
+			emit_sw_pairs(fd, buf);
+	}
+	put_fd(fd, "},\"slots\":{");
+	{
+		char mtds[1024];
 
-			while (buf[le] && buf[le] != '\n')
-				le++;
-			if (!spre(buf + ls, "sw_"))
-				goto next;
-			eq = ls;
-			while (eq < le && buf[eq] != '=')
-				eq++;
-			if (eq == le)
-				goto next;
-			if (!first)
-				put_fd(fd, ",");
-			first = 0;
-			put_fd(fd, "\"");
-			put_json_str(fd, buf + ls, eq - ls);
-			put_fd(fd, "\":\"");
-			put_json_str(fd, buf + eq + 1, le - eq - 1);
-			put_fd(fd, "\"");
-next:
-			i = (buf[le] == '\n') ? le + 1 : le;
-		}
+		if (read_file("/proc/mtd", mtds, sizeof(mtds)) <= 0)
+			mtds[0] = 0;
+		emit_slot(fd, mtds, '0');
+		put_fd(fd, ",");
+		emit_slot(fd, mtds, '1');
 	}
 	put_fd(fd, "},\"confd\":\"");
 	put_json_cstr(fd, BUILD_ID);
+	put_fd(fd, "\",\"exe\":\"");
+	put_json_cstr(fd, confd_exe);
 	put_fd(fd, "\"");
 
 	/*

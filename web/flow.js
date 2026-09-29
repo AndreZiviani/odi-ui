@@ -52,10 +52,10 @@ function renderFlow(text) {
     for (const [k, label] of [['ifInOctets', 'in'], ['ifOutOctets', 'out']]) {
       const r = rate(id, k);
       dl.append(el('dt', null, label),
-                el('dd', null, r === null ? 'measuring' : bytes(r) + '/s'));
+                el('dd', 'num', r === null ? 'measuring' : bytes(r) + '/s'));
     }
     dl.append(el('dt', null, 'dropped'),
-              el('dd', null, Number(p.dot1dTpPortInDiscards || 0).toLocaleString()));
+              el('dd', 'num', Number(p.dot1dTpPortInDiscards || 0).toLocaleString()));
     d.append(dl);
     return d;
   };
@@ -67,7 +67,7 @@ function renderFlow(text) {
     PREV = null;
     return;
   }
-  host.append(side('2', 'Fibre'), el('div', 'mirror', '⇄'), side('0', 'Host', 'right'));
+  host.append(side('2', 'Fibre'), el('div', 'mirror', '\u21c4'), side('0', 'Host', 'right'));
   PREV = { at: now, ports };
 }
 

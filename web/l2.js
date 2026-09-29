@@ -84,7 +84,7 @@ async function renderL2() {
     host.append(el('p', 'hint', 'The switch has not learned any addresses. On a '
       + 'stick carrying traffic that is a finding in itself.'));
   } else {
-    const t = el('table');
+    const t = el('table', 'data');
     const head = el('tr');
     for (const h of ['MAC address', 'Learned on', 'VLAN', 'Age', 'State'])
       head.append(el('th', null, h));
@@ -104,7 +104,9 @@ async function renderL2() {
       tr.append(el('td', null, r.State ?? '—'));
       t.append(tr);
     }
-    host.append(t);
+    const wrap = el('div', 'tablewrap');
+    wrap.append(t);
+    host.append(wrap);
     const learned = rows.length - groups;
     host.append(el('p', 'hint', learned + ' address'
       + (learned === 1 ? '' : 'es') + ' learned'

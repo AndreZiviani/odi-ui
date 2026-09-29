@@ -1,20 +1,63 @@
 /*
- * The Config and All-settings tables: one row per key, rendered from the schema.
+ * The Config rows: one per key, rendered from the schema.
  *
  * Adding a key to the device adds a row here with no code change -- the schema
  * is data, and meta.tsv is what turns a name into a labelled, explained,
- * range-checked control.
+ * range-checked control. GROUPS below only decides which subtab a key lands
+ * on; a key it does not name still appears, under the subtab its schema
+ * section maps to, or under Other.
  */
 
 import { $, el } from './dom.js';
 import {
   S, EDITS, provenance, applyOf, dependsUnmet, decodeMask,
-  CLASS_LABEL, imageAware, settingOf, identitySwitchOn,
+  CLASS_LABEL, CLASS_MEANS, costBadge, imageAware, settingOf, identitySwitchOn,
 } from './state.js';
 import { hexAscii, validateInput } from './validate.js';
 
+/*
+ * The subtabs, grouped by what someone changing the line thinks about rather
+ * than by the schema section a key happens to live in: the schema puts the
+ * LOID in `other` and the UNI MAC in `hardware`, which is where nobody looks
+ * for them.
+ */
+const GROUPS = {
+  line: ['GPON_SN', 'GPON_PLOAM_PASSWD', 'LOID', 'LOID_PASSWD', 'LOID_OLD', 'LOID_PASSWD_OLD'],
+  vlan: ['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI'],
+  identity: ['OMCI_VENDOR_PRODUCT_CODE', 'GPON_ONU_MODEL', 'OMCI_SW_VER1', 'OMCI_SW_VER2', 'OMCC_VER'],
+  network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
+  services: ['SYSLOG_SERVER', 'NTP_SERVER'],
+};
+/* A key GROUPS does not name, by its schema section. */
+const BY_SECTION = { gpon: 'line', vlan: 'vlan', omci: 'identity', lan: 'network', hardware: 'network' };
+
+function groupOf(row) {
+  for (const [g, keys] of Object.entries(GROUPS)) if (keys.includes(row.name)) return g;
+  return BY_SECTION[row.section] || 'other';
+}
+
+/*
+ * One line of help, and the rest behind a disclosure. The first sentence of
+ * the meta.tsv help is what the key IS; everything after it, and the
+ * settings.tsv note (why it costs what it does), is the reason, and belongs
+ * one click away rather than in a paragraph on every row.
+ *
+ * The two files were written separately and some rows said the same thing in
+ * both, which the page used to print twice. A sentence already said is not
+ * said again.
+ */
+const sentences = (t) => String(t || '').split(/(?<=[.!?])\s+(?=[A-Z`(0-9])/).filter(Boolean);
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+function splitHelp(help, note) {
+  const h = sentences(help);
+  const seen = new Set(h.map(norm));
+  const n = sentences(note).filter((s) => !seen.has(norm(s)));
+  return { first: h[0] || '', rest: h.slice(1).join(' '), note: n.join(' ') };
+}
+
 function renderValue(row, raw, readonly = false) {
-  const td = el('td');
+  const box = el('div', 's-field');
   const meta = S.META[row.name] || {};
   const set = settingOf(row.name);
 
@@ -22,22 +65,19 @@ function renderValue(row, raw, readonly = false) {
      device value. `raw` stays the comparison baseline throughout.
 
      Keeping edits in a Map outside the DOM is what lets a tab switch or a
-     filter keystroke rebuild the table without losing them — but only if the
-     rebuild reads the Map back. It did not: renderConfig repopulated every
-     field from VALUES, so a typed change vanished from the screen while the
-     bar still counted it and Save still wrote it. A value the user cannot see
-     is a value they cannot check. */
+     filter keystroke rebuild the rows without losing them -- but only if the
+     rebuild reads the Map back. A value the user cannot see is a value they
+     cannot check. */
   const shown = EDITS.has(row.name) ? EDITS.get(row.name) : raw;
 
   /* Never-writable keys get no control at all. The refusal is enforced in the
-     daemon twice over, but not offering the field is the honest presentation. */
-  /* Nor do the stock keys, on an image that says which keys it reads, nor a
+     daemon twice over, but not offering the field is the honest presentation.
+     Nor do the stock keys, on an image that says which keys it reads, nor a
      key that is written together with another one (LOID_OLD follows LOID). */
   if (row.writable === 'never' || readonly || (set && set.pair)) {
-    const shownRo = EDITS.has(row.name) ? EDITS.get(row.name) : raw;
-    td.append(el('span', 'mono', shownRo === undefined ? '(not set)'
-      : shownRo === '' ? '(empty)' : shownRo));
-    return td;
+    box.append(el('span', 's-ro mono', shown === undefined ? '(not set)'
+      : shown === '' ? '(empty)' : shown));
+    return box;
   }
 
   let input;
@@ -52,9 +92,7 @@ function renderValue(row, raw, readonly = false) {
     /* A value the device holds that is not in the option list must still be
        selectable, or opening the page would silently propose changing it.
        A key with NO value is a different case and gets said differently:
-       several read `GET fail` on this hardware, and rendering that as
-       "undefined (current, not a listed value)" reads like a fault in the page
-       rather than an empty key. */
+       several read `GET fail` on this hardware. */
     if (raw === undefined || raw === '') {
       const o = el('option', null, '(not set)');
       o.value = '';
@@ -75,8 +113,12 @@ function renderValue(row, raw, readonly = false) {
     input.type = 'text';
     input.value = shown === undefined ? '' : shown;
     input.spellcheck = false;
+    input.autocomplete = 'off';
     if (row.type === 'int') input.inputMode = 'numeric';
+    if (row.type !== 'string' && row.type !== 'hostport') input.classList.add('mono');
+    if (meta.range) input.placeholder = meta.range.replace('-', '–');
   }
+  input.id = 'f-' + row.name;
   input.dataset.name = row.name;
   /* Anything else on this row that has to follow the field as it is typed
      registers here, rather than adding a second listener: one handler means no
@@ -95,214 +137,213 @@ function renderValue(row, raw, readonly = false) {
   };
   input.classList.toggle('changed', shown !== raw);
   validateInput(row, input);
-  td.append(input);
+  box.append(input);
 
-  /*
-     The OMCI_CUSTOM_* masks decode to the plugins the image will load. Shown
-     under the field and refreshed on every keystroke, because the whole point
-     is to see what a value DOES before saving it -- upstream has had an open
-     issue since 2022 asking what OMCI_CUSTOM_RDP=4 means, and the answer is one
-     line of text this device could always have printed. */
+  /* The OMCI_CUSTOM_* masks decode to the plugins the image will load, on
+     every keystroke: the point is to see what a value DOES before saving it.
+     Upstream has had an open issue since 2022 asking what OMCI_CUSTOM_RDP=4
+     means, and the answer is one line this device could always have printed. */
   if (decodeMask(row.name, '0')) {
-    const box = el('div', 'aside bits');
+    const bits = el('div', 's-aside bits mono');
     const paint = (v) => {
       const d = decodeMask(row.name, v);
-      box.textContent = '';
-      /* An empty key is not a malformed one. Several keys read back empty
-         on this hardware, and calling that "not a number" reads like a
-         fault in the page rather than an unset value. */
-      if (String(v ?? '').trim() === '') { box.append(el('div', null, 'not set')); return; }
-      if (!d) { box.append(el('div', null, 'not a number')); return; }
-      if (!d.n) { box.append(el('div', null, 'no features enabled')); return; }
+      bits.textContent = '';
+      if (String(v ?? '').trim() === '') { bits.append(el('div', null, 'not set')); return; }
+      if (!d) { bits.append(el('div', null, 'not a number')); return; }
+      if (!d.n) { bits.append(el('div', null, 'no features enabled')); return; }
       for (const b of d.known)
-        box.append(el('div', null, '0x' + b.bit.toString(16) + '  ' + b.names.join(', ')));
+        bits.append(el('div', null, '0x' + b.bit.toString(16) + '  ' + b.names.join(', ')));
       for (const b of d.unknown)
-        box.append(el('div', 'unknownbit',
-          '0x' + b.toString(16) + '  no plugin in this image \u2014 does nothing'));
+        bits.append(el('div', 'unknownbit',
+          '0x' + b.toString(16) + '  no plugin in this image, does nothing'));
     };
     paint(shown);
     follow = paint;
-    td.append(box);
+    box.append(bits);
   }
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form
      beside the field it is stored in. */
   if (row.type === 'hexascii') {
     const txt = hexAscii(raw);
-    td.append(el('div', 'aside', txt === null ? 'not printable ASCII' : 'ASCII: ' + txt));
+    box.append(el('div', 's-aside', txt === null ? 'Not printable ASCII' : 'Reads as “' + txt + '”'));
   }
-  return td;
+  return box;
+}
+
+/* One setting: label and help on the left, the control and its cost on the right. */
+function renderRow(row, readonly) {
+  const meta = S.META[row.name] || {};
+  const set = settingOf(row.name);
+  const prov = provenance(row, S.VALUES[row.name]);
+  const wrap = el('div', 'setting');
+  wrap.dataset.name = row.name;
+
+  const left = el('div', 's-label');
+  const name = el('label', 's-name', meta.label || row.name);
+  if (!(row.writable === 'never' || readonly || (set && set.pair))) name.htmlFor = 'f-' + row.name;
+  const title = el('div', 's-title');
+  title.append(name, el('span', 's-key mono', row.name));
+  left.append(title);
+
+  const h = splitHelp(meta.help, set && set.note);
+  if (h.first) left.append(el('p', 's-help', h.first));
+
+  /* The things that are wrong NOW stay visible: a value the firmware is
+     currently ignoring is not a detail. */
+  if (row.name === 'LAN_IP_ADDR' && S.FW.lanip_override) {
+    left.append(el('p', 's-warn', 'Ignored while /etc/config/lan-ip exists: that file sets the address, with a /24 mask.'));
+  }
+  if (set && /omci-identity\.on/.test(set.reader) && !identitySwitchOn()) {
+    left.append(el('p', 's-warn', 'Not reported to the OLT: the identity switch is off.'));
+  }
+  const unmet = dependsUnmet(row);
+  if (unmet) left.append(el('p', 's-warn', 'Ignored by the firmware now: needs ' + unmet.join(' and ') + '.'));
+
+  const more = [];
+  if (h.rest) more.push(['', h.rest]);
+  if (h.note) more.push(['', h.note]);
+  if (set && set.pair) more.push(['Written with', set.pair + ': edit that one.']);
+  if (meta.options) {
+    more.push(['Accepts', meta.options.split('|').map((p) => p.slice(0, p.indexOf('='))).join(', ')]);
+  }
+  /* Who reads the key. Useful even where the timing is unknown, and it is
+     what the apply class was derived from. */
+  const rd = imageAware() ? (set ? set.reader : '') : (S.CONS[row.name] || {}).readers;
+  if (rd) more.push(['Read by', rd.split(',').map((x) => x.trim()).join(', ')]);
+  if (prov && prov.was !== undefined) more.push(['Was', `${prov.was === '' ? '(empty)' : prov.was} (${prov.from})`]);
+  if (more.length) {
+    const d = el('details', 's-more');
+    d.append(el('summary', null, 'Details'));
+    const dl = el('dl');
+    for (const [k, v] of more) {
+      if (k) dl.append(el('dt', null, k));
+      dl.append(el('dd', k ? null : 'wide', v));
+    }
+    d.append(dl);
+    left.append(d);
+  }
+  wrap.append(left);
+
+  const right = el('div', 's-control');
+  right.append(renderValue(row, S.VALUES[row.name], readonly));
+  const tags = el('div', 's-tags');
+  if (imageAware()) {
+    /* The apply class this image gives the key: what saving it costs. */
+    if (set) tags.append(costBadge(set.apply));
+  } else {
+    const ap = applyOf(row);
+    if (ap === 'restart:omci') tags.append(costBadge('internet', 'Restarts OMCI'));
+    if (ap === 'reboot') tags.append(costBadge('reboot'));
+  }
+  if (row.writable === 'never') tags.append(el('span', 'tag', 'Never written'));
+  if (row.writable === 'identity' && !readonly) {
+    const t = el('span', 'tag identity', 'Identity');
+    t.title = 'The line authenticates on this key. Saving it asks you to confirm.';
+    tags.append(t);
+  }
+  if (prov) {
+    const t = el('span', 'tag ' + prov.cls, prov.label === 'image default' ? 'Default' : 'Changed');
+    if (prov.was !== undefined) t.title = `${prov.from}: ${prov.was === '' ? '(empty)' : prov.was}`;
+    tags.append(t);
+  }
+  if (tags.children.length) right.append(tags);
+  wrap.append(right);
+  return wrap;
 }
 
 /*
- * `sections` off renders the rows bare, with no per-section heading. The Admin
- * tab shows one schema section under a heading of its own -- "Device login"
- * says more to an operator than the schema's internal name for it, and two
- * headings stacked would just be the same word twice.
+ * `sections` groups the rows under their schema section headings; the
+ * editable subtabs are already grouped, so only the stock list uses it.
  */
-function renderConfig(hostSel, rows, filter, sections = true, readonly = false) {
+function renderConfig(hostSel, rows, filter, sections = false, readonly = false) {
   const host = $(hostSel);
   host.textContent = '';
+  /* A read-only list is for scanning, so it is drawn dense. */
+  host.classList.toggle('compact', readonly);
   const f = (filter || '').toLowerCase();
   const bySection = {};
 
   for (const row of rows) {
-    if (f && !(row.name.toLowerCase().includes(f) || row.section.includes(f))) continue;
-    (bySection[row.section] ||= []).push(row);
+    if (f && !(row.name.toLowerCase().includes(f) || row.section.includes(f)
+               || ((S.META[row.name] || {}).label || '').toLowerCase().includes(f))) continue;
+    (bySection[sections ? row.section : ''] ||= []).push(row);
   }
-
-  for (const name of Object.keys(bySection).sort((a, b) => {
-    const ra = sectionRank(a);
-    const rb = sectionRank(b);
-    return ra !== rb ? ra - rb : a.localeCompare(b);
-  })) {
-    if (sections) host.append(el('h2', null, name));
-    const t = el('table');
-    const head = el('tr');
-    for (const h of ['Setting', 'Value', 'What it does']) head.append(el('th', null, h));
-    t.append(head);
-    for (const row of bySection[name]) {
-      const meta = S.META[row.name] || {};
-      const tr = el('tr');
-      const k = el('td');
-      k.append(el('div', 'label', meta.label || row.name));
-      k.append(el('div', 'key', row.name));
-      const set = settingOf(row.name);
-      if (row.writable === 'never') k.append(el('span', 'tag never', 'never'));
-      if (row.writable === 'identity' && !readonly) k.append(el('span', 'tag identity', 'identity'));
-      if (imageAware()) {
-        /* The apply class this image gives the key: what saving it costs. */
-        if (set) k.append(el('span', 'tag cls-' + set.apply, CLASS_LABEL[set.apply] || set.apply));
-        else if (readonly) k.append(el('span', 'tag never', 'stock firmware only'));
-      } else {
-        const ap = applyOf(row);
-        if (ap === 'restart:omci') k.append(el('span', 'tag omci', 'no reboot'));
-        if (ap === 'reboot') k.append(el('span', 'tag identity', 'needs reboot'));
-      }
-      if (meta.range && !readonly) k.append(el('span', 'tag', meta.range));
-      const prov = provenance(row, S.VALUES[row.name]);
-      if (prov) {
-        const t = el('span', 'tag ' + prov.cls, prov.label);
-        if (prov.was !== undefined) {
-          t.title = `${prov.from}: ${prov.was === '' ? '(empty)' : prov.was}`;
-        }
-        k.append(t);
-      }
-      tr.append(k);
-
-      tr.append(renderValue(row, S.VALUES[row.name], readonly));
-
-      const info = el('td', 'info');
-      if (meta.help) info.append(el('div', 'help', meta.help));
-      if (set && set.note) info.append(el('div', 'help', set.note));
-      if (set && set.pair) {
-        info.append(el('div', 'opts', `Written with ${set.pair}: edit that one.`));
-      }
-      if (row.name === 'LAN_IP_ADDR' && S.FW.lanip_override) {
-        info.append(el('div', 'unmet', 'Ignored while /etc/config/lan-ip exists: '
-          + 'that file sets the address, with a /24 mask.'));
-      }
-      if (set && /omci-identity\.on/.test(set.reader) && !identitySwitchOn()) {
-        info.append(el('div', 'unmet', 'Not reported to the OLT now: the OLT '
-          + 'identity switch is off (above).'));
-      }
-      const unmet = dependsUnmet(row);
-      if (unmet) {
-        info.append(el('div', 'unmet',
-          'Ignored by the firmware right now \u2014 needs ' + unmet.join(' and ') + '.'));
-      }
-      if (meta.options) {
-        info.append(el('div', 'opts', 'Accepts: ' +
-          meta.options.split('|').map((p) => p.slice(0, p.indexOf('='))).join(', ')));
-      }
-      /* Who reads the key. Useful even where the timing is unknown, and it is
-         what the apply class was derived from. */
-      const rd = imageAware() ? (set ? set.reader : '') : (S.CONS[row.name] || {}).readers;
-      if (rd) info.append(el('div', 'opts', 'Read by: ' + rd.split(',').join(', ')));
-      if (readonly && !set && imageAware()) {
-        info.append(el('div', 'opts', 'Nothing on this image reads it. Kept for the '
-          + 'stock firmware in the other slot, and in every backup.'));
-      }
-      if (prov && prov.was !== undefined) {
-        info.append(el('div', 'opts',
-          `${prov.from} was ${prov.was === '' ? '(empty)' : prov.was}`));
-      }
-      tr.append(info);
-      t.append(tr);
-    }
-    host.append(t);
+  for (const name of Object.keys(bySection).sort()) {
+    if (sections) host.append(el('h3', 'sec', name));
+    for (const row of bySection[name]) host.append(renderRow(row, readonly));
   }
+  if (!Object.keys(bySection).length && f) host.append(el('p', 'hint', 'No key matches “' + filter + '”.'));
 }
 
-/*
- * The one-line "what is this tab" sentence, as a row rather than a floating
- * paragraph -- same label/value/info columns as every setting below it, so
- * it reads as the first field on the page instead of an odd aside. The value
- * is real device data (which confd build is answering), not a placeholder.
- */
-function renderConfigDescription() {
-  const host = $('#config-description');
+/* The cost legend, once, above the subtabs' content. */
+function renderLegend() {
+  const host = $('#legend');
   host.textContent = '';
-  host.append(el('h2', null, 'Description'));
-  const t = el('table');
-  const head = el('tr');
-  for (const h of ['Setting', 'Value', 'What it does']) head.append(el('th', null, h));
-  t.append(head);
-  const tr = el('tr');
-  const k = el('td');
-  k.append(el('div', 'label', 'confd'));
-  k.append(el('div', 'key', 'build'));
-  tr.append(k);
-  const v = el('td');
-  v.append(el('span', 'mono', (S.FW && S.FW.confd) || 'unknown'));
-  tr.append(v);
-  const info = el('td', 'info');
-  info.append(el('div', 'help', 'Every setting this image reads. Nothing is '
-    + 'written until you save.'));
-  tr.append(info);
-  t.append(tr);
-  host.append(t);
+  if (!imageAware()) return;
+  for (const c of ['live', 'restart', 'internet', 'reboot']) {
+    const s = el('span', 'legend-item');
+    s.append(costBadge(c), document.createTextNode(CLASS_MEANS[c]));
+    host.append(s);
+  }
 }
 
-/*
- * The order a Config section heading is shown in: identity and the service
- * the OLT actually cares about first (GPON, VLAN, OMCI feature bits), then
- * whatever else this image reads, hardware last but one, and the network
- * side of the box last -- not the alphabetical order the section names
- * happen to sort into. A section this list does not name (the stock-only
- * tab has a few more) sorts alphabetically after the named ones.
- */
-const SECTION_ORDER = ['gpon', 'vlan', 'omci', 'other', 'hardware', 'lan'];
-function sectionRank(name) {
-  const i = SECTION_ORDER.indexOf(name);
-  return i === -1 ? SECTION_ORDER.length : i;
+/* Subtab labels carry the number of pending edits on that subtab, so a change
+   typed two subtabs ago is not forgotten. */
+function markPending() {
+  const counts = {};
+  for (const k of EDITS.keys()) {
+    const row = S.SCHEMA.find((r) => r.name === k);
+    if (!row) continue;
+    const g = imageAware() && !settingOf(k) ? 'stock' : groupOf(row);
+    counts[g] = (counts[g] || 0) + 1;
+  }
+  for (const b of document.querySelectorAll('#p-config [role=tab]')) {
+    let n = b.querySelector('.pending');
+    const c = counts[b.dataset.sub] || 0;
+    if (!c) { if (n) n.remove(); continue; }
+    if (!n) { n = el('span', 'pending'); b.append(n); }
+    n.textContent = String(c);
+    n.title = c + ' unsaved';
+  }
 }
 
 function renderAll() {
   const filter = $('#filter').value;
-  renderConfigDescription();
+  renderLegend();
+
+  const editable = imageAware()
+    ? S.SCHEMA.filter((r) => settingOf(r.name))
+    : S.SCHEMA.filter((r) => r.common === 'yes' && r.section !== 'accounts');
+  const groups = {};
+  for (const r of editable) (groups[groupOf(r)] ||= []).push(r);
+  /* In the order GROUPS lists them: the order someone reads a line in. */
+  const rank = (r) => { const i = (GROUPS[groupOf(r)] || []).indexOf(r.name); return i < 0 ? 99 : i; };
+  for (const g of Object.values(groups)) g.sort((a, b) => rank(a) - rank(b));
+  for (const g of ['line', 'vlan', 'identity', 'network', 'services', 'other']) {
+    renderConfig('#set-' + g, groups[g] || [], '');
+  }
+  $('#st-config-other').hidden = !(groups.other || []).length;
 
   if (imageAware()) {
-    /* The keys this image reads, all of them editable on Config with their
-       apply class; everything else is the stock firmware own store, shown
-       read-only on its own tab and kept whole in backups and restores. */
-    renderConfig('#common', S.SCHEMA.filter((r) => settingOf(r.name)), '');
+    /* The keys this image reads, editable with their apply class; everything
+       else is the stock firmware own store, shown read-only on its own subtab
+       and kept whole in backups and restores. */
     renderConfig('#sections', S.SCHEMA.filter((r) => !settingOf(r.name)), filter, true, true);
     /* The device-login keys are the stock firmware accounts; this image
        logs in as root with SSH keys, so the section is not offered. */
     $('#device-login').hidden = true;
-    $('#advanced-deck').textContent = 'The keys only the stock firmware reads, '
-      + 'read-only. They stay in the store because the config partition is '
-      + 'shared with the other slot, and every backup and restore carries them.';
-    return;
+    $('#advanced-deck').textContent = 'Keys only the stock firmware reads, shown read-only. '
+      + 'They stay because the config partition is shared with the other slot.';
+  } else {
+    /* No settings table: every key offered, as before it existed. The account
+       keys are the stock SSH login, so they live on System > Access. */
+    renderConfig('#accounts', S.SCHEMA.filter((r) => r.common === 'yes' && r.section === 'accounts'), '');
+    renderConfig('#sections', S.SCHEMA, filter, true);
+    $('#st-config-stock').textContent = 'All keys';
+    $('#advanced-deck').textContent = 'Every key the device stores, editable.';
   }
-  /* No settings table: every key offered, as before it existed. The account
-     keys are the stock SSH login, so they live on Admin beside the credential
-     for this UI. */
-  const accounts = (r) => r.section === 'accounts';
-  renderConfig('#common', S.SCHEMA.filter((r) => r.common === 'yes' && !accounts(r)), '');
-  renderConfig('#accounts', S.SCHEMA.filter((r) => r.common === 'yes' && accounts(r)), '', false);
-  renderConfig('#sections', S.SCHEMA, filter);
+  markPending();
 }
 
-export { renderValue, renderConfig, renderAll, renderConfigDescription };
+export { renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS };

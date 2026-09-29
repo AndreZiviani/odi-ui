@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>ODI DFP-34X-2C2</title>
 <link rel="stylesheet" href="/style.css">
 <!-- Suppress the browser's automatic /favicon.ico request: the daemon serves
@@ -10,413 +11,419 @@
 <link rel="icon" href="data:,">
 </head>
 <body>
-<header>
-  <h1>ODI DFP-34X-2C2</h1>
-  <nav>
-    <button data-tab="status" class="on">Status</button>
-    <button data-tab="config">Config</button>
-    <button data-tab="advanced">Stock keys</button>
-    <button data-tab="services">Services</button>
-    <button data-tab="omci">MIB</button>
-    <button data-tab="tools">Tools</button>
-    <button data-tab="admin">Admin</button>
-    <button data-tab="firmware">Firmware</button>
+<!--
+  Four sections, each with its own subtabs, all in the document from the
+  start. The location hash names the pair (#config/vlan) so a view can be
+  linked, reloaded and navigated back to. app.js owns the switching.
+
+  Writing on the page comes in three weights and no more:
+    .help      one line under the thing it explains, always visible
+    .more      a <details>, for the long reason behind that line
+    .callout   something that costs you if you miss it
+-->
+<header class="top">
+  <div class="brand">
+    <span class="device">ODI DFP-34X-2C2</span>
+    <a class="linepill" id="linepill" href="#status" hidden></a>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-status" aria-controls="p-status" data-tab="status">Status</button>
+    <button role="tab" id="tab-config" aria-controls="p-config" data-tab="config">Config</button>
+    <button role="tab" id="tab-omci" aria-controls="p-omci" data-tab="omci">OMCI</button>
+    <button role="tab" id="tab-system" aria-controls="p-system" data-tab="system">System</button>
   </nav>
-  <form method="post" action="/api/logout"><button id="logout" type="submit">Sign out</button></form>
-  <span id="err" hidden></span>
-  <p id="defaultauth" hidden>This config UI is on the built-in
-     <code>admin</code> / <code>admin</code>. Anyone who can reach it can change
-     the line settings.
-     <button id="gopassword" type="button">Set a password</button></p>
+  <div class="top-end">
+    <a class="authchip" id="authchip" href="#system/access" hidden>Default password</a>
+    <form method="post" action="/api/logout"><button id="logout" class="quiet" type="submit">Sign out</button></form>
+  </div>
+  <!-- A trial boot: shown on every view, in the sticky header, for as long
+       as U-Boot would boot another partition next. Not dismissible. -->
+  <div id="trialbanner" class="trial" role="status" hidden>
+    <p><strong>Trial boot.</strong> <span id="trial-what"></span></p>
+    <button id="trial-keep" class="primary" type="button">Keep this image</button>
+    <div id="trial-out"></div>
+  </div>
 </header>
 
+<p id="err" class="callout bad" role="alert" hidden></p>
+<div id="defaultauth" class="callout warn banner" hidden>
+  <p>This page answers to the built-in <code>admin</code> / <code>admin</code>.
+     Anyone who can reach it can change the line settings.</p>
+  <button id="gopassword" type="button">Set a password</button>
+</div>
+
 <main>
-  <!--
-    Four registers of writing run through this page, and each has its own
-    treatment so a reader can tell at a glance which one is talking:
-
-      .deck         orientation  -- one per tab, at text size
-      .field-note   instruction  -- attached to the control it governs
-      .consequence  warning      -- panel ground, left rule, two severities
-      .why / .lore  reference    -- collapsed into a popover and a foot block
-
-    Anything demoted into a .lore-item is still on the page, verbatim. It is
-    one click away instead of in the way.
-  -->
-  <section id="status">
-    <!-- No deck here: the optical meters ARE the orientation, and a line of
-         prose above them would only push them down. -->
-    <div class="link">
-      <div class="meter" id="rx"></div>
-      <div class="meter" id="tx"></div>
+  <!-- ============================================================ Status -->
+  <section id="p-status" class="panel" role="tabpanel" aria-labelledby="tab-status">
+    <div class="status-grid">
+      <div class="optics">
+        <div class="meter" id="rx"></div>
+        <div class="meter" id="tx"></div>
+      </div>
+      <div class="status-side">
+        <section class="block">
+          <h2>Registration</h2>
+          <ol class="ladder" id="ladder" aria-label="ONU state"></ol>
+          <p class="state-note" id="statenote"></p>
+          <p class="callout bad" id="losnote" hidden></p>
+        </section>
+        <section class="block">
+          <h2>Transceiver</h2>
+          <dl class="env" id="env"></dl>
+        </section>
+      </div>
     </div>
 
-    <h2>Registration</h2>
-    <ol class="ladder" id="ladder"></ol>
-    <p class="state-note" id="statenote"></p>
-    <p class="state-note" id="losnote" hidden></p>
+    <section class="block">
+      <h2>Forwarding</h2>
+      <div class="flow" id="flow"></div>
+      <p class="help">Healthy looks like a mirror: what the fibre receives, the host side sends.</p>
+      <details class="more">
+        <summary>Why rates, not totals</summary>
+        <p>Traffic crosses the switch in hardware, so these counters are the only
+           place forwarding is visible. The fibre side counts without
+           interruption; the host side is cleared by the performance-monitoring
+           cycle every fifteen minutes. So the two running totals cannot be held
+           against each other &mdash; only the rates, measured between two
+           refreshes of this page, mirror.</p>
+      </details>
+    </section>
 
-    <h2>Forwarding</h2>
-    <div class="flow" id="flow"></div>
-    <p class="field-note">Traffic crosses the switch in hardware, so these
-       counters are the only place forwarding is visible. Healthy looks like a
-       mirror: what the fibre receives, the host side sends.
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-rates">Compare the rates, not the totals</button></span>.</p>
+    <section class="block">
+      <div class="block-head">
+        <h2>Learned addresses</h2>
+        <button id="l2-load" type="button">Read the MAC table</button>
+      </div>
+      <p class="help">Every address the switch has learned, and the side it learned it on.</p>
+      <div id="l2"></div>
+    </section>
 
-    <h2>Learned addresses</h2>
-    <p class="field-note">The counters above say whether frames cross. This says
-       who is crossing: every address the switch has learned, and the side it
-       learned it on. Read on demand, from the switch itself.</p>
-    <p class="me-bar"><button id="l2-load" class="fwbtn" type="button">Read the MAC table</button></p>
-    <div id="l2"></div>
-
-    <h2>Transceiver</h2>
-    <div class="env" id="env"></div>
-
-    <details>
+    <details class="more">
       <summary>Raw diag output</summary>
       <pre id="raw"></pre>
     </details>
-
-    <details class="lore">
-      <summary>Why this device behaves this way</summary>
-      <div class="lore-item" id="l-rates">
-        <h4>Rates, not totals</h4>
-        <p>The fibre side counts without interruption; the host side is cleared
-           by the performance-monitoring cycle every fifteen minutes. So the two
-           running totals cannot be held against each other &mdash; only the
-           rates, measured between two refreshes of this page, mirror.</p>
-      </div>
-    </details>
   </section>
 
-  <section id="config" hidden>
-    <div id="config-description"></div>
-    <p class="field-note">Each one says what applying it costs:
-       <span class="tag cls-live">LIVE</span> takes effect at once;
-       <span class="tag cls-restart">SERVICE RESTART</span> restarts a daemon and
-       keeps the fibre service up;
-       <span class="tag cls-internet">INTERRUPTS INTERNET</span> is applied without
-       a reboot but drops the fibre service while the ONU ranges again;
-       <span class="tag cls-reboot">REBOOT</span> is read only at boot. The last
-       two ask before they act.</p>
-    <div id="identity-switch" hidden></div>
-    <div id="identity-out"></div>
-    <div id="common"></div>
+  <!-- ============================================================ Config -->
+  <section id="p-config" class="panel" role="tabpanel" aria-labelledby="tab-config" hidden>
+    <nav class="subtabs" role="tablist" aria-label="Config">
+      <button role="tab" id="st-config-line" aria-controls="c-line" data-sub="line">Line</button>
+      <button role="tab" id="st-config-vlan" aria-controls="c-vlan" data-sub="vlan">VLAN</button>
+      <button role="tab" id="st-config-identity" aria-controls="c-identity" data-sub="identity">OLT identity</button>
+      <button role="tab" id="st-config-network" aria-controls="c-network" data-sub="network">Network</button>
+      <button role="tab" id="st-config-services" aria-controls="c-services" data-sub="services">Services</button>
+      <button role="tab" id="st-config-other" aria-controls="c-other" data-sub="other" hidden>Other</button>
+      <button role="tab" id="st-config-stock" aria-controls="c-stock" data-sub="stock">Stock keys</button>
+    </nav>
+    <p class="legend" id="legend"></p>
 
+    <div class="sub" id="c-line" role="tabpanel" aria-labelledby="st-config-line" data-sub="line">
+      <p class="lede">What the OLT authenticates this ONU by.</p>
+      <div class="settings" id="set-line"></div>
+    </div>
+    <div class="sub" id="c-vlan" role="tabpanel" aria-labelledby="st-config-vlan" data-sub="vlan" hidden>
+      <p class="lede">The service VLAN this stick tags, and when the firmware honours it.</p>
+      <div class="settings" id="set-vlan"></div>
+    </div>
+    <div class="sub" id="c-identity" role="tabpanel" aria-labelledby="st-config-identity" data-sub="identity" hidden>
+      <p class="lede">What the OLT is told this ONU is.</p>
+      <div id="identity-switch" class="switchrow" hidden></div>
+      <div id="identity-out"></div>
+      <div class="settings" id="set-identity"></div>
+    </div>
+    <div class="sub" id="c-network" role="tabpanel" aria-labelledby="st-config-network" data-sub="network" hidden>
+      <p class="lede">How you reach this stick from the host side.</p>
+      <div class="settings" id="set-network"></div>
+    </div>
+    <div class="sub" id="c-services" role="tabpanel" aria-labelledby="st-config-services" data-sub="services" hidden>
+      <p class="lede">Where this stick sends its logs and gets its time.</p>
+      <div class="settings" id="set-services"></div>
+    </div>
+    <div class="sub" id="c-other" role="tabpanel" aria-labelledby="st-config-other" data-sub="other" hidden>
+      <div class="settings" id="set-other"></div>
+    </div>
+    <div class="sub" id="c-stock" role="tabpanel" aria-labelledby="st-config-stock" data-sub="stock" hidden>
+      <p class="lede" id="advanced-deck">Every key the device stores.</p>
+      <input id="filter" type="search" placeholder="Filter by name" autocomplete="off" aria-label="Filter keys">
+      <p class="help">Backups and restores carry every one of these, whether or not this page offers it for editing.</p>
+      <div class="settings" id="sections"></div>
+    </div>
   </section>
 
-  <section id="advanced" hidden>
-    <p class="deck" id="advanced-deck">Every key the device stores.</p>
-    <input id="filter" type="search" placeholder="Filter settings" autocomplete="off">
-    <p class="field-note">Backups and restores on the Admin tab carry every one of
-       these, whether or not this page offers it for editing.</p>
-    <div id="sections"></div>
+  <!-- ============================================================== OMCI -->
+  <section id="p-omci" class="panel" role="tabpanel" aria-labelledby="tab-omci" hidden>
+    <nav class="subtabs" role="tablist" aria-label="OMCI">
+      <button role="tab" id="st-omci-services" aria-controls="o-services" data-sub="services">Services</button>
+      <button role="tab" id="st-omci-mib" aria-controls="o-mib" data-sub="mib">MIB browser</button>
+    </nav>
+
+    <div class="sub" id="o-services" role="tabpanel" aria-labelledby="st-omci-services" data-sub="services">
+      <div class="block-head">
+        <p class="lede">What the OLT built on this ONU. When it disagrees with Config, the line is right.</p>
+        <button id="services-reload" type="button">Read again</button>
+      </div>
+      <div id="services-cards" class="cards"></div>
+    </div>
+
+    <div class="sub" id="o-mib" role="tabpanel" aria-labelledby="st-omci-mib" data-sub="mib" hidden>
+      <p class="lede">One managed entity at a time, exactly as <code>omcicli mib get</code> prints it. Read-only.</p>
+      <div class="formrow">
+        <label>Managed entity <select id="me-select"></select></label>
+        <label>or class id <input id="me-classid" autocomplete="off" inputmode="numeric" placeholder="84"></label>
+        <label>Entity <input id="me-entity" autocomplete="off" placeholder="all"></label>
+        <button id="me-go" class="primary" type="button">Read</button>
+      </div>
+      <div class="chips" id="me-dumps" aria-label="Data path dumps"></div>
+      <div id="me-out"></div>
+      <details class="more">
+        <summary>Why nothing here writes, and where the table list comes from</summary>
+        <p><code>omcicli mib set</code> exists and is out of reach on purpose. The
+           MIB is the OLT&rsquo;s copy of the service and it is rebuilt at every
+           re-registration, so a change made here would survive one reboot and
+           not the next. Settings that persist are on Config.</p>
+        <p>The table list is a capture, not a query: <code>omcicli get tables</code>
+           returns nothing and leaves the stock <code>omci_app</code> unable to
+           answer anything until it is restarted. This image&rsquo;s omcid answers
+           it safely, but the refusal stays for the stock slot.</p>
+        <pre id="me-tables"></pre>
+      </details>
+    </div>
   </section>
 
-  <section id="services" hidden>
-    <p class="deck">What the OLT built on this ONU, not what this stick asked
-       for.</p>
-    <p class="field-note">When the two disagree the line is right &mdash; so if
-       the state is O5 and no traffic passes, the answer is almost always on this
-       page.</p>
-    <p class="me-bar"><button id="services-reload" type="button">Read the MIB again</button></p>
-    <div id="services-cards"></div>
-  </section>
+  <!-- ============================================================ System -->
+  <section id="p-system" class="panel" role="tabpanel" aria-labelledby="tab-system" hidden>
+    <nav class="subtabs" role="tablist" aria-label="System">
+      <button role="tab" id="st-system-firmware" aria-controls="s-firmware" data-sub="firmware">Firmware</button>
+      <button role="tab" id="st-system-access" aria-controls="s-access" data-sub="access">Access</button>
+      <button role="tab" id="st-system-backup" aria-controls="s-backup" data-sub="backup">Backup &amp; reset</button>
+      <button role="tab" id="st-system-logs" aria-controls="s-logs" data-sub="logs">Logs &amp; tools</button>
+    </nav>
 
-  <section id="omci" hidden>
-    <p class="deck">Every managed entity, unedited &mdash; exactly what
-       <code>omcicli mib get</code> printed.</p>
-    <div class="me-bar">
-      <label>Managed entity
-        <select id="me-select"></select>
-      </label>
-      <label>or class id <input id="me-classid" autocomplete="off" placeholder="e.g. 84"></label>
-      <label>Entity <input id="me-entity" autocomplete="off" placeholder="all"></label>
-      <button id="me-go" type="button">Read</button>
-    </div>
-    <p class="field-note">Read-only, deliberately:
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-nowrite">a change made here would not survive the second
-         reboot</button></span>. Settings that persist are on Config.</p>
-    <div class="me-bar" id="me-dumps"></div>
-    <div id="me-out"></div>
-    <details>
-      <summary>Every table this base registers</summary>
-      <p class="field-note">Captured from a stick, not read live &mdash;
-         <span class="why-wrap"><button type="button" class="why"
-           data-why="l-tables">asking the device costs the MIB service</button></span>.</p>
-      <pre id="me-tables"></pre>
-    </details>
+    <!-- Firmware -->
+    <div class="sub" id="s-firmware" role="tabpanel" aria-labelledby="st-system-firmware" data-sub="firmware">
+      <div id="parts"></div>
 
-    <details class="lore">
-      <summary>Why this device behaves this way</summary>
-      <div class="lore-item" id="l-nowrite">
-        <h4>Why nothing here writes</h4>
-        <p><code>omcicli mib set</code> exists and is out of reach on purpose.
-           The MIB is the OLT&rsquo;s copy of the service and it is rebuilt at
-           every re-registration, so a change made here would survive one reboot
-           and not the next.</p>
-      </div>
-      <div class="lore-item" id="l-tables">
-        <h4>The table list is a capture</h4>
-        <p>Asking the device for it costs the stock MIB service:
-           <code>omcicli get tables</code> returns nothing and leaves the stock
-           <code>omci_app</code> unable to answer anything until it is restarted.
-           This image&rsquo;s omcid answers it safely, but the refusal stays for
-           the stock slot.</p>
-      </div>
-    </details>
-  </section>
-
-  <section id="tools" hidden>
-    <h2>Kernel log</h2>
-    <p class="me-bar"><button id="log-reload" class="fwbtn" type="button">Refresh</button></p>
-    <p class="field-note">The kernel ring buffer.
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-klog">There is no syslog here</button></span>.</p>
-    <div id="log-out"></div>
-
-    <h2>Ping</h2>
-    <div class="me-bar">
-      <label>Address <input id="ping-host" autocomplete="off" placeholder="192.168.1.254"></label>
-      <button id="ping-go" class="fwbtn" type="button">Ping</button>
-    </div>
-    <p class="field-note">From the stick itself: the management LAN, not the
-       internet.
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-ping">IPv4 addresses only</button></span>.</p>
-    <div id="ping-out"></div>
-
-    <details class="lore">
-      <summary>Why this device behaves this way</summary>
-      <div class="lore-item" id="l-klog">
-        <h4>The kernel ring buffer, and the daemon logs beside it</h4>
-        <p>There is no syslog daemon in the image. The kernel complaints live in
-           the ring buffer until they scroll away, and this reads it without
-           consuming it &mdash; <code>cat /proc/kmsg</code> would eat the history
-           and then block. The daemons log to <code>/var/log/omcid.log</code> and
-           <code>/var/log/services.log</code>, in RAM, over SSH.</p>
-      </div>
-      <div class="lore-item" id="l-ping">
-        <h4>Addresses only, never names</h4>
-        <p>With no route to a resolver, a name lookup would hang rather than
-           fail, and this daemon serves one request at a time. What a ping
-           actually answers here is whether the management path works in both
-           directions &mdash; worth knowing when this page loads but a scrape
-           does not.</p>
-      </div>
-    </details>
-  </section>
-
-  <!--
-    Backups, resets and the sign-in credential used to sit at the foot of
-    Config, under two hundred rows of settings -- which put the one control
-    that recovers a stick behind the longest scroll on the page. They are not
-    settings: they act on the whole configuration, or on this UI itself.
-  -->
-  <section id="admin" hidden>
-    <p class="deck">Sign-ins, backups, and resetting the configuration.</p>
-
-    <h2>Config UI credentials</h2>
-    <div class="me-bar">
-      <label>Username <input id="pw-user" autocomplete="username" value="admin"></label>
-      <label>New password <input id="pw-pass" type="password"
-             autocomplete="new-password" placeholder="at least 4 characters"></label>
-      <button id="pw-save" type="button">Save credentials</button>
-    </div>
-    <p class="field-note">This username and password sign you in to this UI and
-       nothing else &mdash; not the SSH login, and not anything the OLT sees.
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-cred">Where it is kept, and what erases it</button></span>.</p>
-    <div id="pw-out"></div>
-
-    <div id="device-login">
-    <h2>Device login</h2>
-    <div id="accounts"></div>
-    <p class="field-note">The username and password for SSH on this stick.
-       Changing them here saves with everything else, on the Save bar.</p>
+      <section class="block">
+        <h2>Load a new image</h2>
+        <div class="formrow">
+          <label>Image tarball <input id="fw-file" type="file" accept=".tar,application/x-tar"></label>
+          <button id="fw-upload" type="button">Upload</button>
+        </div>
+        <p class="help">Uploading only stages it in RAM. Writing it to a partition is a separate step.</p>
+        <div id="fw-upload-out"></div>
+        <div id="fwout"></div>
+        <details class="more">
+          <summary>How a trial boot works</summary>
+          <p>Trying a partition boots it <strong>once</strong>, with the hardware
+             watchdog armed. If the image does not come up, the stick returns by
+             itself to whichever partition is kept &mdash; no console, no
+             intervention. A trial that boots fine still reverts at the next
+             reboot, so keeping it is a separate decision you make after seeing
+             it work.</p>
+          <p>Writing takes about eighty seconds and runs on the stick by itself:
+             this page follows it, and closing the page does not stop it. Do not
+             power the stick off until it says written.</p>
+          <p><code>/tmp</code> is a RAM disk sharing
+             <span id="memtotal">27&nbsp;MB</span> with everything else running,
+             so the image sits there only until it is written. The updater checks
+             the md5 of both the kernel and the root filesystem before it erases
+             anything.</p>
+        </details>
+        <details class="more">
+          <summary>What the OLT is told about the version</summary>
+          <p>On this image the OLT is told <code>0.0.0</code> for both software
+             images, whatever the partitions hold, unless the OLT identity switch
+             on Config is on &mdash; then it is told <code>OMCI_SW_VER1</code> for
+             image 0 and <code>OMCI_SW_VER2</code> for image 1. Both keys are
+             shared with the stock firmware, which may rewrite them when it
+             boots.</p>
+        </details>
+        <details class="more">
+          <summary>Doing it from a shell instead</summary>
+          <pre id="upload"></pre>
+        </details>
+      </section>
     </div>
 
-    <h2>SSH keys</h2>
-    <div id="sshkeys"></div>
-    <div class="me-bar">
-      <label>Public key <input id="sshkey-new" autocomplete="off" spellcheck="false"
-             placeholder="ssh-ed25519 AAAA... comment"></label>
-      <button id="sshkey-add" type="button">Add key</button>
+    <!-- Access -->
+    <div class="sub" id="s-access" role="tabpanel" aria-labelledby="st-system-access" data-sub="access" hidden>
+      <section class="block">
+        <h2>Sign-in for this page</h2>
+        <div class="formrow">
+          <label>Username <input id="pw-user" autocomplete="username" value="admin"></label>
+          <label>New password <input id="pw-pass" type="password"
+                 autocomplete="new-password" placeholder="at least 4 characters"></label>
+          <button id="pw-save" class="primary" type="button">Save password</button>
+        </div>
+        <p class="help">Signs you in to this page only: not SSH, and nothing the OLT sees.</p>
+        <details class="more">
+          <summary>Where it is kept, and what erases it</summary>
+          <p>In <code>/etc/config/confd.auth</code>, which is created here if it
+             does not exist yet, and which survives reflashing. A factory reset
+             erases it and the page falls back to <code>admin</code> /
+             <code>admin</code> until you set one again.</p>
+        </details>
+        <div id="pw-out"></div>
+      </section>
+
+      <section class="block" id="device-login">
+        <h2>Device login</h2>
+        <p class="help">The SSH username and password on this stick. They save with the rest of Config.</p>
+        <div class="settings" id="accounts"></div>
+      </section>
+
+      <section class="block">
+        <h2>SSH keys</h2>
+        <p class="help">Keys that log in as <code>root</code> without a password. They survive a reflash.</p>
+        <div id="sshkeys"></div>
+        <div class="formrow">
+          <label class="grow">Add a public key <input id="sshkey-new" autocomplete="off" spellcheck="false"
+                 placeholder="ssh-ed25519 AAAA… comment"></label>
+          <button id="sshkey-add" type="button">Add key</button>
+        </div>
+        <details class="more">
+          <summary>How keys are stored</summary>
+          <p>One OpenSSH line each, as <code>ssh-keygen</code> prints them. They are
+             the way in on this image: its root password is fixed per build. Kept
+             in <code>/etc/config/dropbear.d/authorized_keys</code>, beside the host
+             key, so they survive a firmware reflash. dropbear reads the file on
+             every login, so nothing restarts.</p>
+        </details>
+        <div id="sshkey-out"></div>
+      </section>
     </div>
-    <p class="field-note">Keys that log in as <code>root</code> over SSH without a
-       password, one OpenSSH line each, as <code>ssh-keygen</code> prints them.
-       They are the way in on this image: its root password is fixed per build.
-       Kept in <code>/etc/config/dropbear.d/authorized_keys</code>, beside the
-       host key, so they survive a firmware reflash.</p>
-    <div id="sshkey-out"></div>
 
-    <h2>Backup and reset</h2>
-    <p class="me-bar"><a class="fwbtn" href="/api/backup" download>Download a
-       full config backup</a></p>
-    <p class="field-note">Both config stores, identity included. Take one before
-       anything you cannot undo.</p>
-    <p class="me-bar"><a class="fwbtn" href="/api/diag" download>Download a
-       diagnostics bundle</a></p>
-    <p class="field-note">Logs, the previous boot&rsquo;s kernel log, slot state
-       and the config with every password redacted, as one
-       <code>.tar.gz</code> to attach to a bug report. The serial number and
-       MAC are kept. Takes a few seconds.</p>
+    <!-- Backup & reset -->
+    <div class="sub" id="s-backup" role="tabpanel" aria-labelledby="st-system-backup" data-sub="backup" hidden>
+      <section class="block">
+        <h2>Backup</h2>
+        <p class="help">Both config stores, identity included. Take one before anything you cannot undo.</p>
+        <p><a class="button" href="/api/backup" download>Download backup</a></p>
+      </section>
 
-    <h3 class="sub">Restore</h3>
-    <div class="me-bar">
-      <label>Backup file <input id="restore-file" type="file" accept=".xml,text/xml,text/plain"></label>
-      <label class="inline"><input id="restore-identity" type="checkbox">
-        also restore identity keys</label>
-      <button id="restore-go" class="fwbtn" type="button">Write the differences</button>
+      <section class="block">
+        <h2>Restore</h2>
+        <div class="formrow">
+          <label>Backup file <input id="restore-file" type="file" accept=".xml,text/xml,text/plain"></label>
+          <label class="check"><input id="restore-identity" type="checkbox"> Include identity keys</label>
+          <button id="restore-go" type="button">Write the differences</button>
+        </div>
+        <p class="help">Nothing is written until you have seen what differs.</p>
+        <details class="more">
+          <summary>What a restore is allowed to write</summary>
+          <p>Every value goes through the same validation the Config fields use, so
+             the SerDes keys stay refused. The identity keys need the tick box: a
+             backup restored onto a <em>different</em> stick would otherwise
+             overwrite the serial number and MAC key its line authenticates on.</p>
+        </details>
+        <div id="restore-out"></div>
+      </section>
+
+      <section class="block">
+        <h2>Reset the service config</h2>
+        <div class="pairs">
+          <div>
+            <h3>Keeps</h3>
+            <ul>
+              <li>the management IP and the second address</li>
+              <li>the VLAN and the PLOAM password</li>
+              <li><code>GPON_SN</code>, <code>MAC_KEY</code>, <code>ELAN_MAC_ADDR</code></li>
+              <li>every key the defaults file does not name</li>
+              <li>this page&rsquo;s sign-in and the SSH keys</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Resets</h3>
+            <ul>
+              <li>the four LOID keys, emptied</li>
+              <li><code>DEVICE_TYPE</code>, <code>DUAL_MGMT_MODE</code> and the three
+                  <code>OMCI_CUSTOM</code> masks, which only the stock firmware reads</li>
+            </ul>
+          </div>
+        </div>
+        <p class="help">A backup downloads first; the reset does not start until your browser has the file.
+           The store is shared with the stock firmware in the other slot, so it is reset there too.</p>
+        <details class="more">
+          <summary>Why this is not <code>flash_eraseall</code></summary>
+          <p>Reset merges the image defaults, <code>/etc/config_default.xml</code>,
+             into the service store with <code>flash default cs</code>; the LOID keys
+             then take effect when OMCI is applied. It rewrites the named keys
+             rather than erasing the partition, so <code>GPON_SN</code>,
+             <code>MAC_KEY</code>, <code>ELAN_MAC_ADDR</code> and this page&rsquo;s
+             credential survive. <code>flash_eraseall /dev/mtd3</code> &mdash; the
+             recipe every forum thread gives &mdash; takes all of it, and is why
+             people end up with sticks that never get past O0.</p>
+        </details>
+        <p><button id="reset-go" class="danger" type="button">Back up, then reset</button></p>
+        <div id="reset-out"></div>
+      </section>
     </div>
-    <p class="field-note">Nothing is written until you have seen what differs.
-       Values go through the
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-restore">same checks the Config fields do</button></span>.</p>
-    <div id="restore-out"></div>
 
-    <h3 class="sub">Reset</h3>
-    <div class="pairs">
-      <div>
-        <h4>Keeps</h4>
-        <ul class="keeps">
-          <li>the management IP and the second address</li>
-          <li>the VLAN and the PLOAM password</li>
-          <li><code>GPON_SN</code>, <code>MAC_KEY</code>, <code>ELAN_MAC_ADDR</code></li>
-          <li>every key the defaults file does not name</li>
-          <li>this UI&rsquo;s sign-in and the SSH keys</li>
-        </ul>
-      </div>
-      <div>
-        <h4>Resets</h4>
-        <ul class="clears">
-          <li>the four LOID keys, emptied</li>
-          <li><code>DEVICE_TYPE</code>, <code>DUAL_MGMT_MODE</code> and the three
-              <code>OMCI_CUSTOM</code> masks, which only the stock firmware reads</li>
-        </ul>
-      </div>
+    <!-- Logs & tools -->
+    <div class="sub" id="s-logs" role="tabpanel" aria-labelledby="st-system-logs" data-sub="logs" hidden>
+      <section class="block">
+        <div class="block-head">
+          <h2>Kernel log</h2>
+          <label class="check"><input id="log-heartbeat" type="checkbox"> Show heartbeats</label>
+          <button id="log-reload" type="button">Refresh</button>
+        </div>
+        <p class="help">The ring buffer the kernel and the boot scripts write to. To keep daemon logs, set a
+           <a href="#config/services">remote syslog server</a>.</p>
+        <div id="log-out"></div>
+        <details class="more">
+          <summary>How it is read</summary>
+          <p>With <code>klogctl</code>, which reads the buffer without consuming it
+             &mdash; <code>cat /proc/kmsg</code> would eat the history and then
+             block. The daemons also log to <code>/var/log/omcid.log</code> and
+             <code>/var/log/services.log</code>, in RAM, over SSH, and to the
+             remote syslog server when one is set.</p>
+        </details>
+      </section>
+
+      <section class="block">
+        <h2>Diagnostics bundle</h2>
+        <p class="help">Logs, the previous boot&rsquo;s kernel log, slot state and the config with every
+           password redacted, as one <code>.tar.gz</code> to attach to a bug report. The serial number
+           and MAC are kept. Takes a few seconds.</p>
+        <p><a class="button" href="/api/diag" download>Download diagnostics</a></p>
+      </section>
+
+      <section class="block">
+        <h2>Ping</h2>
+        <div class="formrow">
+          <label>IPv4 address <input id="ping-host" autocomplete="off" inputmode="decimal" placeholder="192.168.1.254"></label>
+          <button id="ping-go" type="button">Ping</button>
+        </div>
+        <p class="help">From the stick itself, over the management LAN. Addresses only: a name lookup would hang this page.</p>
+        <details class="more">
+          <summary>Why not names</summary>
+          <p>With no route to a resolver, a name lookup would hang rather than
+             fail, and this daemon serves one request at a time. What a ping
+             answers here is whether the management path works in both
+             directions &mdash; worth knowing when this page loads but a scrape
+             does not.</p>
+        </details>
+        <div id="ping-out"></div>
+      </section>
     </div>
-    <p class="consequence">The config store is shared with the stock firmware in
-       the other slot, so the reset keys are reset for it too.</p>
-    <p class="field-note">A backup downloads first, and the reset does not start
-       until your browser has the file. It merges the image defaults,
-       <code>/etc/config_default.xml</code>, into the service store; the LOID keys
-       then take effect when OMCI is applied. This is
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-eraseall">not <code>flash_eraseall</code></button></span>.</p>
-    <div class="me-bar">
-      <button id="reset-go" class="fwbtn danger" type="button">Back up, then
-        reset the service config</button>
-    </div>
-    <div id="reset-out"></div>
-
-    <details class="lore">
-      <summary>Why this device behaves this way</summary>
-      <div class="lore-item" id="l-restore">
-        <h4>What a restore is allowed to write</h4>
-        <p>Every value goes through the same validation the Config tab&rsquo;s
-           fields use, so the SerDes keys stay refused. The identity keys need the tick box:
-           a backup restored onto a <em>different</em> stick would otherwise
-           overwrite the serial number and MAC key its line authenticates on.</p>
-      </div>
-      <div class="lore-item" id="l-eraseall">
-        <h4>Why this is not <code>flash_eraseall</code></h4>
-        <p>Reset runs <code>flash default cs</code>, which rewrites the named keys
-           in the stored configuration rather than erasing the partition.
-           <code>GPON_SN</code>, <code>MAC_KEY</code> and
-           <code>ELAN_MAC_ADDR</code> survive it, and so does the credential
-           this UI signs you in with. <code>flash_eraseall /dev/mtd3</code> &mdash; the recipe
-           every forum thread gives &mdash; takes all of it, and is why people
-           end up with sticks that never get past O0.</p>
-      </div>
-      <div class="lore-item" id="l-cred">
-        <h4>Where the credential is kept</h4>
-        <p>In <code>/etc/config/confd.auth</code>, which is created here if it
-           does not exist yet, and which survives reflashing. A factory reset
-           erases it and the page falls back to <code>admin</code> /
-           <code>admin</code> until you set one again.</p>
-      </div>
-    </details>
-  </section>
-
-  <section id="firmware" hidden>
-    <p class="deck">Two partitions, one running. A new image always goes to the
-       one you are not running.</p>
-    <!-- Above the table, not below it: firmware.js appends its own footer, the
-         build panel and a Reboot button into #parts, so a note placed after it
-         lands under the reboot button and reads as a caption for that. -->
-    <p class="field-note">The running partition shows the image it runs; the other
-       shows what U-Boot records for it.
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-swver">It is not automatically what your ISP sees</button></span>.</p>
-    <div id="parts"></div>
-
-    <h2>Loading a new image</h2>
-    <div class="me-bar">
-      <label>Image <input id="fw-file" type="file" accept=".tar,application/x-tar"></label>
-      <button id="fw-upload" class="fwbtn" type="button">Upload</button>
-    </div>
-    <p class="field-note">Upload the tarball <code>make image</code> produced,
-       then write it to the partition this stick is <em>not</em> running.
-       Uploading is safe and repeatable; writing is the step that matters, which
-       is why it is a separate button.
-       <span class="why-wrap"><button type="button" class="why"
-         data-why="l-tmp">The image waits in RAM until then</button></span>.</p>
-    <div id="fw-upload-out"></div>
-
-    <p class="consequence grave">Writing takes about eighty seconds and runs on
-       the stick by itself: this page follows it, and closing the page does not
-       stop it. Do not power the stick off until it says written.</p>
-    <details>
-      <summary>Doing it from a shell instead</summary>
-      <pre id="upload"></pre>
-    </details>
-
-    <h2>How a trial boot works</h2>
-    <p class="field-note">Trying a partition boots it <strong>once</strong>, with
-       the hardware watchdog armed. If the image does not come up, the stick
-       returns by itself to whichever partition is kept &mdash; no console, no
-       intervention. A trial that boots fine still reverts at the next reboot, so
-       keeping it is a separate decision you make after seeing it work.</p>
-    <div id="fwout"></div>
-
-    <details class="lore">
-      <summary>Why this device behaves this way</summary>
-      <div class="lore-item" id="l-tmp">
-        <h4>Where the upload is held</h4>
-        <p><code>/tmp</code> is a RAM disk sharing
-           <span id="memtotal">27&nbsp;MB</span> with everything else running, so
-           the image sits there only until it is written. The updater checks the
-           md5 of both the kernel and the root filesystem before it erases
-           anything, and streams each straight to flash, so it needs no scratch
-           space beyond the tarball itself.</p>
-      </div>
-      <div class="lore-item" id="l-swver">
-        <h4>What the OLT is told about the version</h4>
-        <p>On this image the OLT is told <code>0.0.0</code> for both software
-           images, whatever the partitions hold, unless the OLT identity switch on
-           the Config tab is on &mdash; then it is told <code>OMCI_SW_VER1</code>
-           for image 0 and <code>OMCI_SW_VER2</code> for image 1. Both keys are
-           shared with the stock firmware, which may rewrite them when it boots.
-           Changing what an ISP authenticates against is a decision to make on a
-           line you can afford to lose.</p>
-      </div>
-    </details>
   </section>
 </main>
 
-<div id="savebar" hidden>
-  <span id="savecount"></span>
-  <span id="saveclasses"></span>
-  <label id="confirmwrap" hidden>
-    <input type="checkbox" id="confirm">
-    Change identity keys the line authenticates on: <span id="confirmwhat"></span>
-  </label>
-  <button id="discard" type="button">Discard</button>
-  <button id="save" type="button">Save changes</button>
+<div id="savebar" class="savebar" hidden>
+  <div class="savebar-in">
+    <div class="savesum">
+      <strong id="savecount"></strong>
+      <span id="saveclasses"></span>
+    </div>
+    <label id="confirmwrap" class="check" hidden>
+      <input type="checkbox" id="confirm">
+      <span>Change keys the line authenticates on: <span id="confirmwhat"></span></span>
+    </label>
+    <div class="saveacts">
+      <button id="discard" class="quiet" type="button">Discard</button>
+      <button id="save" class="primary" type="button">Save changes</button>
+    </div>
+  </div>
   <div id="saveout"></div>
 </div>
 

@@ -20,26 +20,26 @@
 # checks every name against keys.tsv and every class and action against the lists
 # above.
 name	apply	action	pair	reader	note
-LAN_IP_ADDR	live	network		network.sh	Applied at once: the address moves and this page with it. /etc/config/lan-ip, when it exists, wins over this key.
+LAN_IP_ADDR	live	network		network.sh	/etc/config/lan-ip, when it exists, wins over this key.
 LAN_SUBNET	live	network		network.sh	Applied at once, with the address.
 LAN_ENABLE_IP2	live	network		network.sh	1 adds the second address beside the first, 0 removes it. Applied at once; the first address is not touched.
 LAN_IP_ADDR2	live	network		network.sh	A fixed rescue address, as br0:2. Applied at once.
 LAN_SUBNET2	live	network		network.sh	Applied at once, with the second address.
 VLAN_CFG_TYPE	internet	omci		omcid	omcid tags only with type 1 and manual mode 1, as the stock firmware does. Applying restarts omcid and re-ranges the ONU so the OLT provisions every service again.
 VLAN_MANU_MODE	internet	omci		omcid	See VLAN config mode.
-VLAN_MANU_TAG_VID	internet	omci		omcid	The tag omcid adds to the services the OLT provisions. Applying re-ranges the ONU.
+VLAN_MANU_TAG_VID	internet	omci		omcid	Applying re-ranges the ONU so the OLT provisions the services again, with the tag.
 VLAN_MANU_TAG_PRI	internet	omci		omcid	Applied with the VLAN ID.
 GPON_PLOAM_PASSWD	internet	omci		rcS gponpw, apply.sh	Sent to the kernel before the ONU ranges; applying re-ranges it with the new one.
 LOID	internet	omci		omcid	Answered to CTC-profile OLTs in the LOID authentication entity. Written with LOID_OLD, because the OLD value wins whenever the two differ.
 LOID_PASSWD	internet	omci		omcid	Written with LOID_PASSWD_OLD, for the same reason.
 LOID_OLD	internet	omci	LOID	omcid	Follows LOID.
 LOID_PASSWD_OLD	internet	omci	LOID_PASSWD	omcid	Follows LOID_PASSWD.
-OMCI_SW_VER1	internet	omci		omcid, with omci-identity.on	The software version reported for image 0. Reported only while the OLT identity switch is on; otherwise 0.0.0. The stock firmware may rewrite this key when it boots.
-OMCI_SW_VER2	internet	omci		omcid, with omci-identity.on	The same for image 1.
-GPON_ONU_MODEL	internet	omci		omcid, with omci-identity.on	The equipment id in ONU2-G. Reported only while the OLT identity switch is on; otherwise the device id.
-OMCC_VER	internet	omci		omcid, with omci-identity.on	ONU2-G OMCC version, decimal. Otherwise 128 (0x80).
-OMCI_VENDOR_PRODUCT_CODE	internet	omci		omcid, with omci-identity.on	ONU2-G vendor product code, decimal. Otherwise 15, the captured default.
+OMCI_SW_VER1	internet	omci		omcid, with omci-identity.on	Reported only while the OLT identity switch is on; otherwise 0.0.0. The stock firmware may rewrite this key when it boots.
+OMCI_SW_VER2	internet	omci		omcid, with omci-identity.on	Reported only while the OLT identity switch is on; otherwise 0.0.0. The stock firmware may rewrite this key when it boots.
+GPON_ONU_MODEL	internet	omci		omcid, with omci-identity.on	Reported only while the OLT identity switch is on; otherwise the device id.
+OMCC_VER	internet	omci		omcid, with omci-identity.on	Reported only while the OLT identity switch is on; otherwise 128 (0x80).
+OMCI_VENDOR_PRODUCT_CODE	internet	omci		omcid, with omci-identity.on	Reported only while the OLT identity switch is on; otherwise 15, the captured default.
 ELAN_MAC_ADDR	reboot	reboot		network.sh	Needs a reboot: the MAC is set on eth0 and its host port with the links down, before br0 exists, and doing that live would cut every way in mid-change.
 GPON_SN	reboot	reboot		rcS gponsn	Needs a reboot: the kernel writes the serial into the PON MAC once, at the first activation of a boot, and has no way to rewrite it.
-SYSLOG_SERVER	restart	syslog		svc-syslogd.sh, apply.sh	The remote syslog collector, host or host:port. Applying restarts syslogd (init respawns it with the new address); the fibre service is not touched.
-NTP_SERVER	restart	ntp		svc-ntpd.sh, apply.sh	The NTP server, host or host:port. Applying restarts ntpd (init respawns it with the new server); the fibre service is not touched.
+SYSLOG_SERVER	restart	syslog		svc-syslogd.sh, apply.sh	Applying restarts syslogd (init respawns it with the new address); the fibre service is not touched.
+NTP_SERVER	restart	ntp		svc-ntpd.sh, apply.sh	Applying restarts ntpd (init respawns it with the new server); the fibre service is not touched.
