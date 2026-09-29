@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.1.0 - 2026-09-29
+
 ### Changed
 - The web UI is redesigned. Four sections with subtabs replace the eight flat
   tabs: Status; Config (Line, VLAN, OLT identity, Network, Services, Stock
