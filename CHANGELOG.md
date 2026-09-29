@@ -38,7 +38,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the serial into the PON MAC while the ONU is deactivated, which is what the
   re-registration does. It is not verified on a stick yet.
 - `VLAN_MANU_MODE` reads "1 — Stick tags" and "0 — Router tags
-  (transparent)", and its help says who tags the service in each.
+  (transparent): service stops unless the router tags", and its help says who
+  tags the service in each. Every value that can cut the service says so in
+  its option label (`VLAN_CFG_TYPE` 0, `OMCI_UNKNOWN_ME_OK` 1, `LAN_ENABLE_IP2`
+  off), `OLT_SW_DOWNLOAD` says neither value touches the service, and the first
+  line of the help, the one shown without Details, says how a wrong value cuts
+  it for the service VLAN ID, the serial number, the PLOAM password and the
+  LOID. The identity keys and the identity switch say an OLT that expects
+  another identity can leave the ONU in O5 with no service.
+- A save of the LIVE VLAN keys that would stop the stick tagging, start it, or
+  move it to another VLAN asks first, as a Live change, and says what happens
+  to the traffic (the ONU stays in O5, so nothing else would); declining writes
+  nothing. A priority change alone does not ask.
+- An identity key saved while the identity switch is off costs nothing: omcid
+  does not report it, so it does not re-register. The save bar no longer
+  counts it as INTERRUPTS INTERNET, the page does not offer *Apply now* for
+  it, and the row's warning says the service is not dropped.
+- `scripts/check-schema.py` fails when a schema table outgrows the confd
+  buffer it is read into (`src/buffers.c`): `read_file()` stops one byte short
+  without an error, so the tail rows would lose their options and help on the
+  device only.
 - Receive is now read at the same size as Transmit (44 px at most, was 52 px):
   one size, weight and unit style for both readouts.
 

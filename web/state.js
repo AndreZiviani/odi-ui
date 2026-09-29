@@ -127,6 +127,40 @@ function dependsUnmet(row) {
 
 
 /*
+ * The VLAN the stick tags upstream with, or null when it adds no tag: omcid
+ * builds the manual tag only with VLAN_CFG_TYPE=1, VLAN_MANU_MODE=1 and both a
+ * VLAN ID and a priority, as omci_app does on the stock firmware.
+ */
+function vlanTag(v) {
+  const set = (k) => v[k] !== undefined && v[k] !== '';
+  return v.VLAN_CFG_TYPE === '1' && v.VLAN_MANU_MODE === '1'
+    && set('VLAN_MANU_TAG_VID') && set('VLAN_MANU_TAG_PRI') ? v.VLAN_MANU_TAG_VID : null;
+}
+
+/*
+ * What a VLAN change can do to the service, or null when it cannot cut it.
+ * These keys are LIVE: saving applies them at once and the ONU stays in O5,
+ * so a tag the OLT does not accept stops the traffic with every light still
+ * green. `before` is what the stick holds, `after` the same with the edits.
+ */
+function vlanRisk(before, after) {
+  const was = vlanTag(before);
+  const now = vlanTag(after);
+  if (was === now) return null;
+  if (now === null) {
+    return `The stick stops tagging VLAN ${was}: upstream frames reach the OLT as the `
+      + 'router sends them. On a line whose OLT accepts only tagged frames the service '
+      + `stops at once, while the ONU stays in O5, unless the router tags VLAN ${was} itself.`;
+  }
+  if (was === null) {
+    return `The stick starts tagging untagged frames with VLAN ${now}. If the OLT does not `
+      + 'carry that VLAN the service stops at once, while the ONU stays in O5.';
+  }
+  return `The stick tags with VLAN ${now} instead of ${was}. If the OLT does not carry `
+    + `VLAN ${now} the service stops at once, while the ONU stays in O5.`;
+}
+
+/*
  * Decode an OMCI_CUSTOM_* value against the plugins the image actually ships.
  *
  * These four masks are the least documented settings on the device -- the stick
@@ -170,6 +204,6 @@ function decodeMask(name, value) {
 }
 
 export {
-  S, EDITS, provenance, applyOf, dependsUnmet, decodeMask,
+  S, EDITS, provenance, applyOf, dependsUnmet, decodeMask, vlanTag, vlanRisk,
   CLASS_LABEL, CLASS_RANK, CLASS_MEANS, CLASS_CONFIRMS, costBadge, imageAware, settingOf, IDENTITY_SWITCH, identitySwitchOn,
 };

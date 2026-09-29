@@ -652,9 +652,35 @@ ok(['123456789012345', 'a"b', 'a<b', 'a&b', 'caf\u00e9', 'a\tb'].every((v) => hw
     'OLT_SW_DOWNLOAD is live with nothing to apply');
   ok(['ONU_HW_VERSION', 'OMCI_UNKNOWN_ME_OK', 'GPON_SN'].every((n) => setting(n).apply === 'internet' && setting(n).action === 'omci'),
     'the hardware version, unknown-entity answers and serial number re-register the ONU');
-  const mode = META.find((x) => x.name === 'VLAN_MANU_MODE');
-  ok(mode.options === '1=1 \u2014 Stick tags|0=0 \u2014 Router tags (transparent)',
+  /* A value that can cut the service says so in its own label, and the
+     one that cannot does not: the choice is made in the dropdown, where the
+     help text is not. */
+  const opts = (n) => Object.fromEntries(META.find((x) => x.name === n).options.split('|')
+    .map((p) => [p.slice(0, p.indexOf('=')), p.slice(p.indexOf('=') + 1)]));
+  const cuts = /service stops unless the router tags/;
+  const mode = opts('VLAN_MANU_MODE');
+  ok(META.find((x) => x.name === 'VLAN_MANU_MODE').options.split('|').map((p) => p[0]).join(',') === '1,0'
+     && /Stick tags/.test(mode[1]) && /Router tags \(transparent\)/.test(mode[0]),
     'VLAN_MANU_MODE offers stick tags and router tags (transparent)');
+  ok(cuts.test(mode[0]) && !cuts.test(mode[1]),
+    'VLAN_MANU_MODE: router tags says the service stops unless the router tags, stick tags does not');
+  const type = opts('VLAN_CFG_TYPE');
+  ok(cuts.test(type[0]) && !cuts.test(type[1]),
+    'VLAN_CFG_TYPE: transparent says the service stops unless the router tags, manual does not');
+  ok(/silently missing/.test(opts('OMCI_UNKNOWN_ME_OK')[1]) && !/missing/.test(opts('OMCI_UNKNOWN_ME_OK')[0]),
+    'OMCI_UNKNOWN_ME_OK: on names its risk in the label, off does not');
+  ok(Object.values(opts('OLT_SW_DOWNLOAD')).every((l) => /service is not touched/.test(l)),
+    'OLT_SW_DOWNLOAD: both values say the service is not touched');
+  ok(/removes it at once/.test(opts('LAN_ENABLE_IP2')[0]),
+    'LAN_ENABLE_IP2: off says the address goes at once');
+  /* The first sentence is the one shown without opening Details. */
+  const first = (n) => splitHelp(META.find((x) => x.name === n).help,
+    (SETT.find((r) => r.name === n) || {}).note).first;
+  for (const [n, re] of [['VLAN_CFG_TYPE', /service then stops/], ['VLAN_MANU_MODE', /service stops/],
+    ['VLAN_MANU_TAG_VID', /stops the service at once/], ['GPON_SN', /no service/],
+    ['GPON_PLOAM_PASSWD', /refuses the ONU/], ['LOID', /refuses the ONU/]]) {
+    ok(re.test(first(n)), `${n}: the visible help says how a value can cut the service`);
+  }
   ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK'].every((n) => GROUPS.identity.includes(n)),
     'the new OLT-facing keys sit on the OLT identity subtab');
 }
@@ -664,6 +690,68 @@ const pw = withPairs([...EDITS.entries()]);
 ok(pw.some(([k, v]) => k === 'LOID_OLD' && v === 'someone'),
    'saving LOID writes LOID_OLD too, since the OLD value wins');
 EDITS.clear();
+
+/* The VLAN keys are LIVE, so a value that stops the traffic is asked about
+   before the save, not after it: the ONU stays in O5 and nothing else would
+   say so. */
+{
+  const { vlanRisk } = state;
+  const base = { VLAN_CFG_TYPE: '1', VLAN_MANU_MODE: '1', VLAN_MANU_TAG_VID: '11', VLAN_MANU_TAG_PRI: '0' };
+  ok(/stops tagging VLAN 11/.test(vlanRisk(base, { ...base, VLAN_MANU_MODE: '0' }) || ''),
+     'vlanRisk: router tags stops the stick tagging VLAN 11');
+  ok(/stops tagging VLAN 11/.test(vlanRisk(base, { ...base, VLAN_CFG_TYPE: '0' }) || ''),
+     'vlanRisk: config mode 0 does the same');
+  ok(/VLAN 12 instead of 11/.test(vlanRisk(base, { ...base, VLAN_MANU_TAG_VID: '12' }) || ''),
+     'vlanRisk: another VLAN ID says which one replaces which');
+  ok(/starts tagging untagged frames with VLAN 11/.test(
+       vlanRisk({ ...base, VLAN_MANU_MODE: '0' }, base) || ''),
+     'vlanRisk: turning tagging on names the VLAN');
+  ok(vlanRisk(base, { ...base, VLAN_MANU_TAG_PRI: '3' }) === null && vlanRisk(base, base) === null,
+     'vlanRisk: a priority change, or no change, asks nothing');
+
+  const { save, refreshSaveBar, followUp } = await import(join(root, 'web', 'save.js'));
+  const realFetch = globalThis.fetch;
+  const posts = [];
+  globalThis.fetch = async (path, opts) => {
+    if (opts && opts.method === 'POST') posts.push([String(path), String(opts.body)]);
+    return realFetch(path, opts);
+  };
+  const asked = [];
+  globalThis.confirm = (t) => { asked.push(t); return false; };
+  EDITS.set('VLAN_MANU_MODE', '0');
+  refreshSaveBar();
+  await save();
+  ok(asked.length === 1 && /stops tagging VLAN 1\b/.test(asked[0]) && /^\u25AE Live/.test(asked[0]),
+     'save: router tags asks first, as a Live change that stops the tagging');
+  ok(posts.length === 0 && /Not saved/.test(textOf(doc.querySelector('#saveout'))),
+     'save: declined, nothing is written');
+  globalThis.confirm = (t) => { asked.push(t); return true; };
+  await save();
+  ok(posts.some(([p, b]) => p === '/api/config' && /VLAN_MANU_MODE=0/.test(b)),
+     'save: accepted, the change is written');
+  EDITS.clear();
+  globalThis.fetch = realFetch;
+  globalThis.confirm = () => false;
+
+  /* An identity key the switch keeps from the OLT changes nothing on the
+     line: no cost in the save bar, and no Apply now after the save. */
+  EDITS.set('OMCI_SW_VER1', 'V9');
+  refreshSaveBar();
+  ok(textOf(doc.querySelector('#saveclasses')) === '',
+     'save bar: an unreported identity key carries no cost');
+  EDITS.clear();
+  refreshSaveBar();
+  const out1 = new El('div');
+  await followUp({ needs: ['omci'], interrupts: true }, ['OMCI_SW_VER1'], out1);
+  ok(/Not reported to the OLT/.test(textOf(out1)) && !/Apply now/.test(textOf(out1)),
+     'followUp: an unreported identity key is not offered Apply now');
+  const out2 = new El('div');
+  await followUp({ needs: ['omci'], interrupts: true }, ['GPON_SN'], out2);
+  ok(/Apply now/.test(textOf(out2)), 'followUp: the serial number is offered Apply now');
+  const out3 = new El('div');
+  await followUp({ needs: ['omci'], interrupts: true }, ['OMCI_SW_VER1', 'GPON_SN'], out3);
+  ok(/Apply now/.test(textOf(out3)), 'followUp: and so is a batch with one reported key in it');
+}
 
 /* Without the table, the page is what it was: every key offered. */
 for (const k of Object.keys(S.SETTINGS)) delete S.SETTINGS[k];

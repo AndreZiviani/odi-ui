@@ -140,6 +140,28 @@ offers *Apply now* behind the confirmation). `apply.sh omci` does the right
 thing for either: it signals omcid, which compares the store with what it runs
 and rebuilds in place or re-registers.
 
+The class is what APPLYING costs. What a VALUE does to the service is a second
+question, and a live key is where it bites: a VLAN save applies at once, the
+ONU stays in O5, and a tag the OLT does not accept stops the traffic with every
+light green. So the page says it three ways:
+
+- **In the option label**, where the choice is made: a value that can cut the
+  service says so (`VLAN_MANU_MODE` "0 — Router tags (transparent): service
+  stops unless the router tags", `VLAN_CFG_TYPE` 0 the same,
+  `OMCI_UNKNOWN_ME_OK` 1), and one that cannot says that too where it is not
+  obvious (`OLT_SW_DOWNLOAD`: the service is not touched).
+- **In the first sentence of the help**, the one shown without opening Details:
+  the service VLAN ID, the serial number, the PLOAM password, the LOID.
+- **In a confirmation before the save**, headed as a Live change, whenever the
+  batch would stop the stick tagging, start it, or move it to another VLAN
+  (`vlanRisk()` in `web/state.js`, from the same gating omcid applies: config
+  mode 1, manual mode 1, a VLAN ID and a priority). Declining writes nothing.
+
+An identity key omcid reports only while the identity switch is on changes
+nothing on the line while the switch is off: omcid finds no difference and
+does not re-register. The page does not charge for it then: no badge count in
+the save bar, no *Apply now*, and the row says so.
+
 What the page does differently there:
 
 - **Only keys that work are editable.** A key with no settings row is shown on

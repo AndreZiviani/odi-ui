@@ -196,7 +196,8 @@ function renderRow(row, readonly) {
     left.append(el('p', 's-warn', 'Ignored while /etc/config/lan-ip exists: that file sets the address, with a /24 mask.'));
   }
   if (set && /omci-identity\.on/.test(set.reader) && !identitySwitchOn()) {
-    left.append(el('p', 's-warn', 'Not reported to the OLT: the identity switch is off.'));
+    left.append(el('p', 's-warn', 'Not reported to the OLT: the identity switch is off, so '
+      + 'saving it changes nothing on the line and does not drop the service.'));
   }
   const unmet = dependsUnmet(row);
   if (unmet) left.append(el('p', 's-warn', 'Ignored by the firmware now: needs ' + unmet.join(' and ') + '.'));

@@ -20,7 +20,7 @@
 import { $, el, get } from './dom.js';
 import {
   S, EDITS, CLASS_LABEL, CLASS_RANK, costBadge, imageAware, settingOf,
-  IDENTITY_SWITCH, identitySwitchOn,
+  IDENTITY_SWITCH, identitySwitchOn, vlanRisk,
 } from './state.js';
 import { invalidEdits } from './validate.js';
 import { renderAll, markPending } from './config.js';
@@ -60,7 +60,8 @@ function refreshSaveBar() {
      pending changes carry it -- "1 interrupts internet, 2 live". */
   const byClass = {};
   for (const k of EDITS.keys()) {
-    const c = (settingOf(k) || {}).apply;
+    /* An identity key the switch keeps from the OLT costs nothing now. */
+    const c = reportedNow(k) ? (settingOf(k) || {}).apply : null;
     if (c) byClass[c] = (byClass[c] || 0) + 1;
   }
   const host = $('#saveclasses');
@@ -106,6 +107,16 @@ async function save() {
     return;
   }
   if ($('#confirm').checked) pairs.push(['_confirm', 'identity']);
+
+  /* The VLAN keys apply the moment they are saved, so this is the last
+     point to say that a value can stop the traffic. */
+  if (imageAware()) {
+    const risk = vlanRisk(S.VALUES, { ...S.VALUES, ...Object.fromEntries(pairs) });
+    if (risk && !confirmClass('live', risk + ' Continue?')) {
+      out.append(el('div', 'warn', 'Not saved.'));
+      return;
+    }
+  }
 
   $('#save').disabled = true;
   try {
@@ -183,8 +194,17 @@ async function followUp(res, written, out) {
   for (const [what, daemon] of [['syslog', 'syslogd'], ['ntp', 'ntpd']]) {
     if (needs.includes(what)) await applyService(out, what, daemon);
   }
-  if (needs.includes('omci')) {
-    if (res.interrupts) {
+  /* A key omcid reports only while the identity switch is on changes
+     nothing on the line while it is off: omcid finds no difference, so
+     there is nothing to apply and nothing drops. */
+  const omciKeys = written.filter((k) => (settingOf(k) || {}).action === 'omci');
+  const unreported = omciKeys.filter((k) => !reportedNow(k));
+  if (needs.includes('omci') && unreported.length && unreported.length === omciKeys.length) {
+    out.append(el('div', 'hint', 'Saved. Not reported to the OLT while the identity switch '
+      + 'is off, so nothing changes on the line and there is nothing to apply.'));
+  } else if (needs.includes('omci')) {
+    if (res.interrupts && omciKeys.some((k) => reportedNow(k)
+        && (settingOf(k) || {}).apply === 'internet')) {
       out.append(el('div', 'warn', 'Saved. These keys take effect when omcid '
         + 're-registers the ONU and the OLT provisions it again.'));
       out.append(applyButton('internet', 'Apply now', () => applyOmci(out, true)));
@@ -197,6 +217,12 @@ async function followUp(res, written, out) {
     out.append(el('div', 'warn', 'Saved. These keys are read only at boot.'));
     out.append(applyButton('reboot', 'Reboot', () => reboot(out)));
   }
+}
+
+/* Whether omcid reports a key now: the identity ones only with the switch on. */
+function reportedNow(name) {
+  const set = settingOf(name);
+  return !(set && /omci-identity\.on/.test(set.reader)) || identitySwitchOn();
 }
 
 /* A button that says its class and asks before REBOOT or INTERRUPTS INTERNET. */
@@ -331,6 +357,9 @@ function renderIdentitySwitch() {
   text.append(el('p', 's-help', on
     ? 'The OLT is told the versions, model, hardware version, OMCC version and product code below. An empty key keeps the default.'
     : 'The OLT is told software version 0.0.0, the device id as model and hardware version, OMCC 128 and product code 15, whatever the keys below hold.'));
+  text.append(el('p', 's-help', 'Some OLTs provision a service only for the identity they '
+    + 'expect: one they do not expect can leave the ONU in O5 with no service. Switching '
+    + 'interrupts internet while the ONU registers again.'));
   const b = el('button', null, on ? 'Report the defaults' : 'Report the stored identity');
   b.type = 'button';
   b.onclick = async () => {
@@ -355,4 +384,4 @@ function renderIdentitySwitch() {
   host.append(text, acts);
 }
 
-export { refreshSaveBar, save, doApply, withPairs, renderIdentitySwitch, applyButton, rebootWarning };
+export { refreshSaveBar, save, doApply, withPairs, renderIdentitySwitch, applyButton, rebootWarning, followUp, reportedNow };
