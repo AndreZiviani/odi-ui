@@ -26,7 +26,7 @@ static void handle_write(int conn, const char *body)
 	char type[32], writable[32], apply[32];
 	unsigned long i = 0;
 	int first = 1, confirm = 0;
-	int any_omci = 0, any_reboot = 0, any_untraced = 0;
+	int any_omci = 0, any_reboot = 0, any_untraced = 0, omci_interrupts = 0;
 	int need_net = 0, any_stock = 0, need_syslog = 0, need_ntp = 0;
 
 	if (read_file(SCHEMA_PATH_OVR, schema, sizeof(schema)) <= 0 &&
@@ -111,11 +111,11 @@ static void handle_write(int conn, const char *body)
 			err = "not writable";
 		else if (seq(writable, "identity") && !confirm)
 			err = "identity key: resend with _confirm=identity";
-		/* Only the odi-only hostport keys (SYSLOG_SERVER, NTP_SERVER)
-		 * can be cleared: odi-oss flash keeps them in a plain file and
+		/* Only the odi-only hostport and ascii14 keys (SYSLOG_SERVER,
+		 * NTP_SERVER, ONU_HW_VERSION) can be cleared: odi-oss flash keeps them in a plain file and
 		 * an empty value removes the key. Stock keys live in the vendor
 		 * XML, where an empty value is not a clear. */
-		else if (!value[0] && !seq(type, "hostport"))
+		else if (!value[0] && !seq(type, "hostport") && !seq(type, "ascii14"))
 			err = "cannot be cleared: flash set refuses an empty value";
 		else if (!type_ok(type, value))
 			err = "not valid for its type";
@@ -169,8 +169,22 @@ static void handle_write(int conn, const char *body)
 						need_syslog = 1;
 					else if (seq(derived, "ntp"))
 						need_ntp = 1;
-					else if (seq(derived, "omci"))
+					else if (seq(derived, "omci")) {
+						char cls[16];
+
 						any_omci = 1;
+						/* omcid reloads on SIGHUP: a key of class
+						 * live is rebuilt in place and costs
+						 * nothing, any other class re-registers
+						 * the ONU. The page applies the first
+						 * straight away and asks before the
+						 * second. */
+						if (!tsv_field(sett, name, 1, cls, sizeof(cls)) ||
+						    !seq(cls, "live"))
+							omci_interrupts = 1;
+					}
+					/* "none": read by the daemon each time it
+					 * is used, nothing to run. */
 					else if (seq(derived, "reboot"))
 						any_reboot = 1;
 				} else {
@@ -248,6 +262,10 @@ next:
 	}
 	put_fd(conn, "],\"stock\":");
 	put_fd(conn, any_stock ? "true" : "false");
+	/* Whether the omci action drops the fibre service: false when every key
+	 * of the batch that needs it is class live (omcid rebuilds in place). */
+	put_fd(conn, ",\"interrupts\":");
+	put_fd(conn, omci_interrupts ? "true" : "false");
 	put_fd(conn, "}");
 }
 

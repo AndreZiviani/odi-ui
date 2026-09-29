@@ -92,6 +92,22 @@ int type_ok(const char *type, const char *v)
 		}
 		return 1;
 	}
+	if (seq(type, "ascii14")) {
+		/* ONU_HW_VERSION: at most 14 printable ASCII characters, the
+		 * width of the ONU-G version attribute. Empty clears the key
+		 * (odi-oss flash removes it, and omcid then reports the device
+		 * id). The three flash refuses -- a quote, < and & -- are
+		 * refused here first. */
+		if (!v[0])
+			return 1;
+		for (i = 0; v[i]; i++) {
+			unsigned char c = (unsigned char)v[i];
+
+			if (i >= 14 || c < 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
+				return 0;
+		}
+		return 1;
+	}
 	if (seq(type, "string"))
 		return 1;
 

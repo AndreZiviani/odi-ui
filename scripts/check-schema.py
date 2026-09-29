@@ -13,6 +13,7 @@ not have is simply never seen. None of those fail loudly on their own.
 Exits non-zero on anything that would mislead someone reading the UI.
 """
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,7 +25,7 @@ WRITABLE = {"yes", "never", "identity"}
 # anything else -- so a typo here is a key that cannot be written at all, which
 # is the safe direction but still a bug, and one nothing else would report.
 # Keep the two in step: adding a type means adding it in both places.
-TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "hostport", "string"}
+TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "hostport", "ascii14", "string"}
 
 problems = []
 
@@ -59,7 +60,7 @@ sett = load("settings.tsv", 6)
 # settings.tsv, the image's own view. The classes are the four the page
 # labels; the actions are the three apply.sh and the reboot button perform.
 SETT_CLASSES = {"live", "restart", "internet", "reboot"}
-SETT_ACTIONS = {"network", "omci", "syslog", "ntp", "reboot"}
+SETT_ACTIONS = {"network", "omci", "syslog", "ntp", "reboot", "none"}
 
 names = {r[0] for r in keys}
 if not names:
@@ -157,7 +158,10 @@ for name, apply_, action, pair, reader, note_ in sett:
         note(name, f"settings action {action!r} is not one of {sorted(SETT_ACTIONS)}")
     # The class is what the page promises; the action is what it does. A key
     # labelled live that needs a reboot, or the reverse, is a UI that lies.
-    if (apply_, action) not in {("live", "network"), ("internet", "omci"),
+    # live/omci is a key omcid rebuilds in place on SIGHUP; live/none one it
+    # reads each time it is used, with nothing to run.
+    if (apply_, action) not in {("live", "network"), ("live", "omci"),
+                                ("live", "none"), ("internet", "omci"),
                                 ("reboot", "reboot"), ("restart", "syslog"),
                                 ("restart", "ntp")}:
         note(name, f"class {apply_!r} does not match action {action!r}")
@@ -169,6 +173,33 @@ for name, apply_, action, pair, reader, note_ in sett:
         note(name, "needs a reader and a note")
 if len(sett_names) != len(set(sett_names)):
     note("settings.tsv", "a key appears twice")
+
+# --- the daemon's buffers ----------------------------------------------------
+# confd reads each table whole into a fixed buffer (src/buffers.c) and
+# read_file() stops, without an error, one byte short of it. A table that
+# outgrows its buffer loses its last rows on the device only: their options,
+# ranges and help vanish, and the checks above, which read the file, still
+# pass. Each file must fit every buffer it is read into (src/routes.c).
+READS_INTO = {
+    "keys.tsv": ["schema"],
+    "meta.tsv": ["meta", "schema"],
+    "consumers.tsv": ["cons", "schema"],
+    "settings.tsv": ["sett"],
+    "features.tsv": ["schema"],
+}
+bufsrc = os.path.join(HERE, "src", "buffers.c")
+sizes = {m.group(1): int(m.group(2))
+         for m in re.finditer(r"^char (\w+)\[(\d+)\];", open(bufsrc).read(), re.M)}
+for fname, bufs in READS_INTO.items():
+    path = os.path.join(HERE, "schema", fname)
+    if not os.path.exists(path):
+        continue
+    size = os.path.getsize(path)
+    for b in bufs:
+        if b not in sizes:
+            note(fname, f"buffer {b!r} is not in src/buffers.c")
+        elif size >= sizes[b]:
+            note(fname, f"{size} bytes does not fit {b}[{sizes[b]}]: confd would drop its tail")
 
 # --- report ----------------------------------------------------------------
 if problems:

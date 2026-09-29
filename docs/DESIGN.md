@@ -128,10 +128,39 @@ in odi-oss is the prose version and the source of truth.
 
 | class | meaning | action | keys |
 |---|---|---|---|
-| **LIVE** | takes effect at once | `apply.sh network`, run straight after the save | `LAN_IP_ADDR`, `LAN_SUBNET`, `LAN_ENABLE_IP2`, `LAN_IP_ADDR2`, `LAN_SUBNET2` |
+| **LIVE** | takes effect at once | `apply.sh network`, run straight after the save; `apply.sh omci` for the four VLAN keys, also run straight after the save (omcid rereads the store on SIGHUP and rebuilds the connections in place, the ONU stays in O5); `none` where the daemon reads the key each time it uses it | `LAN_IP_ADDR`, `LAN_SUBNET`, `LAN_ENABLE_IP2`, `LAN_IP_ADDR2`, `LAN_SUBNET2`; the four `VLAN_*`; `OLT_SW_DOWNLOAD` |
 | **SERVICE RESTART** | a daemon restarts, the fibre service stays up | `apply.sh syslog` / `apply.sh ntp`, run straight after the save (apply.sh kills the daemon, busybox init respawns it, bounded by `APPLY_TIMEOUT_MS`) | `SYSLOG_SERVER`, `NTP_SERVER` |
-| **INTERRUPTS INTERNET** | applied without a reboot, the fibre service drops meanwhile | `apply.sh omci`, offered as *Apply now* behind a confirmation | the four `VLAN_*`, `GPON_PLOAM_PASSWD`, the four `LOID*`, `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`, `OMCC_VER`, `OMCI_VENDOR_PRODUCT_CODE` |
-| **REBOOT** | read only at boot | *Reboot now*, behind a confirmation that names the slot it comes back on | `ELAN_MAC_ADDR`, `GPON_SN` |
+| **INTERRUPTS INTERNET** | applied without a reboot, the fibre service drops meanwhile | `apply.sh omci`, offered as *Apply now* behind a confirmation (omcid deactivates the ONU, clears its MIB and ranges it again, in the same process) | `GPON_SN`, `GPON_PLOAM_PASSWD`, the four `LOID*`, `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`, `OMCC_VER`, `OMCI_VENDOR_PRODUCT_CODE`, `ONU_HW_VERSION`, `OMCI_UNKNOWN_ME_OK` |
+| **REBOOT** | read only at boot | *Reboot now*, behind a confirmation that names the slot it comes back on | `ELAN_MAC_ADDR` |
+
+The action, not the class, is what the daemon reports in `needs`; a batch that
+needs `omci` also carries `"interrupts"`: false when every key in it is class
+live (the page applies it at once, nothing drops) and true otherwise (the page
+offers *Apply now* behind the confirmation). `apply.sh omci` does the right
+thing for either: it signals omcid, which compares the store with what it runs
+and rebuilds in place or re-registers.
+
+The class is what APPLYING costs. What a VALUE does to the service is a second
+question, and a live key is where it bites: a VLAN save applies at once, the
+ONU stays in O5, and a tag the OLT does not accept stops the traffic with every
+light green. So the page says it three ways:
+
+- **In the option label**, where the choice is made: a value that can cut the
+  service says so (`VLAN_MANU_MODE` "0 — Router tags (transparent): service
+  stops unless the router tags", `VLAN_CFG_TYPE` 0 the same,
+  `OMCI_UNKNOWN_ME_OK` 1), and one that cannot says that too where it is not
+  obvious (`OLT_SW_DOWNLOAD`: the service is not touched).
+- **In the first sentence of the help**, the one shown without opening Details:
+  the service VLAN ID, the serial number, the PLOAM password, the LOID.
+- **In a confirmation before the save**, headed as a Live change, whenever the
+  batch would stop the stick tagging, start it, or move it to another VLAN
+  (`vlanRisk()` in `web/state.js`, from the same gating omcid applies: config
+  mode 1, manual mode 1, a VLAN ID and a priority). Declining writes nothing.
+
+An identity key omcid reports only while the identity switch is on changes
+nothing on the line while the switch is off: omcid finds no difference and
+does not re-register. The page does not charge for it then: no badge count in
+the save bar, no *Apply now*, and the row says so.
 
 What the page does differently there:
 
@@ -140,8 +169,9 @@ What the page does differently there:
   because a restore must write all of them back, and answers `"stock":true` for
   a key nothing here reads.
 - **`/api/config` lists the actions a save needs**, `"needs":["network","omci",
-  "reboot"]`. The daemon still applies nothing on its own; the page runs the
-  live one and offers the other two.
+  "reboot"]`, and whether `omci` drops the fibre service (`"interrupts"`). The
+  daemon still applies nothing on its own; the page runs the live ones
+  (network, and omci when nothing in the batch interrupts) and offers the rest.
 - **`LOID` is written with `LOID_OLD`** (and the password with its `_OLD`),
   because the OLD value wins whenever the two differ, on omcid as on the stock
   firmware; the `pair` column says so and the `_OLD` rows are read-only.
@@ -835,10 +865,11 @@ and the OLT stops authenticating the ONU.
 ## Applying changes without a reboot
 
 **On odi-oss**, `/etc/scripts/apply.sh` does it, and `/api/apply` runs it:
-`network` re-applies both management addresses live, and `omci` deactivates the
-ONU, restarts omcid, and re-activates it so the OLT provisions every service
-again with the settings as they are now -- which is why that class is
-INTERRUPTS INTERNET. odi-oss `docs/SETTINGS.md` has the details and the
+`network` re-applies both management addresses live, and `omci` sends SIGHUP to the running omcid, which rereads the store: a VLAN change
+is rebuilt in place (the ONU stays in O5, so those keys are LIVE), while an
+identity change deactivates the ONU, clears omcid's MIB and re-activates it so
+the OLT provisions every service again with the settings as they are now --
+which is why that class is INTERRUPTS INTERNET. odi-oss `docs/SETTINGS.md` has the details and the
 measurements. The rest of this section is the stock firmware.
 
 On the stock firmware, config is read **once at boot** — `/etc/runomci.sh` builds the whole `omci_app`

@@ -6,9 +6,11 @@
  * table that is one or more of three actions, and the page runs or offers
  * each one according to its class:
  *
- *   LIVE                  network: applied straight after the save
+ *   LIVE                  network, and omci for the VLAN keys: applied straight
+ *                         after the save (omcid rebuilds in place on SIGHUP)
  *   SERVICE RESTART       syslog, ntp: the daemon restarts straight after the save
  *   INTERRUPTS INTERNET   omci: offered as "Apply now", behind a confirmation
+ *                         (omcid re-registers the ONU)
  *   REBOOT                reboot: offered as "Reboot now", behind a confirmation
  *
  * Without the table (a stock-based image) it is the old choice between
@@ -18,7 +20,7 @@
 import { $, el, get } from './dom.js';
 import {
   S, EDITS, CLASS_LABEL, CLASS_RANK, costBadge, imageAware, settingOf,
-  IDENTITY_SWITCH, identitySwitchOn,
+  IDENTITY_SWITCH, identitySwitchOn, vlanRisk,
 } from './state.js';
 import { invalidEdits } from './validate.js';
 import { renderAll, markPending } from './config.js';
@@ -58,7 +60,8 @@ function refreshSaveBar() {
      pending changes carry it -- "1 interrupts internet, 2 live". */
   const byClass = {};
   for (const k of EDITS.keys()) {
-    const c = (settingOf(k) || {}).apply;
+    /* An identity key the switch keeps from the OLT costs nothing now. */
+    const c = reportedNow(k) ? (settingOf(k) || {}).apply : null;
     if (c) byClass[c] = (byClass[c] || 0) + 1;
   }
   const host = $('#saveclasses');
@@ -104,6 +107,16 @@ async function save() {
     return;
   }
   if ($('#confirm').checked) pairs.push(['_confirm', 'identity']);
+
+  /* The VLAN keys apply the moment they are saved, so this is the last
+     point to say that a value can stop the traffic. */
+  if (imageAware()) {
+    const risk = vlanRisk(S.VALUES, { ...S.VALUES, ...Object.fromEntries(pairs) });
+    if (risk && !confirmClass('live', risk + ' Continue?')) {
+      out.append(el('div', 'warn', 'Not saved.'));
+      return;
+    }
+  }
 
   $('#save').disabled = true;
   try {
@@ -181,15 +194,35 @@ async function followUp(res, written, out) {
   for (const [what, daemon] of [['syslog', 'syslogd'], ['ntp', 'ntpd']]) {
     if (needs.includes(what)) await applyService(out, what, daemon);
   }
-  if (needs.includes('omci')) {
-    out.append(el('div', 'warn', 'Saved. These keys take effect when OMCI is '
-      + 'restarted and the OLT provisions the ONU again.'));
-    out.append(applyButton('internet', 'Apply now', () => applyOmci(out)));
+  /* A key omcid reports only while the identity switch is on changes
+     nothing on the line while it is off: omcid finds no difference, so
+     there is nothing to apply and nothing drops. */
+  const omciKeys = written.filter((k) => (settingOf(k) || {}).action === 'omci');
+  const unreported = omciKeys.filter((k) => !reportedNow(k));
+  if (needs.includes('omci') && unreported.length && unreported.length === omciKeys.length) {
+    out.append(el('div', 'hint', 'Saved. Not reported to the OLT while the identity switch '
+      + 'is off, so nothing changes on the line and there is nothing to apply.'));
+  } else if (needs.includes('omci')) {
+    if (res.interrupts && omciKeys.some((k) => reportedNow(k)
+        && (settingOf(k) || {}).apply === 'internet')) {
+      out.append(el('div', 'warn', 'Saved. These keys take effect when omcid '
+        + 're-registers the ONU and the OLT provisions it again.'));
+      out.append(applyButton('internet', 'Apply now', () => applyOmci(out, true)));
+    } else {
+      /* Only VLAN keys: omcid rebuilds the connections in place, nothing drops. */
+      await applyOmci(out, false);
+    }
   }
   if (needs.includes('reboot')) {
     out.append(el('div', 'warn', 'Saved. These keys are read only at boot.'));
     out.append(applyButton('reboot', 'Reboot', () => reboot(out)));
   }
+}
+
+/* Whether omcid reports a key now: the identity ones only with the switch on. */
+function reportedNow(name) {
+  const set = settingOf(name);
+  return !(set && /omci-identity\.on/.test(set.reader)) || identitySwitchOn();
 }
 
 /* A button that says its class and asks before REBOOT or INTERRUPTS INTERNET. */
@@ -199,7 +232,7 @@ function applyButton(cls, text, run) {
   b.append(document.createTextNode(text + ' '), costBadge(cls));
   b.onclick = async () => {
     if (cls === 'internet' && !confirmClass(cls, 'This takes the fibre service down: the '
-        + 'ONU is deactivated, the OMCI daemon restarts, and the ONU ranges again and '
+        + 'ONU is deactivated, omcid clears its MIB, and the ONU ranges again and '
         + 'waits for the OLT to provision it. About ten seconds, then however long '
         + 'the OLT takes (typically under a minute). Continue?')) return;
     if (cls === 'reboot' && !confirmClass(cls, rebootWarning())) return;
@@ -258,15 +291,20 @@ async function applyService(out, what, daemon) {
   }
 }
 
-async function applyOmci(out) {
-  out.append(el('div', 'warn', 'Restarting OMCI and re-ranging the ONU…'));
+/* omcid rereads the store on SIGHUP (apply.sh omci sends it and reports what
+   omcid did). `interrupts` says whether the keys re-register the ONU or only
+   rebuild the connections in place. */
+async function applyOmci(out, interrupts) {
+  out.append(el('div', 'warn', interrupts ? 'Re-registering the ONU…'
+    : 'Rebuilding the connections in place…'));
   try {
     const r = await fetch('/api/apply', form({ what: 'omci' }));
     const res = await r.json();
     if (res.output) out.append(el('pre', null, String(res.output).trim()));
     out.append(el('div', res.ok ? 'good' : 'bad', res.ok
-      ? 'Applied. The ONU is ranging again; the Status tab shows O5 and the '
-        + 'Services tab the provisioned services once the OLT is done.'
+      ? (interrupts ? 'Applied. The Status tab shows O5 and the Services tab the '
+        + 'provisioned services once the OLT is done.'
+        : 'Applied. The ONU stayed in O5.')
       : 'Apply failed: ' + (res.error || 'see above')));
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
@@ -302,11 +340,11 @@ async function doApply(ev, what) {
 
 /*
  * The OLT identity switch. omcid reports OMCI_SW_VER1/2, GPON_ONU_MODEL,
- * OMCC_VER and OMCI_VENDOR_PRODUCT_CODE only while /etc/config/omci-identity.on
- * exists: a stick commonly ships with the stock values already stored in
- * all five, so honouring them by default would change what the OLT sees.
- * Toggling it is INTERRUPTS INTERNET, because it takes effect when OMCI is
- * re-applied.
+ * OMCC_VER, OMCI_VENDOR_PRODUCT_CODE and ONU_HW_VERSION only while
+ * /etc/config/omci-identity.on exists: a stick commonly ships with the stock
+ * values already stored in the XML ones, so honouring them by default would
+ * change what the OLT sees. Toggling it is INTERRUPTS INTERNET, because
+ * omcid re-registers the ONU to make the OLT read them again.
  */
 function renderIdentitySwitch() {
   const host = $('#identity-switch');
@@ -317,8 +355,11 @@ function renderIdentitySwitch() {
   const text = el('div', 'switch-text');
   text.append(el('strong', null, on ? 'Reporting the stored identity' : 'Reporting the image defaults'));
   text.append(el('p', 's-help', on
-    ? 'The OLT is told the versions, model, OMCC version and product code below. An empty key keeps the default.'
-    : 'The OLT is told software version 0.0.0, the device id as model, OMCC 128 and product code 15, whatever the keys below hold.'));
+    ? 'The OLT is told the versions, model, hardware version, OMCC version and product code below. An empty key keeps the default.'
+    : 'The OLT is told software version 0.0.0, the device id as model and hardware version, OMCC 128 and product code 15, whatever the keys below hold.'));
+  text.append(el('p', 's-help', 'Some OLTs provision a service only for the identity they '
+    + 'expect: one they do not expect can leave the ONU in O5 with no service. Switching '
+    + 'interrupts internet while the ONU registers again.'));
   const b = el('button', null, on ? 'Report the defaults' : 'Report the stored identity');
   b.type = 'button';
   b.onclick = async () => {
@@ -333,7 +374,7 @@ function renderIdentitySwitch() {
       renderIdentitySwitch();
       renderAll();
       out.append(el('div', 'warn', 'Switched. It takes effect when OMCI is applied.'),
-        applyButton('internet', 'Apply now', () => applyOmci(out)));
+        applyButton('internet', 'Apply now', () => applyOmci(out, true)));
     } catch (e) {
       out.append(el('div', 'bad', String(e.message || e)));
     } finally { b.disabled = false; }
@@ -343,4 +384,4 @@ function renderIdentitySwitch() {
   host.append(text, acts);
 }
 
-export { refreshSaveBar, save, doApply, withPairs, renderIdentitySwitch, applyButton, rebootWarning };
+export { refreshSaveBar, save, doApply, withPairs, renderIdentitySwitch, applyButton, rebootWarning, followUp, reportedNow };

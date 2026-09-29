@@ -16,9 +16,15 @@ reporting success.
     POST /api/config   key=value&key2=value2
                                           per-key result, apply class, and whether
                                           that class is a traced fact or an assumption;
-                                          identity keys need `_confirm=identity`
+                                          identity keys need `_confirm=identity`.
+                                          On odi-oss also `needs` (the actions),
+                                          `stock` and `interrupts` (whether the
+                                          omci action drops the fibre service)
     POST /api/apply     what=network|omci|syslog|ntp
-                                          apply.sh on odi-oss; without it, `omci`
+                                          apply.sh on odi-oss (`omci` signals the
+                                          running omcid to reload: a VLAN change is
+                                          rebuilt in place, an identity change
+                                          re-registers the ONU); without it, `omci`
                                           restarts omci_app
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file
                                           (currently just `omci-identity.on`)
