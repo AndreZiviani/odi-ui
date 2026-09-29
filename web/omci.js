@@ -44,8 +44,37 @@ function parseOmci(text) {
     group = null;
   };
 
+  let rows = null;
+  let odi = false;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    /*
+       odi-oss omcid prints its own shape for every class it has no vendor
+       renderer for: a `<class> <Name> <instance>` header per row, then one
+       `    Attr   <hex bytes>` line per attribute, and a `N rows` count at
+       the end. Read off src/omci/respond/show.c (cli_row). Values are raw
+       bytes, so they are turned into what the vendor dump would have
+       printed: a number as 0x.., a string as its text.
+    */
+    const hdr = /^(\d+) (\S+) (\d+)(\s+\(row truncated\))?\s*$/.exec(line);
+    if (hdr) {
+      flush();
+      odi = true;
+      name = hdr[2];
+      cur = { id: '0x' + Number(hdr[3]).toString(16).padStart(4, '0'), attrs: [], groups: [], truncated: !!hdr[4] };
+      continue;
+    }
+    const cnt = /^(\d+) rows?\s*$/.exec(line);
+    if (cnt) { flush(); rows = Number(cnt[1]); continue; }
+    if (odi && cur) {
+      const a = /^ {4}(\S+)\s+([0-9a-fA-F]+)\s*$/.exec(line);
+      if (a) { (group ? group.attrs : cur.attrs).push([a[1], hexValue(a[2])]); continue; }
+      if (/^ {4}(\S+)\s*$/.test(line)) { group = { label: line.trim(), attrs: [] }; cur.groups.push(group); continue; }
+      const g = /^ {6}\s*(\d+)\s+(.*)$/.exec(line);
+      if (g && group) { group.attrs.push([g[1], g[2]]); continue; }
+    }
 
     /* The table name sits between two banner rows, once, at the top. */
     if (isBanner(line)) {
@@ -93,7 +122,23 @@ function parseOmci(text) {
     }
   }
   flush();
-  return { name, instances };
+  return { name, instances, rows };
+}
+
+/* Raw attribute bytes from the odi-oss dump, as the vendor dump would print
+   them: up to four bytes is a number; longer is a string if it reads as one
+   (NUL padding dropped), and hex otherwise. */
+function hexValue(hex) {
+  if (hex.length <= 8) return '0x' + hex;
+  const t = hex.replace(/(00)+$/, '');
+  if (!t) return '';
+  let out = '';
+  for (let i = 0; i < t.length; i += 2) {
+    const c = parseInt(t.slice(i, i + 2), 16);
+    if (c < 0x20 || c > 0x7e) return '0x' + hex;
+    out += String.fromCharCode(c);
+  }
+  return out;
 }
 
 /* Case-insensitive attribute lookup, top level only. */
@@ -144,6 +189,8 @@ function unavailable(dump) {
     return 'omcicli returned nothing: the OMCI daemon is not answering. '
          + 'Check that omcid is running (ps); starting it again is described '
          + 'in the image docs (TOOLS.md, Restarting a daemon).';
+  if (/^no managed entity called /m.test(raw))
+    return 'omcid does not know this table: ' + raw.trim();
   if (/^TableId\s*\[\d+\]\s*Name:/m.test(raw) && !dump.instances.length)
     return 'omcicli listed its tables instead of reading the one asked for, '
          + 'which is how the stock omci_app fails when it has stopped '

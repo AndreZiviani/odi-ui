@@ -13,6 +13,7 @@
 # not the page, and it took a screenshot to notice.
 #
 #   scripts/preview.sh                     -> http://127.0.0.1:18080
+#   PREVIEW_TRIAL=1 scripts/preview.sh     -> the same, mid trial boot
 #   scripts/shot.mjs                       -> screenshots + console errors
 #   docker rm -f odi-ui-preview            -> stop it
 set -e
@@ -21,7 +22,7 @@ docker rm -f odi-ui-preview >/dev/null 2>&1 || true
 # --cap-add SYSLOG so the Tools tab has a kernel log to show: klogctl is
 # refused in a default container. It reads the host VM's buffer, which is not
 # what a stick would say but is the right SHAPE -- priority prefixes and all.
-docker run -d --name odi-ui-preview -p 18080:18080 --cap-add SYSLOG \
+docker run -d --name odi-ui-preview -p 18080:18080 --cap-add SYSLOG -e PREVIEW_TRIAL \
   -v "$PWD":/src -w /src "$IMAGE" bash -c '
     mkdir -p /etc/confd /etc/config /etc/scripts
     cp schema/*.tsv web/*.html web/*.css web/*.js /etc/confd/
@@ -58,6 +59,9 @@ FLASH
     chmod +x /etc/scripts/flash
     cat > /bin/diag <<"DIAG"
 #!/bin/sh
+# /api/l2 asks with arguments, not on stdin (see src/status.c), and answers
+# from the odi-oss listing, which carries a multicast group as well.
+if [ "$1" = "l2-table" ]; then cat /src/scripts/fixtures/l2-table-odi-oss.txt; exit 0; fi
 while read -r l; do
   printf "RTK.0> %s\n" "$l"
   case "$l" in
@@ -94,13 +98,16 @@ case "$1 $2 $3" in
   frame OltG
   printf "=================================\nEntityId: 0x0000\nOltVendorId: 0x414c434c\nEquipmentId: 0x00\nVersion: 0x00\nTime: 0x00\n=================================\n" ;;
 "mib get 262")
-  frame Tcont
-  printf "=================================\nEntityId: 0x8000\nAllocId: 1026\nPolicy: 0\n=================================\n" ;;
+  # What odi-oss omcid answered on a live stick for an entity the ONU
+  # creates itself, before that was fixed in omcid: nothing at all.
+  printf "0 rows\n" ;;
 "mib get 268")
-  frame GemPortCtp
-  for e in 0x0101 0x0102 0x0103; do
-    printf "=================================\nEntityId: %s\nPortId: 2177\nTcontPtr: 0x8000\n=================================\n" "$e"
-  done ;;
+  # The odi-oss omcid shape (src/omci/respond/show.c, cli_row), which the
+  # Services card used to misread as no GEM ports at all.
+  for e in 1 2 3; do
+    printf "268 GemPortCtp %s\n    PortID                   %04x\n    TcAdapterPtr             8000\n    Direction                03\n" "$e" $((1025 + e))
+  done
+  printf "3 rows\n" ;;
 "get tables ") printf "class id: 2 OntData\nclass id: 7 SWImage\nclass id: 84 VlanTagFilterData\nclass id: 171 ExtVlanTagOperCfgData\n" ;;
 "dump conn ") printf "no connection\n" ;;
 *) printf "" ;;
@@ -131,11 +138,28 @@ PING
 case "$1 $2" in
 "getenv sw_active")  echo "sw_active=0" ;;
 "getenv "|"getenv")  printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=ODI-260910-6861b53\nsw_version1=V1.0-220923\n" ;;
+"fallback "|"fallback") printf "Fallback environment: 1\nsw_active=0\nsw_commit=0\nsw_tryactive=2\n" ;;
 "setenv"*)           ;;
 esac
 exit 0
 NV
     chmod +x /bin/nv
-    exec qemu-mips-static build/confd 18080'
+    # PREVIEW_TRIAL=1 previews a trial boot: running slot 0, committed slot 1.
+    if [ -n "$PREVIEW_TRIAL" ]; then sed -i "s/sw_commit=0/sw_commit=1/g" /bin/nv; fi
+    # The slot probe reads /proc/mtd and the first 64 bytes of each kernel
+    # partition, and a container has neither. qemu-user looks a path up under
+    # its -L prefix first, so these stand in for them: slot 0 carries an
+    # odi-oss kernel header, slot 1 the stock one (name and build time taken
+    # from the V1.0-220923 base uImage).
+    Q=/qroot
+    mkdir -p $Q/proc $Q/dev
+    printf "dev:    size   erasesize  name\nmtd4: 00148000 00010000 \"k0\"\nmtd5: 00274000 00010000 \"r0\"\nmtd6: 00148000 00010000 \"k1\"\nmtd7: 00274000 00010000 \"r1\"\n" > $Q/proc/mtd
+    uimage() { # name, build time as 8 hex digits
+      { printf "\047\005\031\126\000\000\000\000"; printf "$(printf %s "$2" | sed "s/../\\\\x&/g")"
+        head -c 20 /dev/zero; printf "%s" "$1"; head -c $((32 - ${#1})) /dev/zero; }
+    }
+    uimage "Linux Kernel Image 6.18" 68d8a6f0 > $Q/dev/mtd4
+    uimage "Linux Kernel Image" 632d9a47 > $Q/dev/mtd6
+    exec qemu-mips-static -L $Q build/confd 18080'
 sleep 2
 curl -s -o /dev/null -w "daemon: HTTP %{http_code}\n" -u admin:admin http://127.0.0.1:18080/

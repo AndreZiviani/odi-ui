@@ -37,29 +37,40 @@ page.on('response', (r) => { if (r.status() >= 400) problems.push(`HTTP ${r.stat
 await page.goto(BASE + '/', { waitUntil: 'networkidle0', timeout: 30000 });
 await new Promise((r) => setTimeout(r, 1500));
 
-const tabs = ['status', 'config', 'advanced', 'services', 'omci', 'tools', 'admin', 'firmware'];
-for (const t of tabs) {
-  await page.evaluate((tab) => {
-    for (const b of document.querySelectorAll('nav button')) if (b.dataset.tab === tab) b.click();
-  }, t);
-  /* The MIB tabs fork omcicli once per card, so they need longer than a
-     tab that only re-renders what is already loaded. */
-  await new Promise((r) => setTimeout(r, /firmware|services|omci/.test(t) ? 1800 : 500));
-  await page.screenshot({ path: `/tmp/ui-${t}.png`, fullPage: true });
+/* Every view, by the hash that names it. */
+const views = ['status', 'config/line', 'config/vlan', 'config/identity', 'config/network',
+               'config/services', 'config/stock', 'omci/services', 'omci/mib',
+               'system/firmware', 'system/access', 'system/backup', 'system/logs'];
+for (const v of views) {
+  await page.evaluate((h) => { location.hash = h; }, v);
+  /* The OMCI views fork omcicli once per card, so they need longer than a
+     view that only re-renders what is already loaded. */
+  await new Promise((r) => setTimeout(r, /firmware|omci/.test(v) ? 1800 : 500));
+  const sw = await page.evaluate(() => document.documentElement.scrollWidth);
+  if (sw > 1400) problems.push(`${v}: horizontal overflow, ${sw}px`);
+  await page.screenshot({ path: `/tmp/ui-${v.replace('/', '-')}.png`, fullPage: true });
 }
 
+/* The tablist must answer the arrow keys, not only the mouse. */
+await page.evaluate(() => { location.hash = 'status'; });
+await page.focus('#tab-status');
+await page.keyboard.press('ArrowRight');
+await new Promise((r) => setTimeout(r, 300));
+const afterArrow = await page.evaluate(() => location.hash);
+if (afterArrow !== '#config') problems.push('ArrowRight on Status went to ' + afterArrow);
+
 const counts = await page.evaluate(() => ({
-  commonRows: document.querySelectorAll('#common tr').length,
-  advancedRows: document.querySelectorAll('#sections tr').length,
+  settings: document.querySelectorAll('#p-config .setting').length,
+  stockRows: document.querySelectorAll('#sections .setting').length,
   meters: document.querySelectorAll('.meter').length,
   ladder: document.querySelectorAll('#ladder li').length,
   flowSides: document.querySelectorAll('#flow .side').length,
   saveBarVisible: !document.querySelector('#savebar').hidden,
-  saveBarDisplayed: getComputedStyle(document.querySelector('#savebar')).display,
   meCards: document.querySelectorAll('#services-cards .me-card').length,
-  meRules: document.querySelectorAll('#services-cards .me-rule').length,
+  meUnread: document.querySelectorAll('#services-cards .me-card.unread').length,
   meTableOptions: document.querySelectorAll('#me-select option').length,
   meInstances: document.querySelectorAll('#me-out .me-inst').length,
+  slots: document.querySelectorAll('#parts .slot').length,
   title: document.title,
 }));
 

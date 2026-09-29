@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+- The web UI is redesigned. Four sections with subtabs replace the eight flat
+  tabs: Status; Config (Line, VLAN, OLT identity, Network, Services, Stock
+  keys); OMCI (Services, MIB browser); System (Firmware, Access, Backup &
+  reset, Logs & tools). The hash names the view (`#config/vlan`), old tab names
+  still land, and both levels are keyboard tablists.
+- Settings rows show a label, one line of help and a Details disclosure,
+  beside the control and its cost; on a phone they stack, and the page no
+  longer scrolls sideways. The four apply classes share one badge (one to four
+  bars in the class colour) on each key, in the sticky save bar ("3 changes",
+  "2 interrupts internet", "1 live"), on the apply buttons and in the
+  confirmations. Subtabs count their unsaved changes.
+- The receive and transmit levels are drawn as instruments: the reading on the
+  class B+ window, with the margin to each edge as dimension lines, and a
+  verdict (in window, near the edge, out of window). A header pill repeats the
+  ONU state and receive level on every view.
+- New palette from the fibre world (singlemode yellow, APC green, UPC blue,
+  alarm red on cool slate), with a light theme following
+  `prefers-color-scheme`, checked for WCAG AA. Readouts use a 2.4 KB subset of
+  B612 Bold (SIL OFL), embedded in `style.css`; nothing is fetched.
+- Long explanations moved behind disclosures next to what they explain; the
+  per-tab "Why this device behaves this way" blocks and hover popovers are gone,
+  their text kept.
+- The default-password banner shows on Status and System > Access; elsewhere it
+  is a small header chip.
+
 ### Added
 - `GET /api/diag` and a "Download a diagnostics bundle" button on the Admin
   tab: confd runs the image `/etc/scripts/diag-bundle.sh` (odi-oss), which
@@ -20,6 +46,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it cannot be read), and `fallback`, the sw_* of `nv fallback`, the other copy
   of the redundant U-Boot environment (empty on the stock `nv`). What a slot
   holds can then be told from the slot itself rather than from `sw_version<p>`.
+- A trial-boot band in the header on every view while `sw_commit`, in either
+  environment copy, names another slot than the running one: where the next
+  reboot goes, what that slot holds, and Keep this image (the existing commit).
+  Not dismissible.
+- `/api/firmware` reports `slots` (each kernel partition's uImage name and build
+  time, read from the mtd device) and `fallback` (the sw_* of `nv fallback`).
+  The Firmware view names what each slot holds from that, not from U-Boot
+  `sw_version<p>`, and when the other slot holds the stock firmware it says that
+  writing replaces it and loses it as a fallback, and asks a second time.
+- Kernel log: heartbeat lines (`rcS: alive`, `odi_wdt: alive`) are hidden by
+  default and counted, with a checkbox to show them; levels render as words.
+
+### Fixed
+- Config help was printed twice where `meta.tsv` and `settings.tsv` said the
+  same thing (SYSLOG_SERVER, NTP_SERVER, the identity keys, the VLAN ID). The
+  duplicated sentences are removed from the data, and the page drops a note
+  sentence the help already said.
+- OMCI Services: the parser reads the odi-oss omcid dump shape (`268
+  GemPortCtp 1`, raw attribute bytes, `N rows`), so GEM ports are listed instead
+  of "The OLT has not created any". An empty read of an entity the ONU creates
+  itself (software image, OLT-G, T-CONT) is shown as "Could not read", never as
+  none; each card shows reading, could not read, none, or its rows.
+- Kernel log: `<12>`-style userland priority prefixes (facility and level) are
+  stripped and the level read from the low three bits; the stale "there is no
+  syslog here" note is replaced.
+- The Reboot button reads "Reboot" with its cost badge, not "Reboot now —
+  REBOOT"; the SSH key Remove button matches the other buttons.
 
 ## v1.0.8 - 2026-09-28
 

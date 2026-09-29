@@ -23,11 +23,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 class El {
   constructor(tag) {
     this.tagName = tag; this.children = []; this.attrs = {};
-    this.dataset = {}; this.style = {}; this.options = [];
+    this.dataset = {}; this.options = [];
+    this.style = { setProperty: (k, v) => { this.style[k] = v; } };
     this._text = ''; this.hidden = false; this.disabled = false;
     this.classList = {
       _s: new Set(),
       add: (c) => this.classList._s.add(c),
+      remove: (c) => this.classList._s.delete(c),
       toggle: (c, on) => (on ? this.classList._s.add(c) : this.classList._s.delete(c)),
       contains: (c) => this.classList._s.has(c),
     };
@@ -50,6 +52,10 @@ class El {
   }
   appendChild(n) { this.append(n); }
   setAttribute(k, v) { this.attrs[k] = v; }
+  getAttribute(k) { return this.attrs[k] ?? null; }
+  removeAttribute(k) { delete this.attrs[k]; }
+  addEventListener() {}
+  querySelector() { return null; }
   querySelectorAll() { return []; }
   get value() { return this._value ?? ''; }
   set value(v) { this._value = v; }
@@ -58,6 +64,7 @@ class El {
 const byId = new Map();
 const doc = {
   createElement: (t) => new El(t),
+  createTextNode: (t) => ({ nodeType: 3, textContent: String(t), children: [] }),
   querySelector: (sel) => {
     if (!byId.has(sel)) byId.set(sel, new El('div'));
     return byId.get(sel);
@@ -69,7 +76,8 @@ const doc = {
 globalThis.document = doc;
 globalThis.Event = class { constructor(t) { this.type = t; } };
 globalThis.CustomEvent = globalThis.Event;
-globalThis.location = { hostname: 'stick.example', href: '/' };
+globalThis.location = { hostname: 'stick.example', href: '/', hash: '' };
+globalThis.window = { addEventListener: () => {} };
 globalThis.setInterval = () => 0;
 globalThis.confirm = () => false;   /* the reset flow asks; nothing here clicks it */
 globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} };
@@ -149,6 +157,9 @@ globalThis.fetch = async (path) => {
   return { ok: true, status: 200, json: async () => API[key] };
 };
 
+const textOf = (n) => (n.nodeType === 3 ? n.textContent
+  : (n._text || '') + (n.children || []).map(textOf).join(''));
+
 /* --- load the graph and render ------------------------------------------ */
 let failed = 0;
 const ok = (cond, what) => {
@@ -174,10 +185,10 @@ for (const m of META) S.META[m.name] = m;
 for (const c of CONS) S.CONS[c.name] = c;
 for (const f of FEAT) (S.FEATURES[f.mask] ||= []).push(f);
 
-renderConfig('#sections', S.SCHEMA, '');
-ok(doc.querySelector('#sections').children.length > 0, 'the Advanced table renders rows');
-renderConfig('#common', S.SCHEMA.filter((r) => r.common === 'yes'), '');
-ok(doc.querySelector('#common').children.length > 0, 'the Config table renders rows');
+renderConfig('#sections', S.SCHEMA, '', true);
+ok(doc.querySelector('#sections').children.length > 0, 'the stock-keys list renders rows');
+renderConfig('#set-line', S.SCHEMA.filter((r) => r.common === 'yes'), '');
+ok(doc.querySelector('#set-line').children.length > 0, 'a Config subtab renders rows');
 
 const vlan = SCHEMA.find((r) => r.name === 'VLAN_MANU_TAG_VID');
 ok(valueProblem(vlan, '99999') !== null, 'an out-of-range VLAN is rejected');
@@ -386,6 +397,97 @@ ok(unavailable({ ok: true, raw: 'TableId [1] Name: Anig!\n', instances: [] }) !=
 ok(unavailable({ ok: true, raw: OMCI[84], instances: parseOmci(OMCI[84]).instances }) === null,
    'a real dump is not mistaken for a failure');
 
+/* --- the odi-oss omcid dump shape -------------------------------------- */
+/* SYNTHETIC, and not in scripts/fixtures/omci/: no capture of it is in hand
+   yet. Built from the printf in odi-oss src/omci/respond/show.c (cli_row)
+   and the first line a live stick answered for ME 268 ("268 GemPortCtp 1",
+   then "    PortID 0fff ..."), which the Services card used to call "The
+   OLT has not created any". It proves the parser reads that shape, and
+   nothing about which attributes a real line carries. */
+const ODI268 = [
+  '268 GemPortCtp 1',
+  '    PortID                   0fff',
+  '    TcAdapterPtr             8000',
+  '    Direction                03',
+  '268 GemPortCtp 2',
+  '    PortID                   0402',
+  '    TcAdapterPtr             8001',
+  '2 rows', '',
+].join('\n');
+const p268 = parseOmci(ODI268);
+ok(p268.name === 'GemPortCtp' && p268.instances.length === 2 && p268.rows === 2,
+   'odi-oss: every row is read, and the row count');
+ok(attr(p268.instances[0], 'PortID') === '0x0fff' && Number(attr(p268.instances[1], 'PortID')) === 1026,
+   'odi-oss: attribute bytes read as numbers');
+const pVer = parseOmci('7 SWImage 0\n    Version                  56312e302d3232303932330000000000\n    Active                   01\n1 row\n');
+ok(attr(pVer.instances[0], 'Version') === 'V1.0-220923', 'odi-oss: a string attribute reads as its text');
+
+const SAVED = { 7: OMCI[7], 262: OMCI[262], 268: OMCI[268] };
+OMCI[268] = ODI268;
+OMCI[262] = '0 rows\n';
+OMCI[7] = '0 rows\n';
+await renderServices(true);
+const odiText = JSON.stringify(doc.querySelector('#services-cards'),
+                               (k, v) => (k === 'classList' ? undefined : v));
+ok(/2 provisioned, by GEM port id: 4095, 1026/.test(odiText),
+   'the GEM port card reads the odi-oss shape instead of reporting none');
+ok(!/has not provisioned any|has not created any/.test(odiText),
+   'an ONU-created entity answering 0 rows is never reported as none');
+ok((odiText.match(/Could not read/g) || []).length >= 2,
+   'it is reported as a read that came back incomplete');
+OMCI[262] = '';
+OMCI[268] = '0 rows\n';
+await renderServices(true);
+const noneText = JSON.stringify(doc.querySelector('#services-cards'),
+                                (k, v) => (k === 'classList' ? undefined : v));
+ok(/The MIB holds none/.test(noneText), 'a good empty read of an OLT-created table says none');
+Object.assign(OMCI, SAVED);
+
+/* --- the kernel log, as odi-oss writes it -------------------------------- */
+const oss = doc.createElement('div');
+const rOss = renderLogLines('<12>rcS: alive 517.79 s, free 13912 kB\nodi_wdt: alive at 492 s\n<11>rcS: omcid died\n', oss);
+ok(oss.children.length === 1 && rOss.hidden === 2, 'heartbeat lines are hidden by default, and counted');
+ok(oss.children[0].classList.contains('bad') && !/<\d+>/.test(textOf(oss.children[0])),
+   'a <11> userland line is an error, and its facility prefix is stripped');
+const oss2 = doc.createElement('div');
+renderLogLines('<12>rcS: alive 517.79 s\n', oss2, { heartbeats: true });
+ok(oss2.children.length === 1 && oss2.children[0].classList.contains('warn'), 'and shown on request, <12> as a warning');
+
+/* --- what each firmware slot holds ---------------------------------------- */
+const { slotKind } = await import(join(root, 'web', 'firmware.js'));
+const fwStock = { slots: { 0: { kernel: 'Linux Kernel Image 6.18', built: 1759028976 },
+                           1: { kernel: 'Linux Kernel Image', built: 1663932999 } } };
+ok(slotKind(fwStock, '0').kind === 'odi', 'an odi-oss kernel header is recognised');
+ok(slotKind(fwStock, '1').kind === 'stock' && slotKind(fwStock, '1').when === '2022-09-23',
+   'the stock kernel header is recognised, with its build date');
+ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot is unknown, not assumed');
+
+/* --- the trial-boot banner ------------------------------------------------ */
+{
+  const { renderTrial } = await import(join(root, 'web', 'firmware.js'));
+  const st = await import(join(root, 'web', 'state.js'));
+  const keepFW = st.S.FW;
+  const bar = doc.querySelector('#trialbanner');
+  st.S.FW = { env: { sw_active: '0', sw_commit: '1', sw_version1: 'V1.0-220923' }, fallback: {},
+              slots: { 1: { kernel: 'Linux Kernel Image', built: 1663932999 } } };
+  renderTrial();
+  ok(bar.hidden === false, 'a trial boot raises the banner');
+  ok(/returns to partition 1, which holds the stock firmware/.test(doc.querySelector('#trial-what').textContent),
+     'and says where the next reboot goes, and what that slot holds');
+  ok(doc.querySelector('#trial-keep').hidden === false, 'with the Keep action');
+  st.S.FW = { env: { sw_active: '0', sw_commit: '0' }, fallback: { sw_commit: '1' }, slots: {} };
+  renderTrial();
+  ok(bar.hidden === false && /fallback copy still names partition 1/.test(doc.querySelector('#trial-what').textContent),
+     'a fallback copy naming another slot is a trial too');
+  st.S.FW = { env: { sw_active: '0', sw_commit: '0' }, fallback: { sw_commit: '0' } };
+  renderTrial();
+  ok(bar.hidden === true, 'and a committed image with both copies agreeing has no banner');
+  st.S.FW = { env: {} };
+  renderTrial();
+  ok(bar.hidden === true, 'an unreadable environment is not reported as a trial');
+  st.S.FW = keepFW;
+}
+
 /* --- indented continuation lines ----------------------------------------- */
 const tod = parseOmci(OMCI[131]).instances[0];
 ok(!tod.groups.length, 'ME 131 ToDInfo sub-lines do not become sub-tables');
@@ -407,37 +509,45 @@ const state = await import(join(root, 'web', 'state.js'));
 const { withPairs } = await import(join(root, 'web', 'save.js'));
 const { EDITS } = state;
 const walk = (n, f) => { f(n); for (const c of n.children || []) walk(c, f); };
-const rowsOf = (host) => {
+/* The editable subtabs, each its own host now that Config is grouped. */
+const GROUP_HOSTS = ['line', 'vlan', 'identity', 'network', 'services', 'other'].map((g) => '#set-' + g);
+const hostsOf = (sel) => (sel === '#common' ? GROUP_HOSTS : [sel]).map((h) => doc.querySelector(h));
+const rowsOf = (sel) => {
   const out = [];
-  walk(host, (n) => { if (n.tagName === 'tr' && n.children[0] && n.children[0].tagName === 'td') out.push(n); });
+  for (const host of hostsOf(sel)) walk(host, (n) => { if (n.classList && n.classList.contains('setting')) out.push(n); });
   return out;
 };
-const inputsOf = (host) => {
+const inputsOf = (sel) => {
   let n = 0;
-  walk(host, (x) => { if (x.tagName === 'input' || x.tagName === 'select') n++; });
+  for (const host of hostsOf(sel)) walk(host, (x) => { if (x.tagName === 'input' || x.tagName === 'select') n++; });
   return n;
 };
-const tagsOf = (host) => {
+const tagsOf = (sel) => {
   const out = [];
-  walk(host, (x) => { if (x.tagName === 'span' && x.classList.contains('tag')) out.push(x.textContent); });
+  for (const host of hostsOf(sel)) {
+    walk(host, (x) => {
+      if (x.tagName === 'span' && x.classList && (x.classList.contains('tag') || x.classList.contains('cost'))) out.push(textOf(x));
+    });
+  }
   return out;
 };
+const allText = (sel) => hostsOf(sel).map(textOf).join('\n');
 
 for (const r of SETT) S.SETTINGS[r.name] = r;
 S.FW = API['/api/firmware'];
 ok(state.imageAware(), 'the settings table makes the page image-aware');
 renderAll();
-const common = doc.querySelector('#common');
+const common = '#common';
 ok(rowsOf(common).length === SETT.length,
    `Config shows exactly the ${SETT.length} keys this image reads`);
 const classTags = tagsOf(common).filter((t) => Object.values(state.CLASS_LABEL).includes(t));
 ok(classTags.length === SETT.length, 'and every one of them carries its apply class');
-ok(tagsOf(common).includes('INTERRUPTS INTERNET') && tagsOf(common).includes('LIVE')
-   && tagsOf(common).includes('REBOOT'), 'the classes are the ones SETTINGS.md names');
+ok(tagsOf(common).includes('Interrupts internet') && tagsOf(common).includes('Live')
+   && tagsOf(common).includes('Reboot'), 'the classes are the ones SETTINGS.md names');
 const pairs = SETT.filter((r) => r.pair).length;
 ok(inputsOf(common) === SETT.length - pairs,
    'every key is editable except the ones written with another (LOID_OLD)');
-const stock = doc.querySelector('#sections');
+const stock = '#sections';
 ok(rowsOf(stock).length === SCHEMA.length - SETT.length,
    'the stock keys are all on their own tab');
 ok(inputsOf(stock) === 0, 'and none of them can be edited there');
@@ -445,7 +555,22 @@ ok(doc.querySelector('#device-login').hidden === true,
    'the stock device-login section is not offered');
 
 /* The two SERVICE RESTART keys are editable and validate as host[:port]. */
-ok(tagsOf(common).includes('SERVICE RESTART'), 'SYSLOG_SERVER / NTP_SERVER carry SERVICE RESTART');
+ok(tagsOf(common).includes('Service restart'), 'SYSLOG_SERVER / NTP_SERVER carry SERVICE RESTART');
+
+/* Help text: one line shown, the rest behind Details, and nothing said twice.
+   meta.tsv and settings.tsv were written apart, and the page used to print
+   the syslog and NTP explanations twice over, and "re-ranges" on every VLAN
+   row twice. */
+const { splitHelp } = await import(join(root, 'web', 'config.js'));
+for (const r of SETT) {
+  const m = META.find((x) => x.name === r.name) || {};
+  const h = splitHelp(m.help, r.note);
+  const said = [h.first, h.rest, h.note].join(' ').split(/(?<=[.!?])\s+/).map((x) => x.toLowerCase().trim()).filter(Boolean);
+  ok(new Set(said).size === said.length, `${r.name}: no sentence is shown twice`);
+}
+ok(splitHelp('One. Two.', 'Two. Three.').note === 'Three.', 'a note sentence already in the help is dropped');
+ok(!/[.!?].+[.!?]/.test(splitHelp(META.find((x) => x.name === 'NTP_SERVER').help, '').first),
+   'the visible help is one sentence');
 const hpRow = { name: 'NTP_SERVER', type: 'hostport' };
 const hp = (v) => valueProblem(hpRow, v);
 ok(!hp('pool.ntp.org') && !hp('10.0.0.1') && !hp('10.0.0.1:514') && !hp('a-b.c:65535'),
@@ -463,7 +588,7 @@ EDITS.clear();
 /* Without the table, the page is what it was: every key offered. */
 for (const k of Object.keys(S.SETTINGS)) delete S.SETTINGS[k];
 renderAll();
-ok(inputsOf(doc.querySelector('#sections')) > 100,
+ok(inputsOf('#sections') > 100,
    'with no settings table every key is editable, as before');
 
 await import(join(root, 'web', 'app.js'));

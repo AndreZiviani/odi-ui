@@ -6,33 +6,120 @@
  * any of this.
  */
 
-import { $, el, fail, get, wireLore } from './dom.js';
+import { $, el, fail, get } from './dom.js';
 import { S, EDITS } from './state.js';
 import { renderStatus } from './status.js';
 import { renderAll } from './config.js';
 import { save, refreshSaveBar, renderIdentitySwitch } from './save.js';
-import { renderFirmware, wireFirmware } from './firmware.js';
+import { renderFirmware, wireFirmware, renderTrial } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
 import { wireRestore } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
 
-const TABS = ['status', 'config', 'advanced', 'services', 'omci', 'tools', 'admin', 'firmware'];
-for (const b of document.querySelectorAll('nav button')) {
-  b.onclick = () => {
-    for (const o of document.querySelectorAll('nav button')) o.classList.toggle('on', o === b);
-    for (const t of TABS) $('#' + t).hidden = b.dataset.tab !== t;
-    if (b.dataset.tab === 'firmware') renderFirmware();
-    /* The MIB tabs read the device, so they are loaded on first sight rather
-       than at boot: six forks of ~35 ms each is not something to spend before
-       the status page has painted. */
-    if (b.dataset.tab === 'services') renderServices();
-    if (b.dataset.tab === 'omci') renderMeBrowser();
-    if (b.dataset.tab === 'tools') renderTools();
-    if (b.dataset.tab === 'admin') renderSshKeys();
-  };
+/*
+ * Four sections, each with subtabs, and the location hash naming the pair:
+ * #config/vlan, #system/logs. A bare #config lands on the first subtab.
+ *
+ * Both levels are ARIA tablists: arrow keys move between tabs and activate
+ * them, Home and End jump to the ends, and only the selected tab is in the
+ * tab order, so Tab goes from the tab row straight into its panel.
+ */
+const TABS = ['status', 'config', 'omci', 'system'];
+/* Old tab names, so a bookmark from before the regrouping still lands. */
+const OLD = {
+  advanced: 'config/stock', services: 'omci/services', mib: 'omci/mib',
+  tools: 'system/logs', admin: 'system/access', firmware: 'system/firmware',
+};
+
+/* What a view needs the first time it is shown. The OMCI and firmware views
+   read the device, so they load on sight rather than at boot: seven forks of
+   ~35 ms each is not something to spend before the status page has painted. */
+const ON_SHOW = {
+  'omci/services': () => renderServices(),
+  'omci/mib': () => renderMeBrowser(),
+  'system/firmware': () => renderFirmware(),
+  'system/access': () => renderSshKeys(),
+  'system/logs': () => renderTools(),
+};
+
+function subsOf(tab) {
+  return [...document.querySelectorAll(`#p-${tab} .subtabs [role=tab]`)].filter((b) => !b.hidden);
 }
+
+function select(list, on) {
+  for (const b of list) {
+    const me = b === on;
+    b.setAttribute('aria-selected', me ? 'true' : 'false');
+    b.tabIndex = me ? 0 : -1;
+    const panel = document.getElementById(b.getAttribute('aria-controls'));
+    if (panel) panel.hidden = !me;
+  }
+}
+
+function route() {
+  let h = location.hash.replace(/^#/, '');
+  if (OLD[h]) h = OLD[h];
+  let [tab, sub] = h.split('/');
+  if (!TABS.includes(tab)) tab = 'status';
+  const top = [...document.querySelectorAll('.tabs [role=tab]')];
+  select(top, top.find((b) => b.dataset.tab === tab));
+
+  const subs = subsOf(tab);
+  let view = tab;
+  if (subs.length) {
+    const on = subs.find((b) => b.dataset.sub === sub) || subs[0];
+    select(subs, on);
+    view = tab + '/' + on.dataset.sub;
+  }
+  /* The default-password banner is loud on the two views where it is about
+     what you are looking at, and a small chip in the header everywhere else. */
+  VIEW = view;
+  showAuth();
+  if (ON_SHOW[view]) ON_SHOW[view]();
+}
+
+let VIEW = 'status';
+function showAuth() {
+  const loud = VIEW === 'status' || VIEW === 'system/access';
+  const on = !!(S.FW && S.FW.defaultauth);
+  $('#defaultauth').hidden = !on || !loud;
+  $('#authchip').hidden = !on || loud;
+}
+
+function go(view) {
+  if (location.hash === '#' + view) route(); else location.hash = view;
+}
+
+/* Arrow keys, Home and End, on either level. */
+function wireTablist(list, key) {
+  list.addEventListener('keydown', (e) => {
+    const tabs = [...list.querySelectorAll('[role=tab]')].filter((b) => !b.hidden);
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    const j = e.key === 'ArrowRight' ? (i + 1) % tabs.length
+      : e.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+    if (j < 0) return;
+    e.preventDefault();
+    tabs[j].focus();
+    tabs[j].click();
+  });
+  list.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[role=tab]');
+    if (b) key(b);
+  });
+}
+
+wireTablist($('.tabs'), (b) => go(b.dataset.tab));
+for (const list of document.querySelectorAll('.subtabs')) {
+  const tab = list.closest('.panel').id.slice(2);
+  wireTablist(list, (b) => go(tab + '/' + b.dataset.sub));
+}
+window.addEventListener('hashchange', route);
+route();
+
 $('#filter').oninput = () => renderAll();
 $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
@@ -41,36 +128,27 @@ $('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;
 wireRestore();
 wireFirmware();
-/* Every tab's markup is in the document from the start, hidden or not, so one
-   pass at boot wires the footnotes on all seven. */
-wireLore();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. Both firmwares answer it: the stock diag, and
    odi-oss diag from its own L2 table readback, under the same command. */
-if (!$('#l2-load').disabled) $('#l2-load').onclick = renderL2;
-$('#gopassword').onclick = () => { showTab('admin'); $('#pw-pass').focus(); };
+$('#l2-load').onclick = renderL2;
+$('#gopassword').onclick = () => { go('system/access'); $('#pw-pass').focus(); };
 $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
 
 /*
- * Say so, loudly and everywhere, while the built-in credential is in force.
- * The fallback exists so a freshly flashed stick is reachable at all; leaving
- * it in place is a different decision, and one the operator has to be able to
- * see they are making.
+ * Say so while the built-in credential is in force. The fallback exists so a
+ * freshly flashed stick is reachable at all; leaving it in place is a
+ * different decision, and one the operator has to be able to see they are
+ * making.
  */
 async function checkAuth() {
   try {
     const fw = await get('/api/firmware');
     S.FW = fw;
-    $('#defaultauth').hidden = !fw.defaultauth;
   } catch (e) { /* the banner is advisory; a failed read must not blank the page */ }
+  showAuth();
+  renderTrial();
 }
-
-const showTab = (name) => {
-  for (const b of document.querySelectorAll('nav button')) {
-    b.classList.toggle('on', b.dataset.tab === name);
-    if (b.dataset.tab === name) b.click();
-  }
-};
 
 /*
  * Change the credential this page authenticates with, creating the file if it
@@ -114,20 +192,21 @@ async function renderSshKeys() {
   box.textContent = '';
   try {
     const j = await get('/api/sshkeys');
-    if (!j.keys.length) { box.append(el('p', 'field-note', 'No keys yet: SSH accepts the root password only.')); return; }
-    const t = el('table', 'kv');
+    if (!j.keys.length) { box.append(el('p', 'hint', 'No keys yet: SSH accepts the root password only.')); return; }
+    const t = el('ul', 'keylist');
     for (const k of j.keys) {
-      const tr = el('tr');
+      const li = el('li');
       const parts = k.line.split(/\s+/);
       const blob = parts[1] || '';
-      tr.append(el('td', null, parts[0] || ''));
-      tr.append(el('td', 'mono', blob.length > 24 ? blob.slice(0, 12) + '\u2026' + blob.slice(-8) : blob));
-      tr.append(el('td', null, parts.slice(2).join(' ')));
-      const del = el('button', null, 'Remove');
+      li.append(el('span', 'k-type', parts[0] || ''));
+      li.append(el('span', 'k-blob mono', blob.length > 24 ? blob.slice(0, 12) + '\u2026' + blob.slice(-8) : blob));
+      li.append(el('span', 'k-comment', parts.slice(2).join(' ')));
+      const del = el('button', 'danger-quiet', 'Remove');
       del.type = 'button';
+      del.setAttribute('aria-label', 'Remove key ' + (parts.slice(2).join(' ') || blob.slice(-8)));
       del.onclick = () => delSshKey(k.i);
-      const td = el('td'); td.append(del); tr.append(td);
-      t.append(tr);
+      li.append(del);
+      t.append(li);
     }
     box.append(t);
   } catch (e) { box.append(el('div', 'bad', String(e.message || e))); }

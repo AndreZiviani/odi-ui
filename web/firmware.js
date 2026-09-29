@@ -6,7 +6,7 @@
  */
 
 import { $, el, fail, get, bytes } from './dom.js';
-import { CLASS_LABEL } from './state.js';
+import { S, CLASS_LABEL, CLASS_RANK } from './state.js';
 
 /* How often the page asks how a background write is going. */
 const WRITE_POLL_MS = 3000;
@@ -68,13 +68,47 @@ function uploadImage() {
   xhr.send(f);
 }
 
-async function writeImage(part) {
+/*
+ * What a slot holds, judged by the kernel header the flash wrote into it
+ * (/api/firmware `slots`), never by U-Boot sw_version<p>, which is only what
+ * the last updater chose to record and has named an odi-oss build for a slot
+ * holding the stock firmware. The stock V1.0-220923 base names its kernel
+ * "Linux Kernel Image"; odi-oss adds the kernel line, "... 6.18".
+ */
+function slotKind(fw, p) {
+  const k = ((fw.slots || {})[p] || {}).kernel;
+  if (!k) return { kind: 'unknown' };
+  const built = ((fw.slots || {})[p] || {}).built;
+  const when = built ? new Date(built * 1000).toISOString().slice(0, 10) : '';
+  if (/\b([6-9]|\d{2})\.\d+\b/.test(k)) return { kind: 'odi', kernel: k, when };
+  return { kind: k.trim() === 'Linux Kernel Image' ? 'stock' : 'other', kernel: k, when };
+}
+
+function describeSlot(fw, p) {
+  const k = slotKind(fw, p);
+  const rec = (fw.env || {})['sw_version' + p];
+  const bits = [];
+  if (k.kernel) bits.push(`kernel \u201c${k.kernel}\u201d${k.when ? ', built ' + k.when : ''}`);
+  if (rec) bits.push('U-Boot records ' + rec);
+  return bits.join('; ');
+}
+
+async function writeImage(part, fw) {
   const out = $('#fwout');
+  const k = slotKind(fw || {}, part);
 
   if (!confirm(`Write the uploaded image to partition ${part}?\n\n`
       + 'This takes about eighty seconds and the stick must not lose power '
       + 'meanwhile. The partition you are running now is not touched, and '
       + 'nothing boots the new one until you try it.')) return;
+  /* A second question, only when there is something to lose: the other slot
+     is where the stock firmware is kept as the fallback on most sticks, and
+     writing it is a choice that cannot be taken back from this page. */
+  if (k.kind !== 'odi' && !confirm(`Partition ${part} holds `
+      + (k.kind === 'stock' ? 'the stock firmware' : k.kind === 'other' ? 'an image that is not odi-oss'
+        : 'an image this page cannot identify')
+      + ` (${describeSlot(fw || {}, part) || 'no details'}).\n\n`
+      + 'Writing replaces it, and you lose it as a fallback. Overwrite it?')) return;
 
   out.textContent = '';
   out.append(el('div', 'warn', `Writing partition ${part}.`));
@@ -140,87 +174,93 @@ async function followLoop(part) {
 
 async function renderFirmware() {
   const host = $('#parts');
-  host.textContent = '';
   let fw;
   try {
     fw = await get('/api/firmware');
   } catch (e) { fail(e); return; }
+  S.FW = fw;
+  renderTrial();
+  host.textContent = '';
 
   const env = fw.env || {};
   const committed = env.sw_commit;
   const booted = env.sw_active;
   const pending = env.sw_tryactive;
-
-  const t = el('table');
-  const head = el('tr');
-  for (const h of ['Partition', 'Version', 'State']) head.append(el('th', null, h));
-  t.append(head);
-
   const writing = fw.write && fw.write.state === 'running';
+
+  const grid = el('div', 'slots');
   for (const p of ['0', '1']) {
-    const tr = el('tr');
-    tr.append(el('td', null, 'Partition ' + p));
+    const k = slotKind(fw, p);
+    const card = el('section', 'slot' + (p === booted ? ' running' : ''));
+    const head = el('div', 'slot-head');
+    head.append(el('h2', null, 'Partition ' + p));
+    const tags = el('span', 'slot-tags');
+    if (p === booted) tags.append(el('span', 'tag live', 'Running'));
+    if (p === committed) tags.append(el('span', 'tag', 'Kept'));
+    if (p === pending && pending !== '2') tags.append(el('span', 'tag warn', 'Trial pending'));
+    head.append(tags);
+    card.append(head);
+
     /*
        The running partition shows what it runs: the image name from the build
-       manifest, or /etc/version. sw_version<p> in the U-Boot environment is
-       only what the updater last recorded there, and this image's fwu.sh
-       records nothing unless asked -- so on a trial of ours it still names the
-       stock firmware the slot held before, which is what this cell used to
-       show as the running version.
+       manifest, or /etc/version. sw_version<p> is only what the updater last
+       recorded, and odi-oss fwu.sh records nothing unless asked.
     */
-    const vcell = el('td');
-    const recorded = env['sw_version' + p];
+    const dl = el('dl', 'slot-kv');
+    const kindText = { odi: 'odi-oss', stock: 'Stock firmware', other: 'Not odi-oss', unknown: 'Unknown' }[k.kind];
     if (p === booted) {
-      const running = (fw.build || {}).image || fw.running || recorded || 'unknown';
-      vcell.append(el('div', null, running));
-      if (recorded && recorded !== running) {
-        vcell.append(el('div', 'aside', 'U-Boot records ' + recorded));
-      }
+      const running = (fw.build || {}).image || fw.running || env['sw_version' + p] || 'unknown';
+      dl.append(el('dt', null, 'Image'), el('dd', 'strong', running));
     } else {
-      vcell.append(el('div', null, recorded || 'empty'));
-      vcell.append(el('div', 'aside', 'as U-Boot records it'));
+      dl.append(el('dt', null, 'Holds'), el('dd', 'strong', kindText));
     }
-    tr.append(vcell);
+    if (k.kernel) dl.append(el('dt', null, 'Kernel'), el('dd', null, k.kernel + (k.when ? ', built ' + k.when : '')));
+    const rec = env['sw_version' + p];
+    if (rec) dl.append(el('dt', null, 'U-Boot records'), el('dd', 'mono', rec));
+    card.append(dl);
 
-    const st = el('td');
-    if (p === committed) st.append(el('span', 'tag omci', 'kept'));
-    if (p === booted) st.append(el('span', 'tag', 'booted'));
-    if (p === pending && pending !== '2') st.append(el('span', 'tag identity', 'trial pending'));
-
-    const acts = el('div');
+    const acts = el('div', 'slot-acts');
+    if (p !== booted && (k.kind === 'stock' || k.kind === 'other')) {
+      card.append(el('p', 'callout warn', `Partition ${p} holds `
+        + (k.kind === 'stock' ? 'the stock firmware' : 'an image that is not odi-oss')
+        + '. Writing replaces it, and you lose it as a fallback.'));
+    }
     if (p !== committed) {
-      const b = el('button', 'fwbtn', 'Try partition ' + p);
+      const b = el('button', null, 'Try partition ' + p);
+      b.type = 'button';
       b.onclick = () => fwAction('try', p,
         `Partition ${p} will boot once, at the next reboot. If it fails, the stick `
         + `returns to partition ${committed} on its own.`);
+      acts.append(b);
+    }
+    if (p !== committed && p === booted) {
+      const b = el('button', null, 'Keep partition ' + p);
+      b.type = 'button';
+      b.onclick = () => fwAction('commit', p,
+        `Partition ${p} becomes the one the stick boots from now on.`);
       acts.append(b);
     }
     /*
        Offered only for the partition this stick is NOT running. The daemon
        refuses the running one as well -- fwu.sh would too -- but finding that
        out after the erase has started is not where anyone should learn it.
+       `booted !== undefined` matters: with sw_active unreadable this once
+       offered to write BOTH partitions, including the running one.
     */
-    /* `booted !== undefined` matters: with sw_active unreadable this offered to
-       write BOTH partitions, including the running one. The daemon refuses
-       that by reading sw_active itself, so nothing could have come of it -- but
-       an interface that offers a destructive action it cannot justify is one
-       nobody should trust the rest of. */
-    if (UPLOADED && booted !== undefined && p !== booted && !writing) {
-      const b = el('button', 'fwbtn danger', 'Write the uploaded image to ' + p);
-      b.onclick = () => writeImage(p);
-      acts.append(b);
+    if (booted !== undefined && p !== booted && !writing) {
+      if (UPLOADED) {
+        const b = el('button', 'danger', 'Write the uploaded image here');
+        b.type = 'button';
+        b.onclick = () => writeImage(p, fw);
+        acts.append(b);
+      } else {
+        acts.append(el('span', 'hint', 'Upload an image below to write it here.'));
+      }
     }
-    if (p !== committed && p === booted) {
-      const b = el('button', 'fwbtn', 'Keep partition ' + p);
-      b.onclick = () => fwAction('commit', p,
-        `Partition ${p} becomes the one the stick boots from now on.`);
-      acts.append(b);
-    }
-    st.append(acts);
-    tr.append(st);
-    t.append(tr);
+    if (acts.children.length) card.append(acts);
+    grid.append(card);
   }
-  host.append(t);
+  host.append(grid);
 
   /* Spell the commands out with this stick's own address and the partition it
      is not running, so they can be pasted without being adapted. */
@@ -237,56 +277,47 @@ async function renderFirmware() {
     `ssh root@${location.hostname} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`,
   ].join('\n');
 
-  const foot = el('p', 'hint');
-  /* Which confd is answering, not which one the image shipped. A binary at
-     /etc/config/confd/confd overrides the image's copy and survives reflashing,
-     so the two drift apart silently; reporting the build makes that a question
-     you can ask rather than one you have to go and look. */
-  foot.textContent = 'Running ' + (fw.running || 'unknown') +
-    ' from partition ' + (booted === undefined ? '?' : booted) +
-    '. Config UI build ' + (fw.confd || 'unknown') + '.';
-  host.append(foot);
-
-  /* What this image was built from, if it says. A stick running an override
-     has no manifest, and saying so is more useful than an empty panel: it
-     means the daemon answering is not the one the image ships. */
-  const b = fw.build || {};
-  const keys = Object.keys(b);
-  if (keys.length) {
-    host.append(el('h2', null, 'This image'));
-    const t = el('table');
-    for (const k of ['image', 'base', 'confd', 'exporter', 'built']) {
-      if (!(k in b)) continue;
-      const tr = el('tr');
-      tr.append(el('td', null, k), el('td', 'mono', b[k]));
-      t.append(tr);
-    }
-    host.append(t);
-    if (b.confd && fw.confd && b.confd !== fw.confd) {
-      host.append(el('p', 'warn',
-        `The config UI answering is build ${fw.confd}, but this image ships ` +
-        `${b.confd} — so an override in /etc/config is being used.`));
-    }
-  } else {
-    host.append(el('p', 'hint',
-      'No /etc/odi-build in this image, so it predates build manifests.'));
-  }
-
-  if (fw.mem) $('#memtotal').textContent = fw.mem;
-
-  if (writing) {
-    host.append(el('p', 'warn', `Partition ${fw.write.slot} is being written. `
-      + 'Do not reboot or power off until it finishes.'));
-    followWrite(fw.write.slot);
-  }
-
+  /* What this image was built from, and which confd is answering: a binary
+     at /etc/config/confd/confd overrides the image copy and survives
+     reflashing, so the two drift apart silently. */
+  const bl = el('section', 'block build');
+  const bh = el('div', 'block-head');
+  bh.append(el('h2', null, 'This image'));
   const trial = booted !== undefined && committed !== undefined && booted !== committed;
-  const rb = el('button', 'fwbtn danger', 'Reboot now — ' + CLASS_LABEL.reboot);
+  /* The class badge is the button: its label IS the cost. */
+  const rb = el('button', 'danger cost-reboot');
+  rb.type = 'button';
+  rb.append(el('i', 'bars'), document.createTextNode('Reboot'));
   rb.onclick = () => fwAction('reboot', '',
     'The stick reboots and the fibre service drops for about two minutes.'
     + (trial ? ` This is a trial of partition ${booted}: the reboot comes back on `
       + `partition ${committed}, the committed one, not on this image.` : ''));
-  host.append(rb);
+  bh.append(rb);
+  bl.append(bh);
+  const b = fw.build || {};
+  const kv = el('dl', 'kv');
+  for (const key of ['image', 'base', 'confd', 'exporter', 'built']) {
+    if (key in b) kv.append(el('dt', null, key === 'confd' ? 'Config UI' : key[0].toUpperCase() + key.slice(1)),
+      el('dd', 'mono', b[key]));
+  }
+  kv.append(el('dt', null, 'Answering'), el('dd', 'mono', 'confd ' + (fw.confd || 'unknown')));
+  bl.append(kv);
+  if (!Object.keys(b).length) {
+    bl.append(el('p', 'hint', 'No /etc/odi-build in this image, so it predates build manifests.'));
+  } else if (b.confd && fw.confd && b.confd !== fw.confd) {
+    bl.append(el('p', 'callout warn',
+      `The config UI answering is build ${fw.confd}, but this image ships ` +
+      `${b.confd}: an override in /etc/config is being used.`));
+  }
+  host.append(bl);
+
+  if (fw.mem) $('#memtotal').textContent = fw.mem;
+
+  if (writing) {
+    host.append(el('p', 'callout warn', `Partition ${fw.write.slot} is being written. `
+      + 'Do not reboot or power off until it finishes.'));
+    followWrite(fw.write.slot);
+  }
 }
 
 /* Set while a write is being followed, so a re-render does not start a
@@ -296,7 +327,7 @@ let FOLLOWING = false;
 async function fwAction(action, partition, warning) {
   const out = $('#fwout');
   out.textContent = '';
-  if (!confirm((action === 'reboot' ? CLASS_LABEL.reboot + '\n\n' : '') + warning + '\n\nContinue?')) return;
+  if (!confirm((action === 'reboot' ? '\u25AE'.repeat(CLASS_RANK.reboot) + ' ' + CLASS_LABEL.reboot + '\n\n' : '') + warning + '\n\nContinue?')) return;
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -325,4 +356,65 @@ function wireFirmware() {
   $('#fw-upload').onclick = uploadImage;
 }
 
-export { renderFirmware, wireFirmware };
+/*
+ * The trial-boot banner.
+ *
+ * A trial is any state in which U-Boot would boot a partition other than the
+ * running one at the next reboot: sw_commit, in either copy of the redundant
+ * environment, naming another slot. Both copies count, because a plain
+ * `nv setenv` writes only the winning one and U-Boot falls back to the other
+ * if the winner is ever left invalid. It stays up until the condition is
+ * gone; there is nothing to dismiss.
+ */
+function renderTrial() {
+  const fw = S.FW || {};
+  const env = fw.env || {};
+  const fb = fw.fallback || {};
+  const run = env.sw_active;
+  const bar = $('#trialbanner');
+  const main = env.sw_commit;
+  const alt = fb.sw_commit;
+  const trial = run !== undefined && [main, alt].some((c) => c !== undefined && c !== run);
+  bar.hidden = !trial;
+  if (!trial) return;
+
+  const back = main !== undefined && main !== run ? main : alt;
+  const k = slotKind(fw, back);
+  const holds = { odi: 'an odi-oss image', stock: 'the stock firmware', other: 'an image that is not odi-oss',
+                  unknown: 'an image this page cannot identify' }[k.kind];
+  const rec = env['sw_version' + back];
+  $('#trial-what').textContent = main !== run
+    ? `This image, on partition ${run}, is not kept: the next reboot returns to partition ${back}, `
+      + `which holds ${holds}${rec ? ' (U-Boot records ' + rec + ')' : ''}.`
+    : `Partition ${run} is kept in the active U-Boot copy, but the fallback copy still names `
+      + `partition ${back} (${holds}). If the active copy is ever lost, the stick boots that.`;
+
+  const keep = $('#trial-keep');
+  keep.hidden = main === run;
+  keep.onclick = async () => {
+    const out = $('#trial-out');
+    out.textContent = '';
+    if (!confirm(`Keep partition ${run}?\n\nIt becomes the one the stick boots from now on, `
+        + `instead of partition ${back}.`)) return;
+    keep.disabled = true;
+    try {
+      const r = await fetch('/api/firmware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'action=commit&partition=' + encodeURIComponent(run),
+      });
+      const res = await r.json();
+      if (!res.ok) { out.append(el('div', 'bad', res.error || 'not kept')); return; }
+      S.FW = await get('/api/firmware');
+      renderTrial();
+      if (!$('#trialbanner').hidden) {
+        out.append(el('div', null, 'Kept in the active copy. confd writes only that one; '
+          + `over SSH, nv setenv -c <copy> sw_commit ${run} makes the fallback agree.`));
+      }
+    } catch (e) {
+      out.append(el('div', 'bad', String(e.message || e)));
+    } finally { keep.disabled = false; }
+  };
+}
+
+export { renderFirmware, wireFirmware, slotKind, renderTrial };

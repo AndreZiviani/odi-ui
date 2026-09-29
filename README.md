@@ -11,15 +11,17 @@ project for this stick.
 
 ## What it does
 
-- **Status** — optics, ONU state, alarms, switch-port counters, learned MAC
+- **Status** — the receive and transmit levels on the class B+ window, with
+  the margin to each edge; ONU state, alarms, forwarding rates, learned MAC
   addresses.
-- **Config / Stock keys** — every configuration key, schema-driven forms,
-  labelled with what applying a change costs.
-- **Services / MIB** — what the OLT actually provisioned, and the raw OMCI
-  MIB underneath it.
-- **Tools** — kernel log, ping.
-- **Firmware** — both partitions, image upload and write, one-shot trial boot.
-- **Admin** — UI credential, SSH keys, backup, restore, reset.
+- **Config** — the keys the image reads, on subtabs by what they are for
+  (Line, VLAN, OLT identity, Network, Services), each labelled with what
+  applying a change costs; the stock-only keys, read-only.
+- **OMCI** — what the OLT actually provisioned, in sentences, and the raw MIB
+  underneath it.
+- **System** — both firmware partitions and what each one holds, image upload
+  and write, one-shot trial boot; credentials and SSH keys; backup, restore,
+  reset; kernel log and ping.
 
 On the **stock/OEM firmware**, `confd` runs alongside the vendor's `boa`, on
 its own port — it does not replace it. On the **odi-oss image**, `boa` is
@@ -36,11 +38,11 @@ From the qemu preview (`scripts/preview.sh`) with recorded fixtures; identifiers
 
 | Status | Config |
 |---|---|
-| ![Status page: optics, registration, forwarding counters, MAC table](docs/screenshots/ui-mactable.png) | ![Config page: every setting the image reads, with its apply cost](docs/screenshots/ui-config.png) |
-| **MIB browser** | **Firmware** |
-| ![MIB page: managed-entity picker and attribute table](docs/screenshots/ui-mib.png) | ![Firmware page: version and upload to the inactive slot](docs/screenshots/ui-firmware.png) |
-| **SSH keys** | **Phone width** |
-| ![Admin page: SSH key management](docs/screenshots/ui-sshkeys.png) | ![Status page at phone width](docs/screenshots/ui-overview-mobile.png) |
+| ![Status: receive and transmit levels on the class B+ window, registration, transceiver, forwarding](docs/screenshots/ui-status.png) | ![Config, VLAN subtab: each setting with its apply cost, and the save bar](docs/screenshots/ui-config.png) |
+| **OMCI services** | **Firmware** |
+| ![OMCI services: what the OLT provisioned, one card per managed entity](docs/screenshots/ui-services.png) | ![Firmware: both partitions, what each holds, and the stock-firmware warning](docs/screenshots/ui-firmware.png) |
+| **Light theme** | **Phone width** |
+| ![Status page in the light theme](docs/screenshots/ui-status-light.png) | ![Config at phone width, stacked rows](docs/screenshots/ui-config-mobile.png) |
 
 ## Getting it
 

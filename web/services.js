@@ -27,14 +27,23 @@ import { fetchMe, attr, unavailable } from './omci.js';
  * mislabelled card.
  */
 const CARDS = [
-  { me: '7',   title: 'Software version the OLT sees',  render: renderSwImage },
-  { me: '131', title: 'The OLT at the other end',       render: renderOlt },
+  { me: '7',   title: 'Software version the OLT sees',  render: renderSwImage, onu: true },
+  { me: '131', title: 'The OLT at the other end',       render: renderOlt, onu: true },
   { me: '84',  title: 'VLANs this line allows',         render: renderVlanFilter },
   { me: '171', title: 'VLAN translation',               render: renderExtVlan },
   { me: '47',  title: 'How this line is bridged',       render: renderBridge },
-  { me: '262', title: 'Upstream containers (T-CONT)',   render: renderIds },
-  { me: '268', title: 'GEM ports',                      render: renderIds },
+  { me: '262', title: 'Upstream containers (T-CONT)',   render: renderIds, onu: true,
+    key: 'AllocID', what: 'allocation id' },
+  { me: '268', title: 'GEM ports',                      render: renderIds, key: 'PortID', what: 'GEM port id' },
 ];
+/*
+ * `onu: true` marks the entities the ONU creates for itself at MIB reset
+ * (G.988): a software image, the OLT-G, the T-CONTs. An empty read of one of
+ * those is never a fact about the line -- they always exist -- so it is shown
+ * as a read that came back incomplete, not as "none". odi-oss omcid has
+ * answered `0 rows` for them, and the page used to relay that as the OLT
+ * having created nothing.
+ */
 
 /*
  * Vendor codes are four ASCII characters and the OLT reports them as a 32-bit
@@ -99,18 +108,17 @@ function renderSwImage(box, dump) {
     /* `Active` and `Committed`, not `IsActive`/`IsCommitted` -- read off a
        stick, after the preview stub had guessed the other spelling and this
        card silently showed no tags at all. */
-    const act = attr(inst, 'Active');
-    const com = attr(inst, 'Committed');
+    const act = Number(attr(inst, 'Active'));
+    const com = Number(attr(inst, 'Committed'));
     const tags = [];
-    if (act === '1') tags.push('running');
-    if (com === '1') tags.push('kept');
+    if (act === 1) tags.push('running');
+    if (com === 1) tags.push('kept');
     dl.append(el('dt', '', 'Image ' + (inst.id || '?')),
-              el('dd', '', ver + (tags.length ? '  — ' + tags.join(', ') : '')));
+              el('dd', '', ver + (tags.length ? ' (' + tags.join(', ') + ')' : '')));
   }
   box.append(dl);
-  box.append(note('This is the version string your ISP sees, and the only one '
-    + 'they see. It comes from the image, not from this page — so if it has to '
-    + 'keep matching the ONU you replaced, check it here after every flash.'));
+  box.append(note('The only version string your ISP sees. Check it here after every flash '
+    + 'if it has to match the ONU you replaced.'));
 
   /*
    * The comparison that makes this card worth having. ME 7 is what the OLT was
@@ -196,7 +204,7 @@ function renderExtVlan(box, dump) {
   }
 
   if (!rules.length) {
-    box.append(note('No VLAN translation rules are installed — the OLT is not '
+    box.append(note('No VLAN translation rules are installed: the OLT is not '
       + 'rewriting tags on this line.'));
     return;
   }
@@ -292,11 +300,11 @@ function renderBridge(box, dump) {
             : 'The bridge carries the VEIP, not the physical port.'));
   }
 
-  const t = el('table');
+  const t = el('table', 'data');
   for (const p of ports) {
     const tr = el('tr');
 
-    tr.append(el('td', 'mono', 'port ' + p.port));
+    tr.append(el('td', 'mono', 'port ' + (p.port === null ? '?' : Number(p.port))));
     tr.append(el('td', null, TP_TYPES[p.type] || 'type ' + p.type));
     tr.append(el('td', 'mono', p.ptr || ''));
     t.append(tr);
@@ -308,69 +316,89 @@ function renderBridge(box, dump) {
     + 'no capture here has pinned down.'));
 }
 
-/* T-CONTs and GEM ports: what exists, not what each one is set to. */
-function renderIds(box, dump) {
-  const ids = dump.instances.map((i) => i.id).filter(Boolean);
-
-  if (!ids.length) {
-    box.append(note('The OLT has not created any.'));
-    return;
-  }
-  box.append(el('p', 'me-lead', ids.length + ' provisioned: ' + ids.join(', ')));
+/* T-CONTs and GEM ports: what exists, not what each one is set to. The
+   identifier a support thread asks for is the allocation or port id, not the
+   entity id, so that is what is listed when the dump carries it. */
+function renderIds(box, dump, card) {
+  const ids = dump.instances.map((i) => {
+    const v = card && card.key ? attr(i, card.key) : null;
+    return v !== null && v !== '' && Number.isFinite(Number(v)) ? String(Number(v)) : i.id;
+  }).filter(Boolean);
+  const n = ids.length;
+  box.append(el('p', 'me-lead', n + ' provisioned'
+    + (card && card.key && dump.instances.some((i) => attr(i, card.key) !== null)
+      ? ', by ' + card.what : '') + ': ' + ids.join(', ')));
 }
 
 /* --- the page ------------------------------------------------------------ */
 
 let loaded = false;
+let RUN = 0;
 
+/*
+ * A card is always in one of four states, and each says only what it knows:
+ *   reading          the request is out
+ *   could not read   the daemon failed, answered nothing, or answered 0 rows
+ *                    for an entity the ONU always has
+ *   none             a good read of a table the OLT fills, holding nothing
+ *   the rows         rendered in sentences
+ */
 async function renderServices(force) {
   const host = $('#services-cards');
 
   if (loaded && !force) return;
   loaded = true;
+  const run = ++RUN;
   host.textContent = '';
-  host.append(el('p', 'hint', 'Reading the MIB…'));
+
+  const slots = CARDS.map((c) => {
+    const card = el('section', 'me-card reading');
+    card.append(el('h3', '', c.title));
+    const src = el('p', 'me-src', 'ME ' + c.me);
+    const body = el('div', 'me-body');
+    body.append(el('p', 'me-state', 'Reading\u2026'));
+    card.append(src, body);
+    card.setAttribute('aria-busy', 'true');
+    host.append(card);
+    return { c, card, src, body };
+  });
 
   /* Never let the firmware read take the page down: it is context for one
-     card, and the other five are worth rendering without it. */
+     card, and the other six are worth rendering without it. */
   try { ENV = (await get('/api/firmware')).env || {}; } catch (e) { ENV = {}; }
 
-  const dumps = [];
-  for (const c of CARDS) dumps.push(await fetchMe(c.me));
-
-  host.textContent = '';
-  for (let i = 0; i < CARDS.length; i++) {
-    const c = CARDS[i];
-    const dump = dumps[i];
-    const card = el('section', 'me-card');
-
-    card.append(el('h3', '', c.title));
+  for (const { c, card, src, body } of slots) {
+    const dump = await fetchMe(c.me);
+    if (run !== RUN) return;
+    card.classList.remove('reading');
+    card.removeAttribute('aria-busy');
+    body.textContent = '';
     /* The name the device printed, not the one we asked for. */
-    card.append(el('p', 'me-src', dump.name
-      ? 'ME ' + c.me + ' — ' + dump.name
-      : 'ME ' + c.me));
+    if (dump.name) src.textContent = 'ME ' + c.me + ', ' + dump.name;
 
-    /* An error and an empty MIB are different findings and read differently:
-       one means the daemon could not ask, the other means the OLT provisioned
-       nothing -- which on a line sitting in O5 is itself the diagnosis. Each
-       renderer says what empty means for its own table. */
-    const why = unavailable(dump);
+    const why = unavailable(dump) || (c.onu && !dump.instances.length
+      ? 'The MIB answered with no rows, but the ONU always creates this entity itself, '
+        + 'so the read is incomplete. It says nothing about the line.'
+      : null);
 
-    if (why)
-      card.append(note(why, 'bad'));
-    else
-      c.render(card, dump);
+    if (why) {
+      card.classList.add('unread');
+      body.append(el('p', 'me-state', 'Could not read'), note(why));
+    } else if (!dump.instances.length && c.render === renderIds) {
+      card.classList.add('empty');
+      body.append(el('p', 'me-state', 'None'), note('The MIB holds none: the OLT has not provisioned any.'));
+    } else {
+      c.render(body, dump, c);
+    }
 
     if (dump.truncated)
-      card.append(note('This dump was longer than the daemon will hold; what '
+      body.append(note('This dump was longer than the daemon will hold; what '
         + 'you see is the start of it.', 'bad'));
 
     const det = el('details', 'me-raw');
     det.append(el('summary', '', 'Raw'));
     det.append(el('pre', '', dump.raw || '(no output)'));
-    card.append(det);
-
-    host.append(card);
+    body.append(det);
   }
 }
 

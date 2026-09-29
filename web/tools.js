@@ -6,30 +6,43 @@
 import { $, el, get } from './dom.js';
 
 /*
- * Kernel messages carry a priority in angle brackets -- <4> is a warning, <3>
- * an error. Worth colouring rather than stripping: the interesting lines on
- * this device are exactly the ones that carry one, and the RT_ERR_ switch
- * errors arrive as bare continuation lines under a <4> header, which is why a
- * line with no prefix inherits the last one seen.
+ * Kernel messages carry a priority in angle brackets. The kernel writes a
+ * bare level, <4>; a userland line written to /dev/kmsg carries its syslog
+ * facility too, <12> being user.warning, so the level is the low three bits
+ * and the prefix is never shown. The RT_ERR_ switch errors arrive as bare
+ * continuation lines under a <4> header, which is why a line with no prefix
+ * inherits the last one seen.
  */
-function renderLogLines(text, host) {
+const LEVELS = ['emerg', 'alert', 'crit', 'err', 'warn', 'notice', 'info', 'debug'];
+
+/* The two once-a-minute liveness lines (the boot script and the watchdog)
+   are most of the buffer on a healthy stick, and hide the lines that say
+   something. Hidden by default, counted, one tick away. */
+const HEARTBEAT = /^(rcS|odi_wdt): alive\b/;
+
+function renderLogLines(text, host, opts = {}) {
   let level = null;
+  let hidden = 0;
 
   for (const raw of String(text || '').split('\n')) {
     const line = raw.replace(/\r$/, '');
     if (!line.trim()) continue;
 
-    const m = /^<(\d)>(.*)$/.exec(line);
+    const m = /^<(\d{1,3})>(.*)$/.exec(line);
     let body = line;
-    if (m) { level = Number(m[1]); body = m[2]; }
+    if (m) { level = Number(m[1]) & 7; body = m[2]; }
     /* A bare `<4>` with nothing after it is real -- the kernel emits them --
        and rendering it as an empty row is noise. Take the level from it and
        drop the row. */
     if (!body.trim()) continue;
+    if (!opts.heartbeats && HEARTBEAT.test(body)) { hidden++; continue; }
 
     const cls = level === null ? '' : level <= 3 ? 'bad' : level === 4 ? 'warn' : '';
-    host.append(el('div', 'logline ' + cls, body));
+    const row = el('div', 'logline ' + cls);
+    row.append(el('span', 'lvl', level === null ? '' : LEVELS[level]), el('span', 'msg', body));
+    host.append(row);
   }
+  return { hidden };
 }
 
 async function renderLog() {
@@ -37,21 +50,27 @@ async function renderLog() {
 
   host.textContent = 'Reading…';
   let d;
-  try { d = await get('/api/log'); } catch (e) { host.textContent = String(e.message || e); return; }
+  try { d = await get('/api/log'); } catch (e) {
+    host.textContent = '';
+    host.append(el('p', 'callout bad', 'Could not read the log: ' + String(e.message || e)));
+    return;
+  }
   host.textContent = '';
 
-  if (d.error) { host.append(el('p', 'me-note bad', d.error)); return; }
+  if (d.error) { host.append(el('p', 'callout bad', d.error)); return; }
   if (!String(d.raw || '').trim()) {
     host.append(el('p', 'hint', 'The ring buffer is empty.'));
     return;
   }
   if (d.truncated)
-    host.append(el('p', 'me-note bad', 'Only the newest part of the buffer fits '
-      + 'here; the oldest lines were dropped.'));
+    host.append(el('p', 'hint', 'Only the newest part of the buffer fits here; the oldest lines were dropped.'));
 
   const box = el('div', 'log');
-  renderLogLines(d.raw, box);
+  box.tabIndex = 0;
+  box.setAttribute('aria-label', 'Kernel log');
+  const r = renderLogLines(d.raw, box, { heartbeats: $('#log-heartbeat').checked });
   host.append(box);
+  if (r.hidden) host.append(el('p', 'hint', r.hidden + ' heartbeat line' + (r.hidden === 1 ? '' : 's') + ' hidden.'));
   /* Newest last, like a terminal. Scroll there so a refresh lands on what just
      happened rather than on what happened at boot. */
   box.scrollTop = box.scrollHeight;
@@ -65,7 +84,7 @@ async function runPing() {
   out.textContent = '';
   if (!host) return;
   btn.disabled = true;
-  out.append(el('div', null, `Pinging ${host}…`));
+  out.append(el('div', 'hint', `Pinging ${host}\u2026`));
   try {
     const r = await fetch('/api/ping', {
       method: 'POST',
@@ -91,6 +110,7 @@ function renderTools() {
   if (!wired) {
     wired = true;
     $('#log-reload').onclick = renderLog;
+    $('#log-heartbeat').onchange = renderLog;
     $('#ping-go').onclick = runPing;
     $('#ping-host').onkeydown = (e) => { if (e.key === 'Enter') runPing(); };
   }

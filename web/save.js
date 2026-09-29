@@ -17,10 +17,11 @@
 
 import { $, el, get } from './dom.js';
 import {
-  S, EDITS, CLASS_LABEL, imageAware, settingOf, IDENTITY_SWITCH, identitySwitchOn,
+  S, EDITS, CLASS_LABEL, CLASS_RANK, costBadge, imageAware, settingOf,
+  IDENTITY_SWITCH, identitySwitchOn,
 } from './state.js';
 import { invalidEdits } from './validate.js';
-import { renderAll } from './config.js';
+import { renderAll, markPending } from './config.js';
 
 /* config.js raises this whenever a field changes; it does not import this
    module, so the dependency runs one way only. */
@@ -52,10 +53,20 @@ function refreshSaveBar() {
     (k) => (S.SCHEMA.find((r) => r.name === k) || {}).writable === 'identity');
   $('#confirmwrap').hidden = identity.length === 0;
   $('#confirmwhat').textContent = identity.join(', ');
-  /* What saving these will cost, before the click rather than after it. */
-  const classes = new Set([...EDITS.keys()].map((k) => (settingOf(k) || {}).apply).filter(Boolean));
-  $('#saveclasses').textContent = classes.size
-    ? 'Applying: ' + [...classes].map((c) => CLASS_LABEL[c] || c).join(', ') : '';
+  /* What saving these will cost, before the click rather than after it:
+     one badge per class, most expensive first, each with how many of the
+     pending changes carry it -- "1 interrupts internet, 2 live". */
+  const byClass = {};
+  for (const k of EDITS.keys()) {
+    const c = (settingOf(k) || {}).apply;
+    if (c) byClass[c] = (byClass[c] || 0) + 1;
+  }
+  const host = $('#saveclasses');
+  host.textContent = '';
+  for (const c of Object.keys(byClass).sort((a, b) => CLASS_RANK[b] - CLASS_RANK[a])) {
+    host.append(costBadge(c, byClass[c] + ' ' + (CLASS_LABEL[c] || c).toLowerCase()));
+  }
+  markPending();
 }
 
 function encode(pairs) {
@@ -124,7 +135,7 @@ async function save() {
 
     /* A stock-based image: omci_app restarts, or the stick reboots. */
     if (res.apply === 'restart:omci') {
-      const b = el('button', 'apply', 'Apply now (restarts OMCI, ~6s, no reboot)');
+      const b = el('button', 'apply', 'Apply now: restarts OMCI, about 6 s, no reboot');
       b.onclick = (ev) => doApply(ev, 'omci');
       out.append(b);
     } else if (res.apply === 'reboot') {
@@ -177,14 +188,15 @@ async function followUp(res, written, out) {
   }
   if (needs.includes('reboot')) {
     out.append(el('div', 'warn', 'Saved. These keys are read only at boot.'));
-    out.append(applyButton('reboot', 'Reboot now', () => reboot(out)));
+    out.append(applyButton('reboot', 'Reboot', () => reboot(out)));
   }
 }
 
 /* A button that says its class and asks before REBOOT or INTERRUPTS INTERNET. */
 function applyButton(cls, text, run) {
-  const b = el('button', 'apply cls-' + cls, `${text} — ${CLASS_LABEL[cls]}`);
+  const b = el('button', 'apply cls-' + cls);
   b.type = 'button';
+  b.append(document.createTextNode(text + ' '), costBadge(cls));
   b.onclick = async () => {
     if (cls === 'internet' && !confirmClass(cls, 'This takes the fibre service down: the '
         + 'ONU is deactivated, the OMCI daemon restarts, and the ONU ranges again and '
@@ -198,7 +210,7 @@ function applyButton(cls, text, run) {
 }
 
 function confirmClass(cls, text) {
-  return confirm(`${CLASS_LABEL[cls] || cls}\n\n${text}`);
+  return confirm(`${'\u25AE'.repeat(CLASS_RANK[cls] || 0)} ${CLASS_LABEL[cls] || cls}\n\n${text}`);
 }
 
 /* Which slot a reboot comes back on, which is the whole question on a trial. */
@@ -302,16 +314,12 @@ function renderIdentitySwitch() {
   if (!imageAware()) { host.hidden = true; return; }
   host.hidden = false;
   const on = identitySwitchOn();
-  host.append(el('h2', null, 'OLT identity'));
-  const p = el('p', 'field-note');
-  p.textContent = on
-    ? 'On: the OLT is told the software versions, model, OMCC version and product '
-      + 'code stored below (an empty key keeps the default).'
-    : 'Off: the OLT is told what this image has always reported (software version '
-      + '0.0.0, the device id as model, OMCC 128, product code 15), whatever the '
-      + 'keys below hold.';
-  host.append(p);
-  const b = el('button', 'fwbtn', on ? 'Turn the OLT identity off' : 'Turn the OLT identity on');
+  const text = el('div', 'switch-text');
+  text.append(el('strong', null, on ? 'Reporting the stored identity' : 'Reporting the image defaults'));
+  text.append(el('p', 's-help', on
+    ? 'The OLT is told the versions, model, OMCC version and product code below. An empty key keeps the default.'
+    : 'The OLT is told software version 0.0.0, the device id as model, OMCC 128 and product code 15, whatever the keys below hold.'));
+  const b = el('button', null, on ? 'Report the defaults' : 'Report the stored identity');
   b.type = 'button';
   b.onclick = async () => {
     b.disabled = true;
@@ -330,7 +338,9 @@ function renderIdentitySwitch() {
       out.append(el('div', 'bad', String(e.message || e)));
     } finally { b.disabled = false; }
   };
-  host.append(el('span', 'tag cls-internet', CLASS_LABEL.internet), b);
+  const acts = el('div', 'switch-acts');
+  acts.append(b, costBadge('internet'));
+  host.append(text, acts);
 }
 
 export { refreshSaveBar, save, doApply, withPairs, renderIdentitySwitch, applyButton, rebootWarning };

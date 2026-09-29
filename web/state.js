@@ -9,6 +9,8 @@
  * import would capture the old empty array.
  */
 
+import { el } from './dom.js';
+
 const S = {
   SCHEMA: [], VALUES: {}, META: {}, CONS: {}, DEFAULTS: {}, BASELINE: {},
   /* mask name -> [{ bit, feature, module }], from /api/features. */
@@ -23,16 +25,37 @@ const S = {
 
 /*
  * The four apply classes, as the page labels them. The names are the ones
- * docs/SETTINGS.md in odi-oss uses, so the doc and the page say the same word.
+ * docs/SETTINGS.md in odi-oss uses (LIVE, SERVICE RESTART, ...), in sentence
+ * case, so the doc and the page say the same words.
+ *
+ * They are ordered by what they cost, and the page draws that order: one to
+ * four bars on every badge, in the save bar and in the confirmations alike,
+ * so the price of a change reads the same wherever it is shown.
  */
 const CLASS_LABEL = {
-  live: 'LIVE',
-  restart: 'SERVICE RESTART',
-  reboot: 'REBOOT',
-  internet: 'INTERRUPTS INTERNET',
+  live: 'Live',
+  restart: 'Service restart',
+  internet: 'Interrupts internet',
+  reboot: 'Reboot',
+};
+const CLASS_RANK = { live: 1, restart: 2, internet: 3, reboot: 4 };
+/* What each one means, in the words the legend and the tooltips use. */
+const CLASS_MEANS = {
+  live: 'takes effect at once',
+  restart: 'a daemon restarts, the fibre service stays up',
+  internet: 'the fibre service drops while the ONU ranges again',
+  reboot: 'read only at boot',
 };
 /* The ones that ask before they act. */
 const CLASS_CONFIRMS = new Set(['reboot', 'internet']);
+
+/* The badge, one markup for every place a cost is shown. */
+function costBadge(cls, text) {
+  const b = el('span', 'cost cost-' + cls);
+  b.append(el('i', 'bars'), document.createTextNode(text || CLASS_LABEL[cls] || cls));
+  if (CLASS_MEANS[cls]) b.title = CLASS_LABEL[cls] + ': ' + CLASS_MEANS[cls];
+  return b;
+}
 
 /* Whether this image says which keys it reads. */
 function imageAware() {
@@ -148,5 +171,5 @@ function decodeMask(name, value) {
 
 export {
   S, EDITS, provenance, applyOf, dependsUnmet, decodeMask,
-  CLASS_LABEL, CLASS_CONFIRMS, imageAware, settingOf, IDENTITY_SWITCH, identitySwitchOn,
+  CLASS_LABEL, CLASS_RANK, CLASS_MEANS, CLASS_CONFIRMS, costBadge, imageAware, settingOf, IDENTITY_SWITCH, identitySwitchOn,
 };
