@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- docs: repair text merged into duplicated entries by union-resolved rebases.
+  The v1.1.0 section described `/api/firmware` `slots` and `fallback` twice
+  and the diagnostics bundle download twice (once as on the Admin tab, once
+  as on System > Logs & tools); each is now one entry, worded for the
+  redesigned UI.
 - AGENTS.md has a release checklist: every change since the last tag has an
   entry, no merge debris, `Unreleased` moved into the tag section, and the
   published notes checked.
@@ -127,30 +132,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is a small header chip.
 
 ### Added
-- `GET /api/diag` and a "Download a diagnostics bundle" button on the Admin
-  tab: confd runs the image `/etc/scripts/diag-bundle.sh` (odi-oss), which
-  collects logs, the previous boot ramlog, dmesg, slot variables, an exporter
+- `GET /api/diag` and a "Download a diagnostics bundle" button on System >
+  Logs & tools: confd runs the image `/etc/scripts/diag-bundle.sh` (odi-oss),
+  which collects logs, the previous boot ramlog, dmesg, slot variables, an exporter
   scrape and the config with every secret redacted, and streams the tar.gz it
   wrote (up to 2 MiB, then removed). Bounded at 60 s
   (`DIAG_BUNDLE_TIMEOUT_MS`); a failure or timeout is a 500 carrying the
   script message, an image without the script a 501. Needs an odi-oss image
   that ships `diag-bundle.sh`. Covered by `make smoke` against a stub script.
-- `/api/firmware` reports `slots`, each kernel partition's uImage name and
-  build time (read from the mtd device found by name in `/proc/mtd`; `{}` when
-  it cannot be read), and `fallback`, the sw_* of `nv fallback`, the other copy
-  of the redundant U-Boot environment (empty on the stock `nv`). What a slot
-  holds can then be told from the slot itself rather than from `sw_version<p>`.
 - A trial-boot band in the header on every view while `sw_commit`, in either
   environment copy, names another slot than the running one: where the next
   reboot goes, what that slot holds, and Keep this image (the existing commit).
   Not dismissible.
-- `/api/firmware` reports `slots` (each kernel partition's uImage name and build
-  time, read from the mtd device) and `fallback` (the sw_* of `nv fallback`).
-  The Firmware view names what each slot holds from that, not from U-Boot
-  `sw_version<p>`, and when the other slot holds the stock firmware it says that
-  writing replaces it and loses it as a fallback, and asks a second time.
-- System > Logs & tools carries the diagnostics bundle download
-  (`/api/diag`, from the diagnostics change).
+- `/api/firmware` reports `slots` (each kernel partition's uImage name and
+  build time, read from the mtd device found by name in `/proc/mtd`; `{}` when
+  it cannot be read) and `fallback` (the sw_* of `nv fallback`, the other copy
+  of the redundant U-Boot environment; empty on the stock `nv`). The Firmware
+  view names what each slot holds from that, not from U-Boot `sw_version<p>`,
+  and when the other slot holds the stock firmware it says that writing
+  replaces it and loses it as a fallback, and asks a second time.
 - Kernel log: heartbeat lines (`rcS: alive`, `odi_wdt: alive`) are hidden by
   default and counted, with a checkbox to show them; levels render as words.
 
