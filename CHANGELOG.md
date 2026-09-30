@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- AGENTS.md has a release checklist: every change since the last tag has an
+  entry, no merge debris, `Unreleased` moved into the tag section, and the
+  published notes checked.
+
 ## v1.2.0 - 2026-09-29
 
 ### Added
