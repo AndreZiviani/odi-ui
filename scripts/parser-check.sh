@@ -6,7 +6,7 @@
 # schema-drift.sh, over scripts/fixtures/flash-all-cs-odi-tail.xml.
 #   scripts/parser-check.sh
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 fx=scripts/fixtures/flash-all-cs-odi-tail.xml
 tmp=$(mktemp -d)
