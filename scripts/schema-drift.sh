@@ -50,6 +50,9 @@ import re, sys
 for path in sys.argv[1:]:
     table = index = None
     for line in open(path, encoding="utf-8", errors="replace"):
+        if line.lstrip().startswith("</Dir>"):
+            table = index = None
+            continue
         d = re.search(r'<Dir Name="([^"]+)">(?:\s*<!--index=(\d+)-->)?', line)
         if d:
             table, index = d.group(1), d.group(2)

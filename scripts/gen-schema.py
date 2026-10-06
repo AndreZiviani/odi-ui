@@ -98,6 +98,11 @@ def parse(path, store):
     table = None
     index = None
     for line in text.splitlines():
+        # The store never nests Dirs, so a close leaves table context. Without
+        # it a scalar after the last table block reads as a table value.
+        if line.lstrip().startswith("</Dir>"):
+            table, index = None, None
+            continue
         d = re.search(r'<Dir Name="([^"]+)">(?:\s*<!--index=(\d+)-->)?', line)
         if d:
             name = d.group(1)

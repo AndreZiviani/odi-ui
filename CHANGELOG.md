@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- fix: on odi-oss the Config page showed `SYSLOG_SERVER` and `NTP_SERVER` empty
+  after a reload, although they were saved and `flash get` returned them.
+  `flash all cs` prints the odi-only keys after the last table block, and the
+  `flash all` parsers never left table context on `</Dir>`, so those keys were
+  read as table values with no index and dropped. `/api/values` (src/mib.c),
+  `gen-schema.py`, `capture-baseline.sh` and `schema-drift.sh` now end table
+  context on `</Dir>`. The store never nests Dirs, so no stack is needed.
+  New `scripts/parser-check.sh` (in `make check`) and a smoke case cover it.
 - docs: repair text merged into duplicated entries by union-resolved rebases.
   The v1.1.0 section described `/api/firmware` `slots` and `fallback` twice
   and the diagnostics bundle download twice (once as on the Admin tab, once
