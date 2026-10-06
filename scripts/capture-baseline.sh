@@ -53,6 +53,9 @@ import re, sys
 
 table = index = None
 for line in sys.stdin:
+    if line.lstrip().startswith("</Dir>"):
+        table = index = None
+        continue
     d = re.search(r"<Dir Name=\"([^\"]+)\">(?:\s*<!--index=(\d+)-->)?", line)
     if d:
         table, index = d.group(1), d.group(2)

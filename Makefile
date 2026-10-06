@@ -99,6 +99,7 @@ verify: confd
 check:
 	scripts/check-schema.py
 	scripts/check-assets.py
+	scripts/parser-check.sh
 	node scripts/web-check.mjs
 
 # Run the daemon under qemu and talk HTTP to it. No stick needed: it is the

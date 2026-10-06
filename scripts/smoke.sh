@@ -69,6 +69,9 @@ all)
 <Dir Name="SW_PORT_TBL"> <!--index=1-->
   <Value Name="PVID" Value="1"/>
 </Dir>
+<Dir Name="EPON_LLID_TBL">
+</Dir>
+		<Value Name="NTP_SERVER" Value="192.168.0.2"/>
 XML
 	;;
 set)
@@ -448,6 +451,9 @@ check "values are parsed and served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" '"LAN_IP_ADDR":"192.168.1.1"')"
 check "an indexed table row keeps its address" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" '"SW_PORT_TBL[1].PVID"')"
+# odi-oss appends its odi-only keys after the last table block, before </Config>.
+check "a scalar after a closed table Dir is kept" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" '"NTP_SERVER":"192.168.0.2"')"
 # ORDER MATTERS. /api/defaults shares the values buffer, and it used to emit it
 # without clearing -- so with no default files on the device it republished
 # whatever /api/values had left there, and the page then labelled every key an

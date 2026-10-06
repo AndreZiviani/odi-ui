@@ -1,0 +1,13 @@
+<Config Name="ROOT">
+ <Dir Name="MIB_TABLE">
+  <Value Name="LAN_IP_ADDR" Value="192.168.1.1"/>
+ </Dir>
+ <Dir Name="SW_PORT_TBL"> <!--index=1-->
+  <Value Name="PVID" Value="1"/>
+ </Dir>
+ <Dir Name="RIP_TBL">
+ </Dir>
+ <Dir Name="EPON_LLID_TBL">
+ </Dir>
+		<Value Name="NTP_SERVER" Value="192.168.0.2"/>
+</Config>

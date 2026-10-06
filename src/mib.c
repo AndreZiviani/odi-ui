@@ -488,6 +488,18 @@ void emit_values_json(int fd, const char *buf)
 		while (ls < le && (buf[ls] == ' ' || buf[ls] == '\t'))
 			ls++;
 
+		/* A table Dir ends here. The store never nests Dirs (max depth 1
+		 * in every flash all dump and config xml on file), so closing one
+		 * simply leaves table context. Without this, a scalar printed after
+		 * the last table block -- the odi-only keys flash all appends before
+		 * </Config> -- was read as a value of that table, had no index, and
+		 * was dropped. */
+		if (spre(buf + ls, "</Dir>")) {
+			table[0] = 0;
+			index[0] = 0;
+			goto next;
+		}
+
 		if (spre(buf + ls, "<Dir Name=\"")) {
 			unsigned long p = ls, n = 0;
 
