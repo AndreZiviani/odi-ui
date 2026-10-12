@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.2.1 - 2026-10-12
+
 - fix: on odi-oss the Config page showed `SYSLOG_SERVER` and `NTP_SERVER` empty
   after a reload, although they were saved and `flash get` returned them.
   `flash all cs` prints the odi-only keys after the last table block, and the
