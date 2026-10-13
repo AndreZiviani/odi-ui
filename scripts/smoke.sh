@@ -155,6 +155,15 @@ chmod +x /bin/diag
 # below would pass whether that guard works or is absent.
 cat > /bin/nv <<'NV'
 #!/bin/sh
+echo "$*" >> /tmp/nv.calls
+# `nv commit`: odi-oss nv answers every outcome with "nv: commit <slot>: ...";
+# /tmp/nv.vendor makes it the stock nv, which prints usage and knows no commit.
+if [ "$1" = commit ]; then
+	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
+	[ -f /tmp/nv.refuse ] && { echo "nv: commit $2: that is not the slot this kernel was booted from (root= in /proc/cmdline), nothing written"; exit 1; }
+	echo "nv: commit $2: committed in both copies, read back"
+	exit 0
+fi
 case "$1 $2" in
 "getenv sw_active") echo "sw_active=0" ;;
 "getenv ") printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
@@ -163,6 +172,16 @@ esac
 exit 0
 NV
 chmod +x /bin/nv
+
+# The refresh the commit route runs afterwards. /tmp/slot-state.fail makes it
+# exit non-zero.
+cat > /etc/scripts/slot-state.sh <<'SLOTSTATE'
+#!/bin/sh
+echo refreshed >> /tmp/slot-state.calls
+[ -f /tmp/slot-state.fail ] && exit 1
+exit 0
+SLOTSTATE
+chmod +x /etc/scripts/slot-state.sh
 
 cat > /bin/omcicli <<'OMCICLI'
 #!/bin/sh
@@ -584,6 +603,37 @@ check "writing the running partition is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'action=write&partition=0' "http://127.0.0.1:$PORT/api/firmware")" 'that is the partition this stick is running')"
 check "a bad partition is still refused" 400 \
 	"$(code -u "$AUTH" -X POST -d 'action=write&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
+
+# Commit. It is `nv commit <slot>` (both environment copies, read back, refused
+# for a slot that is not running), never a plain setenv of sw_commit, and the
+# slot state the exporter and the banner read is rewritten afterwards.
+echo "== commit"
+fw() { curl -s -u "$AUTH" -X POST -d "$1" "http://127.0.0.1:$PORT/api/firmware"; }
+yn() { case "$1" in *"$2"*) echo yes ;; *) echo no ;; esac; }
+rm -f /tmp/nv.calls /tmp/slot-state.calls /tmp/nv.refuse /tmp/nv.vendor /tmp/slot-state.fail
+r=$(fw 'action=commit&partition=0')
+check "a commit succeeds" yes "$(err "$r" '"ok":true')"
+check "and says the slot state was refreshed" yes "$(err "$r" '"refreshed":true')"
+check "through nv commit" yes "$(grep -qx 'commit 0' /tmp/nv.calls && echo yes || echo no)"
+check "not a one-copy setenv" no "$(yn "$(cat /tmp/nv.calls)" 'setenv sw_commit')"
+check "and slot-state.sh ran after it" 1 "$(wc -l < /tmp/slot-state.calls | tr -d ' ')"
+touch /tmp/slot-state.fail
+check "a failed refresh is reported, the commit still stands" yes \
+	"$(err "$(fw 'action=commit&partition=0')" '"ok":true,"note":"committed","refreshed":false')"
+rm -f /tmp/slot-state.fail /tmp/slot-state.calls
+touch /tmp/nv.refuse
+r=$(fw 'action=commit&partition=1')
+check "a refusal by nv is an error with nv's reason" yes "$(err "$r" '"ok":false,"error":"commit 1: that is not the slot this kernel was booted from')"
+check "and slot-state.sh is not run for it" no "$(test -e /tmp/slot-state.calls && echo yes || echo no)"
+rm -f /tmp/nv.refuse /tmp/nv.calls
+touch /tmp/nv.vendor
+r=$(fw 'action=commit&partition=0')
+check "the stock nv has no commit verb: one-copy setenv, and it says so" yes "$(err "$r" 'one environment copy')"
+check "that setenv is what ran" yes "$(err "$(cat /tmp/nv.calls)" 'setenv sw_commit 0')"
+rm -f /tmp/nv.vendor /tmp/nv.calls /tmp/slot-state.calls
+check "a bad partition is refused before nv is asked" 400 \
+	"$(code -u "$AUTH" -X POST -d 'action=commit&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
+check "and nv was not run" no "$(test -e /tmp/nv.calls && echo yes || echo no)"
 
 # A background write, as odi-oss fwu_starter.sh leaves it: the state and the
 # log are reported so the page can follow it.

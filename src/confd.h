@@ -44,6 +44,9 @@
 #define PING_PATH    "/bin/ping"
 #define MD5SUM_PATH  "/bin/md5sum"
 #define FWU_STARTER  "/etc/scripts/fwu_starter.sh"
+/* Rewrites /var/run/odi-slot (what the exporter and the trial banner read)
+ * from the environment; odi-oss only, absent on a stock-based image. */
+#define SLOT_STATE_SCRIPT "/etc/scripts/slot-state.sh"
 /*
  * What fwu_starter.sh leaves behind on an image that writes in the background
  * (odi-oss): the state, "running|ok|failed <pid> <slot> [rc]", and the flasher's
@@ -103,6 +106,10 @@
 #define MD5SUM_TIMEOUT_MS  3000   /* hashing the uploaded image */
 #define MKDIR_TIMEOUT_MS   2000   /* mkdir -p SSHKEYS_DIR */
 #define NV_TIMEOUT_MS      2000   /* /bin/nv getenv/setenv (firmware.c) */
+#define NV_COMMIT_TIMEOUT_MS 10000 /* nv commit: two erase-and-write cycles of an
+				   * 8 KB environment partition, each read back */
+#define SLOT_STATE_TIMEOUT_MS 12000 /* slot-state.sh: two nv reads, 10 s each at
+				   * the very worst; milliseconds in practice */
 #define DIAG_BUNDLE_TIMEOUT_MS 60000 /* diag-bundle.sh: about 20 steps of
 				   * busybox timeout 5 s each plus a 10 s
 				   * exporter scrape at worst; seconds in

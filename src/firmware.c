@@ -366,6 +366,61 @@ int nv_set(const char *key, const char *value)
 	return code == 0;
 }
 
+int nv_commit(const char *slot, char *msg, unsigned long cap)
+{
+	char *argv[4];
+	char buf[256];
+	long code = -1;
+	long got;
+	unsigned long i, k = 0;
+
+	argv[0] = "nv";
+	argv[1] = "commit";
+	argv[2] = (char *)slot;
+	argv[3] = 0;
+
+	msg[0] = 0;
+	got = run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code, NV_COMMIT_TIMEOUT_MS);
+	if (got == -2) {
+		str_copy(msg, "nv commit timed out", cap);
+		return 0;
+	}
+	if (got < 0) {
+		str_copy(msg, "could not run nv", cap);
+		return 0;
+	}
+	/*
+	 * Our nv answers a commit with "nv: commit <slot>: <what happened>" on
+	 * every outcome, so that line is what tells a refusal from a nv that
+	 * does not know the verb: the stock one prints its usage text and exits
+	 * non-zero, which would otherwise read as a refusal on a stick that
+	 * cannot do better. Exit 0 alone is success either way.
+	 */
+	if (code == 0)
+		return 1;
+	if (!spre(buf, "nv: commit ")) {
+		str_copy(msg, "this nv has no commit verb", cap);
+		return -1;
+	}
+	/* The first line, with the "nv: " prefix dropped: it names the reason. */
+	for (i = 4; buf[i] && buf[i] != '\n' && k + 1 < cap; i++)
+		msg[k++] = buf[i];
+	msg[k] = 0;
+	return 0;
+}
+
+int slot_state_refresh(void)
+{
+	static char *const argv[] = { "slot-state.sh", 0 };
+	char buf[256];
+	long code = -1;
+
+	if (run_to_buf_ex(SLOT_STATE_SCRIPT, (char *const *)argv, buf, sizeof(buf), &code,
+			  SLOT_STATE_TIMEOUT_MS) < 0)
+		return 0;
+	return code == 0;
+}
+
 /*
  * Read one U-Boot variable.
  *
