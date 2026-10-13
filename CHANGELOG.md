@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.3.0 - 2026-10-13
+
 - fix: the Commit button (`action=commit`) now runs `nv commit <slot>` and
   then `/etc/scripts/slot-state.sh`. It used to run `nv setenv sw_commit`,
   which writes one copy of the U-Boot environment and leaves the other
