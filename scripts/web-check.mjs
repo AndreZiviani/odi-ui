@@ -683,7 +683,7 @@ ok(['123456789012345', 'a"b', 'a<b', 'a&b', 'caf\u00e9', 'a\tb'].every((v) => hw
     ok(re.test(first(n)), `${n}: the visible help says how a value can cut the service`);
   }
   ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK'].every((n) => GROUPS.identity.includes(n)),
-    'the new OLT-facing keys sit on the OLT identity subtab');
+    'the new OLT-facing keys sit on the ONU identity subtab');
 }
 
 EDITS.set('LOID', 'someone');

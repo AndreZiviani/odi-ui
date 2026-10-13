@@ -339,7 +339,7 @@ async function doApply(ev, what) {
 }
 
 /*
- * The OLT identity switch. omcid reports OMCI_SW_VER1/2, GPON_ONU_MODEL,
+ * The ONU identity switch. omcid reports OMCI_SW_VER1/2, GPON_ONU_MODEL,
  * OMCC_VER, OMCI_VENDOR_PRODUCT_CODE and ONU_HW_VERSION only while
  * /etc/config/omci-identity.on exists: a stick commonly ships with the stock
  * values already stored in the XML ones, so honouring them by default would

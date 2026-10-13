@@ -42,7 +42,7 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   not by the schema section a key lives in:
   - *Line* &mdash; `GPON_SN`, the PLOAM password, the four LOID keys;
   - *VLAN* &mdash; the four `VLAN_*` keys;
-  - *OLT identity* &mdash; the identity switch, and the five keys it gates;
+  - *ONU identity* &mdash; the identity switch, and the five keys it gates;
   - *Network* &mdash; both management addresses and the UNI MAC;
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
@@ -179,7 +179,7 @@ What the page does differently there:
 - **`LOID` is written with `LOID_OLD`** (and the password with its `_OLD`),
   because the OLD value wins whenever the two differ, on omcid as on the stock
   firmware; the `pair` column says so and the `_OLD` rows are read-only.
-- **The OLT identity switch.** omcid reports `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`,
+- **The ONU identity switch.** omcid reports `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`,
   `OMCC_VER` and `OMCI_VENDOR_PRODUCT_CODE` only while
   `/etc/config/omci-identity.on` exists; off, it answers what it always has.
   A stick commonly ships with the stock values already stored in all five, so
