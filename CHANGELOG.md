@@ -7,7 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 - Config: a key the firmware ignores in the current mode is shown without a
-  control, with the reason and the key to change first. The VLAN ID and
+  control or a value ("Not used in this mode"), with the reason and the key
+  to change first; the stored value is under Details. The VLAN ID and
   priority used to stay editable in VLAN config mode 0 and failed validation
   when cleared, so the page seemed to require a value nothing reads
   (odi-oss #29). The condition follows pending edits: choosing mode 1 unlocks

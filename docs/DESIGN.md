@@ -466,7 +466,8 @@ That last one exists because the firmware silently ignores settings. `runomci.sh
 only passes `VLAN_MANU_TAG_VID` to `omci_app` when `VLAN_CFG_TYPE=1` **and**
 `VLAN_MANU_MODE=1`; otherwise it sends `-iot_vid 65535` and your VLAN ID goes
 nowhere. Worse, if the VID or the priority is empty it drops the whole `-iot_`
-block. The UI shows such a key without a control, and says why in place:
+block. The UI shows such a key without a control or a value (whatever it
+holds does nothing; the stored value is under Details), and says why in place:
 
     Not editable now: the firmware ignores this key unless VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1. Change that first.
 

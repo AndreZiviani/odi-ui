@@ -755,6 +755,8 @@ EDITS.clear();
     ok(field('VLAN_MANU_TAG_VID') === null && /Not editable now/.test(textOf(vidRow()))
        && /VLAN_CFG_TYPE=1/.test(textOf(vidRow())),
        'gated: config mode 0 locks the VLAN ID and names the key that unlocks it');
+    ok(/Not used in this mode/.test(textOf(vidRow())) && /Stored/.test(textOf(vidRow())),
+       'gated: and shows no value in the field, only under Details');
     ok(!EDITS.has('VLAN_MANU_TAG_VID'), 'gated: and drops the VLAN ID edit made before');
     field('VLAN_CFG_TYPE').value = '1';
     field('VLAN_CFG_TYPE').oninput();

@@ -75,7 +75,14 @@ function renderValue(row, raw, readonly = false) {
      daemon twice over, but not offering the field is the honest presentation.
      Nor do the stock keys, on an image that says which keys it reads, nor a
      key that is written together with another one (LOID_OLD follows LOID). */
-  if (row.writable === 'never' || readonly || (set && set.pair) || dependsUnmet(row)) {
+  /* A key the firmware ignores right now shows no value either: whatever it
+     holds does nothing, and a stale or odd one only invites a fix nobody
+     needs. The stored value is under Details, for when the mode changes. */
+  if (dependsUnmet(row) && !readonly) {
+    box.append(el('span', 's-ro', 'Not used in this mode'));
+    return box;
+  }
+  if (row.writable === 'never' || readonly || (set && set.pair)) {
     box.append(el('span', 's-ro mono', shown === undefined ? '(not set)'
       : shown === '' ? '(empty)' : shown));
     return box;
@@ -224,6 +231,9 @@ function renderRow(row, readonly) {
      what the apply class was derived from. */
   const rd = imageAware() ? (set ? set.reader : '') : (S.CONS[row.name] || {}).readers;
   if (rd) more.push(['Read by', rd.split(',').map((x) => x.trim()).join(', ')]);
+  if (unmet && S.VALUES[row.name] !== undefined) {
+    more.push(['Stored', `${S.VALUES[row.name] === '' ? '(empty)' : S.VALUES[row.name]} (used again once ${unmet.join(' and ')})`]);
+  }
   if (prov && prov.was !== undefined) more.push(['Was', `${prov.was === '' ? '(empty)' : prov.was} (${prov.from})`]);
   if (more.length) {
     const d = el('details', 's-more');
@@ -255,7 +265,7 @@ function renderRow(row, readonly) {
     t.title = 'The line authenticates on this key. Saving it asks you to confirm.';
     tags.append(t);
   }
-  if (prov) {
+  if (prov && !unmet) {
     const t = el('span', 'tag ' + prov.cls, prov.label === 'image default' ? 'Default' : 'Changed');
     if (prov.was !== undefined) t.title = `${prov.from}: ${prov.was === '' ? '(empty)' : prov.was}`;
     tags.append(t);
