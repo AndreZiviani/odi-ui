@@ -99,9 +99,13 @@ naming a slot other than the running one. It says only that this image is
 not committed and which partition the next reboot returns to -- what that
 partition holds is on System > Firmware, not claimed in the band, since it is
 not always the stock firmware -- and offers *Commit to this image*, which is the existing
-`action=commit` (`nv setenv sw_commit <slot>`). It cannot be dismissed. The
-commit writes only the winning environment copy; when only the fallback copy
-disagrees the band says so, and says how to make it agree over SSH.
+`action=commit`: `nv commit <slot>`, which refuses a slot that is not the
+running one and writes both environment copies, read back, followed by
+`slot-state.sh`, which rewrites `/var/run/odi-slot` so the exporter's
+`gpon_uncommitted` and the login notice follow the commit instead of waiting
+for a reboot. The stock `nv` has no `commit` verb, and there confd falls back
+to a plain `nv setenv sw_commit`, one copy. It cannot be dismissed. When only
+the fallback copy disagrees the band says so.
 
 ## Two images, two relationships to `boa`
 

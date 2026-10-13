@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- fix: the Commit button (`action=commit`) now runs `nv commit <slot>` and
+  then `/etc/scripts/slot-state.sh`. It used to run `nv setenv sw_commit`,
+  which writes one copy of the U-Boot environment and leaves the other
+  naming the old slot, and nothing refreshed `/var/run/odi-slot`, which is
+  written once at boot. So `OdiUncommittedImage` (the exporter's
+  `gpon_uncommitted`) kept firing on a stick that had just been committed,
+  and the login notice stayed. `nv commit` refuses a slot that is not the
+  running one and verifies both copies; its reason is shown when it refuses.
+  The reply carries `refreshed`, false when the state file could not be
+  rewritten (the commit stands). The stock `nv` has no `commit` verb, and
+  there the old single `nv setenv` is still used, and the note says one copy.
+  Pairs with odi-oss `slot-state.sh` setting its own `PATH` and not waiting
+  for syslogd on a re-run (odi-oss v1.4.0, #64); an older image still works, its
+  script only lacks both. Smoke cases cover the success, the refusal, the
+  failed refresh and the stock nv.
 - Config: a key the firmware ignores in the current mode is shown without a
   control or a value ("Not used in this mode"), with the reason and the key
   to change first; the stored value is under Details. The VLAN ID and

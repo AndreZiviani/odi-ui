@@ -838,10 +838,42 @@ void serve(int conn)
 				return;
 			}
 			if (seq(action, "commit")) {
+				char why[128];
+				int rc;
+
 				respond(conn, "200 OK", "application/json", 0);
-				put_fd(conn, nv_set("sw_commit", part)
-					? "{\"ok\":true,\"note\":\"committed\"}"
-					: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
+				/*
+				 * `nv commit` writes BOTH environment copies,
+				 * read back, and refuses a slot that is not the
+				 * running one. A plain setenv wrote one copy and
+				 * left the other naming the old slot. The stock
+				 * nv has no such verb: only then is the single
+				 * setenv all there is.
+				 */
+				rc = nv_commit(part, why, sizeof(why));
+				if (rc < 0) {
+					put_fd(conn, nv_set("sw_commit", part)
+						? "{\"ok\":true,\"note\":\"committed in one environment copy: this nv cannot do both\"}"
+						: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
+					return;
+				}
+				if (!rc) {
+					put_fd(conn, "{\"ok\":false,\"error\":\"");
+					put_json_cstr(conn, why[0] ? why : "nv commit failed");
+					put_fd(conn, "\"}");
+					return;
+				}
+				/*
+				 * /var/run/odi-slot is written once at boot and
+				 * read by the exporter and the trial banner:
+				 * without this they keep saying "not committed"
+				 * until the next reboot. The commit is already
+				 * done, so a refresh that fails is reported, not
+				 * turned into a failure.
+				 */
+				put_fd(conn, slot_state_refresh()
+					? "{\"ok\":true,\"note\":\"committed\",\"refreshed\":true}"
+					: "{\"ok\":true,\"note\":\"committed\",\"refreshed\":false}");
 				return;
 			}
 			/*

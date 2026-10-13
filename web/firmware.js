@@ -441,8 +441,11 @@ async function commitRunning() {
     S.FW = await get('/api/firmware');
     renderTrial();
     if (!$('#trialbanner').hidden) {
-      out.append(el('div', null, 'Committed in the active copy. confd writes only that one; '
-        + `over SSH, nv setenv -c <copy> sw_commit ${run} makes the fallback agree.`));
+      out.append(el('div', 'bad', 'Committed, but the stick still reports a trial: '
+        + `over SSH, nv getenv; nv fallback show which copy still says something other than sw_commit=${run}.`));
+    } else if (res.refreshed === false) {
+      out.append(el('div', null, 'Committed in both environment copies. The exporter and the login notice '
+        + 'still show the old state until slot-state.sh runs (over SSH) or the next reboot.'));
     }
     if (!$('#p-system').hidden) await renderFirmware();
   } catch (e) {
