@@ -116,7 +116,7 @@
     <nav class="subtabs" role="tablist" aria-label="Config">
       <button role="tab" id="st-config-line" aria-controls="c-line" data-sub="line">Line</button>
       <button role="tab" id="st-config-vlan" aria-controls="c-vlan" data-sub="vlan">VLAN</button>
-      <button role="tab" id="st-config-identity" aria-controls="c-identity" data-sub="identity">OLT identity</button>
+      <button role="tab" id="st-config-identity" aria-controls="c-identity" data-sub="identity">ONU identity</button>
       <button role="tab" id="st-config-network" aria-controls="c-network" data-sub="network">Network</button>
       <button role="tab" id="st-config-services" aria-controls="c-services" data-sub="services">Services</button>
       <button role="tab" id="st-config-other" aria-controls="c-other" data-sub="other" hidden>Other</button>
@@ -252,7 +252,7 @@
         <details class="more">
           <summary>What the OLT is told about the version</summary>
           <p>On this image the OLT is told <code>0.0.0</code> for both software
-             images, whatever the partitions hold, unless the OLT identity switch
+             images, whatever the partitions hold, unless the ONU identity switch
              on Config is on &mdash; then it is told <code>OMCI_SW_VER1</code> for
              image 0 and <code>OMCI_SW_VER2</code> for image 1. Both keys are
              shared with the stock firmware, which may rewrite them when it

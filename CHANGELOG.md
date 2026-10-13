@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the "OLT identity" subtab is now "ONU identity". Its keys
+  describe the stick (what it reports to the OLT), not the OLT, which a
+  reader of the old name found misleading.
+
 ## v1.3.0 - 2026-10-13
 
 - fix: the Commit button (`action=commit`) now runs `nv commit <slot>` and

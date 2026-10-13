@@ -122,7 +122,7 @@
  * An allowlist of exact names: the route that toggles them builds a path from
  * a request, and nothing but these names may reach the filesystem.
  *
- *   omci-identity.on   report the OLT identity keys (OMCI_SW_VER1/2,
+ *   omci-identity.on   report the ONU identity keys (OMCI_SW_VER1/2,
  *                      GPON_ONU_MODEL, OMCC_VER, OMCI_VENDOR_PRODUCT_CODE) to
  *                      the OLT. Off, omcid answers what it always has.
  */

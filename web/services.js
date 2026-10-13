@@ -123,7 +123,7 @@ function renderSwImage(box, dump) {
   /*
    * The comparison that makes this card worth having. ME 7 is what the OLT was
    * told; sw_version<n> is what U-Boot records for the partition. On this
-   * image omcid answers "0.0.0" unless the OLT identity switch is on, and then
+   * image omcid answers "0.0.0" unless the ONU identity switch is on, and then
    * OMCI_SW_VER1 for image 0 and OMCI_SW_VER2 for image 1 -- so a difference
    * is usually that switch being off, and saying which key sets it is the
    * point. On the stock firmware the same question ("my OMCI software version
@@ -142,7 +142,7 @@ function renderSwImage(box, dump) {
   const key = active === '1' ? 'OMCI_SW_VER2' : 'OMCI_SW_VER1';
   box.append(note('Partition ' + active + ' holds “' + held + '”, which is not '
     + 'what the OLT was told. That is expected here: omcid reports 0.0.0 '
-    + 'unless the OLT identity switch is on (Config), and then ' + key
+    + 'unless the ONU identity switch is on (Config), and then ' + key
     + ' for this image. Set the key, turn the switch on and apply to choose '
     + 'the reported string -- a change the OLT sees, so only on a line that '
     + 'checks it.'));

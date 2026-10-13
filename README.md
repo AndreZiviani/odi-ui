@@ -15,7 +15,7 @@ project for this stick.
   the margin to each edge; ONU state, alarms, forwarding rates, learned MAC
   addresses.
 - **Config** — the keys the image reads, on subtabs by what they are for
-  (Line, VLAN, OLT identity, Network, Services), each labelled with what
+  (Line, VLAN, ONU identity, Network, Services), each labelled with what
   applying a change costs; the stock-only keys, read-only.
 - **OMCI** — what the OLT actually provisioned, in sentences, and the raw MIB
   underneath it.

@@ -686,7 +686,7 @@ check "without apply.sh the syslog action is refused, not turned into an omci re
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=syslog' "http://127.0.0.1:$PORT/api/apply")" 'reboot to apply')"
 
 echo "== switch files"
-check "the OLT identity switch starts off" yes \
+check "the ONU identity switch starts off" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false}')"
 check "it can be turned on" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=1' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":true')"

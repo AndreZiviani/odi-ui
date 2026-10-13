@@ -67,7 +67,7 @@ function settingOf(name) {
   return S.SETTINGS[name] || null;
 }
 
-/* The OLT identity keys, which omcid reports only while its switch is on. */
+/* The ONU identity keys, which omcid reports only while its switch is on. */
 const IDENTITY_SWITCH = 'omci-identity.on';
 function identitySwitchOn() {
   return Boolean((S.FW.switches || {})[IDENTITY_SWITCH]);
