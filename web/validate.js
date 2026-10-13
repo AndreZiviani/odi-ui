@@ -7,7 +7,7 @@
  * after it.
  */
 
-import { S, EDITS } from './state.js';
+import { S, EDITS, dependsUnmet } from './state.js';
 
 function rangeBad(row, raw) {
   const m = S.META[row.name];
@@ -109,7 +109,11 @@ function invalidEdits() {
   const out = [];
   for (const [name, v] of EDITS) {
     const row = S.SCHEMA.find((r) => r.name === name);
-    const why = row && valueProblem(row, v);
+    /* The page does not offer a key the firmware ignores; an edit to one can
+       only be left over, and is refused rather than saved for nothing. */
+    const unmet = row && dependsUnmet(row);
+    const why = unmet ? 'ignored by the firmware unless ' + unmet.join(' and ')
+      : row && valueProblem(row, v);
     if (why) out.push([name, why]);
   }
   return out;

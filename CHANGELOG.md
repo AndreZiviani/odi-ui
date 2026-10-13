@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: a key the firmware ignores in the current mode is shown without a
+  control, with the reason and the key to change first. The VLAN ID and
+  priority used to stay editable in VLAN config mode 0 and failed validation
+  when cleared, so the page seemed to require a value nothing reads
+  (odi-oss #29). The condition follows pending edits: choosing mode 1 unlocks
+  the fields before saving, and setting it back drops an edit typed there.
+  Save refuses any such edit left over; the daemon still accepts the keys, so
+  a backup restore writes them as before.
+
 ## v1.2.1 - 2026-10-12
 
 - fix: on odi-oss the Config page showed `SYSLOG_SERVER` and `NTP_SERVER` empty

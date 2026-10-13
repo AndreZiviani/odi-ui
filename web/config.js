@@ -10,7 +10,7 @@
 
 import { $, el } from './dom.js';
 import {
-  S, EDITS, provenance, applyOf, dependsUnmet, decodeMask,
+  S, EDITS, provenance, applyOf, dependsUnmet, gatesOthers, dropIgnoredEdits, decodeMask,
   CLASS_LABEL, CLASS_MEANS, costBadge, imageAware, settingOf, identitySwitchOn,
 } from './state.js';
 import { hexAscii, validateInput } from './validate.js';
@@ -75,7 +75,7 @@ function renderValue(row, raw, readonly = false) {
      daemon twice over, but not offering the field is the honest presentation.
      Nor do the stock keys, on an image that says which keys it reads, nor a
      key that is written together with another one (LOID_OLD follows LOID). */
-  if (row.writable === 'never' || readonly || (set && set.pair)) {
+  if (row.writable === 'never' || readonly || (set && set.pair) || dependsUnmet(row)) {
     box.append(el('span', 's-ro mono', shown === undefined ? '(not set)'
       : shown === '' ? '(empty)' : shown));
     return box;
@@ -132,6 +132,14 @@ function renderValue(row, raw, readonly = false) {
     input.classList.toggle('changed', v !== raw);
     validateInput(row, input);
     if (follow) follow(v);
+    /* A key others depend on locks or unlocks them: redraw, and keep the
+       focus on the control that was changed. */
+    if (gatesOthers(row.name)) {
+      dropIgnoredEdits();
+      renderAll();
+      const again = $('#f-' + row.name);
+      if (again) again.focus();
+    }
     /* An event, not an import of save.js: config renders the fields and save
        owns the bar, and importing each other would make that a cycle. */
     document.dispatchEvent(new Event('edits-changed'));
@@ -182,7 +190,8 @@ function renderRow(row, readonly) {
 
   const left = el('div', 's-label');
   const name = el('label', 's-name', meta.label || row.name);
-  if (!(row.writable === 'never' || readonly || (set && set.pair))) name.htmlFor = 'f-' + row.name;
+  const unmet = dependsUnmet(row);
+  if (!(row.writable === 'never' || readonly || (set && set.pair) || unmet)) name.htmlFor = 'f-' + row.name;
   const title = el('div', 's-title');
   title.append(name, el('span', 's-key mono', row.name));
   left.append(title);
@@ -199,8 +208,10 @@ function renderRow(row, readonly) {
     left.append(el('p', 's-warn', 'Not reported to the OLT: the identity switch is off, so '
       + 'saving it changes nothing on the line and does not drop the service.'));
   }
-  const unmet = dependsUnmet(row);
-  if (unmet) left.append(el('p', 's-warn', 'Ignored by the firmware now: needs ' + unmet.join(' and ') + '.'));
+  if (unmet) {
+    left.append(el('p', 's-warn', 'Not editable now: the firmware ignores this key unless '
+      + unmet.join(' and ') + '. Change that first.'));
+  }
 
   const more = [];
   if (h.rest) more.push(['', h.rest]);

@@ -55,6 +55,7 @@ class El {
   getAttribute(k) { return this.attrs[k] ?? null; }
   removeAttribute(k) { delete this.attrs[k]; }
   addEventListener() {}
+  focus() {}
   querySelector() { return null; }
   querySelectorAll() { return []; }
   get value() { return this._value ?? ''; }
@@ -732,6 +733,40 @@ EDITS.clear();
   EDITS.clear();
   globalThis.fetch = realFetch;
   globalThis.confirm = () => false;
+
+  /* A key the firmware ignores is shown, not offered, and says why; choosing
+     the mode that reads it unlocks it before anything is saved. */
+  {
+    const { invalidEdits } = await import(join(root, 'web', 'validate.js'));
+    const field = (name) => {
+      let f = null;
+      walk(doc.querySelector('#set-vlan'), (x) => {
+        if ((x.tagName === 'input' || x.tagName === 'select') && x.dataset && x.dataset.name === name) f = x;
+      });
+      return f;
+    };
+    const vidRow = () => rowsOf('#set-vlan').find((r) => r.dataset.name === 'VLAN_MANU_TAG_VID');
+    renderAll();
+    ok(field('VLAN_MANU_TAG_VID') !== null, 'gated: the VLAN ID is editable in manual mode');
+    EDITS.set('VLAN_MANU_TAG_VID', '100');
+    const mode = field('VLAN_CFG_TYPE');
+    mode.value = '0';
+    mode.oninput();
+    ok(field('VLAN_MANU_TAG_VID') === null && /Not editable now/.test(textOf(vidRow()))
+       && /VLAN_CFG_TYPE=1/.test(textOf(vidRow())),
+       'gated: config mode 0 locks the VLAN ID and names the key that unlocks it');
+    ok(!EDITS.has('VLAN_MANU_TAG_VID'), 'gated: and drops the VLAN ID edit made before');
+    field('VLAN_CFG_TYPE').value = '1';
+    field('VLAN_CFG_TYPE').oninput();
+    ok(field('VLAN_MANU_TAG_VID') !== null && !EDITS.has('VLAN_CFG_TYPE'),
+       'gated: setting mode 1 back unlocks it, with nothing pending');
+    EDITS.set('VLAN_CFG_TYPE', '0');
+    EDITS.set('VLAN_MANU_TAG_VID', '100');
+    ok(invalidEdits().some(([k, why]) => k === 'VLAN_MANU_TAG_VID' && /ignored by the firmware/.test(why)),
+       'gated: Save refuses a leftover edit to an ignored key');
+    EDITS.clear();
+    renderAll();
+  }
 
   /* An identity key the switch keeps from the OLT changes nothing on the
      line: no cost in the save bar, and no Apply now after the save. */

@@ -466,9 +466,14 @@ That last one exists because the firmware silently ignores settings. `runomci.sh
 only passes `VLAN_MANU_TAG_VID` to `omci_app` when `VLAN_CFG_TYPE=1` **and**
 `VLAN_MANU_MODE=1`; otherwise it sends `-iot_vid 65535` and your VLAN ID goes
 nowhere. Worse, if the VID or the priority is empty it drops the whole `-iot_`
-block. The UI says so in place:
+block. The UI shows such a key without a control, and says why in place:
 
-    Ignored by the firmware right now — needs VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1.
+    Not editable now: the firmware ignores this key unless VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1. Change that first.
+
+The condition is judged on the values a Save would leave, so choosing mode 1
+unlocks the VLAN ID at once, and setting it back drops an edit already typed
+there. Save refuses any such edit left over. The daemon still accepts these
+keys, because a backup restore writes them whatever the mode.
 
 Values render as their meaning (`0 — SFU / bridge`, not `0`), and anything
 outside its documented range is flagged.
