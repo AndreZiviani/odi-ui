@@ -114,15 +114,36 @@ function applyOf(row) {
  * when VLAN_CFG_TYPE=1 and VLAN_MANU_MODE=1, by omcid here as by omci_app on
  * the stock firmware. Saying so is more useful than showing a value that
  * looks live and is not.
+ *
+ * Judged on the values a Save would leave, pending edits included, so
+ * choosing VLAN config mode 1 unlocks the VLAN ID before anything is saved.
  */
 function dependsUnmet(row) {
   const m = S.META[row.name];
   if (!m || !m.depends) return null;
   const unmet = m.depends.split('&').filter((c) => {
     const [k, v] = c.split('=');
-    return S.VALUES[k] !== v;
+    return (EDITS.has(k) ? EDITS.get(k) : S.VALUES[k]) !== v;
   });
   return unmet.length ? unmet : null;
+}
+
+/* Whether another key's `depends` names this one. */
+function gatesOthers(name) {
+  return Object.values(S.META).some((m) => m.depends
+    && m.depends.split('&').some((c) => c.split('=')[0] === name));
+}
+
+/*
+ * Drop the pending edits of keys the firmware would ignore. A key turns
+ * ignored when the one gating it is changed back (VLAN ID typed, then config
+ * mode set to 0), and an edit to it would be saved for nothing.
+ */
+function dropIgnoredEdits() {
+  for (const k of [...EDITS.keys()]) {
+    const row = S.SCHEMA.find((r) => r.name === k);
+    if (row && dependsUnmet(row)) EDITS.delete(k);
+  }
 }
 
 
@@ -204,6 +225,6 @@ function decodeMask(name, value) {
 }
 
 export {
-  S, EDITS, provenance, applyOf, dependsUnmet, decodeMask, vlanTag, vlanRisk,
+  S, EDITS, provenance, applyOf, dependsUnmet, gatesOthers, dropIgnoredEdits, decodeMask, vlanTag, vlanRisk,
   CLASS_LABEL, CLASS_RANK, CLASS_MEANS, CLASS_CONFIRMS, costBadge, imageAware, settingOf, IDENTITY_SWITCH, identitySwitchOn,
 };
