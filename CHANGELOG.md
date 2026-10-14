@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.3.1 - 2026-10-14
+
 - Config: the odi-only key `OMCI_FIXED_ME` on the ONU identity subtab, up to
   8 `CLASS:HEX` entries (class 1-65535, 1 to 25 bytes of hex, optional `0x`,
   no class twice, e.g. `200:0x0011aa,201:01020304`). omcid answers an OLT Get
