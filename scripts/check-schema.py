@@ -25,7 +25,7 @@ WRITABLE = {"yes", "never", "identity"}
 # anything else -- so a typo here is a key that cannot be written at all, which
 # is the safe direction but still a bug, and one nothing else would report.
 # Keep the two in step: adding a type means adding it in both places.
-TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "hostport", "ascii14", "string"}
+TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "hostport", "ascii14", "fixedme", "string"}
 
 problems = []
 

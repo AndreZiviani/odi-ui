@@ -90,6 +90,7 @@ NTP_SERVER	cs	NTP_SERVER	other	hostport	unknown	yes	no
 ONU_HW_VERSION	cs	ONU_HW_VERSION	omci	ascii14	unknown	yes	no
 OLT_SW_DOWNLOAD	cs	OLT_SW_DOWNLOAD	omci	string	unknown	yes	no
 OMCI_UNKNOWN_ME_OK	cs	OMCI_UNKNOWN_ME_OK	omci	int	unknown	yes	no
+OMCI_FIXED_ME	cs	OMCI_FIXED_ME	omci	fixedme	unknown	yes	no
 FIBER_MODE	cs	FIBER_MODE	other	int	unknown	never	no
 RTK_DEVID_MANUFACTURER	cs	RTK_DEVID_MANUFACTURER	hardware	string	unknown	yes	no
 RTK_DEVID_OUI	cs	RTK_DEVID_OUI	hardware	string	unknown	yes	no

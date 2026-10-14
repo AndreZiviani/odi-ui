@@ -89,6 +89,7 @@ NTP_SERVER	unknown
 ONU_HW_VERSION	unknown	
 OLT_SW_DOWNLOAD	unknown	
 OMCI_UNKNOWN_ME_OK	unknown	
+OMCI_FIXED_ME	unknown	
 FIBER_MODE	reboot	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/runsdk.sh
 RTK_DEVID_MANUFACTURER	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 RTK_DEVID_OUI	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig

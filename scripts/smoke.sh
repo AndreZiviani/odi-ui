@@ -428,6 +428,22 @@ check "OMCI_UNKNOWN_ME_OK is written and interrupts" yes \
 	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=1')" '"needs":["omci"],"stock":false,"interrupts":true')"
 check "OMCI_UNKNOWN_ME_OK outside 0 and 1 is refused" yes \
 	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=2')" 'not one of the values')"
+check "OMCI_FIXED_ME with one entry is written and interrupts" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=200:0x0011aa')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "OMCI_FIXED_ME with two entries passes" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=200:0x0011aa,201:01020304')" '"ok":true')"
+check "OMCI_FIXED_ME with 25 bytes and space separators passes" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=200:0102030405060708090a0b0c0d0e0f101112131415161718ff%20201:AA')" '"ok":true')"
+for bad in 0:aa 65536:aa 200aa 200:abc 200:zz 200:0x 200:aa,200:bb \
+	200:0102030405060708090a0b0c0d0e0f101112131415161718191a \
+	1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa,9:aa; do
+	check "a bad OMCI_FIXED_ME is refused: $bad" yes \
+		"$(err "$(post "OMCI_FIXED_ME=$bad")" 'not valid for its type')"
+done
+check "eight OMCI_FIXED_ME entries pass" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa')" '"ok":true')"
+check "an empty OMCI_FIXED_ME clears it" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=')" '"ok":true')"
 check "settings.tsv is served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")" '"name":"LAN_ENABLE_IP2","apply":"live","action":"network"')"
 check "the VLAN keys are live and applied by omci" yes \

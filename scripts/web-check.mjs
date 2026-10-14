@@ -644,6 +644,13 @@ ok(!hwv('HW-2.1') && !hwv('12345678901234') && !hwv(''),
    'ascii14 accepts up to 14 printable characters, and empty (it clears the key)');
 ok(['123456789012345', 'a"b', 'a<b', 'a&b', 'caf\u00e9', 'a\tb'].every((v) => hwv(v)),
    'ascii14 rejects 15 characters, a quote, < and &, and anything outside printable ASCII');
+const fme = (v) => valueProblem({ name: 'OMCI_FIXED_ME', type: 'fixedme' }, v);
+ok(!fme('200:0x0011aa') && !fme('200:0x0011aa,201:01020304') && !fme('1:aa 65535:0XAB, 7:'+'ff'.repeat(25)) && !fme(''),
+   'fixedme accepts one or more CLASS:HEX entries, either separator, and empty (it clears the key)');
+ok(['0:aa', '65536:aa', '200aa', '200:abc', '200:zz', '200:0x', '200:aa,200:bb', '200:' + 'ff'.repeat(26),
+  ',200:aa', '200:aa,', '1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa,9:aa'].every((v) => fme(v)),
+   'fixedme rejects class 0 and 65536, a missing colon, odd digits, non-hex, 26 bytes, a duplicate class and nine entries');
+ok(!fme('1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa'), 'fixedme accepts eight entries');
 {
   const setting = (n) => SETT.find((r) => r.name === n);
   ok(['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI']
@@ -651,7 +658,7 @@ ok(['123456789012345', 'a"b', 'a<b', 'a&b', 'caf\u00e9', 'a\tb'].every((v) => hw
   'the four VLAN keys are live and applied by omci');
   ok(setting('OLT_SW_DOWNLOAD').apply === 'live' && setting('OLT_SW_DOWNLOAD').action === 'none',
     'OLT_SW_DOWNLOAD is live with nothing to apply');
-  ok(['ONU_HW_VERSION', 'OMCI_UNKNOWN_ME_OK', 'GPON_SN'].every((n) => setting(n).apply === 'internet' && setting(n).action === 'omci'),
+  ok(['ONU_HW_VERSION', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME', 'GPON_SN'].every((n) => setting(n).apply === 'internet' && setting(n).action === 'omci'),
     'the hardware version, unknown-entity answers and serial number re-register the ONU');
   /* A value that can cut the service says so in its own label, and the
      one that cannot does not: the choice is made in the dropdown, where the
@@ -682,7 +689,7 @@ ok(['123456789012345', 'a"b', 'a<b', 'a&b', 'caf\u00e9', 'a\tb'].every((v) => hw
     ['GPON_PLOAM_PASSWD', /refuses the ONU/], ['LOID', /refuses the ONU/]]) {
     ok(re.test(first(n)), `${n}: the visible help says how a value can cut the service`);
   }
-  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK'].every((n) => GROUPS.identity.includes(n)),
+  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'].every((n) => GROUPS.identity.includes(n)),
     'the new OLT-facing keys sit on the ONU identity subtab');
 }
 

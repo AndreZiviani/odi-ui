@@ -108,6 +108,49 @@ int type_ok(const char *type, const char *v)
 		}
 		return 1;
 	}
+	if (seq(type, "fixedme")) {
+		/* OMCI_FIXED_ME: up to 8 CLASS:HEX entries separated by commas
+		 * or spaces. Class decimal 1..65535, hex with an optional 0x,
+		 * 1 to 25 bytes (an even count of 2..50 digits), no class
+		 * twice. omcid turns the whole key off on anything else, so it
+		 * is refused here. Empty clears the key. */
+		unsigned long classes[8], n = 0, k;
+
+		if (!v[0])
+			return 1;
+		i = 0;
+		while (v[i]) {
+			unsigned long cls = 0, cd = 0, hd = 0;
+
+			for (; v[i] >= '0' && v[i] <= '9'; i++) {
+				if (++cd > 5)
+					return 0;
+				cls = cls * 10 + (unsigned long)(v[i] - '0');
+			}
+			if (!cd || cls < 1 || cls > 65535 || v[i] != ':' || n >= 8)
+				return 0;
+			i++;
+			if (v[i] == '0' && (v[i + 1] == 'x' || v[i + 1] == 'X'))
+				i += 2;
+			for (; hexval(v[i]) >= 0; i++)
+				hd++;
+			if (hd < 2 || hd > 50 || hd % 2)
+				return 0;
+			for (k = 0; k < n; k++)
+				if (classes[k] == cls)
+					return 0;
+			classes[n++] = cls;
+			if (!v[i])
+				break;
+			if (v[i] != ',' && v[i] != ' ')
+				return 0;
+			while (v[i] == ',' || v[i] == ' ')
+				i++;
+			if (!v[i])
+				return 0;              /* trailing separator */
+		}
+		return n > 0;
+	}
 	if (seq(type, "string"))
 		return 1;
 

@@ -42,7 +42,9 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   not by the schema section a key lives in:
   - *Line* &mdash; `GPON_SN`, the PLOAM password, the four LOID keys;
   - *VLAN* &mdash; the four `VLAN_*` keys;
-  - *ONU identity* &mdash; the identity switch, and the five keys it gates;
+  - *ONU identity* &mdash; the identity switch, the five keys it gates, and the odi-only
+    `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME` (the latter is private to the
+    owner: confd never logs it, and the diagnostics bundle redacts it);
   - *Network* &mdash; both management addresses and the UNI MAC;
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
