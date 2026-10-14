@@ -115,7 +115,8 @@ function renderValue(row, raw, readonly = false) {
       o.value = shown;
       input.append(o);
     }
-    input.value = shown;
+    /* Unset is the empty option: a select given undefined shows nothing. */
+    input.value = shown === undefined ? '' : shown;
   } else {
     input = el('input');
     input.type = 'text';
