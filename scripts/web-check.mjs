@@ -658,6 +658,8 @@ ok(!fme('1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa'), 'fixedme accepts eight entri
   'the four VLAN keys are live and applied by omci');
   ok(setting('OLT_SW_DOWNLOAD').apply === 'live' && setting('OLT_SW_DOWNLOAD').action === 'none',
     'OLT_SW_DOWNLOAD is live with nothing to apply');
+  ok(setting('OMCI_ACCEPT_REBOOT').apply === 'live' && setting('OMCI_ACCEPT_REBOOT').action === 'none',
+    'OMCI_ACCEPT_REBOOT is live with nothing to apply');
   ok(['ONU_HW_VERSION', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME', 'GPON_SN'].every((n) => setting(n).apply === 'internet' && setting(n).action === 'omci'),
     'the hardware version, unknown-entity answers and serial number re-register the ONU');
   /* A value that can cut the service says so in its own label, and the
@@ -689,7 +691,7 @@ ok(!fme('1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa'), 'fixedme accepts eight entri
     ['GPON_PLOAM_PASSWD', /refuses the ONU/], ['LOID', /refuses the ONU/]]) {
     ok(re.test(first(n)), `${n}: the visible help says how a value can cut the service`);
   }
-  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'].every((n) => GROUPS.identity.includes(n)),
+  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'].every((n) => GROUPS.identity.includes(n)),
     'the new OLT-facing keys sit on the ONU identity subtab');
 }
 

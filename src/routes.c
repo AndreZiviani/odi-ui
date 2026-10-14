@@ -1134,7 +1134,7 @@ void serve(int conn)
 
 	if (seq(path, "/api/settings")) {
 		static const char *col[] = { "name", "apply", "action", "pair",
-					     "reader", "note" };
+					     "reader", "note", "unset" };
 
 		/* This image's own view of each key. Absent answers an empty
 		 * list, and the page then offers every key as it used to. */
@@ -1145,7 +1145,7 @@ void serve(int conn)
 			return;
 		}
 		respond(conn, "200 OK", "application/json", 0);
-		emit_tsv_json(conn, sett, col, 6);
+		emit_tsv_json(conn, sett, col, 7);
 		return;
 	}
 

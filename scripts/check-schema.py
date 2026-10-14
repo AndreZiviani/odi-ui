@@ -55,7 +55,7 @@ def load(name, cols):
 keys = load("keys.tsv", 8)
 meta = load("meta.tsv", 6)
 cons = load("consumers.tsv", 3)
-sett = load("settings.tsv", 6)
+sett = load("settings.tsv", 7)
 
 # settings.tsv, the image's own view. The classes are the four the page
 # labels; the actions are the three apply.sh and the reboot button perform.
@@ -88,6 +88,7 @@ for name, store, addr, section, typ, apply_, writable, common in keys:
 
 # --- meta.tsv --------------------------------------------------------------
 by_name = {r[0]: r for r in keys}
+meta_by_name = {r[0]: r for r in meta}
 meta_names = [r[0] for r in meta]
 for dup in sorted({n for n in meta_names if meta_names.count(n) > 1}):
     # The browser keeps the last row, so the first is dead text nobody sees.
@@ -147,7 +148,7 @@ if cons and names - cons_names:
 
 # --- settings.tsv ----------------------------------------------------------
 sett_names = [r[0] for r in sett]
-for name, apply_, action, pair, reader, note_ in sett:
+for name, apply_, action, pair, reader, note_, unset in sett:
     if name not in names:
         note(name, "is in settings.tsv but not in the schema")
     elif by_name[name][6] == "never":
@@ -171,6 +172,13 @@ for name, apply_, action, pair, reader, note_ in sett:
         note(name, "is paired with itself")
     if not reader or not note_:
         note(name, "needs a reader and a note")
+    # The unset value is shown as the selected option, so it has to be one.
+    opts = [o.split("=", 1)[0] for o in filter(None, meta_by_name.get(name, ("",) * 6)[3].split("|"))]
+    if opts and not unset:
+        note(name, "has options but no unset value: what does the image do without it?")
+    if unset:
+        if unset not in opts:
+            note(name, f"unset {unset!r} is not one of its options {opts}")
 if len(sett_names) != len(set(sett_names)):
     note("settings.tsv", "a key appears twice")
 

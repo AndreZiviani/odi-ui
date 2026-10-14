@@ -25,7 +25,7 @@ const GROUPS = {
   line: ['GPON_SN', 'GPON_PLOAM_PASSWD', 'LOID', 'LOID_PASSWD', 'LOID_OLD', 'LOID_PASSWD_OLD'],
   vlan: ['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI'],
   identity: ['OMCI_VENDOR_PRODUCT_CODE', 'GPON_ONU_MODEL', 'ONU_HW_VERSION', 'OMCI_SW_VER1', 'OMCI_SW_VER2', 'OMCC_VER',
-    'OLT_SW_DOWNLOAD', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'],
+    'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'],
   network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
   services: ['SYSLOG_SERVER', 'NTP_SERVER'],
 };
@@ -69,7 +69,11 @@ function renderValue(row, raw, readonly = false) {
      filter keystroke rebuild the rows without losing them -- but only if the
      rebuild reads the Map back. A value the user cannot see is a value they
      cannot check. */
-  const shown = EDITS.has(row.name) ? EDITS.get(row.name) : raw;
+  /* An absent key the image gives a value of its own (settings.tsv `unset`)
+     shows that value, as what is in effect. It is still the baseline only as
+     absent: choosing it again stores nothing. */
+  const fallback = (raw === undefined || raw === '') && set && set.unset ? set.unset : undefined;
+  const shown = EDITS.has(row.name) ? EDITS.get(row.name) : (fallback !== undefined ? fallback : raw);
 
   /* Never-writable keys get no control at all. The refusal is enforced in the
      daemon twice over, but not offering the field is the honest presentation.
@@ -99,12 +103,15 @@ function renderValue(row, raw, readonly = false) {
     }
     /* A value the device holds that is not in the option list must still be
        selectable, or opening the page would silently propose changing it.
-       A key with NO value is a different case and gets said differently:
-       several read `GET fail` on this hardware. */
+       A key with NO value shows what the image does without it (settings.tsv
+       `unset`, required for every key with options); only a key the image
+       does not describe can still read "(not set)". */
     if (raw === undefined || raw === '') {
-      const o = el('option', null, '(not set)');
-      o.value = '';
-      input.append(o);
+      if (fallback === undefined) {
+        const o = el('option', null, '(not set)');
+        o.value = '';
+        input.append(o);
+      }
     } else if (![...input.options].some((o) => o.value === raw)) {
       const o = el('option', null, raw + ' (current, not a listed value)');
       o.value = raw;
@@ -115,7 +122,8 @@ function renderValue(row, raw, readonly = false) {
       o.value = shown;
       input.append(o);
     }
-    input.value = shown;
+    /* Unset is the empty option: a select given undefined shows nothing. */
+    input.value = shown === undefined ? '' : shown;
   } else {
     input = el('input');
     input.type = 'text';
@@ -135,8 +143,9 @@ function renderValue(row, raw, readonly = false) {
   let follow = null;
   input.oninput = input.onchange = () => {
     const v = input.value;
-    if (v === raw) EDITS.delete(row.name); else EDITS.set(row.name, v);
-    input.classList.toggle('changed', v !== raw);
+    const same = v === raw || (fallback !== undefined && v === fallback);
+    if (same) EDITS.delete(row.name); else EDITS.set(row.name, v);
+    input.classList.toggle('changed', !same);
     validateInput(row, input);
     if (follow) follow(v);
     /* A key others depend on locks or unlocks them: redraw, and keep the
@@ -151,7 +160,7 @@ function renderValue(row, raw, readonly = false) {
        owns the bar, and importing each other would make that a cycle. */
     document.dispatchEvent(new Event('edits-changed'));
   };
-  input.classList.toggle('changed', shown !== raw);
+  input.classList.toggle('changed', EDITS.has(row.name));
   validateInput(row, input);
   box.append(input);
 
@@ -231,6 +240,9 @@ function renderRow(row, readonly) {
      what the apply class was derived from. */
   const rd = imageAware() ? (set ? set.reader : '') : (S.CONS[row.name] || {}).readers;
   if (rd) more.push(['Read by', rd.split(',').map((x) => x.trim()).join(', ')]);
+  if (set && set.unset && (S.VALUES[row.name] === undefined || S.VALUES[row.name] === '')) {
+    more.push(['Stored', `not set (the image uses ${set.unset})`]);
+  }
   if (unmet && S.VALUES[row.name] !== undefined) {
     more.push(['Stored', `${S.VALUES[row.name] === '' ? '(empty)' : S.VALUES[row.name]} (used again once ${unmet.join(' and ')})`]);
   }
