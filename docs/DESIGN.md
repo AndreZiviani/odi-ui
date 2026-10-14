@@ -43,7 +43,7 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   - *Line* &mdash; `GPON_SN`, the PLOAM password, the four LOID keys;
   - *VLAN* &mdash; the four `VLAN_*` keys;
   - *ONU identity* &mdash; the identity switch, the five keys it gates, and the odi-only
-    `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME` (the latter is private to the
+    `OMCI_ACCEPT_REBOOT`, `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME` (the latter is private to the
     owner: confd never logs it, and the diagnostics bundle redacts it);
   - *Network* &mdash; both management addresses and the UNI MAC;
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;

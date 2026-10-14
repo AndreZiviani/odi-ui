@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the odi-only key `OMCI_ACCEPT_REBOOT` on the ONU identity subtab, a
+  yes/no field: "Lets the OLT reboot the stick over OMCI. Off by default."
+  Live, nothing to apply: omcid reads it each time a Reboot arrives. Needs an
+  odi-oss image that knows the key; older images keep the value and ignore it.
+
 ## v1.3.1 - 2026-10-14
 
 - Config: the odi-only key `OMCI_FIXED_ME` on the ONU identity subtab, up to

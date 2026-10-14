@@ -47,6 +47,7 @@ OMCC_VER	internet	omci		omcid, on SIGHUP, with omci-identity.on	Reported only wh
 OMCI_VENDOR_PRODUCT_CODE	internet	omci		omcid, on SIGHUP, with omci-identity.on	Reported only while the ONU identity switch is on; otherwise 15, the captured default.
 ONU_HW_VERSION	internet	omci		omcid, on SIGHUP, with omci-identity.on	Reported only while the ONU identity switch is on; otherwise the device id. An odi-only key, kept in odi.conf: empty removes it. Applying deactivates the ONU so the OLT reads the new version.
 OLT_SW_DOWNLOAD	live	none		omcid, at each software download step	Read each time the OLT starts, activates or commits a software download, so a change is in effect at once and nothing is applied. An odi-only key, kept in odi.conf.
+OMCI_ACCEPT_REBOOT	live	none		omcid, at each Reboot from the OLT	Read each time the OLT sends a Reboot, so a change is in effect at once and nothing is applied. An odi-only key, kept in odi.conf.
 OMCI_UNKNOWN_ME_OK	internet	omci		omcid, on SIGHUP	An odi-only key, kept in odi.conf. Changes what omcid answers the OLT for classes it does not model, so applying re-registers the ONU and the OLT provisions it again with the new answers.
 OMCI_FIXED_ME	internet	omci		omcid, at start and on SIGHUP	An odi-only key, kept in odi.conf: empty removes it. Applying re-registers the ONU so the OLT reads the entities again.
 ELAN_MAC_ADDR	reboot	reboot		network.sh	Needs a reboot: the MAC is set on eth0 and its host port with the links down, before br0 exists, and doing that live would cut every way in mid-change.
