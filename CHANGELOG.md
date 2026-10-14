@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.3.2 - 2026-10-14
+
 - Config: a select whose key is unset showed an empty box. The image always
   does something without a key, so a new settings.tsv column `unset` names
   that value for every key with options (`OLT_SW_DOWNLOAD` accept;
