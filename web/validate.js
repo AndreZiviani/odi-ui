@@ -28,9 +28,9 @@ function rangeBad(row, raw) {
  * after it.
  */
 function valueProblem(row, raw) {
-  /* hostport keys (SYSLOG_SERVER, NTP_SERVER) and ascii14 (ONU_HW_VERSION) are
-     odi-only and empty clears them. */
-  if ((row.type === 'hostport' || row.type === 'ascii14') && raw === '') return null;
+  /* hostport keys (SYSLOG_SERVER, NTP_SERVER), ascii14 (ONU_HW_VERSION) and
+     fixedme (OMCI_FIXED_ME) are odi-only and empty clears them. */
+  if (['hostport', 'ascii14', 'fixedme'].includes(row.type) && raw === '') return null;
   if (raw === '' || raw === undefined) {
     return 'cannot be empty \u2014 flash set refuses to clear a key';
   }
@@ -54,6 +54,14 @@ function valueProblem(row, raw) {
   }
   if (row.type === 'ascii14' && /["<&]/.test(raw)) {
     return 'a quote, < or & cannot be stored';
+  }
+  if (row.type === 'fixedme') {
+    const bad = 'up to 8 CLASS:HEX entries separated by commas or spaces: class 1\u201365535, '
+      + 'hex of 1 to 25 bytes (an even count of digits), no class twice';
+    if (!/^[0-9]{1,5}:(0[xX])?([0-9a-fA-F]{2}){1,25}([ ,]+[0-9]{1,5}:(0[xX])?([0-9a-fA-F]{2}){1,25})*$/.test(raw)) return bad;
+    const classes = raw.split(/[ ,]+/).map((e) => Number(e.split(':')[0]));
+    if (classes.length > 8 || classes.some((c) => c < 1 || c > 65535)
+        || new Set(classes).size !== classes.length) return bad;
   }
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';

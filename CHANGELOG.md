@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the odi-only key `OMCI_FIXED_ME` on the ONU identity subtab, up to
+  8 `CLASS:HEX` entries (class 1-65535, 1 to 25 bytes of hex, optional `0x`,
+  no class twice, e.g. `200:0x0011aa,201:01020304`). omcid answers an OLT Get
+  of a class it has no model for with that entry's bytes; an implemented
+  class is never overridden. Empty clears it, it re-registers the ONU like
+  `OMCI_UNKNOWN_ME_OK`, and a malformed list is refused in the browser and in
+  confd (new type `fixedme`) because omcid would turn the whole key off. The
+  bytes are never logged. Pairs with odi-oss #88.
 - Config: the "OLT identity" subtab is now "ONU identity". Its keys
   describe the stick (what it reports to the OLT), not the OLT, which a
   reader of the old name found misleading.

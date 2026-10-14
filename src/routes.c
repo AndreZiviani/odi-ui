@@ -111,11 +111,13 @@ static void handle_write(int conn, const char *body)
 			err = "not writable";
 		else if (seq(writable, "identity") && !confirm)
 			err = "identity key: resend with _confirm=identity";
-		/* Only the odi-only hostport and ascii14 keys (SYSLOG_SERVER,
-		 * NTP_SERVER, ONU_HW_VERSION) can be cleared: odi-oss flash keeps them in a plain file and
+		/* Only the odi-only hostport, ascii14, and fixedme keys
+		 * (SYSLOG_SERVER, NTP_SERVER, ONU_HW_VERSION, OMCI_FIXED_ME)
+		 * can be cleared: odi-oss flash keeps them in a plain file and
 		 * an empty value removes the key. Stock keys live in the vendor
 		 * XML, where an empty value is not a clear. */
-		else if (!value[0] && !seq(type, "hostport") && !seq(type, "ascii14"))
+		else if (!value[0] && !seq(type, "hostport") && !seq(type, "ascii14") &&
+			 !seq(type, "fixedme"))
 			err = "cannot be cleared: flash set refuses an empty value";
 		else if (!type_ok(type, value))
 			err = "not valid for its type";
