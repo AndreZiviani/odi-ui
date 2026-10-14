@@ -160,7 +160,7 @@ function renderValue(row, raw, readonly = false) {
        owns the bar, and importing each other would make that a cycle. */
     document.dispatchEvent(new Event('edits-changed'));
   };
-  input.classList.toggle('changed', shown !== raw);
+  input.classList.toggle('changed', EDITS.has(row.name));
   validateInput(row, input);
   box.append(input);
 
