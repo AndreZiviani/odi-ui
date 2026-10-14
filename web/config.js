@@ -69,7 +69,11 @@ function renderValue(row, raw, readonly = false) {
      filter keystroke rebuild the rows without losing them -- but only if the
      rebuild reads the Map back. A value the user cannot see is a value they
      cannot check. */
-  const shown = EDITS.has(row.name) ? EDITS.get(row.name) : raw;
+  /* An absent key the image gives a value of its own (settings.tsv `unset`)
+     shows that value, as what is in effect. It is still the baseline only as
+     absent: choosing it again stores nothing. */
+  const fallback = (raw === undefined || raw === '') && set && set.unset ? set.unset : undefined;
+  const shown = EDITS.has(row.name) ? EDITS.get(row.name) : (fallback !== undefined ? fallback : raw);
 
   /* Never-writable keys get no control at all. The refusal is enforced in the
      daemon twice over, but not offering the field is the honest presentation.
@@ -101,7 +105,7 @@ function renderValue(row, raw, readonly = false) {
        selectable, or opening the page would silently propose changing it.
        A key with NO value is a different case and gets said differently:
        several read `GET fail` on this hardware. */
-    if (raw === undefined || raw === '') {
+    if ((raw === undefined || raw === '') && fallback === undefined) {
       const o = el('option', null, '(not set)');
       o.value = '';
       input.append(o);
@@ -136,8 +140,9 @@ function renderValue(row, raw, readonly = false) {
   let follow = null;
   input.oninput = input.onchange = () => {
     const v = input.value;
-    if (v === raw) EDITS.delete(row.name); else EDITS.set(row.name, v);
-    input.classList.toggle('changed', v !== raw);
+    const same = v === raw || (fallback !== undefined && v === fallback);
+    if (same) EDITS.delete(row.name); else EDITS.set(row.name, v);
+    input.classList.toggle('changed', !same);
     validateInput(row, input);
     if (follow) follow(v);
     /* A key others depend on locks or unlocks them: redraw, and keep the
@@ -232,6 +237,9 @@ function renderRow(row, readonly) {
      what the apply class was derived from. */
   const rd = imageAware() ? (set ? set.reader : '') : (S.CONS[row.name] || {}).readers;
   if (rd) more.push(['Read by', rd.split(',').map((x) => x.trim()).join(', ')]);
+  if (set && set.unset && (S.VALUES[row.name] === undefined || S.VALUES[row.name] === '')) {
+    more.push(['Stored', `not set (the image uses ${set.unset})`]);
+  }
   if (unmet && S.VALUES[row.name] !== undefined) {
     more.push(['Stored', `${S.VALUES[row.name] === '' ? '(empty)' : S.VALUES[row.name]} (used again once ${unmet.join(' and ')})`]);
   }

@@ -6,9 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Config: a select whose key is unset (`OLT_SW_DOWNLOAD`,
-  `OMCI_UNKNOWN_ME_OK`, `OMCI_ACCEPT_REBOOT` on a fresh stick) showed an
-  empty box. It now shows "(not set)"; each key's help says what unset means.
+- Config: a select whose key is unset showed an empty box. A key the image
+  gives its own value while absent now shows that value selected, the one in
+  effect (`OLT_SW_DOWNLOAD` accept, `OMCI_UNKNOWN_ME_OK` and
+  `OMCI_ACCEPT_REBOOT` 0), from a new settings.tsv column `unset`; choosing
+  it stores nothing. Any other unset select shows "(not set)".
 
 - Config: the odi-only key `OMCI_ACCEPT_REBOOT` on the ONU identity subtab, a
   yes/no field: "Lets the OLT reboot the stick over OMCI. Off by default."
