@@ -173,8 +173,10 @@ for name, apply_, action, pair, reader, note_, unset in sett:
     if not reader or not note_:
         note(name, "needs a reader and a note")
     # The unset value is shown as the selected option, so it has to be one.
+    opts = [o.split("=", 1)[0] for o in filter(None, meta_by_name.get(name, ("",) * 6)[3].split("|"))]
+    if opts and not unset:
+        note(name, "has options but no unset value: what does the image do without it?")
     if unset:
-        opts = [o.split("=", 1)[0] for o in filter(None, meta_by_name.get(name, ("",) * 6)[3].split("|"))]
         if unset not in opts:
             note(name, f"unset {unset!r} is not one of its options {opts}")
 if len(sett_names) != len(set(sett_names)):

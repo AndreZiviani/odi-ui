@@ -6,11 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Config: a select whose key is unset showed an empty box. A key the image
-  gives its own value while absent now shows that value selected, the one in
-  effect (`OLT_SW_DOWNLOAD` accept, `OMCI_UNKNOWN_ME_OK` and
-  `OMCI_ACCEPT_REBOOT` 0), from a new settings.tsv column `unset`; choosing
-  it stores nothing. Any other unset select shows "(not set)".
+- Config: a select whose key is unset showed an empty box. The image always
+  does something without a key, so a new settings.tsv column `unset` names
+  that value for every key with options (`OLT_SW_DOWNLOAD` accept;
+  `OMCI_UNKNOWN_ME_OK`, `OMCI_ACCEPT_REBOOT`, `LAN_ENABLE_IP2`,
+  `VLAN_CFG_TYPE` and `VLAN_MANU_MODE` 0), and the page shows it selected,
+  never "(not set)" and never an option to unset; choosing it stores
+  nothing. scripts/check-schema.py requires the column for those keys.
 
 - Config: the odi-only key `OMCI_ACCEPT_REBOOT` on the ONU identity subtab, a
   yes/no field: "Lets the OLT reboot the stick over OMCI. Off by default."

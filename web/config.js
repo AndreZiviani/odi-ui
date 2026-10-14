@@ -103,12 +103,15 @@ function renderValue(row, raw, readonly = false) {
     }
     /* A value the device holds that is not in the option list must still be
        selectable, or opening the page would silently propose changing it.
-       A key with NO value is a different case and gets said differently:
-       several read `GET fail` on this hardware. */
-    if ((raw === undefined || raw === '') && fallback === undefined) {
-      const o = el('option', null, '(not set)');
-      o.value = '';
-      input.append(o);
+       A key with NO value shows what the image does without it (settings.tsv
+       `unset`, required for every key with options); only a key the image
+       does not describe can still read "(not set)". */
+    if (raw === undefined || raw === '') {
+      if (fallback === undefined) {
+        const o = el('option', null, '(not set)');
+        o.value = '';
+        input.append(o);
+      }
     } else if (![...input.options].some((o) => o.value === raw)) {
       const o = el('option', null, raw + ' (current, not a listed value)');
       o.value = raw;

@@ -22,8 +22,9 @@
 # reader   what on the image reads it
 # note     why it costs what it does
 # unset    the value the image uses while the key is absent, one of its
-#          options; the page shows that option selected. Empty when the
-#          image has no single such value.
+#          options; the page shows that option selected. Required for every
+#          key with an option list: the image always does something, so the
+#          page never offers or shows "not set" for one.
 #
 # Source of truth for the classes: odi-oss docs/SETTINGS.md. scripts/check-schema.py
 # checks every name against keys.tsv and every class and action against the lists
@@ -31,11 +32,11 @@
 name	apply	action	pair	reader	note	unset
 LAN_IP_ADDR	live	network		network.sh	/etc/config/lan-ip, when it exists, wins over this key.	
 LAN_SUBNET	live	network		network.sh	Applied at once, with the address.	
-LAN_ENABLE_IP2	live	network		network.sh	1 adds the second address beside the first, 0 removes it. Applied at once; the first address is not touched.	
+LAN_ENABLE_IP2	live	network		network.sh	1 adds the second address beside the first, 0 removes it. Applied at once; the first address is not touched.	0
 LAN_IP_ADDR2	live	network		network.sh	A fixed rescue address, as br0:2. Applied at once.	
 LAN_SUBNET2	live	network		network.sh	Applied at once, with the second address.	
-VLAN_CFG_TYPE	live	omci		omcid, on SIGHUP	omcid tags only with type 1 and manual mode 1, as the stock firmware does. Applying makes omcid rebuild the bridge connections in place from the MIB it holds: the ONU stays in O5 and the fibre service is not dropped.	
-VLAN_MANU_MODE	live	omci		omcid, on SIGHUP	See VLAN config mode. Switching between stick tags and router tags (transparent) is rebuilt in place, without re-ranging the ONU.	
+VLAN_CFG_TYPE	live	omci		omcid, on SIGHUP	omcid tags only with type 1 and manual mode 1, as the stock firmware does. Applying makes omcid rebuild the bridge connections in place from the MIB it holds: the ONU stays in O5 and the fibre service is not dropped.	0
+VLAN_MANU_MODE	live	omci		omcid, on SIGHUP	See VLAN config mode. Switching between stick tags and router tags (transparent) is rebuilt in place, without re-ranging the ONU.	0
 VLAN_MANU_TAG_VID	live	omci		omcid, on SIGHUP	Applying rebuilds the connections in place with the new tag; the ONU is not re-ranged.	
 VLAN_MANU_TAG_PRI	live	omci		omcid, on SIGHUP	Applied with the VLAN ID.	
 GPON_PLOAM_PASSWD	internet	omci		rcS gponpw, omcid on SIGHUP	Sent to the kernel before the ONU is activated again; applying deactivates the ONU and ranges it with the new one.	
