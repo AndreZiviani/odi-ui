@@ -426,8 +426,10 @@ check "OLT_SW_DOWNLOAD outside accept and reject is refused" yes \
 	"$(err "$(post 'OLT_SW_DOWNLOAD=maybe')" 'not one of the values')"
 check "OMCI_ACCEPT_REBOOT is written and needs nothing" yes \
 	"$(err "$(post 'OMCI_ACCEPT_REBOOT=1')" '"needs":[],"stock":false,"interrupts":false')"
-check "OMCI_ACCEPT_REBOOT outside 0 and 1 is refused" yes \
-	"$(err "$(post 'OMCI_ACCEPT_REBOOT=2')" 'not one of the values')"
+check "OMCI_ACCEPT_REBOOT=2 (acknowledge only) is written and needs nothing" yes \
+	"$(err "$(post 'OMCI_ACCEPT_REBOOT=2')" '"needs":[],"stock":false,"interrupts":false')"
+check "OMCI_ACCEPT_REBOOT outside 0, 1 and 2 is refused" yes \
+	"$(err "$(post 'OMCI_ACCEPT_REBOOT=3')" 'not one of the values')"
 check "OMCI_UNKNOWN_ME_OK is written and interrupts" yes \
 	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=1')" '"needs":["omci"],"stock":false,"interrupts":true')"
 check "OMCI_UNKNOWN_ME_OK outside 0 and 1 is refused" yes \
