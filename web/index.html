@@ -148,6 +148,13 @@
       <div id="identity-switch" class="switchrow" hidden></div>
       <div id="identity-out"></div>
       <div class="settings" id="set-identity"></div>
+      <details class="expert" id="expert" hidden>
+        <summary>Expert settings</summary>
+        <p class="s-warn">These change how the stick presents itself to the OLT. A wrong
+          value can stop the OLT from provisioning the ONU, and the line drops while
+          the ONU re-registers. Change them only to match what a native ONU reports.</p>
+        <div class="settings" id="set-expert"></div>
+      </details>
     </div>
     <div class="sub" id="c-network" role="tabpanel" aria-labelledby="st-config-network" data-sub="network" hidden>
       <p class="lede">How you reach this stick from the host side.</p>

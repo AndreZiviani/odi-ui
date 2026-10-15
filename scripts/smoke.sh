@@ -426,8 +426,10 @@ check "OLT_SW_DOWNLOAD outside accept and reject is refused" yes \
 	"$(err "$(post 'OLT_SW_DOWNLOAD=maybe')" 'not one of the values')"
 check "OMCI_ACCEPT_REBOOT is written and needs nothing" yes \
 	"$(err "$(post 'OMCI_ACCEPT_REBOOT=1')" '"needs":[],"stock":false,"interrupts":false')"
-check "OMCI_ACCEPT_REBOOT outside 0 and 1 is refused" yes \
-	"$(err "$(post 'OMCI_ACCEPT_REBOOT=2')" 'not one of the values')"
+check "OMCI_ACCEPT_REBOOT=2 (acknowledge only) is written and needs nothing" yes \
+	"$(err "$(post 'OMCI_ACCEPT_REBOOT=2')" '"needs":[],"stock":false,"interrupts":false')"
+check "OMCI_ACCEPT_REBOOT outside 0, 1 and 2 is refused" yes \
+	"$(err "$(post 'OMCI_ACCEPT_REBOOT=3')" 'not one of the values')"
 check "OMCI_UNKNOWN_ME_OK is written and interrupts" yes \
 	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=1')" '"needs":["omci"],"stock":false,"interrupts":true')"
 check "OMCI_UNKNOWN_ME_OK outside 0 and 1 is refused" yes \
@@ -438,14 +440,21 @@ check "OMCI_FIXED_ME with two entries passes" yes \
 	"$(err "$(post 'OMCI_FIXED_ME=200:0x0011aa,201:01020304')" '"ok":true')"
 check "OMCI_FIXED_ME with 25 bytes and space separators passes" yes \
 	"$(err "$(post 'OMCI_FIXED_ME=200:0102030405060708090a0b0c0d0e0f101112131415161718ff%20201:AA')" '"ok":true')"
+check "OMCI_FIXED_ME in the entry form, hex and decimal instances, passes" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=200:0x8001:1:0x0011aa,200:32769:2:ff%20201:0xFFFF:16:AA')" '"ok":true')"
+check "OMCI_FIXED_ME with both forms on different classes passes" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=200:0x8001:1:aa,201:bb')" '"ok":true')"
 for bad in 0:aa 65536:aa 200aa 200:abc 200:zz 200:0x 200:aa,200:bb \
 	200:0102030405060708090a0b0c0d0e0f101112131415161718191a \
-	1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa,9:aa; do
+	1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa,9:aa,10:aa,11:aa,12:aa,13:aa,14:aa,15:aa,16:aa,17:aa \
+	200:0x8001:0:aa 200:0x8001:17:aa 200:0x10000:1:aa 200:65536:1:aa 200:0x:1:aa \
+	200:1:aa 200::1:aa 200:1::aa 200:1:2:3:aa 0xc8:1:1:aa 200:1:1:a 200:1:1:0x \
+	200:1:1:aa,200:0x1:1:bb 200:aa,200:1:1:bb 200:1:1:bb,200:aa 200:1:001:aa; do
 	check "a bad OMCI_FIXED_ME is refused: $bad" yes \
 		"$(err "$(post "OMCI_FIXED_ME=$bad")" 'not valid for its type')"
 done
-check "eight OMCI_FIXED_ME entries pass" yes \
-	"$(err "$(post 'OMCI_FIXED_ME=1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa')" '"ok":true')"
+check "sixteen OMCI_FIXED_ME entries pass" yes \
+	"$(err "$(post 'OMCI_FIXED_ME=1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa,9:aa,10:aa,11:aa,12:aa,13:aa,14:aa,15:aa,16:aa')" '"ok":true')"
 check "an empty OMCI_FIXED_ME clears it" yes \
 	"$(err "$(post 'OMCI_FIXED_ME=')" '"ok":true')"
 check "settings.tsv is served" yes \
