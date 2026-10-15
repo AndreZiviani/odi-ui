@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Docs: docs/DESIGN.md describes the safe-mode, safe-mode-record and boot
+  fallback bars (the same striped band as the trial-boot bar) and the
+  "Locked out? The safe mode" help on System > Access; docs/API.md lists
+  `/api/hostlink`.
+
 ## v1.4.0 - 2026-10-15
 
 - The `meta.tsv` buffer in confd is 24 KB instead of 16 KB. The table had grown

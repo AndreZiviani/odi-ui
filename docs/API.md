@@ -65,6 +65,22 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `exe`, the path this confd was started from
     POST /api/firmware   action=try|commit|reboot&partition=N
 
+## Host port and safe mode (odi-oss)
+
+    GET  /api/hostlink                    the state the image keeps, read with no fork:
+                                          the host-port mode and trial
+                                          (`/var/run/host-autoneg`), the safe-mode
+                                          flag for this boot and the record of an
+                                          unacknowledged one, the host link;
+                                          `supported` is false on an image without it
+    POST /api/hostlink  action=try&mode=on|off
+                        action=confirm | revert | ack
+                                          one of four fixed verbs: try, confirm and
+                                          revert run `host-autoneg.sh`, ack runs
+                                          `safe-mode.sh ack`; bounded at 20 s.
+                                          `HOST_AUTONEG` is never written by
+                                          `/api/config`: only `confirm` stores it
+
 ## Backup and reset
 
     GET  /api/backup                      both config stores as a file, identity included
