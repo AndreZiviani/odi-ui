@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- The `meta.tsv` buffer in confd is 24 KB instead of 16 KB. The table had grown
+  to 16.6 KB with the new keys, past the old buffer, and confd silently dropped
+  the last rows (their help, options and ranges) on the device; `make check`
+  caught it.
+
 - Config, Network: a Host port control for the odi-only key `HOST_AUTONEG`
   (odi-oss: host port auto-negotiation, on by default, off forces
   1000BASE-X full duplex for a router port with auto-negotiation off). It
