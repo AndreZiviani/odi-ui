@@ -49,7 +49,17 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
     table (class, instance, attribute, bytes; `any` for the form that answers every instance;
     `web/expert.js`). Its value is private to the owner: confd never logs it, and the
     diagnostics bundle redacts it;
-  - *Network* &mdash; both management addresses and the UNI MAC;
+  - *Network* &mdash; both management addresses and the UNI MAC, and the *Host port*
+    control for the odi-only `HOST_AUTONEG` (auto-negotiation with the router). Not a
+    schema row: the key is `writable=never`, so neither Save nor Restore writes it. The
+    control runs `host-autoneg.sh` through `/api/hostlink`: a trial the image reverts by
+    itself after two minutes unless Keep arrives over the link being tried, in a dialog
+    that counts the window down. A banner on every view says when the image runs
+    auto-negotiation although the key is off: the boot fallback (clears at the next boot
+    that brings the forced link up), an odi-oss safe-mode boot (the fibre off, the default
+    password for that boot only: confd accepts `admin:admin` while `/var/run/safe-mode`
+    exists, without reading or touching `confd.auth`) and a past safe-mode boot not yet
+    acknowledged (Acknowledge runs `safe-mode.sh ack`);
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
     stock firmware reads, read-only, for inspecting what a backup carries. On a

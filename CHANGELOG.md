@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config, Network: a Host port control for the odi-only key `HOST_AUTONEG`
+  (odi-oss: host port auto-negotiation, on by default, off forces
+  1000BASE-X full duplex for a router port with auto-negotiation off). It
+  never stores the key: Try runs `host-autoneg.sh try on|off`, the image
+  applies the mode a second later in RAM, and a dialog counts the two-minute
+  window down ("Keep this setting? Reverting in N s"); Keep runs `confirm`,
+  Revert runs `revert`, and with no answer the image goes back by itself.
+  The dialog polls the stick and says when it stops answering. New route
+  `/api/hostlink`: GET reads the state the image keeps (`/var/run/host-autoneg`,
+  the safe-mode flag and record, the host link) with no fork; POST runs one
+  of four fixed verbs (try, confirm, revert on host-autoneg.sh; ack on
+  safe-mode.sh), bounded at 20 s. `HOST_AUTONEG` is `writable=never` in the
+  schema, so Save and Restore cannot write it, and it is on neither the
+  Network nor the Stock keys list.
+
+- A banner on every view, beside the default-password one, when the image
+  changed what runs by itself: the boot fallback (`HOST_AUTONEG` is off but
+  this boot found no host link forced; clears by itself at the next boot
+  that brings it up), a safe-mode boot (odi-oss: the fibre off, the host
+  port on auto-negotiation, the default password for that boot only; the
+  banner says so and how to leave: set a password if lost, acknowledge,
+  reboot), and a past safe-mode boot nobody acknowledged yet (an
+  Acknowledge button, which runs `safe-mode.sh ack`).
+
+- How to enter the safe mode, on System, Access ("Locked out?") and under
+  Host port: plug in, wait about 80 seconds, pull, wait a few seconds;
+  five times (three with the host port forced); then leave it in. The
+  window is roughly 60 to 110 s after power-on, since about 54 s pass
+  before the kernel starts (measured; it can vary by board). The banner no
+  longer says the power-ups were under a minute: they are cut about 80 s
+  after power-on, before the boot itself has run a minute.
+
+- Safe mode: on a safe-mode boot (`/var/run/safe-mode`) the web UI accepts
+  the built-in `admin:admin` instead of the saved credential, in memory
+  only: `confd.auth` is not read and not touched, a password saved meanwhile
+  is written to it and in force from the next boot, and the page reports
+  the default as in force. `/api/hostlink` adds `safemode_now`, the flag of
+  the boot, beside `safemode`, the record (now `/etc/config/safe-mode`).
+
 - Config: an *Expert settings* disclosure, collapsed, at the foot of the ONU
   identity subtab. It warns that its keys change how the stick presents itself
   to the OLT, and holds `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME`, moved out of the

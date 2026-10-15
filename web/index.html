@@ -58,6 +58,14 @@
      Anyone who can reach it can change the line settings.</p>
   <button id="gopassword" type="button">Set a password</button>
 </div>
+<!-- The host port runs auto-negotiation although it was set off: the boot
+     fallback (clears at the next boot that brings the forced link up) or the
+     safe mode (stays until acknowledged here). Shown on every view. -->
+<div id="hostlinkbanner" class="callout warn banner" role="status" hidden>
+  <div id="hostlink-banner-text"></div>
+  <a href="#config/network">Host port settings</a>
+  <button id="hostlink-ack" type="button" hidden>Acknowledge</button>
+</div>
 
 <main>
   <!-- ============================================================ Status -->
@@ -148,6 +156,38 @@
     <div class="sub" id="c-network" role="tabpanel" aria-labelledby="st-config-network" data-sub="network" hidden>
       <p class="lede">How you reach this stick from the host side.</p>
       <div class="settings" id="set-network"></div>
+      <!-- Not a schema row: HOST_AUTONEG is never written by Save. hostlink.js
+           runs a trial the image reverts by itself unless kept. -->
+      <section class="block" id="hostlink" hidden>
+        <div class="block-head"><h2>Host port</h2></div>
+        <p class="help">Auto-negotiation with the router on the SFP edge. Leave it on unless the router port has
+          auto-negotiation off. A change is a trial: it reverts by itself after two minutes unless you keep it,
+          and keeping it only works if this page still answers in the new mode.</p>
+        <details class="more">
+          <summary>If the stick becomes unreachable</summary>
+          <p>A boot whose host link does not come up with auto-negotiation off falls back to on for
+             that boot, and the banner says so. If it still cannot be reached: plug it in, wait about
+             80 seconds, pull it, wait a few seconds; three times in a row; then plug it in and leave
+             it in. That boot is the safe mode: it clears this setting and runs auto-negotiation
+             (System, Access has the details).</p>
+        </details>
+        <div id="hostlink-now"></div>
+        <div class="switchrow">
+          <button id="hostlink-try" type="button">Try auto-negotiation off</button>
+          <button id="hostlink-keep-on" type="button" hidden>Keep auto-negotiation on</button>
+        </div>
+        <div id="hostlink-out"></div>
+        <dialog id="hostlink-dialog" aria-labelledby="hostlink-dialog-title">
+          <p id="hostlink-dialog-title"><strong>Keep this setting?</strong> <span id="hostlink-count"></span></p>
+          <p class="help">If this page answers, the link works in the new mode. Keep stores it; Revert, or no
+            answer, goes back to the mode before.</p>
+          <div class="switchrow">
+            <button id="hostlink-keep" class="primary" type="button">Keep</button>
+            <button id="hostlink-revert" type="button">Revert</button>
+          </div>
+          <div id="hostlink-dialog-out"></div>
+        </dialog>
+      </section>
     </div>
     <div class="sub" id="c-services" role="tabpanel" aria-labelledby="st-config-services" data-sub="services" hidden>
       <p class="lede">Where this stick sends its logs and gets its time.</p>
@@ -289,6 +329,19 @@
              does not exist yet, and which survives reflashing. A factory reset
              erases it and the page falls back to <code>admin</code> /
              <code>admin</code> until you set one again.</p>
+        </details>
+        <details class="more">
+          <summary>Locked out? The safe mode</summary>
+          <p>Plug the stick in, wait about 80 seconds, pull it, wait a few seconds. Do that five
+             times in a row (three times when the host port is set to auto-negotiation off), then
+             plug it in and leave it in: that boot is the safe mode. Do not pull it again. Each
+             power-up has to end roughly 60 to 110 seconds after power-on (the stick spends about
+             54 seconds before its kernel starts; that can vary by board).</p>
+          <p>For that one boot the fibre is off, the host port runs auto-negotiation, and this
+             page accepts <code>admin</code> / <code>admin</code> and root over SSH the password
+             <code>admin</code>. Set a new password here if you lost yours, acknowledge the banner,
+             and reboot: the next boot uses the saved configuration again. Anyone who can
+             power-cycle the stick can do this.</p>
         </details>
         <div id="pw-out"></div>
       </section>

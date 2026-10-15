@@ -92,6 +92,7 @@ OLT_SW_DOWNLOAD	cs	OLT_SW_DOWNLOAD	omci	string	unknown	yes	no
 OMCI_UNKNOWN_ME_OK	cs	OMCI_UNKNOWN_ME_OK	omci	int	unknown	yes	no
 OMCI_ACCEPT_REBOOT	cs	OMCI_ACCEPT_REBOOT	omci	int	unknown	yes	no
 OMCI_FIXED_ME	cs	OMCI_FIXED_ME	omci	fixedme	unknown	yes	no
+HOST_AUTONEG	cs	HOST_AUTONEG	lan	string	unknown	never	no
 FIBER_MODE	cs	FIBER_MODE	other	int	unknown	never	no
 RTK_DEVID_MANUFACTURER	cs	RTK_DEVID_MANUFACTURER	hardware	string	unknown	yes	no
 RTK_DEVID_OUI	cs	RTK_DEVID_OUI	hardware	string	unknown	yes	no

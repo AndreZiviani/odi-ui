@@ -151,6 +151,39 @@ static inline void put_json_cstr(int fd, const char *s)
 	put_json_str(fd, s, slen(s));
 }
 
+/*
+ * Emit key=value lines as the members of a JSON object, without the braces.
+ * The files the image writes for this daemon (the build manifest, the
+ * host-link state) are key=value lines, so a new field appears in the API
+ * without a C change. A line with no `=`, or nothing before it, is skipped.
+ */
+static inline void put_kv_members(int fd, const char *text)
+{
+	unsigned long i = 0;
+	int first = 1;
+
+	while (text[i]) {
+		unsigned long ls = i, le = i, eq;
+
+		while (text[le] && text[le] != '\n')
+			le++;
+		eq = ls;
+		while (eq < le && text[eq] != '=')
+			eq++;
+		if (eq < le && eq > ls) {
+			if (!first)
+				write_all(fd, ",", 1);
+			first = 0;
+			write_all(fd, "\"", 1);
+			put_json_str(fd, text + ls, eq - ls);
+			write_all(fd, "\":\"", 3);
+			put_json_str(fd, text + eq + 1, le - eq - 1);
+			write_all(fd, "\"", 1);
+		}
+		i = (text[le] == '\n') ? le + 1 : le;
+	}
+}
+
 /* Sleep whole seconds. struct timespec is two longs on this 32-bit target. */
 static inline void sleep_s(long secs)
 {
