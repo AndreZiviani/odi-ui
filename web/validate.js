@@ -19,6 +19,107 @@ function rangeBad(row, raw) {
 }
 
 /*
+ * OMCI_FIXED_ME, the grammar the daemon and omcid both hold to. Up to 16
+ * entries separated by commas or spaces, in two forms:
+ *
+ *   CLASS:HEX                     any instance of the class, not in the MIB
+ *                                 upload (the legacy form, "any" below)
+ *   CLASS:INSTANCE:ATTR:HEX       one attribute of the entity at INSTANCE
+ *
+ * CLASS is decimal 1-65535, INSTANCE decimal or 0x hex 0-65535, ATTR decimal
+ * 1-16, HEX 1 to 25 bytes with an optional 0x. A row is the entry before it
+ * is spelled out: {cls, inst, attr, hex} as typed, inst and attr 'any' (or
+ * empty) for the legacy form.
+ */
+const FME_MAX_ENTRIES = 16;
+const isAny = (v) => v === '' || String(v).toLowerCase() === 'any';
+
+/* What is wrong with each field of a row: {cls, inst, attr, hex} reasons,
+   the fields that are fine absent. */
+function fixedMeRowProblems(r) {
+  const p = {};
+  if (!/^\d{1,5}$/.test(r.cls) || Number(r.cls) < 1 || Number(r.cls) > 65535) {
+    p.cls = 'class: a decimal number, 1\u201365535';
+  }
+  if (isAny(r.inst) !== isAny(r.attr)) {
+    const both = 'instance and attribute are either both \u201cany\u201d or both set';
+    if (isAny(r.inst)) p.inst = both; else p.attr = both;
+  } else if (!isAny(r.inst)) {
+    const hexInst = /^0[xX][0-9a-fA-F]{1,4}$/.test(r.inst);
+    if (!hexInst && !(/^\d{1,5}$/.test(r.inst) && Number(r.inst) <= 65535)) {
+      p.inst = 'instance: 0\u201365535, decimal or 0x hex';
+    }
+    if (!/^\d{1,2}$/.test(r.attr) || Number(r.attr) < 1 || Number(r.attr) > 16) {
+      p.attr = 'attribute: a decimal number, 1\u201316';
+    }
+  }
+  if (!/^(0[xX])?([0-9a-fA-F]{2}){1,25}$/.test(r.hex)) {
+    p.hex = 'bytes: hex of 1 to 25 bytes (an even count of digits)';
+  }
+  return p;
+}
+
+/* The first thing wrong with a row, or null. */
+const fixedMeRowProblem = (r) => Object.values(fixedMeRowProblems(r))[0] || null;
+
+const instNum = (i) => (/^0[xX]/.test(i) ? parseInt(i.slice(2), 16) : Number(i));
+
+/* What is wrong between rows that are each fine, or null: too many, a class
+   in both forms, a class twice in the legacy form, a slot twice. */
+function fixedMeSetProblem(rows) {
+  if (rows.length > FME_MAX_ENTRIES) return `at most ${FME_MAX_ENTRIES} entries`;
+  const seen = new Map();
+  for (const r of rows) {
+    const cls = Number(r.cls);
+    const slot = isAny(r.inst) ? 'any' : instNum(r.inst) + ':' + Number(r.attr);
+    const prev = seen.get(cls) || new Set();
+    if (prev.has(slot)) {
+      return slot === 'any' ? `class ${cls} is listed twice`
+        : `class ${cls}, instance ${slot.split(':')[0]}, attribute ${slot.split(':')[1]} is listed twice`;
+    }
+    if ((slot === 'any' && prev.size) || (slot !== 'any' && prev.has('any'))) {
+      return `class ${cls} is in both forms: all instances, and a single instance`;
+    }
+    prev.add(slot);
+    seen.set(cls, prev);
+  }
+  return null;
+}
+
+/* The key's string as rows; each row also carries `bad`, the reason its entry
+   does not parse (a wrong number of colons), null when it does. */
+function fixedMeParse(raw) {
+  if (!raw) return [];
+  return raw.split(/[ ,]+/).filter((e) => e !== '').map((e) => {
+    const f = e.split(':');
+    if (f.length === 2) return { cls: f[0], inst: 'any', attr: 'any', hex: f[1], bad: null };
+    if (f.length === 4) return { cls: f[0], inst: f[1], attr: f[2], hex: f[3], bad: null };
+    return { cls: f[0], inst: '', attr: '', hex: f.slice(1).join(':'), bad: 'not CLASS:HEX or CLASS:INSTANCE:ATTR:HEX' };
+  });
+}
+
+/* Rows back to the key's string. Typed text goes out as typed, so a row that
+   is not complete yet makes a string the check refuses, not a silent one. */
+function fixedMeSerialise(rows) {
+  return rows.filter((r) => !(r.cls === '' && isAny(r.inst) && isAny(r.attr) && r.hex === ''))
+    .map((r) => (isAny(r.inst) && isAny(r.attr) ? `${r.cls}:${r.hex}` : `${r.cls}:${r.inst}:${r.attr}:${r.hex}`))
+    .join(',');
+}
+
+const FME_HELP = `up to ${FME_MAX_ENTRIES} entries, CLASS:HEX or CLASS:INSTANCE:ATTR:HEX, separated by commas or spaces`;
+
+function fixedMeProblem(raw) {
+  if (raw === '') return null;
+  if (!/^[^ ,]+([ ,]+[^ ,]+)*$/.test(raw)) return 'a separator with no entry beside it; ' + FME_HELP;
+  const rows = fixedMeParse(raw);
+  for (const [n, r] of rows.entries()) {
+    const why = r.bad || fixedMeRowProblem(r);
+    if (why) return `entry ${n + 1}: ${why}`;
+  }
+  return fixedMeSetProblem(rows);
+}
+
+/*
  * Everything wrong with a value, in one place, so the field marking and the
  * Save gate cannot disagree about what is acceptable.
  *
@@ -55,14 +156,7 @@ function valueProblem(row, raw) {
   if (row.type === 'ascii14' && /["<&]/.test(raw)) {
     return 'a quote, < or & cannot be stored';
   }
-  if (row.type === 'fixedme') {
-    const bad = 'up to 8 CLASS:HEX entries separated by commas or spaces: class 1\u201365535, '
-      + 'hex of 1 to 25 bytes (an even count of digits), no class twice';
-    if (!/^[0-9]{1,5}:(0[xX])?([0-9a-fA-F]{2}){1,25}([ ,]+[0-9]{1,5}:(0[xX])?([0-9a-fA-F]{2}){1,25})*$/.test(raw)) return bad;
-    const classes = raw.split(/[ ,]+/).map((e) => Number(e.split(':')[0]));
-    if (classes.length > 8 || classes.some((c) => c < 1 || c > 65535)
-        || new Set(classes).size !== classes.length) return bad;
-  }
+  if (row.type === 'fixedme') return fixedMeProblem(raw);
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';
   }
@@ -127,4 +221,7 @@ function invalidEdits() {
   return out;
 }
 
-export { rangeBad, valueProblem, hexAscii, validateInput, invalidEdits };
+export {
+  rangeBad, valueProblem, hexAscii, validateInput, invalidEdits,
+  fixedMeRowProblem, fixedMeRowProblems, fixedMeSetProblem, fixedMeParse, fixedMeSerialise, FME_MAX_ENTRIES,
+};
