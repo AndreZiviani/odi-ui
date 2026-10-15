@@ -6,6 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- The `meta.tsv` buffer in confd is 24 KB instead of 16 KB. The table had grown
+  to 16.6 KB with the new keys, past the old buffer, and confd silently dropped
+  the last rows (their help, options and ranges) on the device; `make check`
+  caught it.
+
+- Config, Network: a Host port control for the odi-only key `HOST_AUTONEG`
+  (odi-oss: host port auto-negotiation, on by default, off forces
+  1000BASE-X full duplex for a router port with auto-negotiation off). It
+  never stores the key: Try runs `host-autoneg.sh try on|off`, the image
+  applies the mode a second later in RAM, and a dialog counts the two-minute
+  window down ("Keep this setting? Reverting in N s"); Keep runs `confirm`,
+  Revert runs `revert`, and with no answer the image goes back by itself.
+  The dialog polls the stick and says when it stops answering. New route
+  `/api/hostlink`: GET reads the state the image keeps (`/var/run/host-autoneg`,
+  the safe-mode flag and record, the host link) with no fork; POST runs one
+  of four fixed verbs (try, confirm, revert on host-autoneg.sh; ack on
+  safe-mode.sh), bounded at 20 s. `HOST_AUTONEG` is `writable=never` in the
+  schema, so Save and Restore cannot write it, and it is on neither the
+  Network nor the Stock keys list.
+
+- A banner on every view, beside the default-password one, when the image
+  changed what runs by itself: the boot fallback (`HOST_AUTONEG` is off but
+  this boot found no host link forced; clears by itself at the next boot
+  that brings it up), a safe-mode boot (odi-oss: the fibre off, the host
+  port on auto-negotiation, the default password for that boot only; the
+  banner says so and how to leave: set a password if lost, acknowledge,
+  reboot), and a past safe-mode boot nobody acknowledged yet (an
+  Acknowledge button, which runs `safe-mode.sh ack`).
+
+- The safe-mode and boot-fallback banners are now the same full-width striped
+  band as the trial boot, one short line each, stacked under it: "Safe mode.
+  A recovery boot: the fibre (PON) is off and the default passwords work for
+  this boot only", with Details and Acknowledge; after Acknowledge the bar
+  stays for that boot, without the button, and says the next boot is normal;
+  a later boot with an unacknowledged record says the build and the number of
+  short power cycles. The long explanation (what the mode does, how to leave
+  it, how to enter it, the trade-off) moved to "Locked out? The safe mode" on
+  System, Access, which Details opens. The Host port block on Config, Network
+  is now drawn as the other settings rows (label and help on the left, the
+  buttons on the right, status as compact key/value rows, the unreachable-stick
+  note as a Details disclosure) instead of a lone button in a full-width card.
+
+- How to enter the safe mode, on System, Access ("Locked out?") and under
+  Host port: plug in, wait about 80 seconds, pull, wait a few seconds;
+  five times (three with the host port forced); then leave it in. The
+  window is roughly 60 to 110 s after power-on, since about 54 s pass
+  before the kernel starts (measured; it can vary by board). The banner no
+  longer says the power-ups were under a minute: they are cut about 80 s
+  after power-on, before the boot itself has run a minute.
+
+- Safe mode: on a safe-mode boot (`/var/run/safe-mode`) the web UI accepts
+  the built-in `admin:admin` instead of the saved credential, in memory
+  only: `confd.auth` is not read and not touched, a password saved meanwhile
+  is written to it and in force from the next boot, and the page reports
+  the default as in force. `/api/hostlink` adds `safemode_now`, the flag of
+  the boot, beside `safemode`, the record (now `/etc/config/safe-mode`).
+
 - Config: an *Expert settings* disclosure, collapsed, at the foot of the ONU
   identity subtab. It warns that its keys change how the stick presents itself
   to the OLT, and holds `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME`, moved out of the

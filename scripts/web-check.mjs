@@ -105,6 +105,8 @@ const API = {
   '/api/schema': SCHEMA, '/api/meta': META, '/api/consumers': CONS,
   '/api/values': VALUES, '/api/defaults': {}, '/api/baseline': [], '/api/features': FEAT,
   '/api/settings': SETT,
+  '/api/hostlink': { supported: true, state: { setting: 'on', running: 'on', phase: 'steady', fallback: '0' },
+                     safemode: null, link: '1', uptime: '300' },
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
   '/api/firmware': {
     running: 'ODI-260910-6861b53', confd: 'test', mem: '26 MB', build: {},
@@ -170,7 +172,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'restore', 'l2', 'tools'];
+              'omci', 'services', 'mebrowser', 'restore', 'l2', 'tools', 'hostlink'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -527,6 +529,74 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   st.S.FW = keepFW;
 }
 
+/* --- the host-link banner and the Host port control ------------------------- */
+{
+  const { bannerText, trialLeft, renderHostlink } = await import(join(root, 'web', 'hostlink.js'));
+  const keep = API['/api/hostlink'];
+  const st = (o) => ({ setting: 'on', running: 'on', phase: 'steady', fallback: '0', ...o });
+
+  let b = bannerText({ supported: true, state: st({}), safemode: null });
+  ok(!b.show, 'host link: no banner in the default state');
+  b = bannerText({ supported: true, state: st({ setting: 'off', running: 'off' }), safemode: null });
+  ok(!b.show, 'host link: no banner while off runs as set');
+  b = bannerText({ supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }), safemode: null });
+  ok(b.show && !b.safe && !b.ack && /did not come up/.test(b.fallback) && !/\n/.test(b.fallback),
+     'host link: the boot fallback raises its own bar, one short line, nothing to acknowledge');
+  b = bannerText({ supported: true, state: st({}), safemode_now: null,
+                  safemode: { short_boots: '5', cleared: 'none', build: 'v1.5.0' } });
+  ok(b.show && b.ack && !b.fallback && /safe-mode boot happened \(build v1\.5\.0, after 5 short power cycles\)/.test(b.safe)
+     && !/host port setting/.test(b.safe),
+     'safe mode: a past safe-mode boot says the build and the count, with an acknowledgement');
+  b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG' },
+                  safemode: { short_boots: '3', cleared: 'HOST_AUTONEG' } });
+  ok(b.show && b.ack && /^Safe mode\./.test(b.safe) && /PON\) is off/.test(b.safe)
+     && /default passwords/.test(b.safe) && /this boot only/.test(b.safe) && /host port setting/.test(b.safe)
+     && b.safe.length < 220,
+     'safe mode: this boot, one short line: PON off, default passwords for this boot only, what it cleared');
+  b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '5' }, safemode: null });
+  ok(b.show && !b.ack && /Safe mode\./.test(b.safe) && /next boot is a normal boot/.test(b.safe),
+     'safe mode: acknowledged during the boot, the bar stays without the button and says the next boot is normal');
+  b = bannerText({ supported: false, state: {}, safemode_now: { short_boots: '5' }, safemode: {} });
+  ok(b.show, 'safe mode: shown even on an image without host-autoneg.sh');
+  b = bannerText({ supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }), safemode: {} });
+  ok(b.safe && b.fallback && /several short/.test(b.safe), 'host link: a record and a fallback at once, two bars');
+  ok(!bannerText({ supported: false, state: st({ fallback: '1', setting: 'off', running: 'on' }), safemode: null }).show,
+     'host link: an image without host-autoneg.sh shows no fallback');
+  ok(!bannerText(null).show, 'host link: an unreadable answer shows nothing');
+  ok(trialLeft({ state: st({ phase: 'trial', trial_deadline: '420' }), uptime: '330' }) === 90,
+     'host link: the countdown comes from the stick clock');
+  ok(trialLeft({ state: st({}), uptime: '330' }) === null, 'host link: no trial, no countdown');
+
+  API['/api/hostlink'] = { supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }),
+                           safemode_now: null, safemode: { short_boots: '3' }, link: '1', uptime: '40' };
+  await renderHostlink();
+  const banner = doc.querySelector('#safebanner');
+  ok(banner.hidden === false && doc.querySelector('#hostlink-ack').hidden === false,
+     'host link: the safe-mode bar renders, with its Acknowledge button');
+  ok(textOf(doc.querySelector('#safe-text')).includes('safe-mode boot happened'), 'host link: and its text');
+  ok(doc.querySelector('#fallbackbanner').hidden === false
+     && doc.querySelector('#safebanner').className === doc.querySelector('#trialbanner').className,
+     'host link: the bars are the trial-boot band, and the fallback bar shows beside it');
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  ok(/id="safe-details" href="#system\/access"/.test(html) && /<details[^>]*id="safemode-help"/.test(html),
+     'host link: Details points at the safe-mode help on System, Access, which exists');
+  ok(!/id="hostlinkbanner"/.test(html), 'host link: the big card is gone');
+  ok(textOf(doc.querySelector('#hostlink-now')).includes('Host link'), 'host link: status rows render');
+  ok(doc.querySelector('#hostlink').hidden === false, 'host link: the Host port block shows on an image that has it');
+  ok(doc.querySelector('#hostlink-keep-on').hidden === false,
+     'host link: in the fallback the block offers to keep auto-negotiation on');
+  ok(doc.querySelector('#hostlink-try').dataset.mode === 'off', 'host link: and to try off again');
+  API['/api/hostlink'] = keep;
+  await renderHostlink();
+  ok(banner.hidden === true && doc.querySelector('#fallbackbanner').hidden === true,
+     'host link: the default state takes the bars down again');
+  ok(doc.querySelector('#hostlink-keep-on').hidden === true, 'host link: and the keep-on offer');
+  API['/api/hostlink'] = { supported: false, state: {}, safemode: null, link: '', uptime: '1' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink').hidden === true, 'host link: no block on an image without host-autoneg.sh');
+  API['/api/hostlink'] = keep;
+}
+
 /* --- the Firmware subtab ------------------------------------------------ */
 {
   const { renderFirmware } = await import(join(root, 'web', 'firmware.js'));
@@ -616,8 +686,11 @@ const pairs = SETT.filter((r) => r.pair).length;
 ok(inputsOf(common) === SETT.length - pairs,
    'every key is editable except the ones written with another (LOID_OLD)');
 const stock = '#sections';
-ok(rowsOf(stock).length === SCHEMA.length - SETT.length,
-   'the stock keys are all on their own tab');
+const { OWN_CONTROL } = await import(join(root, 'web', 'config.js'));
+ok(rowsOf(stock).length === SCHEMA.length - SETT.length - OWN_CONTROL.length,
+   'the stock keys are all on their own tab (the keys with a control of their own are on neither)');
+ok(![stock, common].some((v) => /HOST_AUTONEG|Host port auto-negotiation/.test(textOf(doc.querySelector(v)))),
+   'HOST_AUTONEG is no schema row: only the Host port control changes it');
 ok(inputsOf(stock) === 0, 'and none of them can be edited there');
 ok(doc.querySelector('#device-login').hidden === true,
    'the stock device-login section is not offered');

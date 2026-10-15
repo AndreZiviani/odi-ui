@@ -254,6 +254,12 @@ int same_origin(const char *r)
  * /etc/config/confd.auth when it has content, DEFAULT_AUTH otherwise. Returns
  * its length; sets *is_default when the fallback was used.
  *
+ * On a safe-mode boot of odi-oss (SAFEMODE_FLAG) the file is not read at
+ * all: the recovery boot accepts the default credential, in memory only,
+ * so a forgotten password can be replaced. The file is left alone, and a
+ * password saved meanwhile is written to it and in force from the next
+ * boot.
+ *
  * A file that exists but is empty counts as absent. That is not pedantry: the
  * obvious way to clear a password is to truncate the file, and treating the
  * result as "no credential accepted" would lock the operator out of the device
@@ -261,7 +267,7 @@ int same_origin(const char *r)
  */
 static long load_credential(int *is_default)
 {
-	long want = read_file(AUTH_PATH, credbuf, sizeof(credbuf));
+	long want = file_exists(SAFEMODE_FLAG) ? 0 : read_file(AUTH_PATH, credbuf, sizeof(credbuf));
 	unsigned long k;
 
 	if (want > 0) {
@@ -517,6 +523,7 @@ const struct web_asset web_assets[] = {
 	{ "/restore.js",    "restore.js",  "application/javascript" },
 	{ "/l2.js",         "l2.js",       "application/javascript" },
 	{ "/tools.js",      "tools.js",    "application/javascript" },
+	{ "/hostlink.js",   "hostlink.js", "application/javascript" },
 	{ 0, 0, 0 },
 };
 

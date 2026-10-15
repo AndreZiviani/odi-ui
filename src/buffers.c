@@ -4,7 +4,7 @@
 
 char req[16384];
 char schema[40960];
-char meta[16384];
+char meta[24576];
 char cons[16384];
 char sett[8192];
 char values[24576];

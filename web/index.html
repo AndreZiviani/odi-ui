@@ -50,6 +50,18 @@
     <button id="trial-commit" class="primary" type="button">Commit to this image</button>
     <div id="trial-out"></div>
   </div>
+  <!-- The image changed what runs by itself: the same band as the trial boot,
+       one short line each, stacked under it. The long explanation of the
+       safe mode is under System > Access ("Locked out?"), behind Details. -->
+  <div id="safebanner" class="trial" role="status" hidden>
+    <p id="safe-text"></p>
+    <a id="safe-details" href="#system/access">Details</a>
+    <button id="hostlink-ack" type="button" hidden>Acknowledge</button>
+  </div>
+  <div id="fallbackbanner" class="trial" role="status" hidden>
+    <p id="fallback-text"></p>
+    <a href="#config/network">Host port settings</a>
+  </div>
 </header>
 
 <p id="err" class="callout bad" role="alert" hidden></p>
@@ -58,7 +70,6 @@
      Anyone who can reach it can change the line settings.</p>
   <button id="gopassword" type="button">Set a password</button>
 </div>
-
 <main>
   <!-- ============================================================ Status -->
   <section id="p-status" class="panel" role="tabpanel" aria-labelledby="tab-status">
@@ -148,6 +159,47 @@
     <div class="sub" id="c-network" role="tabpanel" aria-labelledby="st-config-network" data-sub="network" hidden>
       <p class="lede">How you reach this stick from the host side.</p>
       <div class="settings" id="set-network"></div>
+      <!-- Not a schema row: HOST_AUTONEG is never written by Save. hostlink.js
+           runs a trial the image reverts by itself unless kept. -->
+      <section class="block" id="hostlink" hidden>
+        <div class="block-head"><h2>Host port</h2></div>
+        <div class="settings">
+          <div class="setting">
+            <div class="s-label">
+              <div class="s-title"><label class="s-name" for="hostlink-try">Auto-negotiation</label></div>
+              <p class="s-help">With the router on the SFP edge. Leave it on unless the router port has
+                auto-negotiation off. A change is a trial: it reverts by itself after two minutes unless you
+                keep it, and keeping it only works if this page still answers in the new mode.</p>
+              <details class="s-more">
+                <summary>If the stick becomes unreachable</summary>
+                <p>A boot whose host link does not come up with auto-negotiation off falls back to on for
+                   that boot, and the banner says so. If it still cannot be reached: plug it in, wait about
+                   80 seconds, pull it, wait a few seconds; three times in a row; then plug it in and leave
+                   it in. That boot is the safe mode: it clears this setting and runs auto-negotiation
+                   (System, Access has the details).</p>
+              </details>
+            </div>
+            <div class="s-control">
+              <div class="s-inline">
+                <button id="hostlink-try" type="button">Try auto-negotiation off</button>
+                <button id="hostlink-keep-on" type="button" hidden>Keep auto-negotiation on</button>
+              </div>
+              <div id="hostlink-out"></div>
+            </div>
+          </div>
+        </div>
+        <div class="settings compact" id="hostlink-now"></div>
+        <dialog id="hostlink-dialog" aria-labelledby="hostlink-dialog-title">
+          <p id="hostlink-dialog-title"><strong>Keep this setting?</strong> <span id="hostlink-count"></span></p>
+          <p class="help">If this page answers, the link works in the new mode. Keep stores it; Revert, or no
+            answer, goes back to the mode before.</p>
+          <div class="switchrow">
+            <button id="hostlink-keep" class="primary" type="button">Keep</button>
+            <button id="hostlink-revert" type="button">Revert</button>
+          </div>
+          <div id="hostlink-dialog-out"></div>
+        </dialog>
+      </section>
     </div>
     <div class="sub" id="c-services" role="tabpanel" aria-labelledby="st-config-services" data-sub="services" hidden>
       <p class="lede">Where this stick sends its logs and gets its time.</p>
@@ -289,6 +341,24 @@
              does not exist yet, and which survives reflashing. A factory reset
              erases it and the page falls back to <code>admin</code> /
              <code>admin</code> until you set one again.</p>
+        </details>
+        <details class="more" id="safemode-help">
+          <summary>Locked out? The safe mode</summary>
+          <p><strong>What it is.</strong> A recovery boot. For that one boot the fibre (PON) is off, so there is
+             no internet through this stick and it does not disturb the line; the host port runs
+             auto-negotiation, and a setting that forced it off is cleared; this page accepts
+             <code>admin</code> / <code>admin</code> and root over SSH accepts the password
+             <code>admin</code>. The saved password and SSH keys are unchanged: they come back at the next boot.</p>
+          <p><strong>How to leave it.</strong> If you lost your password, set a new one here (or add an SSH key):
+             it is saved and takes effect from the next boot. Acknowledge the banner, then reboot. The next
+             boot uses the saved configuration again, with the fibre on.</p>
+          <p><strong>How to enter it.</strong> Plug the stick in, wait about 80 seconds, pull it, wait a few
+             seconds. Do that five times in a row (three times when the host port is set to auto-negotiation
+             off), then plug it in and leave it in: that boot is the safe mode. Do not pull it again. Each
+             power-up has to end roughly 60 to 110 seconds after power-on (the stick spends about
+             54 seconds before its kernel starts; that can vary by board).</p>
+          <p><strong>The trade-off.</strong> Anyone who can power-cycle the stick can do this, and gets
+             the default password for that boot.</p>
         </details>
         <div id="pw-out"></div>
       </section>

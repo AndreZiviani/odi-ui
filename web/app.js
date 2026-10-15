@@ -17,6 +17,7 @@ import { renderMeBrowser } from './mebrowser.js';
 import { wireRestore } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
+import { renderHostlink, wireHostlink } from './hostlink.js';
 
 /*
  * Four sections, each with subtabs, and the location hash naming the pair:
@@ -129,6 +130,7 @@ $('#reset-go').onclick = resetConfig;
 wireRestore();
 wireTheme();
 wireFirmware();
+wireHostlink();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. Both firmwares answer it: the stock diag, and
    odi-oss diag from its own L2 table readback, under the same command. */
@@ -337,6 +339,8 @@ async function refresh() {
     renderIdentitySwitch();
   } catch (e) { fail(e); }
   await checkAuth();
+  /* The host-link banner: files read by confd, no fork. */
+  await renderHostlink();
   await refresh();
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is
      deliberately unhurried. */
