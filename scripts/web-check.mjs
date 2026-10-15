@@ -541,25 +541,37 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   b = bannerText({ supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }), safemode: null });
   ok(b.show && !b.ack && /did not come up/.test(b.paras[0]) && /next boot/.test(b.paras[0]),
      'host link: the boot fallback raises the banner, says why and when it clears, with nothing to acknowledge');
-  b = bannerText({ supported: true, state: st({}), safemode: { short_boots: '3', previous: 'off' } });
-  ok(b.show && b.ack && /powered up 3 times/.test(b.paras[0]) && /runs auto-negotiation/.test(b.paras[0]),
-     'host link: the safe mode raises the banner, says what happened and what runs now, with an acknowledgement');
+  b = bannerText({ supported: true, state: st({}), safemode_now: null,
+                  safemode: { short_boots: '5', cleared: 'none' } });
+  ok(b.show && b.ack && /safe-mode boot happened/.test(b.paras[0]) && /5 times/.test(b.paras[0])
+     && /saved configuration/.test(b.paras[0]) && !/host port setting/.test(b.paras[0]),
+     'safe mode: a past safe-mode boot raises the banner, says what happened and the state now, with an acknowledgement');
+  b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG' },
+                  safemode: { short_boots: '3', cleared: 'HOST_AUTONEG' } });
+  ok(b.show && b.ack && /^Safe mode\./.test(b.paras[0]) && /PON\) is off/.test(b.paras[0])
+     && /admin \/ admin/.test(b.paras[0]) && /for this boot only/.test(b.paras[0]) && /reboot/.test(b.paras[0])
+     && /host port setting/.test(b.paras[0]),
+     'safe mode: this boot says the PON is off, the password is the default for this boot only, how to leave, what it cleared');
+  b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '5' }, safemode: null });
+  ok(b.show && !b.ack, 'safe mode: acknowledged during the boot, the banner stays until the reboot, without the button');
+  b = bannerText({ supported: false, state: {}, safemode_now: { short_boots: '5' }, safemode: {} });
+  ok(b.show, 'safe mode: shown even on an image without host-autoneg.sh');
   b = bannerText({ supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }), safemode: {} });
-  ok(b.paras.length === 2 && /three times/.test(b.paras[0]), 'host link: both at once, two paragraphs');
-  ok(!bannerText({ supported: false, state: st({ fallback: '1', setting: 'off' }), safemode: {} }).show,
-     'host link: an image without host-autoneg.sh shows nothing');
+  ok(b.paras.length === 2 && /several times/.test(b.paras[0]), 'host link: a record and a fallback at once, two paragraphs');
+  ok(!bannerText({ supported: false, state: st({ fallback: '1', setting: 'off', running: 'on' }), safemode: null }).show,
+     'host link: an image without host-autoneg.sh shows no fallback');
   ok(!bannerText(null).show, 'host link: an unreadable answer shows nothing');
   ok(trialLeft({ state: st({ phase: 'trial', trial_deadline: '420' }), uptime: '330' }) === 90,
      'host link: the countdown comes from the stick clock');
   ok(trialLeft({ state: st({}), uptime: '330' }) === null, 'host link: no trial, no countdown');
 
   API['/api/hostlink'] = { supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }),
-                           safemode: { short_boots: '3' }, link: '1', uptime: '40' };
+                           safemode_now: null, safemode: { short_boots: '3' }, link: '1', uptime: '40' };
   await renderHostlink();
   const banner = doc.querySelector('#hostlinkbanner');
   ok(banner.hidden === false && doc.querySelector('#hostlink-ack').hidden === false,
      'host link: the banner renders, with its Acknowledge button');
-  ok(textOf(doc.querySelector('#hostlink-banner-text')).includes('Safe mode'), 'host link: and its text');
+  ok(textOf(doc.querySelector('#hostlink-banner-text')).includes('safe-mode boot happened'), 'host link: and its text');
   ok(doc.querySelector('#hostlink').hidden === false, 'host link: the Host port block shows on an image that has it');
   ok(doc.querySelector('#hostlink-keep-on').hidden === false,
      'host link: in the fallback the block offers to keep auto-negotiation on');

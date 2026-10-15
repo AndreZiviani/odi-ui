@@ -846,38 +846,47 @@ check "a well-formed row in the same file still works" yes \
 	"$(err "$(post 'GOOD_ROW=7')" '"ok":true,"value":"7"')"
 rm -f /etc/config/confd/keys.tsv
 
-echo "== the host link: state, banner data and the trial verbs"
+echo "== the host link and the safe mode: state, banner data, verbs, credential"
 # odi-oss keeps the state of this boot in /var/run/host-autoneg (key=value,
-# replaced by a rename) and the safe-mode record in
-# /etc/config/host-autoneg.safemode until it is acknowledged; the page reads
-# both through GET /api/hostlink, with no fork, and raises the banner from
-# them. host-autoneg.sh runs the verbs; the stub echoes them and, for ack,
-# removes the record as the real one does.
+# replaced by a rename), the flag of a safe-mode boot in /var/run/safe-mode
+# and the safe-mode record in /etc/config/safe-mode until it is
+# acknowledged; the page reads them through GET /api/hostlink, with no fork,
+# and raises the banner from them. host-autoneg.sh runs try, confirm and
+# revert, safe-mode.sh runs ack; the stubs echo them, and the ack one removes
+# the record as the real one does.
 hl() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/hostlink"; }
 hlpost() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/hostlink"; }
-rm -f /etc/scripts/host-autoneg.sh /var/run/host-autoneg /etc/config/host-autoneg.safemode
+rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg /var/run/safe-mode /etc/config/safe-mode
 mkdir -p /var/run
-check "without the script: not supported, no state, no safe mode" yes \
-	"$(err "$(hl)" '"supported":false,"state":{},"safemode":null')"
+check "without the scripts: not supported, no state, no safe mode" yes \
+	"$(err "$(hl)" '"supported":false,"state":{},"safemode_now":null,"safemode":null')"
 check "without the script: a verb is refused" yes \
 	"$(err "$(hlpost 'action=confirm')" 'this image has no /etc/scripts/host-autoneg.sh')"
+check "without safe-mode.sh: ack is refused" yes \
+	"$(err "$(hlpost 'action=ack')" 'this image has no /etc/scripts/safe-mode.sh')"
 cat > /etc/scripts/host-autoneg.sh <<'HOSTLINK'
 #!/bin/sh
 echo "host-autoneg.sh: $*"
-[ "$1" = ack ] && rm -f /etc/config/host-autoneg.safemode
 [ "$1" = confirm ] && [ -f /tmp/hostlink-refuse ] && { echo "host-autoneg: no trial is running" >&2; exit 1; }
 exit 0
 HOSTLINK
-chmod +x /etc/scripts/host-autoneg.sh
+cat > /etc/scripts/safe-mode.sh <<'SAFEMODE'
+#!/bin/sh
+echo "safe-mode.sh: $*"
+[ "$1" = ack ] && rm -f /etc/config/safe-mode
+exit 0
+SAFEMODE
+chmod +x /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh
 printf '%s\n' setting=off running=on phase=steady fallback=1 'event=fallback' \
 	'message=no host link with auto-negotiation off; "quoted" \ back' > /var/run/host-autoneg
-printf '%s\n' short_boots=3 uptime=21 previous=off build=v1.5.0 > /etc/config/host-autoneg.safemode
+printf '%s\n' short_boots=3 uptime=21 cleared=HOST_AUTONEG build=v1.5.0 > /etc/config/safe-mode
 r=$(hl)
 check "a quote and a backslash in the state are escaped" yes "$(err "$r" '; \"quoted\" \\ back"}')"
 check "the boot fallback reaches the page" yes \
 	"$(err "$r" '"state":{"setting":"off","running":"on","phase":"steady","fallback":"1"')"
+check "not a safe-mode boot" yes "$(err "$r" '"safemode_now":null')"
 check "the safe-mode record reaches the page" yes \
-	"$(err "$r" '"safemode":{"short_boots":"3","uptime":"21","previous":"off","build":"v1.5.0"}')"
+	"$(err "$r" '"safemode":{"short_boots":"3","uptime":"21","cleared":"HOST_AUTONEG","build":"v1.5.0"}')"
 check "the uptime is whole seconds" yes "$(err "$r" '"uptime":"')"
 check "try off runs host-autoneg.sh try off" yes \
 	"$(err "$(hlpost 'action=try&mode=off')" '"ok":true,"output":"host-autoneg.sh: try off')"
@@ -899,13 +908,30 @@ check "revert runs host-autoneg.sh revert" yes \
 check "a cross-site verb is refused" 403 \
 	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'action=ack' "http://127.0.0.1:$PORT/api/hostlink")"
 check "the record is still there after the refused one" yes "$(err "$(hl)" '"safemode":{"short_boots"')"
-check "ack runs host-autoneg.sh ack" yes "$(err "$(hlpost 'action=ack')" 'host-autoneg.sh: ack')"
-check "after the acknowledgement the page sees no safe mode" yes "$(err "$(hl)" '"safemode":null')"
+check "ack runs safe-mode.sh ack" yes "$(err "$(hlpost 'action=ack')" 'safe-mode.sh: ack')"
+check "after the acknowledgement the page sees no record" yes "$(err "$(hl)" '"safemode":null')"
 printf '%s\n' setting=off running=off phase=steady fallback=0 > /var/run/host-autoneg
 check "the next boot with the forced link up: no fallback for the banner" yes \
 	"$(err "$(hl)" '"fallback":"0"')"
+
+# A safe-mode boot: the web UI accepts the built-in default credential, in
+# memory, whatever confd.auth holds; the file is not touched, and the
+# saved credential is back as soon as the flag is gone (the next boot).
+printf '%s\n' short_boots=5 cleared=none root_password=default > /var/run/safe-mode
+check "safe-mode boot: the flag reaches the page" yes \
+	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/hostlink")" '"safemode_now":{"short_boots":"5","cleared":"none","root_password":"default"}')"
+check "safe-mode boot: admin:admin is accepted" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "safe-mode boot: the saved credential is not" 401 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "safe-mode boot: the page is told the default is in force" yes \
+	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware")" '"defaultauth":true')"
+check "safe-mode boot: confd.auth is untouched" "$AUTH" "$(cat /etc/config/confd.auth)"
+rm -f /var/run/safe-mode
+check "the next boot: the saved credential again" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
-rm -f /etc/scripts/host-autoneg.sh /var/run/host-autoneg
+rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
 
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to

@@ -52,8 +52,10 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
     itself after two minutes unless Keep arrives over the link being tried, in a dialog
     that counts the window down. A banner on every view says when the image runs
     auto-negotiation although the key is off: the boot fallback (clears at the next boot
-    that brings the forced link up) and the safe mode (three short boots cleared the key;
-    stays until acknowledged from the banner);
+    that brings the forced link up), an odi-oss safe-mode boot (the fibre off, the default
+    password for that boot only: confd accepts `admin:admin` while `/var/run/safe-mode`
+    exists, without reading or touching `confd.auth`) and a past safe-mode boot not yet
+    acknowledged (Acknowledge runs `safe-mode.sh ack`);
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
     stock firmware reads, read-only, for inspecting what a backup carries. On a

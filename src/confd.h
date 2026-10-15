@@ -67,19 +67,31 @@
 #define APPLY_PATH   "/etc/scripts/apply.sh"
 
 /*
- * The host-port auto-negotiation (odi-oss HOST_AUTONEG, host-autoneg.sh). A
+ * The host-port auto-negotiation (odi-oss HOST_AUTONEG, host-autoneg.sh), and
+ * the safe mode that can clear it (below). A
  * change is a trial the script applies in RAM and reverts by itself unless
  * confirmed, so the page never writes the key: it runs the script (try,
  * confirm, revert, ack). What the page shows is read from the files the
  * image keeps, with no fork: the state of this boot (key=value lines,
- * replaced by a rename), the safe-mode record on the config partition
- * (present until acknowledged), and the live host link from the kernel.
+ * replaced by a rename), the safe-mode flag of this boot and its record on
+ * the config partition (present until acknowledged), and the live host link
+ * from the kernel.
  */
 #define HOSTLINK_SCRIPT   "/etc/scripts/host-autoneg.sh"
 #define HOSTLINK_STATE    "/var/run/host-autoneg"
-#define HOSTLINK_SAFEMODE "/etc/config/host-autoneg.safemode"
+#define HOSTLINK_SAFEMODE "/etc/config/safe-mode"
 #define HOSTLINK_LINK     "/sys/module/odi_switch/parameters/host_link"
 #define UPTIME_FILE       "/proc/uptime"
+/*
+ * The odi-oss safe mode (safe-mode.sh): a recovery boot, entered by a run of
+ * short power-ups, with the PON off, the host port on auto-negotiation and
+ * the default credentials in memory, for that boot only. The flag of the
+ * boot (tmpfs) is what confd reads: present, the web UI accepts
+ * DEFAULT_AUTH whatever confd.auth holds (http.c). The record above
+ * (HOSTLINK_SAFEMODE) outlives the boot until acknowledged with the script.
+ */
+#define SAFEMODE_FLAG     "/var/run/safe-mode"
+#define SAFEMODE_SCRIPT   "/etc/scripts/safe-mode.sh"
 
 /*
  * The diagnostics bundle (odi-oss /etc/scripts/diag-bundle.sh): the image

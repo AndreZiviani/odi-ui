@@ -1011,10 +1011,11 @@ void serve(int conn)
 
 	/*
 	 * The host-port auto-negotiation. GET reads the state the image keeps
-	 * (confd.h, HOSTLINK_*): no fork, so the page can poll it through a
-	 * trial. POST runs host-autoneg.sh with one of four fixed verbs; the
-	 * script owns the trial, the revert timer and the stored key, and the
-	 * page only relays what it said. try answers before the link changes
+	 * (confd.h, HOSTLINK_*, SAFEMODE_FLAG): no fork, so the page can poll
+	 * it through a trial. POST runs host-autoneg.sh with try, confirm or
+	 * revert, or safe-mode.sh with ack; the scripts own the trial, the
+	 * revert timer, the stored key and the safe-mode record, and the page
+	 * only relays what they said. try answers before the link changes
 	 * (the script applies the mode a second later), so this answer always
 	 * leaves.
 	 */
@@ -1030,7 +1031,17 @@ void serve(int conn)
 			got = read_file(HOSTLINK_STATE, buf, sizeof(buf));
 			if (got > 0)
 				put_kv_members(conn, buf);
-			put_fd(conn, "},\"safemode\":");
+			put_fd(conn, "},\"safemode_now\":");
+			got = read_file(SAFEMODE_FLAG, buf, sizeof(buf));
+			if (got >= 0) {
+				put_fd(conn, "{");
+				if (got > 0)
+					put_kv_members(conn, buf);
+				put_fd(conn, "}");
+			} else {
+				put_fd(conn, "null");
+			}
+			put_fd(conn, ",\"safemode\":");
 			got = read_file(HOSTLINK_SAFEMODE, buf, sizeof(buf));
 			if (got >= 0) {
 				put_fd(conn, "{");
@@ -1059,6 +1070,7 @@ void serve(int conn)
 		if (seq(method, "POST")) {
 			char action[16], mode[8];
 			char *argv[4];
+			const char *script = HOSTLINK_SCRIPT;
 			long code = -1, got;
 
 			if (!form_get(body, "action", action, sizeof(action)))
@@ -1071,19 +1083,26 @@ void serve(int conn)
 			if (seq(action, "try") && (seq(mode, "on") || seq(mode, "off"))) {
 				argv[1] = "try";
 				argv[2] = mode;
-			} else if (seq(action, "confirm") || seq(action, "revert") || seq(action, "ack")) {
+			} else if (seq(action, "confirm") || seq(action, "revert")) {
+				argv[1] = action;
+			} else if (seq(action, "ack")) {
+				/* The safe-mode record belongs to safe-mode.sh. */
+				script = SAFEMODE_SCRIPT;
+				argv[0] = "safe-mode.sh";
 				argv[1] = action;
 			} else {
 				respond(conn, "400 Bad Request", "application/json", 0);
 				put_fd(conn, "{\"ok\":false,\"error\":\"action must be try (mode on or off), confirm, revert or ack\"}");
 				return;
 			}
-			if (!file_exists(HOSTLINK_SCRIPT)) {
+			if (!file_exists(script)) {
 				respond(conn, "200 OK", "application/json", 0);
-				put_fd(conn, "{\"ok\":false,\"error\":\"this image has no " HOSTLINK_SCRIPT "\"}");
+				put_fd(conn, "{\"ok\":false,\"error\":\"this image has no ");
+				put_json_cstr(conn, script);
+				put_fd(conn, "\"}");
 				return;
 			}
-			got = run_to_buf_ex(HOSTLINK_SCRIPT, argv, status, sizeof(status), &code,
+			got = run_to_buf_ex(script, argv, status, sizeof(status), &code,
 					   HOSTLINK_TIMEOUT_MS);
 			respond(conn, "200 OK", "application/json", 0);
 			put_fd(conn, "{\"ok\":");
@@ -1091,7 +1110,7 @@ void serve(int conn)
 			put_fd(conn, ",\"output\":\"");
 			if (got > 0)
 				put_json_cstr(conn, status);
-			put_fd(conn, got == -2 ? "\",\"error\":\"host-autoneg.sh did not answer in time\"}" : "\"}");
+			put_fd(conn, got == -2 ? "\",\"error\":\"the script did not answer in time\"}" : "\"}");
 			return;
 		}
 	}

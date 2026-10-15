@@ -12,13 +12,16 @@
  * that fails says the link may be down in this mode, and that the stick
  * reverts by itself.
  *
- * The banner covers the two states in which the stick runs auto-negotiation
- * although the user turned it off, so neither goes unseen:
+ * The banner covers the states in which the image changed what runs by
+ * itself, so none goes unseen:
  *   - the boot fallback: HOST_AUTONEG is off, this boot found no host link
  *     forced and the link came up only with auto-negotiation. It clears by
  *     itself at the next boot that brings the forced link up;
- *   - the safe mode: three short boots in a row cleared HOST_AUTONEG. It
- *     stays until acknowledged, from the banner.
+ *   - a safe-mode boot (odi-oss safe-mode.sh): a run of short power-ups made
+ *     this boot a recovery boot, with the PON off, the host port on
+ *     auto-negotiation and the default password, for this boot only;
+ *   - a safe-mode record: a safe-mode boot happened and nobody acknowledged
+ *     it yet. It stays until acknowledged, from the banner.
  */
 
 import { $, el, get } from './dom.js';
@@ -36,17 +39,32 @@ const modeText = (m) => (m === 'off' ? 'off (forced 1000BASE-X full duplex)' : '
  */
 function bannerText(h) {
   const out = { show: false, paras: [], ack: false };
-  if (!h || !h.supported) return out;
+  if (!h) return out;
   const st = h.state || {};
-  if (h.safemode) {
-    const n = h.safemode.short_boots || 'three';
-    out.paras.push(`Safe mode: this stick was powered up ${n} times in a row for less than a minute each, `
-      + 'so it cleared the host port setting and now runs auto-negotiation (the default). '
-      + 'If you did not do that on purpose, check the power supply of the router port or the stick. '
-      + 'If the router port needs auto-negotiation off, try it again under Config, Network, Host port.');
+  const now = h.safemode_now;
+  const rec = h.safemode;
+  const cleared = (s) => (s && s.cleared === 'HOST_AUTONEG'
+    ? ' It also cleared the host port setting (auto-negotiation off), which is what made it fire; '
+      + 'if the router port needs it, try it again under Config, Network, Host port after the reboot.'
+    : '');
+  if (now) {
+    const n = now.short_boots || 'several';
+    out.paras.push(`Safe mode. This boot followed ${n} short power-ups in a row, so it is a recovery boot, `
+      + 'for this boot only. The fibre (PON) is off: no internet through this stick, and it does not disturb the '
+      + 'line. The host port runs auto-negotiation. The web UI accepts admin / admin and root over ssh the '
+      + 'password admin, for this boot only: the saved password and keys are unchanged and come back at the next '
+      + 'boot. To leave: set a new password under System, Access (or add an ssh key) if you lost yours, it is '
+      + 'saved and in force from the next boot; acknowledge this; then reboot.' + cleared(now));
+    out.ack = !!rec;
+  } else if (rec) {
+    const n = rec.short_boots || 'several';
+    out.paras.push(`A safe-mode boot happened: the stick was powered up ${n} times in a row for less than a `
+      + 'minute each, and booted once in safe mode (the fibre off, the default password). It is back on its '
+      + 'saved configuration now. If nobody did that on purpose, check the power supply of the stick.'
+      + cleared(rec));
     out.ack = true;
   }
-  if (st.fallback === '1' && st.setting === 'off' && st.running === 'on') {
+  if (h.supported && st.fallback === '1' && st.setting === 'off' && st.running === 'on') {
     out.paras.push('Host link fallback: the host port is set to auto-negotiation off, but this boot the host link '
       + 'did not come up that way, so the stick runs auto-negotiation on to stay reachable. The setting is kept. '
       + 'Check that the router port runs 1000 Mb/s full duplex with auto-negotiation off and try off again, '

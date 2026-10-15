@@ -15,17 +15,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Revert runs `revert`, and with no answer the image goes back by itself.
   The dialog polls the stick and says when it stops answering. New route
   `/api/hostlink`: GET reads the state the image keeps (`/var/run/host-autoneg`,
-  the safe-mode record, the host link) with no fork; POST runs one of four
-  fixed verbs, bounded at 20 s. `HOST_AUTONEG` is `writable=never` in the
+  the safe-mode flag and record, the host link) with no fork; POST runs one
+  of four fixed verbs (try, confirm, revert on host-autoneg.sh; ack on
+  safe-mode.sh), bounded at 20 s. `HOST_AUTONEG` is `writable=never` in the
   schema, so Save and Restore cannot write it, and it is on neither the
   Network nor the Stock keys list.
 
-- A banner on every view, beside the default-password one, when the stick
-  runs auto-negotiation although `HOST_AUTONEG` is off: the boot fallback
-  (this boot found no host link forced; clears by itself at the next boot
-  that brings it up) or the safe mode (three short boots in a row cleared the
-  key; stays, with an Acknowledge button, until acknowledged). Each says what
-  happened, what the stick runs now and what to check.
+- A banner on every view, beside the default-password one, when the image
+  changed what runs by itself: the boot fallback (`HOST_AUTONEG` is off but
+  this boot found no host link forced; clears by itself at the next boot
+  that brings it up), a safe-mode boot (odi-oss: the fibre off, the host
+  port on auto-negotiation, the default password for that boot only; the
+  banner says so and how to leave: set a password if lost, acknowledge,
+  reboot), and a past safe-mode boot nobody acknowledged yet (an
+  Acknowledge button, which runs `safe-mode.sh ack`).
+
+- Safe mode: on a safe-mode boot (`/var/run/safe-mode`) the web UI accepts
+  the built-in `admin:admin` instead of the saved credential, in memory
+  only: `confd.auth` is not read and not touched, a password saved meanwhile
+  is written to it and in force from the next boot, and the page reports
+  the default as in force. `/api/hostlink` adds `safemode_now`, the flag of
+  the boot, beside `safemode`, the record (now `/etc/config/safe-mode`).
 
 ## v1.3.2 - 2026-10-14
 
