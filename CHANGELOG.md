@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config, Network: a Host port control for the odi-only key `HOST_AUTONEG`
+  (odi-oss: host port auto-negotiation, on by default, off forces
+  1000BASE-X full duplex for a router port with auto-negotiation off). It
+  never stores the key: Try runs `host-autoneg.sh try on|off`, the image
+  applies the mode a second later in RAM, and a dialog counts the two-minute
+  window down ("Keep this setting? Reverting in N s"); Keep runs `confirm`,
+  Revert runs `revert`, and with no answer the image goes back by itself.
+  The dialog polls the stick and says when it stops answering. New route
+  `/api/hostlink`: GET reads the state the image keeps (`/var/run/host-autoneg`,
+  the safe-mode record, the host link) with no fork; POST runs one of four
+  fixed verbs, bounded at 20 s. `HOST_AUTONEG` is `writable=never` in the
+  schema, so Save and Restore cannot write it, and it is on neither the
+  Network nor the Stock keys list.
+
+- A banner on every view, beside the default-password one, when the stick
+  runs auto-negotiation although `HOST_AUTONEG` is off: the boot fallback
+  (this boot found no host link forced; clears by itself at the next boot
+  that brings it up) or the safe mode (three short boots in a row cleared the
+  key; stays, with an Acknowledge button, until acknowledged). Each says what
+  happened, what the stick runs now and what to check.
+
 ## v1.3.2 - 2026-10-14
 
 - Config: a select whose key is unset showed an empty box. The image always

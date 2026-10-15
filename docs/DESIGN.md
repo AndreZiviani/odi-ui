@@ -45,7 +45,15 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   - *ONU identity* &mdash; the identity switch, the five keys it gates, and the odi-only
     `OMCI_ACCEPT_REBOOT`, `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME` (the latter is private to the
     owner: confd never logs it, and the diagnostics bundle redacts it);
-  - *Network* &mdash; both management addresses and the UNI MAC;
+  - *Network* &mdash; both management addresses and the UNI MAC, and the *Host port*
+    control for the odi-only `HOST_AUTONEG` (auto-negotiation with the router). Not a
+    schema row: the key is `writable=never`, so neither Save nor Restore writes it. The
+    control runs `host-autoneg.sh` through `/api/hostlink`: a trial the image reverts by
+    itself after two minutes unless Keep arrives over the link being tried, in a dialog
+    that counts the window down. A banner on every view says when the image runs
+    auto-negotiation although the key is off: the boot fallback (clears at the next boot
+    that brings the forced link up) and the safe mode (three short boots cleared the key;
+    stays until acknowledged from the banner);
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
     stock firmware reads, read-only, for inspecting what a backup carries. On a

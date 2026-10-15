@@ -1010,6 +1010,93 @@ void serve(int conn)
 	}
 
 	/*
+	 * The host-port auto-negotiation. GET reads the state the image keeps
+	 * (confd.h, HOSTLINK_*): no fork, so the page can poll it through a
+	 * trial. POST runs host-autoneg.sh with one of four fixed verbs; the
+	 * script owns the trial, the revert timer and the stored key, and the
+	 * page only relays what it said. try answers before the link changes
+	 * (the script applies the mode a second later), so this answer always
+	 * leaves.
+	 */
+	if (seq(path, "/api/hostlink")) {
+		if (seq(method, "GET")) {
+			char buf[1024];
+			long got;
+
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "{\"supported\":");
+			put_fd(conn, file_exists(HOSTLINK_SCRIPT) ? "true" : "false");
+			put_fd(conn, ",\"state\":{");
+			got = read_file(HOSTLINK_STATE, buf, sizeof(buf));
+			if (got > 0)
+				put_kv_members(conn, buf);
+			put_fd(conn, "},\"safemode\":");
+			got = read_file(HOSTLINK_SAFEMODE, buf, sizeof(buf));
+			if (got >= 0) {
+				put_fd(conn, "{");
+				if (got > 0)
+					put_kv_members(conn, buf);
+				put_fd(conn, "}");
+			} else {
+				put_fd(conn, "null");
+			}
+			put_fd(conn, ",\"link\":\"");
+			got = read_file(HOSTLINK_LINK, buf, sizeof(buf));
+			if (got > 0 && (buf[0] == '0' || buf[0] == '1'))
+				put_json_str(conn, buf, 1);
+			put_fd(conn, "\",\"uptime\":\"");
+			got = read_file(UPTIME_FILE, buf, sizeof(buf));
+			if (got > 0) {
+				unsigned long k = 0;
+
+				while (buf[k] >= '0' && buf[k] <= '9')
+					k++;
+				put_json_str(conn, buf, k);
+			}
+			put_fd(conn, "\"}");
+			return;
+		}
+		if (seq(method, "POST")) {
+			char action[16], mode[8];
+			char *argv[4];
+			long code = -1, got;
+
+			if (!form_get(body, "action", action, sizeof(action)))
+				action[0] = 0;
+			if (!form_get(body, "mode", mode, sizeof(mode)))
+				mode[0] = 0;
+			argv[0] = "host-autoneg.sh";
+			argv[2] = 0;
+			argv[3] = 0;
+			if (seq(action, "try") && (seq(mode, "on") || seq(mode, "off"))) {
+				argv[1] = "try";
+				argv[2] = mode;
+			} else if (seq(action, "confirm") || seq(action, "revert") || seq(action, "ack")) {
+				argv[1] = action;
+			} else {
+				respond(conn, "400 Bad Request", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"action must be try (mode on or off), confirm, revert or ack\"}");
+				return;
+			}
+			if (!file_exists(HOSTLINK_SCRIPT)) {
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"this image has no " HOSTLINK_SCRIPT "\"}");
+				return;
+			}
+			got = run_to_buf_ex(HOSTLINK_SCRIPT, argv, status, sizeof(status), &code,
+					   HOSTLINK_TIMEOUT_MS);
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "{\"ok\":");
+			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ",\"output\":\"");
+			if (got > 0)
+				put_json_cstr(conn, status);
+			put_fd(conn, got == -2 ? "\",\"error\":\"host-autoneg.sh did not answer in time\"}" : "\"}");
+			return;
+		}
+	}
+
+	/*
 	 * Create or remove one switch file on the config partition, from the
 	 * allowlist in confd.h. Only the name is compared; the path is built
 	 * from the literal, never from the request.

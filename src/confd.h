@@ -67,6 +67,21 @@
 #define APPLY_PATH   "/etc/scripts/apply.sh"
 
 /*
+ * The host-port auto-negotiation (odi-oss HOST_AUTONEG, host-autoneg.sh). A
+ * change is a trial the script applies in RAM and reverts by itself unless
+ * confirmed, so the page never writes the key: it runs the script (try,
+ * confirm, revert, ack). What the page shows is read from the files the
+ * image keeps, with no fork: the state of this boot (key=value lines,
+ * replaced by a rename), the safe-mode record on the config partition
+ * (present until acknowledged), and the live host link from the kernel.
+ */
+#define HOSTLINK_SCRIPT   "/etc/scripts/host-autoneg.sh"
+#define HOSTLINK_STATE    "/var/run/host-autoneg"
+#define HOSTLINK_SAFEMODE "/etc/config/host-autoneg.safemode"
+#define HOSTLINK_LINK     "/sys/module/odi_switch/parameters/host_link"
+#define UPTIME_FILE       "/proc/uptime"
+
+/*
  * The diagnostics bundle (odi-oss /etc/scripts/diag-bundle.sh): the image
  * collects it, redacts every secret and writes one tar.gz; GET /api/diag only
  * runs the script and streams what it wrote. The collection lives in the
@@ -100,6 +115,9 @@
 				   * up to a 15 s poll loop plus a 3 s settle
 				   * (mib.c apply_omci, routes.c /api/apply) */
 #define PING_TIMEOUT_MS    6000   /* `ping -c 3`, ~1 s per probe plus slack */
+#define HOSTLINK_TIMEOUT_MS 20000 /* host-autoneg.sh: up to 10 s for its lock,
+				   * then a flash set and its read-back, 5 s
+				   * each at worst; try returns at once */
 #define FWU_TIMEOUT_MS     5000   /* fwu_starter.sh backgrounds the flasher
 				   * and returns almost at once */
 #define REBOOT_TIMEOUT_MS  3000   /* backgrounds the actual reboot and returns */

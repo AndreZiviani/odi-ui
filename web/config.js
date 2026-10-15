@@ -29,6 +29,11 @@ const GROUPS = {
   network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
   services: ['SYSLOG_SERVER', 'NTP_SERVER'],
 };
+/* Keys with a control of their own on their subtab, not a schema row there:
+   HOST_AUTONEG is never written by Save or Restore (hostlink.js runs a trial
+   instead), and its schema row is writable=never, so the daemon refuses it
+   too. Kept off the Stock keys subtab as well: this image reads it. */
+const OWN_CONTROL = ['HOST_AUTONEG'];
 /* A key GROUPS does not name, by its schema section. */
 const BY_SECTION = { gpon: 'line', vlan: 'vlan', omci: 'identity', lan: 'network', hardware: 'network' };
 
@@ -347,9 +352,10 @@ function renderAll() {
   const filter = $('#filter').value;
   renderLegend();
 
-  const editable = imageAware()
+  const editable = (imageAware()
     ? S.SCHEMA.filter((r) => settingOf(r.name))
-    : S.SCHEMA.filter((r) => r.common === 'yes' && r.section !== 'accounts');
+    : S.SCHEMA.filter((r) => r.common === 'yes' && r.section !== 'accounts'))
+    .filter((r) => !OWN_CONTROL.includes(r.name));
   const groups = {};
   for (const r of editable) (groups[groupOf(r)] ||= []).push(r);
   /* In the order GROUPS lists them: the order someone reads a line in. */
@@ -364,7 +370,8 @@ function renderAll() {
     /* The keys this image reads, editable with their apply class; everything
        else is the stock firmware own store, shown read-only on its own subtab
        and kept whole in backups and restores. */
-    renderConfig('#sections', S.SCHEMA.filter((r) => !settingOf(r.name)), filter, true, true);
+    renderConfig('#sections', S.SCHEMA.filter((r) => !settingOf(r.name) && !OWN_CONTROL.includes(r.name)),
+      filter, true, true);
     /* The device-login keys are the stock firmware accounts; this image
        logs in as root with SSH keys, so the section is not offered. */
     $('#device-login').hidden = true;
@@ -381,4 +388,4 @@ function renderAll() {
   markPending();
 }
 
-export { renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS };
+export { renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS, OWN_CONTROL };

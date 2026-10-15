@@ -846,6 +846,67 @@ check "a well-formed row in the same file still works" yes \
 	"$(err "$(post 'GOOD_ROW=7')" '"ok":true,"value":"7"')"
 rm -f /etc/config/confd/keys.tsv
 
+echo "== the host link: state, banner data and the trial verbs"
+# odi-oss keeps the state of this boot in /var/run/host-autoneg (key=value,
+# replaced by a rename) and the safe-mode record in
+# /etc/config/host-autoneg.safemode until it is acknowledged; the page reads
+# both through GET /api/hostlink, with no fork, and raises the banner from
+# them. host-autoneg.sh runs the verbs; the stub echoes them and, for ack,
+# removes the record as the real one does.
+hl() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/hostlink"; }
+hlpost() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/hostlink"; }
+rm -f /etc/scripts/host-autoneg.sh /var/run/host-autoneg /etc/config/host-autoneg.safemode
+mkdir -p /var/run
+check "without the script: not supported, no state, no safe mode" yes \
+	"$(err "$(hl)" '"supported":false,"state":{},"safemode":null')"
+check "without the script: a verb is refused" yes \
+	"$(err "$(hlpost 'action=confirm')" 'this image has no /etc/scripts/host-autoneg.sh')"
+cat > /etc/scripts/host-autoneg.sh <<'HOSTLINK'
+#!/bin/sh
+echo "host-autoneg.sh: $*"
+[ "$1" = ack ] && rm -f /etc/config/host-autoneg.safemode
+[ "$1" = confirm ] && [ -f /tmp/hostlink-refuse ] && { echo "host-autoneg: no trial is running" >&2; exit 1; }
+exit 0
+HOSTLINK
+chmod +x /etc/scripts/host-autoneg.sh
+printf '%s\n' setting=off running=on phase=steady fallback=1 'event=fallback' \
+	'message=no host link with auto-negotiation off; "quoted" \ back' > /var/run/host-autoneg
+printf '%s\n' short_boots=3 uptime=21 previous=off build=v1.5.0 > /etc/config/host-autoneg.safemode
+r=$(hl)
+check "a quote and a backslash in the state are escaped" yes "$(err "$r" '; \"quoted\" \\ back"}')"
+check "the boot fallback reaches the page" yes \
+	"$(err "$r" '"state":{"setting":"off","running":"on","phase":"steady","fallback":"1"')"
+check "the safe-mode record reaches the page" yes \
+	"$(err "$r" '"safemode":{"short_boots":"3","uptime":"21","previous":"off","build":"v1.5.0"}')"
+check "the uptime is whole seconds" yes "$(err "$r" '"uptime":"')"
+check "try off runs host-autoneg.sh try off" yes \
+	"$(err "$(hlpost 'action=try&mode=off')" '"ok":true,"output":"host-autoneg.sh: try off')"
+check "try on runs host-autoneg.sh try on" yes \
+	"$(err "$(hlpost 'action=try&mode=on')" 'host-autoneg.sh: try on')"
+check "try with another mode is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=try&mode=sideways' "http://127.0.0.1:$PORT/api/hostlink")"
+check "an unknown verb is refused, not passed on" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=boot' "http://127.0.0.1:$PORT/api/hostlink")"
+check "confirm runs host-autoneg.sh confirm" yes \
+	"$(err "$(hlpost 'action=confirm')" 'host-autoneg.sh: confirm')"
+: > /tmp/hostlink-refuse
+r=$(hlpost 'action=confirm')
+check "a refused confirm is reported as not ok" yes "$(err "$r" '"ok":false')"
+check "  ... with the reason the script gave" yes "$(err "$r" 'no trial is running')"
+rm -f /tmp/hostlink-refuse
+check "revert runs host-autoneg.sh revert" yes \
+	"$(err "$(hlpost 'action=revert')" 'host-autoneg.sh: revert')"
+check "a cross-site verb is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'action=ack' "http://127.0.0.1:$PORT/api/hostlink")"
+check "the record is still there after the refused one" yes "$(err "$(hl)" '"safemode":{"short_boots"')"
+check "ack runs host-autoneg.sh ack" yes "$(err "$(hlpost 'action=ack')" 'host-autoneg.sh: ack')"
+check "after the acknowledgement the page sees no safe mode" yes "$(err "$(hl)" '"safemode":null')"
+printf '%s\n' setting=off running=off phase=steady fallback=0 > /var/run/host-autoneg
+check "the next boot with the forced link up: no fallback for the banner" yes \
+	"$(err "$(hl)" '"fallback":"0"')"
+check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
+rm -f /etc/scripts/host-autoneg.sh /var/run/host-autoneg
+
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to
 # block every other request indefinitely -- a port scanner holding a socket, or
