@@ -14,6 +14,7 @@ import {
   CLASS_LABEL, CLASS_MEANS, costBadge, imageAware, settingOf, identitySwitchOn,
 } from './state.js';
 import { hexAscii, validateInput } from './validate.js';
+import { renderFixedMeEditor } from './expert.js';
 
 /*
  * The subtabs, grouped by what someone changing the line thinks about rather
@@ -25,11 +26,17 @@ const GROUPS = {
   line: ['GPON_SN', 'GPON_PLOAM_PASSWD', 'LOID', 'LOID_PASSWD', 'LOID_OLD', 'LOID_PASSWD_OLD'],
   vlan: ['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI'],
   identity: ['OMCI_VENDOR_PRODUCT_CODE', 'GPON_ONU_MODEL', 'ONU_HW_VERSION', 'OMCI_SW_VER1', 'OMCI_SW_VER2', 'OMCC_VER',
-    'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'],
+    'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNKNOWN_ME_OK'],
+  /* Behind the Expert settings disclosure on the ONU identity subtab: keys
+     that change how the stick presents itself to the OLT, for someone who has
+     read what a native ONU reports. */
+  expert: ['OMCI_FIXED_ME'],
   network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
   services: ['SYSLOG_SERVER', 'NTP_SERVER'],
 };
 /* A key GROUPS does not name, by its schema section. */
+/* Where a group is drawn: expert settings sit on the ONU identity subtab. */
+const TAB_OF = { expert: 'identity' };
 const BY_SECTION = { gpon: 'line', vlan: 'vlan', omci: 'identity', lan: 'network', hardware: 'network' };
 
 function groupOf(row) {
@@ -89,6 +96,20 @@ function renderValue(row, raw, readonly = false) {
   if (row.writable === 'never' || readonly || (set && set.pair)) {
     box.append(el('span', 's-ro mono', shown === undefined ? '(not set)'
       : shown === '' ? '(empty)' : shown));
+    return box;
+  }
+
+  /* OMCI_FIXED_ME is a table, not a string. The editor hands back the key's
+     text after each edit; what a pending edit is stays decided here. */
+  if (row.type === 'fixedme') {
+    const ed = renderFixedMeEditor(shown, (v) => {
+      const same = v === raw || (raw === undefined && v === '');
+      if (same) EDITS.delete(row.name); else EDITS.set(row.name, v);
+      ed.classList.toggle('changed', !same);
+      document.dispatchEvent(new Event('edits-changed'));
+    });
+    ed.classList.toggle('changed', EDITS.has(row.name));
+    box.append(ed);
     return box;
   }
 
@@ -201,7 +222,7 @@ function renderRow(row, readonly) {
   const meta = S.META[row.name] || {};
   const set = settingOf(row.name);
   const prov = provenance(row, S.VALUES[row.name]);
-  const wrap = el('div', 'setting');
+  const wrap = el('div', row.type === 'fixedme' ? 'setting wide' : 'setting');
   wrap.dataset.name = row.name;
 
   const left = el('div', 's-label');
@@ -330,7 +351,8 @@ function markPending() {
   for (const k of EDITS.keys()) {
     const row = S.SCHEMA.find((r) => r.name === k);
     if (!row) continue;
-    const g = imageAware() && !settingOf(k) ? 'stock' : groupOf(row);
+    const g0 = imageAware() && !settingOf(k) ? 'stock' : groupOf(row);
+    const g = TAB_OF[g0] || g0;
     counts[g] = (counts[g] || 0) + 1;
   }
   for (const b of document.querySelectorAll('#p-config [role=tab]')) {
@@ -355,10 +377,15 @@ function renderAll() {
   /* In the order GROUPS lists them: the order someone reads a line in. */
   const rank = (r) => { const i = (GROUPS[groupOf(r)] || []).indexOf(r.name); return i < 0 ? 99 : i; };
   for (const g of Object.values(groups)) g.sort((a, b) => rank(a) - rank(b));
-  for (const g of ['line', 'vlan', 'identity', 'network', 'services', 'other']) {
+  for (const g of ['line', 'vlan', 'identity', 'expert', 'network', 'services', 'other']) {
     renderConfig('#set-' + g, groups[g] || [], '');
   }
   $('#st-config-other').hidden = !(groups.other || []).length;
+  /* The disclosure is offered only where this image reads an expert key, and
+     is held open while one has a pending edit, so a change is never hidden. */
+  const xp = $('#expert');
+  xp.hidden = !(groups.expert || []).length;
+  if ((groups.expert || []).some((r) => EDITS.has(r.name))) xp.open = true;
 
   if (imageAware()) {
     /* The keys this image reads, editable with their apply class; everything

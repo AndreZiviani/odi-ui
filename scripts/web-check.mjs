@@ -169,7 +169,7 @@ const ok = (cond, what) => {
   if (!cond) failed++;
 };
 
-const mods = ['dom', 'state', 'status', 'flow', 'validate', 'config', 'save', 'firmware',
+const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
               'omci', 'services', 'mebrowser', 'restore', 'l2', 'tools'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
@@ -178,7 +178,8 @@ for (const m of mods) {
 
 const { S } = await import(join(root, 'web', 'state.js'));
 const { renderConfig, renderAll } = await import(join(root, 'web', 'config.js'));
-const { valueProblem } = await import(join(root, 'web', 'validate.js'));
+const { valueProblem, fixedMeParse, fixedMeSerialise, fixedMeRowProblems } = await import(join(root, 'web', 'validate.js'));
+const { renderFixedMeEditor } = await import(join(root, 'web', 'expert.js'));
 const { renderStatus } = await import(join(root, 'web', 'status.js'));
 
 S.SCHEMA = SCHEMA;
@@ -571,7 +572,7 @@ const { withPairs } = await import(join(root, 'web', 'save.js'));
 const { EDITS } = state;
 const walk = (n, f) => { f(n); for (const c of n.children || []) walk(c, f); };
 /* The editable subtabs, each its own host now that Config is grouped. */
-const GROUP_HOSTS = ['line', 'vlan', 'identity', 'network', 'services', 'other'].map((g) => '#set-' + g);
+const GROUP_HOSTS = ['line', 'vlan', 'identity', 'expert', 'network', 'services', 'other'].map((g) => '#set-' + g);
 const hostsOf = (sel) => (sel === '#common' ? GROUP_HOSTS : [sel]).map((h) => doc.querySelector(h));
 const rowsOf = (sel) => {
   const out = [];
@@ -580,7 +581,13 @@ const rowsOf = (sel) => {
 };
 const inputsOf = (sel) => {
   let n = 0;
-  for (const host of hostsOf(sel)) walk(host, (x) => { if (x.tagName === 'input' || x.tagName === 'select') n++; });
+  /* A table editor is one control, however many rows it holds. */
+  const count = (x) => {
+    if (x.classList && x.classList.contains('fme')) { n++; return; }
+    if (x.tagName === 'input' || x.tagName === 'select') n++;
+    for (const c of x.children || []) count(c);
+  };
+  for (const host of hostsOf(sel)) count(host);
   return n;
 };
 const tagsOf = (sel) => {
@@ -648,9 +655,56 @@ const fme = (v) => valueProblem({ name: 'OMCI_FIXED_ME', type: 'fixedme' }, v);
 ok(!fme('200:0x0011aa') && !fme('200:0x0011aa,201:01020304') && !fme('1:aa 65535:0XAB, 7:'+'ff'.repeat(25)) && !fme(''),
    'fixedme accepts one or more CLASS:HEX entries, either separator, and empty (it clears the key)');
 ok(['0:aa', '65536:aa', '200aa', '200:abc', '200:zz', '200:0x', '200:aa,200:bb', '200:' + 'ff'.repeat(26),
-  ',200:aa', '200:aa,', '1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa,9:aa'].every((v) => fme(v)),
-   'fixedme rejects class 0 and 65536, a missing colon, odd digits, non-hex, 26 bytes, a duplicate class and nine entries');
-ok(!fme('1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa'), 'fixedme accepts eight entries');
+  ',200:aa', '200:aa,', ...Array(1).fill(Array.from({ length: 17 }, (_, i) => `${i + 1}:aa`).join(','))].every((v) => fme(v)),
+   'fixedme rejects class 0 and 65536, a missing colon, odd digits, non-hex, 26 bytes, a duplicate class and 17 entries');
+ok(!fme(Array.from({ length: 16 }, (_, i) => `${i + 1}:aa`).join(',')), 'fixedme accepts sixteen entries');
+ok(!fme('188:0x8001:1:0x0011aa') && !fme('188:32769:1:00,188:0x8001:2:ff 188:0xFFFF:16:' + 'ab'.repeat(25))
+   && !fme('188:0:1:00,200:aa') && !fme('188:1:1:00 188:1:2:00 188:2:1:00'),
+   'fixedme accepts CLASS:INSTANCE:ATTR:HEX, decimal or 0x instance, several attributes, and both forms on different classes');
+ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:00', '188:65536:1:00',
+  '188:0x:1:00', '188:-1:1:00', '188:1:1', '188::1:00', '188:1::00', '188:1:2:3:00', '0xbc:1:1:00',
+  '188:1:1:0', '188:1:1:0x', '188:1:1:' + 'ff'.repeat(26),
+  '188:1:1:00,188:0x1:1:01', '188:0x8001:1:00 188:32769:1:01',   /* the same slot twice, spelled two ways */
+  '188:00,188:1:1:00', '188:1:1:00,188:00']   /* a class in both forms, either order */
+  .every((v) => fme(v)),
+  'fixedme rejects attribute 0 and 17, an instance past 65535, a missing field, a slot twice and a class in both forms');
+{
+  const rows = fixedMeParse('200:0011aa,188:0x8001:1:ff');
+  ok(rows.length === 2 && rows[0].inst === 'any' && rows[0].attr === 'any' && rows[0].hex === '0011aa'
+     && rows[1].cls === '188' && rows[1].inst === '0x8001' && rows[1].attr === '1' && rows[1].hex === 'ff',
+     'fixedMeParse: the legacy form reads as any/any, the entry form as typed');
+  ok(fixedMeSerialise(rows) === '200:0011aa,188:0x8001:1:ff', 'fixedMeSerialise: the round trip keeps the text');
+  ok(fixedMeSerialise([{ cls: '', inst: '', attr: '', hex: '' }, { cls: '5', inst: 'any', attr: '', hex: 'aa' }]) === '5:aa',
+     'fixedMeSerialise: an empty row is dropped, any/empty is the legacy form');
+  ok(fme(fixedMeSerialise([{ cls: '5', inst: '1', attr: '', hex: 'aa' }])), 'an unfinished row serialises to a string the check refuses');
+  ok(fixedMeRowProblems({ cls: '0', inst: 'x', attr: '3', hex: 'a' }).cls && fixedMeRowProblems({ cls: '0', inst: 'x', attr: '3', hex: 'a' }).inst
+     && fixedMeRowProblems({ cls: '0', inst: 'x', attr: '3', hex: 'a' }).hex && !fixedMeRowProblems({ cls: '5', inst: 'any', attr: '', hex: 'aa' }).inst,
+     'fixedMeRowProblems names the fields that are wrong');
+  /* The editor: one table row per entry, and a row it adds. */
+  const ed = renderFixedMeEditor('200:0011aa,188:0x8001:1:ff', () => {});
+  const trs = ed.children[0].children[1].children;
+  ok(trs.length === 2 && trs[0].inputs.map((i) => i.value).join('|') === '200|any|any|0011aa'
+     && trs[1].inputs.map((i) => i.value).join('|') === '188|0x8001|1|ff',
+     'the expert editor shows one row per entry, the legacy form as any/any');
+  let seen = null;
+  const ed2 = renderFixedMeEditor('', (v) => { seen = v; });
+  ok(ed2.children[0].children[1].children.length === 0, 'the expert editor with no value has no rows');
+  ed2.children[2].onclick();
+  const row0 = ed2.children[0].children[1].children[0];
+  row0.inputs[0].value = '188'; row0.inputs[0].oninput();
+  ok(seen === '188:', 'a half-typed row is handed on as typed, so the check holds the save');
+  row0.inputs[1].value = '0x8001'; row0.inputs[1].oninput();
+  row0.inputs[2].value = '1'; row0.inputs[2].oninput();
+  row0.inputs[3].value = '0011aa'; row0.inputs[3].oninput();
+  ok(seen === '188:0x8001:1:0011aa' && !fme(seen), 'a finished row serialises to the entry form');
+  ed2.children[2].onclick();
+  const r1 = ed2.children[0].children[1].children[1];
+  r1.inputs[0].value = '188'; r1.inputs[0].oninput();
+  r1.inputs[3].value = '00'; r1.inputs[3].oninput();
+  ok(fme(seen) && /both forms/.test(fme(seen)), 'a legacy row for a class that has an entity says both forms');
+  r1.children[4].children[0].onclick();
+  ok(seen === '188:0x8001:1:0011aa', 'removing a row removes its entry');
+}
 {
   const setting = (n) => SETT.find((r) => r.name === n);
   ok(['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI']
@@ -691,8 +745,10 @@ ok(!fme('1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa'), 'fixedme accepts eight entri
     ['GPON_PLOAM_PASSWD', /refuses the ONU/], ['LOID', /refuses the ONU/]]) {
     ok(re.test(first(n)), `${n}: the visible help says how a value can cut the service`);
   }
-  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'].every((n) => GROUPS.identity.includes(n)),
+  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNKNOWN_ME_OK'].every((n) => GROUPS.identity.includes(n)),
     'the new OLT-facing keys sit on the ONU identity subtab');
+  ok(GROUPS.expert.join() === 'OMCI_FIXED_ME' && !GROUPS.identity.includes('OMCI_FIXED_ME'),
+    'OMCI_FIXED_ME is an expert setting, not in the ONU identity list');
 }
 
 EDITS.set('LOID', 'someone');

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: an *Expert settings* disclosure, collapsed, at the foot of the ONU
+  identity subtab. It warns that its keys change how the stick presents itself
+  to the OLT, and holds `OMCI_FIXED_ME`, moved out of the identity list. The
+  key is now a table editor, one row per entry (class, instance, attribute,
+  bytes), with Add entry and Remove, checked as you type against the rules the
+  daemon enforces; the form that answers every instance shows `any` in
+  instance and attribute. Saving and applying are unchanged. The key takes a
+  second entry form, `CLASS:INSTANCE:ATTR:HEX` (instance 0-65535, decimal or
+  `0x`; attribute 1-16), which makes an entity that exists only at that
+  instance, and the limit is 16 entries. confd (type `fixedme`), the browser
+  check and the help text follow. The entry form needs an odi-oss image whose
+  omcid reads it (odi-oss, same batch); an older omcid turns the whole key off.
+
 ## v1.3.2 - 2026-10-14
 
 - Config: a select whose key is unset showed an empty box. The image always

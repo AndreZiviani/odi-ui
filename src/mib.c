@@ -109,37 +109,85 @@ int type_ok(const char *type, const char *v)
 		return 1;
 	}
 	if (seq(type, "fixedme")) {
-		/* OMCI_FIXED_ME: up to 8 CLASS:HEX entries separated by commas
-		 * or spaces. Class decimal 1..65535, hex with an optional 0x,
-		 * 1 to 25 bytes (an even count of 2..50 digits), no class
-		 * twice. omcid turns the whole key off on anything else, so it
-		 * is refused here. Empty clears the key. */
-		unsigned long classes[8], n = 0, k;
+		/* OMCI_FIXED_ME: up to 16 entries separated by commas or
+		 * spaces, each CLASS:HEX (any instance of the class) or
+		 * CLASS:INSTANCE:ATTR:HEX (one attribute of one entity).
+		 * Class decimal 1..65535; instance decimal or 0x hex
+		 * 0..65535; attribute decimal 1..16; hex with an optional 0x,
+		 * 1 to 25 bytes (an even count of 2..50 digits). A class
+		 * cannot be listed twice in the first form, in both forms, or
+		 * with the same instance and attribute twice. omcid turns the
+		 * whole key off on anything else, so it is refused here.
+		 * Empty clears the key. */
+		struct { unsigned long cls, inst, attr; } fe[16];
+		unsigned long n = 0, k;
 
 		if (!v[0])
 			return 1;
 		i = 0;
 		while (v[i]) {
-			unsigned long cls = 0, cd = 0, hd = 0;
+			unsigned long cls = 0, cd = 0, hd = 0, inst = 0, attr = 0, colons = 0, t;
+			int any;
 
 			for (; v[i] >= '0' && v[i] <= '9'; i++) {
 				if (++cd > 5)
 					return 0;
 				cls = cls * 10 + (unsigned long)(v[i] - '0');
 			}
-			if (!cd || cls < 1 || cls > 65535 || v[i] != ':' || n >= 8)
+			if (!cd || cls < 1 || cls > 65535 || v[i] != ':' || n >= 16)
 				return 0;
 			i++;
+			/* One colon more means INSTANCE:ATTR: come first. */
+			for (t = i; v[t] && v[t] != ',' && v[t] != ' '; t++)
+				if (v[t] == ':')
+					colons++;
+			if (colons != 0 && colons != 2)
+				return 0;
+			any = colons == 0;
+			if (!any) {
+				unsigned long id = 0;
+
+				if (v[i] == '0' && (v[i + 1] == 'x' || v[i + 1] == 'X')) {
+					for (i += 2; hexval(v[i]) >= 0; i++) {
+						if (++id > 4)
+							return 0;
+						inst = inst * 16 + (unsigned long)hexval(v[i]);
+					}
+				} else {
+					for (; v[i] >= '0' && v[i] <= '9'; i++) {
+						if (++id > 5)
+							return 0;
+						inst = inst * 10 + (unsigned long)(v[i] - '0');
+					}
+				}
+				if (!id || inst > 65535 || v[i] != ':')
+					return 0;
+				for (id = 0, i++; v[i] >= '0' && v[i] <= '9'; i++) {
+					if (++id > 2)
+						return 0;
+					attr = attr * 10 + (unsigned long)(v[i] - '0');
+				}
+				if (!id || attr < 1 || attr > 16 || v[i] != ':')
+					return 0;
+				i++;
+			}
 			if (v[i] == '0' && (v[i + 1] == 'x' || v[i + 1] == 'X'))
 				i += 2;
 			for (; hexval(v[i]) >= 0; i++)
 				hd++;
 			if (hd < 2 || hd > 50 || hd % 2)
 				return 0;
-			for (k = 0; k < n; k++)
-				if (classes[k] == cls)
+			for (k = 0; k < n; k++) {
+				if (fe[k].cls != cls)
+					continue;
+				if (any || !fe[k].attr ||
+				    (fe[k].inst == inst && fe[k].attr == attr))
 					return 0;
-			classes[n++] = cls;
+			}
+			fe[n].cls = cls;
+			fe[n].inst = inst;
+			fe[n].attr = any ? 0 : attr;
+			n++;
 			if (!v[i])
 				break;
 			if (v[i] != ',' && v[i] != ' ')
