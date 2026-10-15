@@ -167,14 +167,15 @@ button.themetoggle svg { width: 18px; height: 18px; fill: none; stroke: currentC
 .trial strong { color: var(--yellow-ink); }
 #trial-out { flex-basis: 100%; font-size: 14px; }
 #trial-out:empty { display: none; }
+/* Further bars (safe mode, host link fallback) stack under it, same width. */
+.trial a { font-size: 14px; white-space: nowrap; }
+.trial + .trial { margin-top: -24px; border-top-width: 1px; } /* cancels the header row gap */
 
 /* --------------------------------------------------------------- layout */
 main { max-width: 1180px; padding: 24px 24px 120px; }
 .banner { max-width: 1180px; margin: 16px 24px 0; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .banner p { margin: 0; flex: 1 1 320px; }
 #err { margin: 16px 24px 0; max-width: 1180px; }
-#hostlink-banner-text { flex: 1 1 320px; }
-#hostlink-banner-text p + p { margin-top: 8px; }
 
 /* The host-port keep-or-revert dialog: modal, so nothing else is clicked
    while the stick may be about to revert. */
@@ -325,6 +326,8 @@ button.apply .cost { padding: 1px 6px; }
 .s-more dd { margin: 0; }
 .s-more dd.wide { grid-column: 1 / -1; }
 .s-control { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.s-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.s-inline .s-ro { padding: 0; }
 .s-field input, .s-field select { width: min(100%, 380px); }
 .s-ro { display: inline-block; padding: 7px 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .s-aside { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
@@ -516,6 +519,7 @@ table.data td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); v
 @media (max-width: 720px) {
   .top { padding: 0 16px; gap: 0 12px; }
   .trial { flex-basis: calc(100% + 32px); margin: 0 -16px; padding: 10px 16px; }
+  .trial + .trial { margin-top: 0; }
   .brand { flex: 1 1 auto; }
   .tabs { order: 3; width: 100%; overflow-x: auto; }
   .tabs [role=tab] { padding: 10px 12px; }
