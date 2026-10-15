@@ -8,8 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Config: an *Expert settings* disclosure, collapsed, at the foot of the ONU
   identity subtab. It warns that its keys change how the stick presents itself
-  to the OLT, and holds `OMCI_FIXED_ME`, moved out of the identity list. The
-  key is now a table editor, one row per entry (class, instance, attribute,
+  to the OLT, and holds `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME`, moved out of the
+  identity list. `OMCI_FIXED_ME` is now a table editor, one row per entry (class, instance, attribute,
   bytes), with Add entry and Remove, checked as you type against the rules the
   daemon enforces; the form that answers every instance shows `any` in
   instance and attribute. Saving and applying are unchanged. The key takes a

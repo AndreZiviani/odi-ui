@@ -745,10 +745,11 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
     ['GPON_PLOAM_PASSWD', /refuses the ONU/], ['LOID', /refuses the ONU/]]) {
     ok(re.test(first(n)), `${n}: the visible help says how a value can cut the service`);
   }
-  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNKNOWN_ME_OK'].every((n) => GROUPS.identity.includes(n)),
+  ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT'].every((n) => GROUPS.identity.includes(n)),
     'the new OLT-facing keys sit on the ONU identity subtab');
-  ok(GROUPS.expert.join() === 'OMCI_FIXED_ME' && !GROUPS.identity.includes('OMCI_FIXED_ME'),
-    'OMCI_FIXED_ME is an expert setting, not in the ONU identity list');
+  ok(GROUPS.expert.join() === 'OMCI_UNKNOWN_ME_OK,OMCI_FIXED_ME'
+     && !GROUPS.identity.includes('OMCI_FIXED_ME') && !GROUPS.identity.includes('OMCI_UNKNOWN_ME_OK'),
+    'OMCI_UNKNOWN_ME_OK and OMCI_FIXED_ME are expert settings, not in the ONU identity list');
 }
 
 EDITS.set('LOID', 'someone');
