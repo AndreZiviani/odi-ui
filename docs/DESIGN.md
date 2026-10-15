@@ -74,7 +74,9 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   and *MIB browser*, the same thing unedited, one managed entity at a time.
 - **System** &mdash; *Firmware* (both partitions, what each one holds, image
   upload and write, the one-shot trial boot); *Access* (this page's
-  credential, SSH keys); *Backup &amp; reset*; *Logs &amp; tools* (the kernel
+  credential, SSH keys, and *Locked out? The safe mode*, a closed-by-default
+  help block with what the odi-oss recovery boot is, how to leave it and how to
+  enter it); *Backup &amp; reset*; *Logs &amp; tools* (the kernel
   log, ping).
 
 Which keys are editable is data: `schema/settings.tsv` when the image has it,
@@ -102,7 +104,7 @@ sticky save bar (`3 changes`, then `2 interrupts internet`, `1 live`), on the
 buttons that apply a change, and the same bar count heads the confirmation
 dialogs. A subtab label carries the number of unsaved changes on it.
 
-### The two banners
+### The banners
 
 The default-credential notice is loud on Status and System &rsaquo; Access,
 where it is about what you are looking at, and a small *Default password*
@@ -122,6 +124,21 @@ running one and writes both environment copies, read back, followed by
 for a reboot. The stock `nv` has no `commit` verb, and there confd falls back
 to a plain `nv setenv sw_commit`, one copy. It cannot be dismissed. When only
 the fallback copy disagrees the band says so.
+
+The same striped band carries three more states, because in each the image
+changed what runs without being asked, and none may go unseen: an odi-oss
+**safe-mode boot** (the fibre off, the default passwords for this boot only), a
+**safe-mode record** (a safe-mode boot happened and nobody has acknowledged it;
+it stays until someone does), and the **boot fallback** (`HOST_AUTONEG` is off
+but this boot found the forced link down and runs auto-negotiation to stay
+reachable; the setting is kept). They come from `/api/hostlink` and stack under the trial bar at the same width. Each is one
+short line that starts with a bold head (*Safe mode.*, *Host link fallback.*);
+the long explanation is on System > Access, under *Locked out? The safe mode*.
+The safe bars link to *Details* (System > Access) and offer *Acknowledge*
+(`safe-mode.sh ack`); the fallback bar links to the Host port settings and has
+no button: it goes by itself at the next boot that brings the forced link up. The text is built by a pure
+function (`bannerText` in `web/hostlink.js`) that `make check` drives with
+fixtures.
 
 ## Two images, two relationships to `boa`
 
