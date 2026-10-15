@@ -316,6 +316,20 @@ button.apply .cost { padding: 1px 6px; }
 .s-field input, .s-field select { width: min(100%, 380px); }
 .s-ro { display: inline-block; padding: 7px 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .s-aside { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.setting.wide { grid-template-columns: minmax(0, 1fr); }
+details.expert { margin: 24px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+details.expert[open] > summary { margin-bottom: 8px; }
+.fme { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
+.fme.changed { border-left: 2px solid var(--blue); padding-left: 10px; }
+.fme-table { border-collapse: collapse; max-width: 100%; }
+.fme-table th { text-align: left; font-weight: 500; font-size: 13px; color: var(--ink-3); padding: 0 8px 4px 0; }
+.fme-table td { padding: 0 8px 6px 0; }
+.fme-table input { width: 100%; }
+.fme-table td:nth-child(1) input { width: 7ch; }
+.fme-table td:nth-child(2) input { width: 10ch; }
+.fme-table td:nth-child(3) input { width: 9ch; }
+.fme-table td:nth-child(4) input { width: min(52ch, 100%); }
+.fme-msg { margin: 0; }
 .bits div { white-space: pre-wrap; }
 .unknownbit { color: var(--yellow-ink); }
 .s-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -520,6 +534,7 @@ table.data td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); v
   .dim em { display: none; }
   .device { font-size: 14px; }
   .s-field input, .s-field select { width: 100%; }
+  .fme-table td:nth-child(4) input { width: 100%; }
   .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .subtabs [role=tab] { white-space: nowrap; }
   .savebar-in { padding: 10px 16px; }

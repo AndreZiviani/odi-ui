@@ -43,8 +43,12 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   - *Line* &mdash; `GPON_SN`, the PLOAM password, the four LOID keys;
   - *VLAN* &mdash; the four `VLAN_*` keys;
   - *ONU identity* &mdash; the identity switch, the five keys it gates, and the odi-only
-    `OMCI_ACCEPT_REBOOT`, `OMCI_UNKNOWN_ME_OK` and `OMCI_FIXED_ME` (the latter is private to the
-    owner: confd never logs it, and the diagnostics bundle redacts it);
+    `OMCI_ACCEPT_REBOOT`. Below them, collapsed, *Expert settings*,
+    keys that change how the stick presents itself to the OLT: today `OMCI_UNKNOWN_ME_OK` and
+    `OMCI_FIXED_ME`, the latter edited as a
+    table (class, instance, attribute, bytes; `any` for the form that answers every instance;
+    `web/expert.js`). Its value is private to the owner: confd never logs it, and the
+    diagnostics bundle redacts it;
   - *Network* &mdash; both management addresses and the UNI MAC;
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
