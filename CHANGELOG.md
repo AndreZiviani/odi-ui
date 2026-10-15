@@ -30,6 +30,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reboot), and a past safe-mode boot nobody acknowledged yet (an
   Acknowledge button, which runs `safe-mode.sh ack`).
 
+- How to enter the safe mode, on System, Access ("Locked out?") and under
+  Host port: plug in, wait about 80 seconds, pull, wait a few seconds;
+  five times (three with the host port forced); then leave it in. The
+  window is roughly 60 to 110 s after power-on, since about 54 s pass
+  before the kernel starts (measured; it can vary by board). The banner no
+  longer says the power-ups were under a minute: they are cut about 80 s
+  after power-on, before the boot itself has run a minute.
+
 - Safe mode: on a safe-mode boot (`/var/run/safe-mode`) the web UI accepts
   the built-in `admin:admin` instead of the saved credential, in memory
   only: `confd.auth` is not read and not touched, a password saved meanwhile

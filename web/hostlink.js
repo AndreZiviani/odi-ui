@@ -49,7 +49,8 @@ function bannerText(h) {
     : '');
   if (now) {
     const n = now.short_boots || 'several';
-    out.paras.push(`Safe mode. This boot followed ${n} short power-ups in a row, so it is a recovery boot, `
+    out.paras.push(`Safe mode. This boot followed ${n} power cycles in a row that each ended before the stick `
+      + 'had been up a minute, so it is a recovery boot, '
       + 'for this boot only. The fibre (PON) is off: no internet through this stick, and it does not disturb the '
       + 'line. The host port runs auto-negotiation. The web UI accepts admin / admin and root over ssh the '
       + 'password admin, for this boot only: the saved password and keys are unchanged and come back at the next '
@@ -58,8 +59,8 @@ function bannerText(h) {
     out.ack = !!rec;
   } else if (rec) {
     const n = rec.short_boots || 'several';
-    out.paras.push(`A safe-mode boot happened: the stick was powered up ${n} times in a row for less than a `
-      + 'minute each, and booted once in safe mode (the fibre off, the default password). It is back on its '
+    out.paras.push(`A safe-mode boot happened: the stick was power-cycled ${n} times in a row, each time before `
+      + 'it had been up a minute, and booted once in safe mode (the fibre off, the default password). It is back on its '
       + 'saved configuration now. If nobody did that on purpose, check the power supply of the stick.'
       + cleared(rec));
     out.ack = true;
