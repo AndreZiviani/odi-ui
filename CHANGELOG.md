@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   check and the help text follow. The entry form needs an odi-oss image whose
   omcid reads it (odi-oss, same batch); an older omcid turns the whole key off.
 
+- Config: `OMCI_ACCEPT_REBOOT` gains a third option, `2` acknowledge only: the
+  OLT Reboot is answered with success and the stick does not reboot. The
+  help text says so.
+
 ## v1.3.2 - 2026-10-14
 
 - Config: a select whose key is unset showed an empty box. The image always
