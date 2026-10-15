@@ -540,25 +540,26 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   b = bannerText({ supported: true, state: st({ setting: 'off', running: 'off' }), safemode: null });
   ok(!b.show, 'host link: no banner while off runs as set');
   b = bannerText({ supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }), safemode: null });
-  ok(b.show && !b.ack && /did not come up/.test(b.paras[0]) && /next boot/.test(b.paras[0]),
-     'host link: the boot fallback raises the banner, says why and when it clears, with nothing to acknowledge');
+  ok(b.show && !b.safe && !b.ack && /did not come up/.test(b.fallback) && !/\n/.test(b.fallback),
+     'host link: the boot fallback raises its own bar, one short line, nothing to acknowledge');
   b = bannerText({ supported: true, state: st({}), safemode_now: null,
-                  safemode: { short_boots: '5', cleared: 'none' } });
-  ok(b.show && b.ack && /safe-mode boot happened/.test(b.paras[0]) && /5 times/.test(b.paras[0])
-     && /saved configuration/.test(b.paras[0]) && !/host port setting/.test(b.paras[0]),
-     'safe mode: a past safe-mode boot raises the banner, says what happened and the state now, with an acknowledgement');
+                  safemode: { short_boots: '5', cleared: 'none', build: 'v1.5.0' } });
+  ok(b.show && b.ack && !b.fallback && /safe-mode boot happened \(build v1\.5\.0, after 5 short power cycles\)/.test(b.safe)
+     && !/host port setting/.test(b.safe),
+     'safe mode: a past safe-mode boot says the build and the count, with an acknowledgement');
   b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG' },
                   safemode: { short_boots: '3', cleared: 'HOST_AUTONEG' } });
-  ok(b.show && b.ack && /^Safe mode\./.test(b.paras[0]) && /PON\) is off/.test(b.paras[0])
-     && /admin \/ admin/.test(b.paras[0]) && /for this boot only/.test(b.paras[0]) && /reboot/.test(b.paras[0])
-     && /host port setting/.test(b.paras[0]),
-     'safe mode: this boot says the PON is off, the password is the default for this boot only, how to leave, what it cleared');
+  ok(b.show && b.ack && /^Safe mode\./.test(b.safe) && /PON\) is off/.test(b.safe)
+     && /default passwords/.test(b.safe) && /this boot only/.test(b.safe) && /host port setting/.test(b.safe)
+     && b.safe.length < 220,
+     'safe mode: this boot, one short line: PON off, default passwords for this boot only, what it cleared');
   b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '5' }, safemode: null });
-  ok(b.show && !b.ack, 'safe mode: acknowledged during the boot, the banner stays until the reboot, without the button');
+  ok(b.show && !b.ack && /Safe mode\./.test(b.safe) && /next boot is a normal boot/.test(b.safe),
+     'safe mode: acknowledged during the boot, the bar stays without the button and says the next boot is normal');
   b = bannerText({ supported: false, state: {}, safemode_now: { short_boots: '5' }, safemode: {} });
   ok(b.show, 'safe mode: shown even on an image without host-autoneg.sh');
   b = bannerText({ supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }), safemode: {} });
-  ok(b.paras.length === 2 && /several times/.test(b.paras[0]), 'host link: a record and a fallback at once, two paragraphs');
+  ok(b.safe && b.fallback && /several short/.test(b.safe), 'host link: a record and a fallback at once, two bars');
   ok(!bannerText({ supported: false, state: st({ fallback: '1', setting: 'off', running: 'on' }), safemode: null }).show,
      'host link: an image without host-autoneg.sh shows no fallback');
   ok(!bannerText(null).show, 'host link: an unreadable answer shows nothing');
@@ -569,17 +570,26 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   API['/api/hostlink'] = { supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }),
                            safemode_now: null, safemode: { short_boots: '3' }, link: '1', uptime: '40' };
   await renderHostlink();
-  const banner = doc.querySelector('#hostlinkbanner');
+  const banner = doc.querySelector('#safebanner');
   ok(banner.hidden === false && doc.querySelector('#hostlink-ack').hidden === false,
-     'host link: the banner renders, with its Acknowledge button');
-  ok(textOf(doc.querySelector('#hostlink-banner-text')).includes('safe-mode boot happened'), 'host link: and its text');
+     'host link: the safe-mode bar renders, with its Acknowledge button');
+  ok(textOf(doc.querySelector('#safe-text')).includes('safe-mode boot happened'), 'host link: and its text');
+  ok(doc.querySelector('#fallbackbanner').hidden === false
+     && doc.querySelector('#safebanner').className === doc.querySelector('#trialbanner').className,
+     'host link: the bars are the trial-boot band, and the fallback bar shows beside it');
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  ok(/id="safe-details" href="#system\/access"/.test(html) && /<details[^>]*id="safemode-help"/.test(html),
+     'host link: Details points at the safe-mode help on System, Access, which exists');
+  ok(!/id="hostlinkbanner"/.test(html), 'host link: the big card is gone');
+  ok(textOf(doc.querySelector('#hostlink-now')).includes('Host link'), 'host link: status rows render');
   ok(doc.querySelector('#hostlink').hidden === false, 'host link: the Host port block shows on an image that has it');
   ok(doc.querySelector('#hostlink-keep-on').hidden === false,
      'host link: in the fallback the block offers to keep auto-negotiation on');
   ok(doc.querySelector('#hostlink-try').dataset.mode === 'off', 'host link: and to try off again');
   API['/api/hostlink'] = keep;
   await renderHostlink();
-  ok(banner.hidden === true, 'host link: the default state takes the banner down again');
+  ok(banner.hidden === true && doc.querySelector('#fallbackbanner').hidden === true,
+     'host link: the default state takes the bars down again');
   ok(doc.querySelector('#hostlink-keep-on').hidden === true, 'host link: and the keep-on offer');
   API['/api/hostlink'] = { supported: false, state: {}, safemode: null, link: '', uptime: '1' };
   await renderHostlink();

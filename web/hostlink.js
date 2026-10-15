@@ -34,55 +34,51 @@ let polling = false;
 const modeText = (m) => (m === 'off' ? 'off (forced 1000BASE-X full duplex)' : 'on');
 
 /*
- * What the banner says for a /api/hostlink answer: { show, paras, ack }.
- * Pure, so make check can drive it with fixtures.
+ * What the bars say for a /api/hostlink answer:
+ *   { show, safe, fallback, ack }
+ * safe is the text of the safe-mode bar (or null), fallback that of the boot
+ * fallback bar (or null), ack whether the safe bar offers Acknowledge. One
+ * short line each: the long explanation is under System, Access. Pure, so
+ * make check can drive it with fixtures.
  */
 function bannerText(h) {
-  const out = { show: false, paras: [], ack: false };
+  const out = { show: false, safe: null, fallback: null, ack: false };
   if (!h) return out;
   const st = h.state || {};
   const now = h.safemode_now;
   const rec = h.safemode;
-  const cleared = (s) => (s && s.cleared === 'HOST_AUTONEG'
-    ? ' It also cleared the host port setting (auto-negotiation off), which is what made it fire; '
-      + 'if the router port needs it, try it again under Config, Network, Host port after the reboot.'
-    : '');
+  const cleared = (s) => (s && s.cleared === 'HOST_AUTONEG' ? ' It also cleared the host port setting.' : '');
   if (now) {
-    const n = now.short_boots || 'several';
-    out.paras.push(`Safe mode. This boot followed ${n} power cycles in a row that each ended before the stick `
-      + 'had been up a minute, so it is a recovery boot, '
-      + 'for this boot only. The fibre (PON) is off: no internet through this stick, and it does not disturb the '
-      + 'line. The host port runs auto-negotiation. The web UI accepts admin / admin and root over ssh the '
-      + 'password admin, for this boot only: the saved password and keys are unchanged and come back at the next '
-      + 'boot. To leave: set a new password under System, Access (or add an ssh key) if you lost yours, it is '
-      + 'saved and in force from the next boot; acknowledge this; then reboot.' + cleared(now));
+    out.safe = 'Safe mode. A recovery boot: the fibre (PON) is off and the default passwords work for this boot only.'
+      + cleared(now) + (rec ? '' : ' Acknowledged: the next boot is a normal boot.');
     out.ack = !!rec;
   } else if (rec) {
     const n = rec.short_boots || 'several';
-    out.paras.push(`A safe-mode boot happened: the stick was power-cycled ${n} times in a row, each time before `
-      + 'it had been up a minute, and booted once in safe mode (the fibre off, the default password). It is back on its '
-      + 'saved configuration now. If nobody did that on purpose, check the power supply of the stick.'
-      + cleared(rec));
+    const build = rec.build ? `build ${rec.build}, ` : '';
+    out.safe = `A safe-mode boot happened (${build}after ${n} short power cycles).` + cleared(rec);
     out.ack = true;
   }
   if (h.supported && st.fallback === '1' && st.setting === 'off' && st.running === 'on') {
-    out.paras.push('Host link fallback: the host port is set to auto-negotiation off, but this boot the host link '
-      + 'did not come up that way, so the stick runs auto-negotiation on to stay reachable. The setting is kept. '
-      + 'Check that the router port runs 1000 Mb/s full duplex with auto-negotiation off and try off again, '
-      + 'or set the host port back to on. This clears at the next boot that brings the link up with '
-      + 'auto-negotiation off.');
+    out.fallback = 'Host link fallback. The host port is set to auto-negotiation off, but this boot the link '
+      + 'did not come up that way, so the stick runs auto-negotiation on to stay reachable. The setting is kept.';
   }
-  out.show = out.paras.length > 0;
+  out.show = !!(out.safe || out.fallback);
   return out;
 }
 
 function renderBanner() {
   const b = bannerText(H);
-  const box = $('#hostlinkbanner');
-  box.hidden = !b.show;
-  const text = $('#hostlink-banner-text');
-  text.textContent = '';
-  for (const p of b.paras) text.append(el('p', null, p));
+  const bar = (id, textId, text) => {
+    $(id).hidden = !text;
+    const p = $(textId);
+    p.textContent = '';
+    if (!text) return;
+    const i = text.indexOf('. ');
+    const head = /^(Safe mode|Host link fallback)\./.test(text) ? text.slice(0, i + 1) : '';
+    if (head) { p.append(el('strong', null, head), document.createTextNode(' ' + text.slice(i + 2))); } else p.append(document.createTextNode(text));
+  };
+  bar('#safebanner', '#safe-text', b.safe);
+  bar('#fallbackbanner', '#fallback-text', b.fallback);
   $('#hostlink-ack').hidden = !b.ack;
 }
 
@@ -103,11 +99,18 @@ function renderBlock() {
   const link = H.link === '1' ? 'up' : H.link === '0' ? 'down' : 'unknown';
   const now = $('#hostlink-now');
   now.textContent = '';
-  now.append(el('div', null, `Auto-negotiation now: ${modeText(st.running || 'on')}`));
-  now.append(el('div', null, `Stored setting: ${modeText(st.setting || 'on')}`));
-  now.append(el('div', null, `Host link: ${link}`));
-  if (st.phase === 'watch') now.append(el('div', 'callout warn', 'The boot check is still deciding the mode; try again in a minute.'));
-  if (st.message) now.append(el('div', 'help', `Last: ${st.message}`));
+  const row = (k, v, cls) => {
+    const r = el('div', 'setting');
+    const ctl = el('div', 's-control');
+    ctl.append(el('span', 's-ro' + (cls ? ' ' + cls : ''), v));
+    r.append(el('div', 's-label', k), ctl);
+    now.append(r);
+  };
+  row('Auto-negotiation now', modeText(st.running || 'on'));
+  row('Stored setting', modeText(st.setting || 'on'));
+  row('Host link', link, link === 'up' ? 'good' : link === 'down' ? 'bad' : '');
+  if (st.phase === 'watch') row('Boot check', 'Still deciding the mode; try again in a minute.', 'warn');
+  if (st.message) row('Last event', st.message);
   const busy = st.phase === 'trial' || st.phase === 'watch';
   const other = (st.running || 'on') === 'off' ? 'on' : 'off';
   const btn = $('#hostlink-try');
@@ -230,6 +233,11 @@ function wireHostlink() {
   $('#hostlink-keep').onclick = () => finish('confirm');
   $('#hostlink-revert').onclick = () => finish('revert');
   $('#hostlink-ack').onclick = ack;
+  /* Details: the bar links to System, Access; open the explanation there. */
+  $('#safe-details').onclick = () => {
+    $('#safemode-help').open = true;
+    setTimeout(() => $('#safemode-help').scrollIntoView({ block: 'center' }), 0);
+  };
 }
 
 export { bannerText, trialLeft, refresh as renderHostlink, wireHostlink };

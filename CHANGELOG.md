@@ -35,6 +35,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reboot), and a past safe-mode boot nobody acknowledged yet (an
   Acknowledge button, which runs `safe-mode.sh ack`).
 
+- The safe-mode and boot-fallback banners are now the same full-width striped
+  band as the trial boot, one short line each, stacked under it: "Safe mode.
+  A recovery boot: the fibre (PON) is off and the default passwords work for
+  this boot only", with Details and Acknowledge; after Acknowledge the bar
+  stays for that boot, without the button, and says the next boot is normal;
+  a later boot with an unacknowledged record says the build and the number of
+  short power cycles. The long explanation (what the mode does, how to leave
+  it, how to enter it, the trade-off) moved to "Locked out? The safe mode" on
+  System, Access, which Details opens. The Host port block on Config, Network
+  is now drawn as the other settings rows (label and help on the left, the
+  buttons on the right, status as compact key/value rows, the unreachable-stick
+  note as a Details disclosure) instead of a lone button in a full-width card.
+
 - How to enter the safe mode, on System, Access ("Locked out?") and under
   Host port: plug in, wait about 80 seconds, pull, wait a few seconds;
   five times (three with the host port forced); then leave it in. The
