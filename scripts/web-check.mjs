@@ -98,7 +98,7 @@ const SCHEMA = tsv('keys.tsv', ['name', 'store', 'address', 'section', 'type', '
 const META = tsv('meta.tsv', ['name', 'label', 'help', 'options', 'depends', 'range']);
 const CONS = tsv('consumers.tsv', ['name', 'apply', 'readers']);
 const FEAT = tsv('features.tsv', ['mask', 'bit', 'feature', 'module']);
-const SETT = tsv('settings.tsv', ['name', 'apply', 'action', 'pair', 'reader', 'note']);
+const SETT = tsv('settings.tsv', ['name', 'apply', 'action', 'pair', 'reader', 'note', 'unset']);
 const VALUES = Object.fromEntries(SCHEMA.map((r) => [r.name, '1']));
 
 const API = {
@@ -820,9 +820,18 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   }
   ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT'].every((n) => GROUPS.identity.includes(n)),
     'the new OLT-facing keys sit on the ONU identity subtab');
-  ok(GROUPS.expert.join() === 'OMCI_UNKNOWN_ME_OK,OMCI_FIXED_ME'
+  ok(GROUPS.expert.join() === 'OMCI_UNKNOWN_ME_OK,OMCI_FIXED_ME,OMCI_VEIP,OMCI_VEIP_SLOT_ID,OMCI_PRIVATE_ME'
      && !GROUPS.identity.includes('OMCI_FIXED_ME') && !GROUPS.identity.includes('OMCI_UNKNOWN_ME_OK'),
-    'OMCI_UNKNOWN_ME_OK and OMCI_FIXED_ME are expert settings, not in the ONU identity list');
+    'the unknown-entity, fixed-entity, VEIP and vendor-private keys are expert settings, not in the ONU identity list');
+  ok(['OMCI_VEIP', 'OMCI_VEIP_SLOT_ID', 'OMCI_PRIVATE_ME'].every((n) => setting(n).apply === 'internet' && setting(n).action === 'omci'),
+    'the VEIP, VEIP slot and vendor-private keys re-register the ONU');
+  ok(setting('OMCI_VEIP').unset === '1' && setting('OMCI_PRIVATE_ME').unset === '1',
+    'the VEIP and the vendor-private entities are created while the key is unset');
+  const veipOpts = META.find((x) => x.name === 'OMCI_VEIP').options.split('|').map((p) => p[0]).join(',');
+  ok(veipOpts === '1,0' && /PPTP-only/.test(opts('OMCI_VEIP')[0]),
+    'OMCI_VEIP offers create and none, and none says what it means');
+  ok(META.find((x) => x.name === 'OMCI_VEIP_SLOT_ID').range === '2-254',
+    'OMCI_VEIP_SLOT_ID takes a slot of 2 to 254');
 }
 
 EDITS.set('LOID', 'someone');

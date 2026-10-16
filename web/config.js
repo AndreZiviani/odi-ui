@@ -30,7 +30,7 @@ const GROUPS = {
   /* Behind the Expert settings disclosure on the ONU identity subtab: keys
      that change how the stick presents itself to the OLT, for someone who has
      read what a native ONU reports. */
-  expert: ['OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME'],
+  expert: ['OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME', 'OMCI_VEIP', 'OMCI_VEIP_SLOT_ID', 'OMCI_PRIVATE_ME'],
   network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
   services: ['SYSLOG_SERVER', 'NTP_SERVER'],
 };

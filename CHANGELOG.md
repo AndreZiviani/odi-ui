@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config, Expert settings: three new controls for what the stick presents to
+  the OLT (odi-oss #104 has the keys): *Create a VEIP* (`OMCI_VEIP`, a select:
+  create, the default, or none for a PPTP-only ONU), *VEIP slot*
+  (`OMCI_VEIP_SLOT_ID`, the stock key, a number from 2 to 254, with its
+  dependence on bit 256 of `OMCI_CUSTOM_ME` in the help) and *Vendor-private
+  entities* (`OMCI_PRIVATE_ME`, a select: create, the default, or leave out
+  entities 350, 370 and 373). Each re-registers the ONU, so the page offers
+  *Apply now* behind the confirmation. The VEIP slot key moved from the Stock
+  keys tab to Expert settings.
+
 - Docs: docs/DESIGN.md describes the safe-mode, safe-mode-record and boot
   fallback bars (the same striped band as the trial-boot bar) and the
   "Locked out? The safe mode" help on System > Access; docs/API.md lists
