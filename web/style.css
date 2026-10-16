@@ -172,10 +172,16 @@ button.themetoggle svg { width: 18px; height: 18px; fill: none; stroke: currentC
 .trial + .trial { margin-top: -24px; border-top-width: 1px; } /* cancels the header row gap */
 
 /* --------------------------------------------------------------- layout */
-main { max-width: 1180px; padding: 24px 24px 120px; }
-.banner { max-width: 1180px; margin: 16px 24px 0; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+main { padding: 24px 24px 120px; }
+.block-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0 48px; align-items: start; }
+/* First in a subtab, the subtab bar already rules the row off. */
+.sub > .block-row:first-child > .block { border-top: 0; }
+/* What follows a row is ruled off from it, as one block is from the next. */
+.block-row + details.more { margin-top: 0; padding-top: 20px; border-top: 1px solid var(--line); }
+#restore-out { overflow-x: auto; }
+.banner { margin: 16px 24px 0; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .banner p { margin: 0; flex: 1 1 320px; }
-#err { margin: 16px 24px 0; max-width: 1180px; }
+#err { margin: 16px 24px 0; }
 
 /* The host-port keep-or-revert dialog: modal, so nothing else is clicked
    while the stick may be about to revert. */
@@ -191,15 +197,15 @@ main { max-width: 1180px; padding: 24px 24px 120px; }
 .panel > .block:first-child, .sub > .block:first-child { border-top: 0; padding-top: 4px; }
 .block-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .block-head h2, .block-head .lede { margin: 0; margin-right: auto; }
-.lede { font-size: 16px; color: var(--ink); margin: 4px 0 18px; max-width: 70ch; }
-.help { color: var(--ink-2); font-size: 14px; max-width: 72ch; }
+.lede { font-size: 16px; color: var(--ink); margin: 4px 0 18px; }
+.help { color: var(--ink-2); font-size: 14px; }
 .hint { color: var(--ink-3); font-size: 14px; }
 .state-note { font-size: 14px; color: var(--ink-2); }
 .state-note.bad { color: var(--red-ink); }
 
 .callout {
   padding: 10px 14px; border-radius: var(--r); background: var(--surface);
-  border: 1px solid var(--line); border-left: 3px solid var(--ink-3); max-width: 72ch;
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-3);
 }
 .callout.warn { border-left-color: var(--yellow); }
 .callout.bad { border-left-color: var(--red); }
@@ -210,7 +216,7 @@ main { max-width: 1180px; padding: 24px 24px 120px; }
 #saveout > div, #fwout > div, #fw-upload-out > div, #reset-out > div, #restore-out > div,
 #pw-out > div, #sshkey-out > div, #identity-out > div, #ping-out > div { margin: 6px 0; font-size: 14px; }
 
-details.more { margin: 8px 0 4px; max-width: 72ch; }
+details.more { margin: 8px 0 4px; }
 details.more > summary, .s-more > summary, .me-raw > summary {
   cursor: pointer; color: var(--ink-2); font-size: 13.5px; list-style: none; width: max-content; max-width: 100%;
 }
@@ -328,7 +334,7 @@ button.apply .cost { padding: 1px 6px; }
 .s-control { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .s-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .s-inline .s-ro { padding: 0; }
-.s-field input, .s-field select { width: min(100%, 380px); }
+.s-field input, .s-field select { width: 100%; }
 .s-ro { display: inline-block; padding: 7px 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .s-aside { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
 .setting.wide { grid-template-columns: minmax(0, 1fr); }
@@ -366,16 +372,16 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
   background: var(--surface); border-top: 1px solid var(--line-2);
   box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25);
 }
-.savebar-in { max-width: 1180px; padding: 12px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.savebar-in { padding: 12px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
 .savesum, #saveclasses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .saveacts { margin-left: auto; display: flex; gap: 8px; }
-#saveout { max-width: 1180px; padding: 0 24px; max-height: 40vh; overflow: auto; }
+#saveout { padding: 0 24px; max-height: 40vh; overflow: auto; }
 #saveout:not(:empty) { padding-bottom: 12px; }
 #saveout pre { max-height: 160px; }
 
 /* ------------------------------------------------------------- status */
 .status-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); gap: 32px 48px; margin-bottom: 8px; }
-.optics { display: grid; gap: 28px; }
+.optics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 28px 48px; }
 .status-side .block:first-child { border-top: 0; padding-top: 0; }
 
 .meter { --state: var(--ink-3); }
@@ -428,7 +434,7 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .dim.tight { background-image: linear-gradient(var(--yellow), var(--yellow)); }
 .dim.over, .dim.over span { color: var(--red-ink); border-color: var(--red); }
 .dim.over { background-image: linear-gradient(var(--red), var(--red)); }
-.m-note { font-size: 12.5px; color: var(--ink-3); margin: 6px 0 0; }
+.m-note { font-size: 12.5px; color: var(--ink-3); margin: 6px 0 0; text-align: center; }
 
 .ladder { list-style: none; display: flex; gap: 4px; padding: 0; margin: 0 0 10px; }
 .ladder li {
@@ -529,6 +535,8 @@ table.data td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); v
 /* ------------------------------------------------------------- narrow */
 @media (max-width: 900px) {
   .status-grid { grid-template-columns: minmax(0, 1fr); }
+  .block-row { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
+  .sub > .block-row:first-child > .block + .block { border-top: 1px solid var(--line); }
 }
 @media (max-width: 720px) {
   .top { padding: 0 16px; gap: 0 12px; }
@@ -549,7 +557,6 @@ table.data td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); v
   .legend { display: none; }
   .dim em { display: none; }
   .device { font-size: 14px; }
-  .s-field input, .s-field select { width: 100%; }
   .fme-table td:nth-child(4) input { width: 100%; }
   .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .subtabs [role=tab] { white-space: nowrap; }

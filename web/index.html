@@ -92,29 +92,31 @@
       </div>
     </div>
 
-    <section class="block">
-      <h2>Forwarding</h2>
-      <div class="flow" id="flow"></div>
-      <p class="help">Healthy looks like a mirror: what the fibre receives, the host side sends.</p>
-      <details class="more">
-        <summary>Why rates, not totals</summary>
-        <p>Traffic crosses the switch in hardware, so these counters are the only
-           place forwarding is visible. The fibre side counts without
-           interruption; the host side is cleared by the performance-monitoring
-           cycle every fifteen minutes. So the two running totals cannot be held
-           against each other &mdash; only the rates, measured between two
-           refreshes of this page, mirror.</p>
-      </details>
-    </section>
+    <div class="block-row">
+      <section class="block">
+        <h2>Forwarding</h2>
+        <div class="flow" id="flow"></div>
+        <p class="help">Healthy looks like a mirror: what the fibre receives, the host side sends.</p>
+        <details class="more">
+          <summary>Why rates, not totals</summary>
+          <p>Traffic crosses the switch in hardware, so these counters are the only
+             place forwarding is visible. The fibre side counts without
+             interruption; the host side is cleared by the performance-monitoring
+             cycle every fifteen minutes. So the two running totals cannot be held
+             against each other &mdash; only the rates, measured between two
+             refreshes of this page, mirror.</p>
+        </details>
+      </section>
 
-    <section class="block">
-      <div class="block-head">
-        <h2>Learned addresses</h2>
-        <button id="l2-load" type="button">Read the MAC table</button>
-      </div>
-      <p class="help">Every address the switch has learned, and the side it learned it on.</p>
-      <div id="l2"></div>
-    </section>
+      <section class="block">
+        <div class="block-head">
+          <h2>Learned addresses</h2>
+          <button id="l2-load" type="button">Read the MAC table</button>
+        </div>
+        <p class="help">Every address the switch has learned, and the side it learned it on.</p>
+        <div id="l2"></div>
+      </section>
+    </div>
 
     <details class="more">
       <summary>Raw diag output</summary>
@@ -392,29 +394,33 @@
 
     <!-- Backup & reset -->
     <div class="sub" id="s-backup" role="tabpanel" aria-labelledby="st-system-backup" data-sub="backup" hidden>
-      <section class="block">
-        <h2>Backup</h2>
-        <p class="help">Both config stores, identity included. Take one before anything you cannot undo.</p>
-        <p><a class="button" href="/api/backup" download>Download backup</a></p>
-      </section>
+      <div class="block-row">
+        <section class="block">
+          <h2>Backup</h2>
+          <p class="help">Both config stores, identity included. Take one before anything you cannot undo.</p>
+          <p><a class="button" href="/api/backup" download>Download backup</a></p>
+        </section>
 
-      <section class="block">
-        <h2>Restore</h2>
-        <div class="formrow">
-          <label>Backup file <input id="restore-file" type="file" accept=".xml,text/xml,text/plain"></label>
-          <label class="check"><input id="restore-identity" type="checkbox"> Include identity keys</label>
-          <button id="restore-go" type="button">Write the differences</button>
-        </div>
-        <p class="help">Nothing is written until you have seen what differs.</p>
-        <details class="more">
-          <summary>What a restore is allowed to write</summary>
-          <p>Every value goes through the same validation the Config fields use, so
-             the SerDes keys stay refused. The identity keys need the tick box: a
-             backup restored onto a <em>different</em> stick would otherwise
-             overwrite the serial number and MAC key its line authenticates on.</p>
-        </details>
-        <div id="restore-out"></div>
-      </section>
+        <section class="block">
+          <h2>Restore</h2>
+          <div class="formrow">
+            <label class="grow">Backup file <input id="restore-file" type="file" accept=".xml,text/xml,text/plain"></label>
+          </div>
+          <div class="formrow">
+            <label class="check"><input id="restore-identity" type="checkbox"> Include identity keys</label>
+          </div>
+          <p class="help">Nothing is written until you have seen what differs.</p>
+          <details class="more">
+            <summary>What a restore is allowed to write</summary>
+            <p>Every value goes through the same validation the Config fields use, so
+               the SerDes keys stay refused. The identity keys need the tick box: a
+               backup restored onto a <em>different</em> stick would otherwise
+               overwrite the serial number and MAC key its line authenticates on.</p>
+          </details>
+          <div id="restore-out"></div>
+          <p><button id="restore-go" type="button">Write the differences</button></p>
+        </section>
+      </div>
 
       <section class="block">
         <h2>Reset the service config</h2>
