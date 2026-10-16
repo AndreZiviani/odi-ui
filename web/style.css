@@ -197,8 +197,8 @@ main { padding: 24px 24px 120px; }
 .panel > .block:first-child, .sub > .block:first-child { border-top: 0; padding-top: 4px; }
 .block-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .block-head h2, .block-head .lede { margin: 0; margin-right: auto; }
-.lede { font-size: 16px; color: var(--ink); margin: 4px 0 18px; }
-.help { color: var(--ink-2); font-size: 14px; }
+.lede { font-size: 16px; color: var(--ink); margin: 4px 0 18px; max-width: 70ch; }
+.help { color: var(--ink-2); font-size: 14px; max-width: 72ch; }
 .hint { color: var(--ink-3); font-size: 14px; }
 .state-note { font-size: 14px; color: var(--ink-2); }
 .state-note.bad { color: var(--red-ink); }
@@ -216,7 +216,7 @@ main { padding: 24px 24px 120px; }
 #saveout > div, #fwout > div, #fw-upload-out > div, #reset-out > div, #restore-out > div,
 #pw-out > div, #sshkey-out > div, #identity-out > div, #ping-out > div { margin: 6px 0; font-size: 14px; }
 
-details.more { margin: 8px 0 4px; }
+details.more { margin: 8px 0 4px; max-width: 72ch; }
 details.more > summary, .s-more > summary, .me-raw > summary {
   cursor: pointer; color: var(--ink-2); font-size: 13.5px; list-style: none; width: max-content; max-width: 100%;
 }
