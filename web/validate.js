@@ -256,6 +256,26 @@ function valueProblem(row, raw, ctx = defaultCtx) {
     const pairBad = hostMaskProblem(row.name, raw, ctx);
     if (pairBad) return pairBad;
   }
+  if (row.type === 'ipv4host' || row.type === 'netmask') {
+    /* Four numbers, no leading zeros (busybox ifconfig reads 010 as octal). */
+    const oct = raw.split('.');
+    if (oct.length !== 4 || !oct.every((o) => /^(0|[1-9]\d{0,2})$/.test(o) && Number(o) <= 255)) {
+      return 'must be four numbers 0–255 separated by dots, without leading zeros';
+    }
+    const n = oct.map(Number);
+    if (row.type === 'ipv4host' && (n[0] < 1 || n[0] > 223 || n[0] === 127)) {
+      return 'not an address the stick can use (it must start with 1–223, not 127)';
+    }
+    if (row.type === 'netmask') {
+      const m = ((n[0] << 24) | (n[1] << 16) | (n[2] << 8) | n[3]) >>> 0;
+      const inv = (~m) >>> 0;
+      if ((inv & (inv + 1)) !== 0 || n[0] !== 255 || (m & 3) !== 0) {
+        return 'not a netmask the stick can use: ones then zeros, from /8 to /30 (255.255.255.0)';
+      }
+    }
+    const pairBad = hostMaskProblem(row.name, raw);
+    if (pairBad) return pairBad;
+  }
   if (row.type === 'hostport') {
     const bad = hostportProblem(raw);
     if (bad) return bad;
