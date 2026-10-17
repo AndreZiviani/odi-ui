@@ -487,6 +487,11 @@ table.data { border-collapse: collapse; font-size: 14px; min-width: 100%; margin
 table.data th { text-align: left; font-weight: 600; font-size: 13px; color: var(--ink-3); padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line-2); }
 table.data td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
 
+/* A restore preview: what the stick holds against what the backup writes. */
+table.diff td.was { color: var(--ink-3); }
+table.diff td.now { color: var(--blue-ink); font-weight: 600; }
+table.diff .tag { margin-left: 8px; font-family: var(--sans); }
+
 /* ------------------------------------------------------------- OMCI */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
 .me-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; min-width: 0; }
