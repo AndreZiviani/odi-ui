@@ -11,8 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Status: the receive and transmit meters sit side by side when there is room for both (320 px each), and stack as before on a phone; the "class B+..." line under each is centred.
 - Forwarding and Learned addresses share a row in two columns above 900 px, and a rule separates Raw diag output from them.
 - Backup & reset tab: Backup and Restore share a row in two columns above 900 px.
-- Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
-  K5, K9): a request now has a ten-second wall-clock deadline and the upload
+
 ## v1.5.0 (2026-10-17)
 
 - Web: the page no longer judges an address or netmask twice (an older copy
