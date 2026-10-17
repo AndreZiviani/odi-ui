@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- No OLT or ONT make is named in the UI or its fixtures. The MIB tab lists the
+  six entities the stock firmware registers under such names as
+  `PrivateQueueMap`, `Me350`, `Me370`, `Me373`, `PrivateMcastTag` and
+  `PrivateSntp` and queries them by class id (243, 350, 370, 373, 65282,
+  65294); the Services card shows the OLT vendor code as the four characters
+  the OLT reports, without a name lookup. Released sections of this file are
+  unchanged. Refs odi-oss#114
 - Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
   (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
   the web checks, AGENTS.md and comments, and the fixture README no longer
