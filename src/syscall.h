@@ -59,6 +59,8 @@
 #define __NR_rt_sigaction 4194
 #define __NR_kill       4037
 #define __NR_poll       4188
+#define __NR_clock_gettime 4263
+#define CLOCK_MONOTONIC 1
 
 #define SIGPIPE 13
 #define SIG_IGN 1
@@ -179,6 +181,19 @@ __attribute__((unused)) static void close_inherited(void)
 		syscall3(__NR_close, fd, 0, 0);
 }
 
+/* Back to the default action. An ignored signal survives execve, so every
+ * child of this daemon would otherwise run with SIGPIPE ignored and see EPIPE
+ * where a `cmd | head` in a script expects to be killed. */
+__attribute__((unused)) static void sig_default(long signum)
+{
+	long act[6];
+	unsigned long i;
+
+	for (i = 0; i < 6; i++)
+		act[i] = 0;
+	__syscall6(__NR_rt_sigaction, signum, (long)act, 0, 16, 0, 0);
+}
+
 __attribute__((unused)) static long sig_ignore(long signum)
 {
 	long act[6];
@@ -198,6 +213,36 @@ __attribute__((unused)) static unsigned long str_len(const char *s)
 	while (s[n])
 		n++;
 	return n;
+}
+
+/*
+ * Milliseconds on the monotonic clock, modulo 2^32: only ever subtracted from
+ * an earlier reading, so the wrap (about 49 days) cancels out. 0 when the
+ * clock cannot be read, which makes every elapsed time 0 and a deadline built
+ * on it never fire: the poll() each wait also carries is then the only bound,
+ * which is what the daemon had before the deadlines existed.
+ */
+__attribute__((unused)) static unsigned long mono_ms(void)
+{
+	long ts[2];
+
+	if (syscall3(__NR_clock_gettime, CLOCK_MONOTONIC, (long)ts, 0) < 0)
+		return 0;
+	return (unsigned long)ts[0] * 1000UL + (unsigned long)ts[1] / 1000000UL;
+}
+
+/*
+ * Wait until `fd` can be read, for at most `ms`. 1 when it can (data, EOF or
+ * an error: the read says which), 0 on timeout.
+ */
+__attribute__((unused)) static int wait_readable(int fd, long ms)
+{
+	struct pollfd pfd;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	return syscall3(__NR_poll, (long)&pfd, 1, ms) > 0;
 }
 
 static long write_all(int fd, const char *buf, unsigned long len)
@@ -386,6 +431,39 @@ static void kill_and_reap(long pid)
 	syscall3(__NR_waitpid, pid, (long)&status, 0);
 }
 
+/* How long a child that has closed its output may take to exit. */
+#define REAP_MS 2000
+
+/*
+ * Wait for a child that has closed its output to exit, for at most `ms`.
+ * Returns 1 and the raw status in *status when it exited, 0 when it did not
+ * and was killed and reaped. A child that closes stdout is normally gone
+ * within a few milliseconds; one that is not is stuck, and a blocking
+ * waitpid() would take the daemon with it.
+ */
+static int reap_bounded(long pid, long ms, long *status)
+{
+	long waited = 0;
+
+	for (;;) {
+		long r = syscall3(__NR_waitpid, pid, (long)status, 1 /* WNOHANG */);
+		long ts[2];
+
+		if (r == pid)
+			return 1;
+		if (r < 0)
+			return 1;	/* already reaped, or not ours: nothing to wait for */
+		if (waited >= ms)
+			break;
+		ts[0] = 0;
+		ts[1] = 20 * 1000000L;
+		syscall3(__NR_nanosleep, (long)ts, 0, 0);
+		waited += 20;
+	}
+	kill_and_reap(pid);
+	return 0;
+}
+
 /*
  * Drain a pipe into buf, bounded by timeout_ms of overall inactivity: each
  * read is gated by poll() so a child that goes silent (not merely slow) is
@@ -409,9 +487,10 @@ static long drain_bounded(int fd, long pid, char *buf, unsigned long cap,
 	unsigned long got = 0;
 
 	*timed_out = 0;
-	while (got + 1 < cap) {
+	for (;;) {
 		struct pollfd pfd;
 		long pr, n;
+		char sink[256];
 
 		pfd.fd = fd;
 		pfd.events = POLLIN;
@@ -424,10 +503,21 @@ static long drain_bounded(int fd, long pid, char *buf, unsigned long cap,
 			kill_and_reap(pid);
 			break;
 		}
-		n = syscall3(__NR_read, fd, (long)(buf + got), cap - got - 1);
+		/*
+		 * A full buffer is not the end of the child. Leaving here at
+		 * "full" used to hand straight to a blocking waitpid() while the
+		 * child, still talking (omcicli printing a MIB larger than the
+		 * buffer), waited on something that never came. Keep reading and
+		 * throw the rest away, under the same inactivity bound.
+		 */
+		if (got + 1 < cap)
+			n = syscall3(__NR_read, fd, (long)(buf + got), cap - got - 1);
+		else
+			n = syscall3(__NR_read, fd, (long)sink, sizeof(sink));
 		if (n <= 0)
 			break;		/* EOF: the child is done, not stuck */
-		got += (unsigned long)n;
+		if (got + 1 < cap)
+			got += (unsigned long)n;
 	}
 	buf[got] = 0;
 	return (long)got;
@@ -473,6 +563,7 @@ static long run_to_buf_ex(const char *path, char *const argv[],
 		if (fds[1] > 2)
 			syscall3(__NR_close, fds[1], 0, 0);
 		close_inherited();
+		sig_default(SIGPIPE);
 		syscall3(__NR_execve, (long)path, (long)argv, 0);
 		syscall3(__NR_exit, 127, 0, 0);	/* exec failed */
 	}
@@ -490,10 +581,12 @@ static long run_to_buf_ex(const char *path, char *const argv[],
 
 	syscall3(__NR_close, fds[0], 0, 0);
 	if (!timed_out) {
-		syscall3(__NR_waitpid, pid, (long)&status, 0);
-		if (exitcode)
-			*exitcode = wait_exitcode(status);
-		return got;
+		if (reap_bounded(pid, REAP_MS, &status)) {
+			if (exitcode)
+				*exitcode = wait_exitcode(status);
+			return got;
+		}
+		timed_out = 1;	/* closed its output and never exited */
 	}
 	/* Already SIGKILLed and reaped by drain_bounded. -2 is a distinguishable
 	 * sentinel: the caller must not read a timeout as "ran and said
@@ -573,6 +666,7 @@ __attribute__((unused)) static long run_script_to_buf(const char *path, char *co
 		if (out[1] > 2)
 			syscall3(__NR_close, out[1], 0, 0);
 		close_inherited();
+		sig_default(SIGPIPE);
 		syscall3(__NR_execve, (long)path, (long)argv, 0);
 		syscall3(__NR_exit, 127, 0, 0);		/* exec failed */
 	}
@@ -605,8 +699,8 @@ __attribute__((unused)) static long run_script_to_buf(const char *path, char *co
 	got = drain_bounded(out[0], pid, buf, cap, timeout_ms, &timed_out);
 
 	syscall3(__NR_close, out[0], 0, 0);
-	if (!timed_out)
-		syscall3(__NR_waitpid, pid, (long)&status, 0);
+	if (!timed_out && !reap_bounded(pid, REAP_MS, &status))
+		timed_out = 1;
 	return timed_out ? -2 : got;	/* -2: distinguishable from "ran, said nothing" */
 }
 

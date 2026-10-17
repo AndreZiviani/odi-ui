@@ -165,9 +165,26 @@
  * fits with room, and something much larger would not. UPLOAD_MAX is the guard:
  * it refuses before writing rather than after filling the filesystem every
  * other process on this device is also using.
+ *
+ * Not 8 MiB: /tmp is /var/tmp, a tmpfs the image caps at size=8m (odi-oss
+ * rootfs/skeleton/etc/fstab), so an upload of exactly the old limit filled it
+ * and left nothing for the flasher's own files (/tmp/fwu.d, fwu.log,
+ * fwu.state) or for `flash set`, which stages its temp file there. A real
+ * image is at most kernel plus rootfs partition, 3,997,696 bytes, plus the tar
+ * headers, fwu.sh and md5.txt: well under this.
  */
+/*
+ * Wall-clock budgets, from the moment the request starts to be read. SO_RCVTIMEO
+ * (main.c) bounds one read(), so a client sending a byte every 14 s never
+ * tripped it and held the whole single-threaded daemon for as long as it
+ * liked: these bound the sum. A browser sends a request in one go, so ten
+ * seconds is generous for the headers and any body that fits the buffer; the
+ * upload streams megabytes over whatever the link is and gets two minutes.
+ */
+#define REQUEST_DEADLINE_MS 10000
+#define UPLOAD_DEADLINE_MS  120000
 #define UPLOAD_PATH  "/tmp/img.tar"
-#define UPLOAD_MAX   (8u * 1024u * 1024u)
+#define UPLOAD_MAX   (6u * 1024u * 1024u)
 
 /* The image ships these; /etc/config wins so the UI can be iterated without a
  * reflash, exactly as the exporter binary can. */

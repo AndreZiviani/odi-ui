@@ -6,11 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- The page uses the full window width: `main`, the banners, the error box and the save bar no longer stop at 1180 px.
+- The page uses the full window width: `main`, the banners, the error box and the save bar no longer stop at 1180px.
 - Config: a setting's input or dropdown fills its column
 - Status: the receive and transmit meters sit side by side when there is room for both (320 px each), and stack as before on a phone; the "class B+..." line under each is centred.
 - Forwarding and Learned addresses share a row in two columns above 900 px, and a rule separates Raw diag output from them.
 - Backup & reset tab: Backup and Restore share a row in two columns above 900 px.
+- Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
+  K5, K9): a request now has a ten-second wall-clock deadline and the upload
+  body two minutes, where before only each single read was bounded (15 s), so
+  one client sending a byte every few seconds held the single-threaded daemon
+  (and the Firmware tab during an update) indefinitely. `POST /api/upload` is
+  refused with 409 while `fwu_starter.sh` has a write running, because the
+  flasher reads that same file for the eighty seconds it takes and a second
+  upload truncated it under it; the file is created fresh (`O_EXCL`) instead
+  of opened through whatever is at the path; bytes beyond the declared
+  `Content-Length` are no longer counted as still to come (a subtraction that
+  wrapped and copied whatever followed into `/tmp` until it was full). A
+  form value that does not fit its buffer is an error instead of being cut:
+  `/api/config` answers it per key (`the value is too long ...`) and no longer
+  reports `ok` for a truncated `OMCI_FIXED_ME`; a long value of one key no
+  longer hides `_confirm=identity` after it.
+- Firmware upload: the size limit is 6 MiB, not 8. `/tmp` is a tmpfs the image
+  caps at 8 MiB, so an upload of exactly the old limit filled it and left no
+  room for the flasher's own files or for `flash set`, which stages its temp
+  file there. A real image (kernel plus rootfs partition, about 3.8 MiB) is
+  well under the new limit. Found in the night audit of the update path
+  (odi-oss investigations/odi-sfp-re/AUDIT-night-flash.md, finding 6).
+- Robustness, from the night audit (AUDIT-night-confd K7): a child confd
+  runs can no longer hold the whole daemon after its output ends. The drain
+  kept nothing past a full buffer and then waited for the child with a
+  blocking `waitpid()`, so a command that printed more than the buffer
+  (`omcicli mib get` on a big MIB) and then stalled froze every request; it
+  now keeps reading and discarding under the same inactivity bound, and a
+  child that closes its output but does not exit within two seconds is
+  killed and reported as a timeout like any other. Children also start with
+  SIGPIPE at its default action again: the daemon ignores it for itself and
+  an ignored signal survives `execve`, so scripts ran with it ignored.
 - Security and robustness, from the night audit (AUDIT-night-confd K6, K10):
   `/etc/config/confd.auth` and the ssh `authorized_keys` are written to a
   temporary file beside them and renamed into place, instead of truncated and
