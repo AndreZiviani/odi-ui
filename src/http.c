@@ -375,11 +375,28 @@ static int host_ok(const char *host)
  * foreign page, such as the diagnostics bundle, which holds the only thread
  * for up to a minute.
  */
+/* Offset of the request target in "METHOD target HTTP/x"; read only. */
+static unsigned long path_off(const char *r)
+{
+	unsigned long i = 0;
+
+	while (r[i] && r[i] != ' ' && r[i] != '\r' && r[i] != '\n')
+		i++;
+	return r[i] == ' ' ? i + 1 : i;
+}
+
 const char *request_refusal(const char *r)
 {
 	char host[128], site[32], mode[16], dest[16];
 
-	if (header_copy(r, "host", host, sizeof(host)) && !host_ok(host))
+	/*
+	 * header_copy cuts a value that does not fit, and a cut Host can look
+	 * like something else: 127 characters of one long label, or a prefix
+	 * ending in ".lan", with the attacker's own domain after the cut. A
+	 * Host that fills the buffer is refused, never judged by its prefix.
+	 */
+	if (header_copy(r, "host", host, sizeof(host)) &&
+	    (slen(host) + 1 >= sizeof(host) || !host_ok(host)))
 		return "this name is not one for this stick; open it by its IP address "
 		       "or list the name in /etc/config/confd.hosts\n";
 	if (header_copy(r, "sec-fetch-site", site, sizeof(site)) &&
@@ -389,8 +406,11 @@ const char *request_refusal(const char *r)
 		 * and is the operator acting: the UI itself offers one, to the
 		 * stick new address after a move, and that is cross-site by
 		 * definition. A fetch, an image, a script or a frame is not.
+		 * Never for /api/: a followed link has no business there, and
+		 * it is where the work and the data are.
 		 */
-		if (header_copy(r, "sec-fetch-mode", mode, sizeof(mode)) &&
+		if (!spre(r + path_off(r), "/api/") &&
+		    header_copy(r, "sec-fetch-mode", mode, sizeof(mode)) &&
 		    header_copy(r, "sec-fetch-dest", dest, sizeof(dest)) &&
 		    seq(mode, "navigate") && seq(dest, "document"))
 			return 0;

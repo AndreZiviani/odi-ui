@@ -365,6 +365,13 @@ check "a fetch from a sibling port is refused" 403 \
 check "a followed link (top-level navigation) is allowed" 200 \
 	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
 		-H 'Sec-Fetch-Dest: document' "$U/")"
+check "a followed link to an API route is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+		-H 'Sec-Fetch-Dest: document' "$U/api/diag")"
+long=$(python3 -c 'print("a"*130)')
+check "a Host filling the buffer is refused, not judged by its prefix" 403 "$(hcode "$long.example.com")"
+check "a long label whose cut prefix has no dot is refused" 403 "$(hcode "$long")"
+check "a prefix cut at .lan is refused" 403 "$(hcode "$(python3 -c 'print("a"*123)').lan.evil.example")"
 check "a same-origin fetch is allowed" 200 \
 	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Mode: cors' "$U/api/schema")"
 hdrs=$(curl -s -D - -o /dev/null -u "$AUTH" "$U/api/schema")
