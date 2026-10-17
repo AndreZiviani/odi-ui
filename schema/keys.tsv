@@ -190,7 +190,7 @@ PON_MODE	hs	PON_MODE	gpon	int	unknown	identity	yes
 PON_LED_SPEC	hs	PON_LED_SPEC	gpon	int	unknown	yes	no
 OUI	hs	OUI	other	string	unknown	yes	no
 PORT_REMAPPING	hs	PORT_REMAPPING	other	string	unknown	yes	no
-PON_VENDOR_ID	hs	PON_VENDOR_ID	gpon	string	unknown	identity	yes
+PON_VENDOR_ID	hs	PON_VENDOR_ID	gpon	str4	unknown	identity	yes
 GPON_SN	hs	GPON_SN	gpon	gponsn	restart:omci	identity	yes
 EPON_ONU_MODEL	hs	EPON_ONU_MODEL	epon	string	unknown	yes	no
 EPON_EXTONU_MODEL	hs	EPON_EXTONU_MODEL	epon	string	unknown	yes	no

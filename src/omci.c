@@ -33,7 +33,7 @@
  */
 static int me_token_ok(const char *s)
 {
-	unsigned long i;
+	unsigned long i, n = 0, digits = 1;
 
 	for (i = 0; s[i]; i++) {
 		char c = s[i];
@@ -41,23 +41,31 @@ static int me_token_ok(const char *s)
 		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
 		      (c >= '0' && c <= '9') || c == '_'))
 			return 0;
+		if (c < '0' || c > '9')
+			digits = 0;
+		else if (n <= 65535)
+			n = n * 10 + (unsigned long)(c - '0');
 	}
+	/* A class id is a 16-bit number (G.988); omcicli would refuse more. */
+	if (digits && (n < 1 || n > 65535))
+		return 0;
 	return i > 0 && i <= 32;
 }
 
-/* An entity id, in the form omcicli prints them: hex, 0x optional. */
+/* An entity id, in the form omcicli prints them: hex, 0x optional, and 16
+ * bits (G.988 entity ids are two bytes), so 1 to 4 digits. */
 static int entity_ok(const char *s)
 {
-	unsigned long i = 0;
+	unsigned long i = 0, digits = 0;
 
 	if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
 		i = 2;
 	if (!s[i])
 		return 0;
-	for (; s[i]; i++)
-		if (hexval(s[i]) < 0)
+	for (; s[i]; i++, digits++)
+		if (hexval(s[i]) < 0 || digits >= 4)
 			return 0;
-	return i <= 10;
+	return 1;
 }
 
 /*

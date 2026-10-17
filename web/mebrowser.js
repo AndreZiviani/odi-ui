@@ -13,6 +13,7 @@
 
 import { $, el } from './dom.js';
 import { fetchOmci, fetchMe } from './omci.js';
+import { meProblem, entityProblem } from './validate.js';
 
 /*
  * The table names `omcicli get tables` reported, taken off a stick once.
@@ -146,6 +147,8 @@ async function load() {
   const entity = String($('#me-entity').value || '').trim();
 
   if (!me) return;
+  const bad = meProblem(me) || entityProblem(entity);
+  if (bad) { $('#me-out').textContent = bad; return; }
   $('#me-out').textContent = 'Reading…';
   show(await fetchMe(me, entity), 'ME ' + me + (entity ? ' entity ' + entity : ''));
 }

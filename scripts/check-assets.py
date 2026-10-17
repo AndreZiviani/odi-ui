@@ -49,6 +49,18 @@ for f in sorted(on_disk):
         if dep not in table_files:
             problems.append(f"web/{f} imports {dep}, which web_assets[] does not serve")
 
+
+# The page and the daemon each hold the upload ceiling, and a page that allows
+# more than the daemon takes sends the whole file to be told 413.
+conf_h = open(os.path.join(HERE, "src", "confd.h"), encoding="utf-8").read()
+mc = re.search(r"#define\s+UPLOAD_MAX\s+\((\d+)u\s*\*\s*(\d+)u\s*\*\s*(\d+)u\)", conf_h)
+mj = re.search(r"const UPLOAD_MAX = (\d+) \* (\d+) \* (\d+);",
+               open(os.path.join(HERE, "web", "validate.js"), encoding="utf-8").read())
+if not mc or not mj:
+    problems.append("could not read UPLOAD_MAX from src/confd.h or web/validate.js")
+elif [int(x) for x in mc.groups()] != [int(x) for x in mj.groups()]:
+    problems.append(f"UPLOAD_MAX differs: src/confd.h {mc.groups()}, web/validate.js {mj.groups()}")
+
 if problems:
     for p in problems:
         print(f"  {p}")

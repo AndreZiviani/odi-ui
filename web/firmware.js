@@ -7,6 +7,7 @@
 
 import { $, el, fail, get, bytes } from './dom.js';
 import { S, CLASS_LABEL, CLASS_RANK } from './state.js';
+import { uploadSizeProblem, tarProblem } from './validate.js';
 
 /* How often the page asks how a background write is going. */
 const WRITE_POLL_MS = 3000;
@@ -32,6 +33,19 @@ function uploadImage() {
   out.textContent = '';
   if (!f) { out.append(el('div', 'bad', 'Pick the tarball first.')); return; }
 
+  /* The daemon refuses the same two things, but only after the bytes have
+     travelled: an oversize file would be sent in full to be told so, and a
+     file that is not a tar would sit in /tmp until Write failed a click later. */
+  const big = uploadSizeProblem(f.size);
+  if (big) { out.append(el('div', 'bad', big)); return; }
+  f.slice(0, 512).arrayBuffer().then((head) => {
+    const bad = tarProblem(head);
+    if (bad) out.append(el('div', 'bad', bad));
+    else sendImage(f, out);
+  }, () => out.append(el('div', 'bad', 'That file could not be read.')));
+}
+
+function sendImage(f, out) {
   const btn = $('#fw-upload');
   const bar = el('div', 'progress');
   const fill = el('div', 'fill');
