@@ -1067,6 +1067,102 @@ check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
 
+echo "== request deadlines, and a body that is not what it declared"
+U="http://127.0.0.1:$PORT"
+
+# SO_RCVTIMEO bounds one read(), so a client sending a byte every second never
+# tripped it and held the single thread for hours. The request has a deadline
+# of its own (REQUEST_DEADLINE_MS, 10 s): the connection is closed on it even
+# though bytes keep arriving. The probe sends one byte a second and reports
+# whether the server hung up within 15 s.
+slow=$(python3 - "$PORT" <<'PY'
+import socket, sys, time
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=5)
+t0 = time.time()
+req = b"GET /api/schema HTTP/1.0\r\nX-Pad: " + b"a" * 200
+closed = None
+for b in req:
+    try:
+        s.sendall(bytes([b]))
+        s.settimeout(0.05)
+        try:
+            if s.recv(1) == b"":
+                closed = time.time() - t0
+                break
+        except socket.timeout:
+            pass
+    except OSError:
+        closed = time.time() - t0
+        break
+    time.sleep(1.0)
+    if time.time() - t0 > 25:
+        break
+print("closed" if closed is not None and closed < 15 else "open")
+PY
+)
+check "a client that dribbles bytes is cut off by the request deadline" closed "$slow"
+check "and the server answers right after" 200 "$(code -u "$AUTH" "$U/api/schema")"
+
+# More body than declared: `left = want - have` wrapped to four billion and the
+# loop wrote whatever came next into /tmp until it was full. The extra bytes
+# are not part of the body now. Ten declared, four thousand sent in one segment.
+over=$(python3 - "$PORT" "$AUTH" <<'PY'
+import base64, socket, sys
+port, auth = int(sys.argv[1]), sys.argv[2]
+cred = base64.b64encode(auth.encode()).decode()
+s = socket.create_connection(("127.0.0.1", port), timeout=10)
+s.sendall(b"POST /api/upload HTTP/1.0\r\nAuthorization: Basic " + cred.encode() +
+          b"\r\nContent-Length: 10\r\n\r\n" + b"A" * 4000)
+out = b""
+while True:
+    d = s.recv(4096)
+    if not d:
+        break
+    out += d
+print(out.decode("utf-8", "replace").split("\r\n\r\n", 1)[-1])
+PY
+)
+check "bytes past the declared length are not part of the upload" yes "$(err "$over" '"ok":true,"bytes":10')"
+check "and the file is exactly the declared length" 10 "$(wc -c < /tmp/img.tar | tr -d ' ')"
+
+# A write in progress reads that file. The state file is the script's own
+# (fwu_starter.sh): running, a live pid.
+sleep 300 &
+LIVE=$!
+printf 'running %s 1\n' "$LIVE" > /tmp/fwu.state
+check "an upload is refused while a firmware write is running" 409 \
+	"$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
+check "and the image it was reading is untouched" 10 "$(wc -c < /tmp/img.tar | tr -d ' ')"
+kill "$LIVE" 2>/dev/null || true
+wait "$LIVE" 2>/dev/null || true
+check "a state naming a dead process does not block an upload" 200 \
+	"$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
+rm -f /tmp/fwu.state
+
+# The upload name is made fresh, not opened through whatever is there.
+echo keep > /tmp/target.keep
+rm -f /tmp/img.tar
+ln -s /tmp/target.keep /tmp/img.tar
+check "an upload through a planted link still succeeds" 200 \
+	"$(code -u "$AUTH" -X POST --data-binary 'new image' "$U/api/upload")"
+check "but does not write through the link" keep "$(cat /tmp/target.keep)"
+check "and the image is a regular file" yes "$([ -f /tmp/img.tar ] && [ ! -L /tmp/img.tar ] && echo yes || echo no)"
+rm -f /tmp/target.keep /tmp/img.tar
+
+# A field that does not fit its buffer is an error, not a prefix: cut at 511
+# bytes it was validated, written and read back against itself, and reported
+# saved.
+long=$(python3 -c 'print("x" * 600)')
+r=$(post "SNMP_SYS_NAME=$long")
+check "a value too long for its buffer is refused" yes "$(err "$r" 'too long')"
+check "and is not reported as saved" no "$(err "$r" '"ok":true' | grep -q '^yes' && echo yes || echo no)"
+mid=$(python3 -c 'print("y" * 40)')
+r=$(post "SNMP_SYS_NAME=$mid&GPON_SN=ODI12345678&_confirm=identity")
+check "a long value before _confirm does not hide the confirmation" yes \
+	"$(err "$r" '"name":"GPON_SN","ok":true')"
+check "a value too long for form_get is not truncated into a match" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=writeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&partition=1' "$U/api/firmware")"
+
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to
 # block every other request indefinitely -- a port scanner holding a socket, or

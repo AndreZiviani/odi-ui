@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
+  K5, K9): a request now has a ten-second wall-clock deadline and the upload
+  body two minutes, where before only each single read was bounded (15 s), so
+  one client sending a byte every few seconds held the single-threaded daemon
+  (and the Firmware tab during an update) indefinitely. `POST /api/upload` is
+  refused with 409 while `fwu_starter.sh` has a write running, because the
+  flasher reads that same file for the eighty seconds it takes and a second
+  upload truncated it under it; the file is created fresh (`O_EXCL`) instead
+  of opened through whatever is at the path; bytes beyond the declared
+  `Content-Length` are no longer counted as still to come (a subtraction that
+  wrapped and copied whatever followed into `/tmp` until it was full). A
+  form value that does not fit its buffer is an error instead of being cut:
+  `/api/config` answers it per key (`the value is too long ...`) and no longer
+  reports `ok` for a truncated `OMCI_FIXED_ME`; a long value of one key no
+  longer hides `_confirm=identity` after it.
+
 - No OLT or ONT make is named in the UI or its fixtures. The MIB tab lists the
   six entities the stock firmware registers under such names as
   `PrivateQueueMap`, `Me350`, `Me370`, `Me373`, `PrivateMcastTag` and

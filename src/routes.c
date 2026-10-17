@@ -68,11 +68,17 @@ static void handle_write(int conn, const char *body)
 			j = k;
 			if (body[j] == '=')
 				j++;
-			j = url_decode(body, j, 0, c, sizeof(c));
-			if (!j)
-				break;
-			if (seq(name, "_confirm") && seq(c, "identity"))
-				confirm = 1;
+			/* Only _confirm is decoded: a long value of another key
+			 * must not stop the scan before it gets there. */
+			if (seq(name, "_confirm")) {
+				j = url_decode(body, j, 0, c, sizeof(c));
+				if (!j)
+					break;
+				if (seq(c, "identity"))
+					confirm = 1;
+			} else {
+				j = url_skip(body, j);
+			}
 			if (body[j] == '&')
 				j++;
 		}
@@ -85,14 +91,30 @@ static void handle_write(int conn, const char *body)
 		unsigned long k = url_decode(body, i, '=', name, sizeof(name));
 		const char *err = 0;
 
-		if (!k)
+		if (!k) {
+			/* A name that does not fit or is badly encoded ends the
+			 * batch, and says so rather than ending it silently. */
+			put_fd(conn, first ? "" : ",");
+			first = 0;
+			put_fd(conn, "{\"name\":\"\",\"ok\":false,\"error\":"
+				     "\"a field name is too long or badly encoded\"}");
 			break;
+		}
 		i = k;
 		if (body[i] == '=')
 			i++;
 		i = url_decode(body, i, 0, value, sizeof(value));
-		if (!i)
+		if (!i) {
+			/* Not cut to fit: a value the page did not send would be
+			 * written and read back as if it had been. */
+			put_fd(conn, first ? "" : ",");
+			first = 0;
+			put_fd(conn, "{\"name\":\"");
+			put_json_cstr(conn, name);
+			put_fd(conn, "\",\"ok\":false,\"error\":\"the value is too long "
+				     "or badly encoded; this key was not written\"}");
 			break;
+		}
 
 		if (seq(name, "_confirm"))
 			goto next;
@@ -271,6 +293,31 @@ next:
 	put_fd(conn, "}");
 }
 
+/*
+ * Whether fwu_starter.sh has a write running: FWU_STATE reads `running <pid>
+ * <slot>` and the pid is alive. The same test the script itself uses to refuse
+ * a second write, and for the same reason the upload needs it: the flasher
+ * reads UPLOAD_PATH for the eighty seconds it takes, so a second upload (a
+ * double click, another tab) would truncate the image under it and write what
+ * is left into the slot. No state file, or a state that is not running, or a
+ * pid that is gone (a kill left it stale): not running.
+ */
+static int fwu_running(void)
+{
+	char st[64];
+	unsigned long i = 0, pid = 0;
+
+	if (read_file(FWU_STATE, st, sizeof(st)) <= 0 || !spre(st, "running "))
+		return 0;
+	for (i = 8; st[i] >= '0' && st[i] <= '9' && i < 8 + 9; i++)
+		pid = pid * 10 + (unsigned long)(st[i] - '0');
+	if (!pid)
+		return 0;
+	/* Signal 0 only tests that the process exists. EPERM would also mean
+	 * it does; confd runs as root, so only ESRCH (gone) says no. */
+	return syscall3(__NR_kill, (long)pid, 0, 0) == 0;
+}
+
 void serve(int conn)
 {
 	char *path, *method, *body, *query;
@@ -381,6 +428,7 @@ void serve(int conn)
 	if (seq(path, "/api/upload") && seq(method, "POST")) {
 		long fd, wrote = 0;
 		unsigned long left;
+		unsigned long t_up;
 
 		if (!body_want || body_want > UPLOAD_MAX) {
 			respond(conn, "413 Payload Too Large", "application/json", 0);
@@ -388,8 +436,33 @@ void serve(int conn)
 			return;
 		}
 
+		/* The flasher is reading that very file. */
+		if (fwu_running()) {
+			respond(conn, "409 Conflict", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"a firmware write is running; "
+				     "wait for it to finish before uploading another image\"}");
+			return;
+		}
+
+		/*
+		 * Bytes beyond the declared length are not part of this body (a
+		 * client that pipelines, or lies): without the clamp `left`
+		 * below is a subtraction that wraps to about four billion and
+		 * the loop copies whatever the peer sends until /tmp is full.
+		 */
+		if (body_have > body_want)
+			body_have = body_want;
+
+		/*
+		 * A fresh file, never one reached through a link: /tmp is shared,
+		 * and O_CREAT|O_TRUNC on a name somebody else made would write
+		 * the image wherever it points. Unlinking first and creating
+		 * with O_EXCL (which does not follow a link) makes the name this
+		 * daemon's own or the open fails.
+		 */
+		syscall3(__NR_unlink, (long)UPLOAD_PATH, 0, 0);
 		fd = syscall3(__NR_open, (long)UPLOAD_PATH,
-			      O_WRONLY | O_CREAT | O_TRUNC, 0600);
+			      O_WRONLY | O_CREAT | O_EXCL, 0600);
 		if (fd < 0) {
 			respond(conn, "500 Internal Server Error", "application/json", 0);
 			put_fd(conn, "{\"ok\":false,\"error\":\"could not open " UPLOAD_PATH "\"}");
@@ -403,12 +476,19 @@ void serve(int conn)
 			wrote = (long)body_have;
 
 		left = body_want - body_have;
+		t_up = mono_ms();
 		while (wrote >= 0 && left) {
 			unsigned long chunk = left < sizeof(filebuf) ? left : sizeof(filebuf);
-			long got = syscall3(__NR_read, conn, (long)filebuf, (long)chunk);
+			long got, budget = UPLOAD_DEADLINE_MS - (long)(mono_ms() - t_up);
 
-			/* A peer that stops sending is bounded by SO_RCVTIMEO,
-			 * so this cannot hang the server indefinitely. */
+			/* SO_RCVTIMEO bounds one read, so a peer sending a byte
+			 * now and then never trips it: the whole body has a
+			 * budget, and the wait for each piece is part of it. */
+			if (budget <= 0 || !wait_readable(conn, budget)) {
+				wrote = -1;
+				break;
+			}
+			got = syscall3(__NR_read, conn, (long)filebuf, (long)chunk);
 			if (got <= 0) { wrote = -1; break; }
 			if (write_all((int)fd, filebuf, (unsigned long)got) < 0) {
 				/* /tmp is ramfs and shared. A short write here
