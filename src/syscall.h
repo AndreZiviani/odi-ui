@@ -59,6 +59,8 @@
 #define __NR_rt_sigaction 4194
 #define __NR_kill       4037
 #define __NR_poll       4188
+#define __NR_clock_gettime 4263
+#define CLOCK_MONOTONIC 1
 
 #define SIGPIPE 13
 #define SIG_IGN 1
@@ -211,6 +213,36 @@ __attribute__((unused)) static unsigned long str_len(const char *s)
 	while (s[n])
 		n++;
 	return n;
+}
+
+/*
+ * Milliseconds on the monotonic clock, modulo 2^32: only ever subtracted from
+ * an earlier reading, so the wrap (about 49 days) cancels out. 0 when the
+ * clock cannot be read, which makes every elapsed time 0 and a deadline built
+ * on it never fire: the poll() each wait also carries is then the only bound,
+ * which is what the daemon had before the deadlines existed.
+ */
+__attribute__((unused)) static unsigned long mono_ms(void)
+{
+	long ts[2];
+
+	if (syscall3(__NR_clock_gettime, CLOCK_MONOTONIC, (long)ts, 0) < 0)
+		return 0;
+	return (unsigned long)ts[0] * 1000UL + (unsigned long)ts[1] / 1000000UL;
+}
+
+/*
+ * Wait until `fd` can be read, for at most `ms`. 1 when it can (data, EOF or
+ * an error: the read says which), 0 on timeout.
+ */
+__attribute__((unused)) static int wait_readable(int fd, long ms)
+{
+	struct pollfd pfd;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	return syscall3(__NR_poll, (long)&pfd, 1, ms) > 0;
 }
 
 static long write_all(int fd, const char *buf, unsigned long len)

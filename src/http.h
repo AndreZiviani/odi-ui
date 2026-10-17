@@ -49,6 +49,7 @@ int set_credential(const char *user, const char *pass, const char **why);
 unsigned long url_decode(const char *in, unsigned long i, char stop,
 			 char *out, unsigned long cap);
 int form_get(const char *body, const char *want, char *out, unsigned long cap);
+unsigned long url_skip(const char *in, unsigned long i);
 void serve_static(int fd, const char *name, const char *ctype);
 
 /*
