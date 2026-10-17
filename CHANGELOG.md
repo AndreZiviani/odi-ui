@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Validation of every input, stacked on the config-key work above (night audit
+  2026-10-16, "make sure the web UI validates all inputs"). The daemon first,
+  then the page with the same rule, and one table of accepted and refused
+  examples (`scripts/fixtures/validation-vectors.tsv`) that `make check` runs
+  through the page and `make smoke` posts to the daemon, so neither can change
+  a rule alone:
+  - config keys: `int` is at most ten digits and 4294967295 (a 400-digit value
+    was written, and omcid's 15-character buffer read it as absent);
+    `string` is printable ASCII of at most 255 characters with no quote, `<`
+    or `&` (a tab or carriage return was stored, and flash refused the other
+    three with a bare "did not stick"); `ipv4` has no leading zeros (octal in
+    busybox); `hostport` checks the labels (`a..b`, a 64-character label and
+    `999.1.1.1` passed and made ntpd exit and respawn); `PON_VENDOR_ID` is at
+    most four characters; `OMCI_VEIP_SLOT_ID` refuses 128, which omcid
+    ignores; the second management address may not equal the first while it is
+    on (network.sh refused to add it, silently); a `%00` in any form field is
+    refused instead of ending the value there; and a full `OMCI_FIXED_ME` table
+    (up to 1071 bytes, which the grammar and omcid accept) is no longer cut at
+    511 bytes by the daemon.
+  - the password form: the page checks the rules the daemon already had and
+    asks for the password twice; a name or password too long for the daemon's
+    buffer is told its limit instead of "required".
+  - ssh keys: the type must be ssh-ed25519, ssh-rsa, ecdsa-sha2-nistp256/384/521
+    or an sk- type, the blob must parse as length-prefixed fields that name that
+    type and add up exactly (a truncated paste, a private key or a fingerprint
+    no longer pass), a duplicate is refused, and removing a key asks first.
+  - firmware upload: the page refuses an empty file, one over 6 MiB, or one that
+    does not start like a tar archive before sending it, and the daemon checks
+    the tar header too and keeps nothing else. `make check` compares the two size
+    limits.
+  - ping takes an address a host can have (1-223, not 127, no leading zeros);
+    the MIB browser checks the class id (1-65535) and the entity (16 bits) in the
+    page and in the daemon.
+  - restore lists the values the daemon would refuse before writing anything,
+    judges a backup as a whole (an address with its mask, as in the file), refuses
+    a file over 1 MiB, and asks once more, naming the keys, before writing
+    identity keys.
+
 - Validation: a value is accepted when the code that reads the key accepts
   it (night audit 2026-10-16). New schema types, enforced by the daemon and
   checked by the page: `ipv4host` and `netmask` for the management address and

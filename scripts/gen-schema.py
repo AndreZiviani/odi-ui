@@ -94,6 +94,8 @@ TYPE_OVERRIDE = {
     "OMCI_SW_VER1": "str14", "OMCI_SW_VER2": "str14", "GPON_ONU_MODEL": "str20",
     "LOID": "str24", "LOID_OLD": "str24",
     "LOID_PASSWD": "str12", "LOID_PASSWD_OLD": "str12",
+    # The first four characters of GPON_SN (meta.tsv).
+    "PON_VENDOR_ID": "str4",
 }
 
 

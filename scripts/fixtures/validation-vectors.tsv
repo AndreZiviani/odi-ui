@@ -1,0 +1,227 @@
+# What every input must accept and refuse, one example per row, shared by the
+# page and the daemon. scripts/web-check.mjs runs each row through the page's
+# validator (web/validate.js) and scripts/smoke.sh posts it to the running
+# daemon: the two must agree with the expectation, so neither layer can change a
+# rule without the other (and this table) changing with it.
+#
+# kind     what is being tested
+#   key      a config key, written as NAME=value through /api/config
+#   password /api/password: the NAME column is the user, the value the password
+#   sshkey   /api/sshkeys add: the value is the key line
+#   ping     /api/ping host
+#   me       /api/omci?cmd=me&me=  (a class id or table name)
+#   entity   /api/omci?cmd=me&me=84&entity=  (empty means every instance)
+# value    form-urlencoded, as it travels: %20 for a space, %2B for a plus
+# expect   ok = accepted, bad = refused
+# The last column is for the reader. Rows run in order: an ssh key accepted
+# once is a duplicate the next time, which is the point of the row after it.
+kind	name	value	expect	why
+key	WAN_MODE	0	ok	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	128	ok	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	4294967295	ok	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	0000000128	ok	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	4294967296	bad	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	99999999999	bad	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	0000000000128	bad	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	12a	bad	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	-1	bad	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	1%200	bad	int: digits, at most 10, at most 4294967295
+key	WAN_MODE	1.5	bad	int: digits, at most 10, at most 4294967295
+key	WAN_MODE		bad	a stock key cannot be cleared
+key	VLAN_MANU_TAG_VID	1	ok	range 1-4094, and the digit cap
+key	VLAN_MANU_TAG_VID	4094	ok	range 1-4094, and the digit cap
+key	VLAN_MANU_TAG_VID	0	bad	range 1-4094, and the digit cap
+key	VLAN_MANU_TAG_VID	4095	bad	range 1-4094, and the digit cap
+key	VLAN_MANU_TAG_VID	99999	bad	range 1-4094, and the digit cap
+key	VLAN_MANU_TAG_VID	00000000110	bad	range 1-4094, and the digit cap
+key	VLAN_MANU_TAG_PRI	0	ok	range 0-7
+key	VLAN_MANU_TAG_PRI	7	ok	range 0-7
+key	VLAN_MANU_TAG_PRI	8	bad	range 0-7
+key	OMCC_VER	0	ok	range 0-255
+key	OMCC_VER	255	ok	range 0-255
+key	OMCC_VER	256	bad	range 0-255
+key	OMCI_VENDOR_PRODUCT_CODE	65535	ok	range 0-65535
+key	OMCI_VENDOR_PRODUCT_CODE	65536	bad	range 0-65535
+key	LAN_ENABLE_IP2	0	ok	options 0|1
+key	LAN_ENABLE_IP2	2	bad	options 0|1
+key	LAN_ENABLE_IP2	on	bad	options 0|1
+key	OMCI_ACCEPT_REBOOT	0	ok	options 0|1|2
+key	OMCI_ACCEPT_REBOOT	1	ok	options 0|1|2
+key	OMCI_ACCEPT_REBOOT	2	ok	options 0|1|2
+key	OMCI_ACCEPT_REBOOT	3	bad	options 0|1|2
+key	OLT_SW_DOWNLOAD	accept	ok	options accept|reject
+key	OLT_SW_DOWNLOAD	reject	ok	options accept|reject
+key	OLT_SW_DOWNLOAD	Accept	bad	options accept|reject
+key	OLT_SW_DOWNLOAD		bad	options accept|reject
+key	OMCI_VEIP_SLOT_ID	2	ok	2-254 and not 128 (omcid ignores 128)
+key	OMCI_VEIP_SLOT_ID	14	ok	2-254 and not 128 (omcid ignores 128)
+key	OMCI_VEIP_SLOT_ID	254	ok	2-254 and not 128 (omcid ignores 128)
+key	OMCI_VEIP_SLOT_ID	1	bad	2-254 and not 128 (omcid ignores 128)
+key	OMCI_VEIP_SLOT_ID	255	bad	2-254 and not 128 (omcid ignores 128)
+key	OMCI_VEIP_SLOT_ID	128	bad	2-254 and not 128 (omcid ignores 128)
+key	OMCI_VEIP_SLOT_ID	0128	bad	2-254 and not 128 (omcid ignores 128)
+key	OMCI_VEIP_SLOT_ID	0014	ok	2-254 and not 128 (omcid ignores 128)
+key	DNS1	0.0.0.0	ok	ipv4: four numbers, no leading zeros
+key	DNS1	8.8.8.8	ok	ipv4: four numbers, no leading zeros
+key	DNS1	192.168.010.1	bad	ipv4: four numbers, no leading zeros
+key	DNS1	1.2.3.256	bad	ipv4: four numbers, no leading zeros
+key	DNS1	1.2.3	bad	ipv4: four numbers, no leading zeros
+key	DNS1	1.2.3.4.5	bad	ipv4: four numbers, no leading zeros
+key	DNS1	1.2.3.4%20	bad	ipv4: four numbers, no leading zeros
+key	DNS1	a.b.c.d	bad	ipv4: four numbers, no leading zeros
+key	LAN_IP_ADDR2	192.168.1.1	ok	ipv4host
+key	LAN_IP_ADDR2	10.0.0.1	ok	ipv4host
+key	LAN_IP_ADDR2	0.0.0.0	bad	ipv4host
+key	LAN_IP_ADDR2	127.0.0.1	bad	ipv4host
+key	LAN_IP_ADDR2	224.0.0.1	bad	ipv4host
+key	LAN_IP_ADDR2	255.255.255.255	bad	ipv4host
+key	LAN_SUBNET2	255.255.255.0	ok	netmask: ones then zeros, /8 to /30
+key	LAN_SUBNET2	255.255.0.0	ok	netmask: ones then zeros, /8 to /30
+key	LAN_SUBNET2	255.0.255.0	bad	netmask: ones then zeros, /8 to /30
+key	LAN_SUBNET2	255.255.255.255	bad	netmask: ones then zeros, /8 to /30
+key	LAN_SUBNET2	0.0.0.0	bad	netmask: ones then zeros, /8 to /30
+key	SNMP_SYS_NAME	odi%20stick-1	ok	string: spaces are text
+key	SNMP_SYS_NAME	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	ok	string: 255 characters
+key	SNMP_SYS_NAME	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	bad	string: 256 characters
+key	SNMP_SYS_NAME	a%22b	bad	string: a quote
+key	SNMP_SYS_NAME	a%3Cb	bad	string: <
+key	SNMP_SYS_NAME	a%26b	bad	string: &
+key	SNMP_SYS_NAME	a%09b	bad	string: a tab
+key	SNMP_SYS_NAME	a%0Ab	bad	string: a newline
+key	SNMP_SYS_NAME	a%0Db	bad	string: a carriage return
+key	SNMP_SYS_NAME	caf%C3%A9	bad	string: not ASCII
+key	SNMP_SYS_NAME	%7F	bad	string: DEL
+key	SNMP_SYS_NAME	a%00b	bad	string: a NUL byte ends the C string
+key	SNMP_SYS_NAME	-2147483648	ok	string: a negative number is text
+key	PON_VENDOR_ID	ODI0	ok	str4
+key	PON_VENDOR_ID	ODI	ok	str4
+key	PON_VENDOR_ID	ODI01	bad	str4
+key	PON_VENDOR_ID	OD%22	bad	str4
+key	LOID	aaaaaaaaaaaaaaaaaaaaaaaa	ok	str24
+key	LOID	aaaaaaaaaaaaaaaaaaaaaaaaa	bad	str24
+key	LOID_PASSWD	aaaaaaaaaaaa	ok	str12
+key	LOID_PASSWD	aaaaaaaaaaaaa	bad	str12
+key	OMCI_SW_VER1	aaaaaaaaaaaaaa	ok	str14
+key	OMCI_SW_VER1	aaaaaaaaaaaaaaa	bad	str14
+key	GPON_ONU_MODEL	aaaaaaaaaaaaaaaaaaaa	ok	str20
+key	GPON_ONU_MODEL	aaaaaaaaaaaaaaaaaaaaa	bad	str20
+key	ONU_HW_VERSION		ok	ascii14, empty clears
+key	ONU_HW_VERSION	aaaaaaaaaaaaaa	ok	ascii14, empty clears
+key	ONU_HW_VERSION	aaaaaaaaaaaaaaa	bad	ascii14, empty clears
+key	ONU_HW_VERSION	a%22	bad	ascii14, empty clears
+key	NTP_SERVER		ok	hostport
+key	NTP_SERVER	pool.ntp.org	ok	hostport
+key	NTP_SERVER	pool.ntp.org:123	ok	hostport
+key	NTP_SERVER	192.0.2.1	ok	hostport
+key	NTP_SERVER	192.0.2.1:5514	ok	hostport
+key	NTP_SERVER	time-1.example.com	ok	hostport
+key	NTP_SERVER	localhost	ok	hostport
+key	NTP_SERVER	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example	ok	hostport
+key	NTP_SERVER	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example	bad	hostport
+key	NTP_SERVER	a..b	bad	hostport
+key	NTP_SERVER	-a.example	bad	hostport
+key	NTP_SERVER	a-.example	bad	hostport
+key	NTP_SERVER	a.example.	bad	hostport
+key	NTP_SERVER	.a	bad	hostport
+key	NTP_SERVER	999.1.1.1	bad	hostport
+key	NTP_SERVER	1.2.3	bad	hostport
+key	NTP_SERVER	12345	bad	hostport
+key	NTP_SERVER	01.2.3.4	bad	hostport
+key	NTP_SERVER	1.2.3.4.	bad	hostport
+key	NTP_SERVER	host:0	bad	hostport
+key	NTP_SERVER	host:65536	bad	hostport
+key	NTP_SERVER	host:80:80	bad	hostport
+key	NTP_SERVER	host:	bad	hostport
+key	NTP_SERVER	host%20name	bad	hostport
+key	NTP_SERVER	host%22	bad	hostport
+key	NTP_SERVER	host_name	bad	hostport
+key	NTP_SERVER	-x	bad	hostport
+key	NTP_SERVER	host:65535	ok	hostport
+key	SYSLOG_SERVER	10.0.0.5:514	ok	hostport
+key	SYSLOG_SERVER	10.0.0.5%0Aid	bad	hostport: no newline
+key	OMCI_FIXED_ME	200:0x0011aa	ok	one entry, any instance
+key	OMCI_FIXED_ME	200:0x8001:1:0011aa,201:0x0011aa	ok	two forms
+key	OMCI_FIXED_ME	10001:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10002:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10003:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10004:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10005:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10006:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10007:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10008:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10009:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10010:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10011:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10012:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10013:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10014:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10015:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10016:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff	ok	16 full-size entries, 1071 bytes: more than the old 511-byte cut
+key	OMCI_FIXED_ME	10001:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10002:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10003:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10004:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10005:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10006:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10007:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10008:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10009:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10010:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10011:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10012:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10013:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10014:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10015:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10016:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff,10017:0xffff:16:ffffffffffffffffffffffffffffffffffffffffffffffffff	bad	17 entries
+key	OMCI_FIXED_ME	200:zz	bad	not hex
+key	OMCI_FIXED_ME	200:0x0011aa,200:0x0011bb	bad	a class twice
+key	OMCI_FIXED_ME		ok	empty clears
+key	GPON_SN	ODI012345678	ok	gponsn
+key	GPON_SN	ODI01234567	bad	gponsn
+key	GPON_SN	ODI0123456789	bad	gponsn
+key	GPON_SN	ODI0123456zz	bad	gponsn
+key	GPON_PLOAM_PASSWD	31323334353637383930	ok	hex20
+key	GPON_PLOAM_PASSWD	3132333435363738	bad	hex20
+key	GPON_PLOAM_PASSWD	zz323334353637383930	bad	hex20
+key	ELAN_MAC_ADDR	02aabbccddee	ok	elanmac
+key	ELAN_MAC_ADDR	01aabbccddee	bad	elanmac
+key	ELAN_MAC_ADDR	000000000000	bad	elanmac
+key	ELAN_MAC_ADDR	02aabbccdd	bad	elanmac
+password	admin	s3cret	ok	a normal pair
+password	o	abcd	ok	shortest
+password	uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu	pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp	ok	longest
+password		abcd	bad	no user
+password	uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu	abcd	bad	user too long
+password	a:b	abcd	bad	colon in user
+password	a%20b	abcd	bad	space in user
+password	a	abc	bad	password too short
+password	a	ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp	bad	password too long
+password	a	ab%0Acd	bad	newline in password
+password	a	caf%C3%A9xx	bad	not ASCII
+password	a	ab%00cd	bad	NUL
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f%20laptop	ok	ed25519 with a comment
+sshkey		ssh-rsa%20AAAAB3NzaC1yc2EAAAADAQABAAABAQABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp%2BgoaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2%2Bv8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4%2BTl5ufo6err7O3u7/Dx8vP09fb3%2BPn6%2B/z9/v8B%20desk	ok	rsa
+sshkey		ecdsa-sha2-nistp256%20AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=	ok	ecdsa, no comment
+sshkey		sk-ssh-ed25519@openssh.com%20AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fAAAABHNzaDo=	ok	security-key type
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f%20laptop	bad	already in the list (the first one above)
+sshkey		hello%20world	bad	not a key
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5	bad	a truncated paste
+sshkey		command=%22id%22%20ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f%20laptop	bad	options in front
+sshkey		ssh-dss%20AAAAB3NzaC1kc3MAAAA8AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7	bad	a type dropbear here does not take
+sshkey		ssh-ed25519%20AAAAB3NzaC1yc2EAAAAgAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=	bad	the blob names another type
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f%20laptop%0Aid	bad	a newline
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAIQABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f	bad	a blob cut short: its last field runs past the end
+sshkey		ssh-ed25519%20%20AAAAC3NzaC1lZDI1NTE5AAAAIgABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICE=	bad	two spaces
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAIwABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEi=Q	bad	padding in the middle
+sshkey		ssh-ed25519%20AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	bad	over 1000 characters
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	bad	a type name with no key material after it
+sshkey		ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=	bad	bytes left over after the last field
+ping		192.0.2.1	ok	ping
+ping		10.0.0.1	ok	ping
+ping		223.255.255.254	ok	ping
+ping		0.0.0.0	bad	ping
+ping		127.0.0.1	bad	ping
+ping		224.0.0.1	bad	ping
+ping		255.255.255.255	bad	ping
+ping		999.1.1.1	bad	ping
+ping		1..2.3	bad	ping
+ping		1.2.3	bad	ping
+ping		1.2.3.4.5	bad	ping
+ping		192.168.001.001	bad	ping
+ping		example.com	bad	ping
+ping		1.2.3.4;id	bad	ping
+ping			bad	ping
+me		84	ok	class id or table name
+me		65535	ok	class id or table name
+me		1	ok	class id or table name
+me		VlanTagFilterData	ok	class id or table name
+me		ONU2G	ok	class id or table name
+me		0	bad	class id or table name
+me		65536	bad	class id or table name
+me		99999999999	bad	class id or table name
+me		-h	bad	class id or table name
+me		a%20b	bad	class id or table name
+me		a;b	bad	class id or table name
+me		xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	bad	class id or table name
+me			bad	class id or table name
+entity			ok	entity: up to 4 hex digits
+entity		0	ok	entity: up to 4 hex digits
+entity		0x04	ok	entity: up to 4 hex digits
+entity		ffff	ok	entity: up to 4 hex digits
+entity		0xFFFF	ok	entity: up to 4 hex digits
+entity		10000	bad	entity: up to 4 hex digits
+entity		0x10000	bad	entity: up to 4 hex digits
+entity		0x	bad	entity: up to 4 hex digits
+entity		zz	bad	entity: up to 4 hex digits
+entity		-1	bad	entity: up to 4 hex digits
+entity		4%204	bad	entity: up to 4 hex digits

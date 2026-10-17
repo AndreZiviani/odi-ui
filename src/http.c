@@ -606,6 +606,13 @@ unsigned long url_decode(const char *in, unsigned long i, char stop,
 			if (hi < 0 || lo < 0)
 				return 0;
 			c = (char)((hi << 4) | lo);
+			/* %00 would end the C string here: the text validated,
+			 * written and read back would be the part before it,
+			 * reported as the value that was sent. */
+			if (!c) {
+				out[0] = 0;
+				return 0;
+			}
 			i += 3;
 		} else {
 			i++;

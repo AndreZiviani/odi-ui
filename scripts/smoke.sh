@@ -284,7 +284,7 @@ check "a line that is not a key is refused" 400 \
 check "an empty key is refused" 400 \
 	"$(code -u "$AUTH" -X POST -d 'key=' "http://127.0.0.1:$PORT/api/sshkeys")"
 K1='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxJq2sL3o5p8Qh1u7v9wXyZaBcDeFgHiJkLmNoPqRsT laptop'
-K2='ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0m8v2xFakeKeyBlobForTheSmokeTest0123456789abcdefghijklmnopqrstuvwxyz desk'
+K2='ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQADChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8 desk'
 check "a key is added" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
 check "and a second one" yes \
@@ -734,13 +734,26 @@ echo "== firmware upload"
 # request buffer. So the check uses a REAL multi-megabyte body and compares
 # md5s end to end -- a small one would pass whether the streaming loop works or
 # the whole thing still fits in one read.
-dd if=/dev/urandom of=/tmp/fake.tar bs=1024 count=3072 2>/dev/null
+# A real tar, not random bytes: the daemon looks for the ustar header and
+# refuses anything else. One 3 MB member of random data gives a multi-megabyte
+# body whose md5 can be compared end to end.
+mkdir -p /tmp/payload.d
+dd if=/dev/urandom of=/tmp/payload.d/payload bs=1024 count=3072 2>/dev/null
+tar -cf /tmp/fake.tar -C /tmp/payload.d payload
+rm -rf /tmp/payload.d
+FAKE_BYTES=$(wc -c < /tmp/fake.tar | tr -d ' ')
+# A small one for the checks that only need an upload to succeed.
+mkdir -p /tmp/small.d
+echo small > /tmp/small.d/small
+tar -cf /tmp/small.tar -C /tmp/small.d small
+rm -rf /tmp/small.d
+SMALL_BYTES=$(wc -c < /tmp/small.tar | tr -d ' ')
 LOCAL_MD5=$(md5sum /tmp/fake.tar | cut -d" " -f1)
 UP=$(curl -s -u "$AUTH" -X POST --data-binary @/tmp/fake.tar \
 	-H 'Content-Type: application/octet-stream' \
 	"http://127.0.0.1:$PORT/api/upload")
 check "a 3 MB image uploads" yes "$(err "$UP" '"ok":true')"
-check "every byte arrives" yes "$(err "$UP" '"bytes":3145728')"
+check "every byte arrives" yes "$(err "$UP" "\"bytes\":$FAKE_BYTES")"
 check "and the file on disk is byte-identical" "$LOCAL_MD5" \
 	"$(md5sum /tmp/img.tar 2>/dev/null | cut -d' ' -f1)"
 check "the daemon reports that same md5" yes "$(err "$UP" "$LOCAL_MD5")"
@@ -760,7 +773,7 @@ check "an upload declaring more than the limit is refused" 413 \
 	   -H 'Content-Length: 20000000' -H 'Content-Type: application/octet-stream' \
 	   --data-binary @/tmp/lie.bin "http://127.0.0.1:$PORT/api/upload")"
 check "and it wrote nothing" no \
-	"$([ -f /tmp/img.tar ] && [ "$(wc -c < /tmp/img.tar)" -lt 3145728 ] && echo yes || echo no)"
+	"$([ -f /tmp/img.tar ] && [ "$(wc -c < /tmp/img.tar)" -lt "$FAKE_BYTES" ] && echo yes || echo no)"
 rm -f /tmp/lie.bin
 check "an empty upload is refused" 413 \
 	"$(code -u "$AUTH" -X POST -H 'Content-Type: application/octet-stream' \
@@ -906,12 +919,12 @@ for bad in 'host=example.com' 'host=1.2.3' 'host=1.2.3.4.5' 'host=' \
 		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/ping")"
 done
 check "ping accepts an IPv4 literal" 200 \
-	"$(code -u "$AUTH" -X POST -d 'host=127.0.0.1' "http://127.0.0.1:$PORT/api/ping")"
+	"$(code -u "$AUTH" -X POST -d 'host=192.0.2.1' "http://127.0.0.1:$PORT/api/ping")"
 # There is no /bin/ping in the toolchain container, which makes this the case
 # worth pinning: a missing binary must not read as "no reply", or it sends you
 # to look at the network instead of at the image.
 check "a missing ping says so, rather than 'no reply'" yes \
-	"$(err "$(curl -s -u "$AUTH" -X POST -d 'host=127.0.0.1' "http://127.0.0.1:$PORT/api/ping")" 'no ping in this image')"
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'host=192.0.2.1' "http://127.0.0.1:$PORT/api/ping")" 'no ping in this image')"
 check "the kernel log comes back" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/log")" '"truncated"')"
 check "and it is not empty" yes \
@@ -1145,13 +1158,14 @@ check "and the server answers right after" 200 "$(code -u "$AUTH" "$U/api/schema
 # More body than declared: `left = want - have` wrapped to four billion and the
 # loop wrote whatever came next into /tmp until it was full. The extra bytes
 # are not part of the body now. Ten declared, four thousand sent in one segment.
-over=$(python3 - "$PORT" "$AUTH" <<'PY'
+over=$(python3 - "$PORT" "$AUTH" /tmp/small.tar <<'PY'
 import base64, socket, sys
 port, auth = int(sys.argv[1]), sys.argv[2]
+img = open(sys.argv[3], "rb").read()
 cred = base64.b64encode(auth.encode()).decode()
 s = socket.create_connection(("127.0.0.1", port), timeout=10)
 s.sendall(b"POST /api/upload HTTP/1.0\r\nAuthorization: Basic " + cred.encode() +
-          b"\r\nContent-Length: 10\r\n\r\n" + b"A" * 4000)
+          b"\r\nContent-Length: " + str(len(img)).encode() + b"\r\n\r\n" + img + b"A" * 4000)
 out = b""
 while True:
     d = s.recv(4096)
@@ -1161,8 +1175,8 @@ while True:
 print(out.decode("utf-8", "replace").split("\r\n\r\n", 1)[-1])
 PY
 )
-check "bytes past the declared length are not part of the upload" yes "$(err "$over" '"ok":true,"bytes":10')"
-check "and the file is exactly the declared length" 10 "$(wc -c < /tmp/img.tar | tr -d ' ')"
+check "bytes past the declared length are not part of the upload" yes "$(err "$over" "\"ok\":true,\"bytes\":$SMALL_BYTES")"
+check "and the file is exactly the declared length" "$SMALL_BYTES" "$(wc -c < /tmp/img.tar | tr -d ' ')"
 
 # A write in progress reads that file. The state file is the script's own
 # (fwu_starter.sh): running, a live pid.
@@ -1171,11 +1185,11 @@ LIVE=$!
 printf 'running %s 1\n' "$LIVE" > /tmp/fwu.state
 check "an upload is refused while a firmware write is running" 409 \
 	"$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
-check "and the image it was reading is untouched" 10 "$(wc -c < /tmp/img.tar | tr -d ' ')"
+check "and the image it was reading is untouched" "$SMALL_BYTES" "$(wc -c < /tmp/img.tar | tr -d ' ')"
 kill "$LIVE" 2>/dev/null || true
 wait "$LIVE" 2>/dev/null || true
 check "a state naming a dead process does not block an upload" 200 \
-	"$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "$U/api/upload")"
 rm -f /tmp/fwu.state
 
 # The upload name is made fresh, not opened through whatever is there.
@@ -1183,15 +1197,15 @@ echo keep > /tmp/target.keep
 rm -f /tmp/img.tar
 ln -s /tmp/target.keep /tmp/img.tar
 check "an upload through a planted link still succeeds" 200 \
-	"$(code -u "$AUTH" -X POST --data-binary 'new image' "$U/api/upload")"
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "$U/api/upload")"
 check "but does not write through the link" keep "$(cat /tmp/target.keep)"
 check "and the image is a regular file" yes "$([ -f /tmp/img.tar ] && [ ! -L /tmp/img.tar ] && echo yes || echo no)"
 rm -f /tmp/target.keep /tmp/img.tar
 
-# A field that does not fit its buffer is an error, not a prefix: cut at 511
-# bytes it was validated, written and read back against itself, and reported
+# A field that does not fit its buffer is an error, not a prefix: cut at the
+# buffer (1279 bytes, VALUE_MAX) it was validated, written and read back against itself, and reported
 # saved.
-long=$(python3 -c 'print("x" * 600)')
+long=$(python3 -c 'print("x" * 1400)')
 r=$(post "SNMP_SYS_NAME=$long")
 check "a value too long for its buffer is refused" yes "$(err "$r" 'too long')"
 check "and is not reported as saved" no "$(err "$r" '"ok":true' | grep -q '^yes' && echo yes || echo no)"
@@ -1242,6 +1256,82 @@ check "a child does not inherit an ignored SIGPIPE" 0 \
 	"$(( 0x${sigign:-1} & 0x1000 ))"
 cp /tmp/omcicli.kept /bin/omcicli
 rm -f /tmp/omcicli.kept
+
+echo "== validation vectors"
+# scripts/fixtures/validation-vectors.tsv is the table of what every input
+# accepts and refuses; scripts/web-check.mjs runs the same rows through the
+# page. A row is posted to the route that owns the input, and what comes back
+# must be the table's word: ok accepted, bad refused.
+VEC=scripts/fixtures/validation-vectors.tsv
+cp /etc/config/confd.auth /etc/config/confd.auth.vec
+rm -f /etc/config/dropbear.d/authorized_keys
+vec_n=0
+vec_bad=0
+# Tabs become a separator that is not whitespace, or read would fold the empty
+# fields (a row with no name, or no value) into their neighbours.
+while IFS=$'\037' read -r kind name value expect why; do
+	case "$kind" in ''|'#'*|kind) continue ;; esac
+	vec_n=$((vec_n + 1))
+	got=bad
+	case "$kind" in
+	key)
+		r=$(curl -s -u "$AUTH" -X POST --data "$name=$value&_confirm=identity" "http://127.0.0.1:$PORT/api/config")
+		case "$r" in *'"ok":true'*) got=ok ;; esac ;;
+	password)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "user=$name&password=$value" "http://127.0.0.1:$PORT/api/password")
+		[ "$c" = 200 ] && got=ok
+		# put the credential back so the next row, and the checks after, still sign in
+		cp /etc/config/confd.auth.vec /etc/config/confd.auth ;;
+	sshkey)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "key=$value" "http://127.0.0.1:$PORT/api/sshkeys")
+		[ "$c" = 200 ] && got=ok ;;
+	ping)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "host=$value" "http://127.0.0.1:$PORT/api/ping")
+		[ "$c" = 200 ] && got=ok ;;
+	me)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=$value")
+		[ "$c" = 200 ] && got=ok ;;
+	entity)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&entity=$value")
+		[ "$c" = 200 ] && got=ok ;;
+	esac
+	if [ "$got" != "$expect" ]; then
+		vec_bad=$((vec_bad + 1))
+		check "vector $kind $name ${value:0:40} ($why)" "$expect" "$got"
+	fi
+done < <(tr '\t' '\037' < "$VEC")
+mv /etc/config/confd.auth.vec /etc/config/confd.auth
+rm -f /etc/config/dropbear.d/authorized_keys
+check "$vec_n validation vectors agree with the daemon" 0 "$vec_bad"
+check "the credential survived the password vectors" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+
+# What a vector cannot say: a refusal that depends on the request, or on bytes.
+# The second management address while it is on must differ from the first.
+check "the second address equal to the first, in one request, is refused" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_ENABLE_IP2=1&LAN_IP_ADDR=192.168.1.1&LAN_IP_ADDR2=192.168.1.1' "http://127.0.0.1:$PORT/api/config")" 'the same as the other management address')"
+check "the second address on while it differs from the first is accepted" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_ENABLE_IP2=1&LAN_IP_ADDR=192.168.1.1&LAN_IP_ADDR2=192.168.100.1' "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_IP_ADDR2","ok":true')"
+check "equal while the second address is off is accepted" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_ENABLE_IP2=0&LAN_IP_ADDR2=192.168.1.1' "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_IP_ADDR2","ok":true')"
+check "slot 128 says why" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'OMCI_VEIP_SLOT_ID=128' "http://127.0.0.1:$PORT/api/config")" 'omcid ignores it')"
+check "a NUL byte in a value is refused, not read as the text before it" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'GPON_SN=ODI012345678%00junk&_confirm=identity' "http://127.0.0.1:$PORT/api/config")" 'badly encoded')"
+check "a value of five hundred characters in a string key says what is allowed" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data "SNMP_SYS_NAME=$(printf 'a%.0s' $(seq 500))" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
+
+# The upload must be a tar archive: a 512-byte header with ustar at offset 257.
+head -c 4096 /dev/zero > /tmp/notatar.bin
+check "an upload that is not a tar archive is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/notatar.bin "http://127.0.0.1:$PORT/api/upload")"
+check "and it is not kept" no "$([ -e /tmp/img.tar ] && echo yes || echo no)"
+head -c 600 /dev/urandom > /tmp/notatar.bin
+check "random bytes are not a tar archive either" 400 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/notatar.bin "http://127.0.0.1:$PORT/api/upload")"
+check "a tar archive is accepted" 200 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "http://127.0.0.1:$PORT/api/upload")"
+rm -f /tmp/notatar.bin /tmp/img.tar
 
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to
