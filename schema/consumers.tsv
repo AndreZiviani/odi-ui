@@ -91,6 +91,8 @@ OLT_SW_DOWNLOAD	unknown
 OMCI_UNKNOWN_ME_OK	unknown	
 OMCI_ACCEPT_REBOOT	unknown	
 OMCI_FIXED_ME	unknown	
+OMCI_VEIP	unknown	
+OMCI_PRIVATE_ME	unknown	
 HOST_AUTONEG	unknown	
 FIBER_MODE	reboot	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/runsdk.sh
 RTK_DEVID_MANUFACTURER	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig

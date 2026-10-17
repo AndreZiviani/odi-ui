@@ -434,6 +434,20 @@ check "OMCI_UNKNOWN_ME_OK is written and interrupts" yes \
 	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=1')" '"needs":["omci"],"stock":false,"interrupts":true')"
 check "OMCI_UNKNOWN_ME_OK outside 0 and 1 is refused" yes \
 	"$(err "$(post 'OMCI_UNKNOWN_ME_OK=2')" 'not one of the values')"
+check "OMCI_VEIP=0 (no VEIP) is written and interrupts" yes \
+	"$(err "$(post 'OMCI_VEIP=0')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "OMCI_VEIP outside 0 and 1 is refused" yes \
+	"$(err "$(post 'OMCI_VEIP=2')" 'not one of the values')"
+check "OMCI_PRIVATE_ME=0 is written and interrupts" yes \
+	"$(err "$(post 'OMCI_PRIVATE_ME=0')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "OMCI_PRIVATE_ME outside 0 and 1 is refused" yes \
+	"$(err "$(post 'OMCI_PRIVATE_ME=2')" 'not one of the values')"
+check "OMCI_VEIP_SLOT_ID 14 is written and interrupts" yes \
+	"$(err "$(post 'OMCI_VEIP_SLOT_ID=14')" '"needs":["omci"],"stock":false,"interrupts":true')"
+for bad in 1 255 300; do
+	check "OMCI_VEIP_SLOT_ID $bad is outside the slots omcid uses and is refused" yes \
+		"$(err "$(post "OMCI_VEIP_SLOT_ID=$bad")" 'outside the range')"
+done
 check "OMCI_FIXED_ME with one entry is written and interrupts" yes \
 	"$(err "$(post 'OMCI_FIXED_ME=200:0x0011aa')" '"needs":["omci"],"stock":false,"interrupts":true')"
 check "OMCI_FIXED_ME with two entries passes" yes \

@@ -345,7 +345,7 @@ static void kill_and_reap(long pid)
  * read is gated by poll() so a child that goes silent (not merely slow) is
  * caught and killed instead of hung on forever.
  *
- * Found on hardware in the sibling exporter (odi-sfp-exporter, rc3, claro,
+ * Found on hardware in the sibling exporter (odi-sfp-exporter, rc3, ISP1,
  * 2026-09-28): omcid can stop answering its command queue after a respawn
  * bug, and a child talking to it then never exits -- a blind read() never
  * returns, so the single-threaded HTTP server never gets back to accept()
