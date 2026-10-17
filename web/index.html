@@ -434,7 +434,8 @@
             <ul>
               <li>the four LOID keys, emptied</li>
               <li><code>DEVICE_TYPE</code>, <code>DUAL_MGMT_MODE</code> and the three
-                  <code>OMCI_CUSTOM</code> masks, which only the stock firmware reads</li>
+                  <code>OMCI_CUSTOM</code> masks, which the stock firmware reads
+                  (this image reads one bit of <code>OMCI_CUSTOM_ME</code>, the VEIP slot, which reset clears)</li>
             </ul>
           </div>
         </div>

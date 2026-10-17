@@ -74,6 +74,13 @@ all)
 		<Value Name="NTP_SERVER" Value="192.168.0.2"/>
 XML
 	;;
+get)
+	# The stored value of one key, as `flash get` prints it: from the same XML.
+	# Prints nothing for a key the store does not hold.
+	# A key in /etc/config/getfake ("K=V" lines) wins: a test stores one there.
+	grep "^$2=" /etc/config/getfake 2>/dev/null && exit 0
+	"$0" all cs | sed -n "s/.*Name=\"$2\" Value=\"\([^\"]*\)\".*/$2=\1/p" | head -n 1
+	;;
 set)
 	echo "$2=$3"
 	;;
@@ -479,6 +486,88 @@ for bad in '123456789012345' 'a"b' 'a&b' 'a<b'; do
 done
 check "a non-ASCII ONU_HW_VERSION is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "ONU_HW_VERSION=caf$(printf '\303\251')" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
+# What the code that reads a key will accept is what the daemon accepts: an
+# address or mask the kernel refuses, a serial number the gponsn verb refuses,
+# a PLOAM password of the wrong length, a string wider than its OLT field.
+# A refused value is never stored, so none of these reaches flash.
+pt() {  # pt NAME VALUE: post one value, URL-encoded
+	curl -s -u "$AUTH" -X POST --data-urlencode "$1=$2" "http://127.0.0.1:$PORT/api/config"
+}
+pti() {  # pti NAME VALUE: the same, for an identity key, with the confirmation
+	curl -s -u "$AUTH" -X POST --data-urlencode "$1=$2" --data '_confirm=identity' "http://127.0.0.1:$PORT/api/config"
+}
+for bad in 0.0.0.0 127.0.0.1 224.0.0.1 255.255.255.255 192.168.010.1 192.168.1 1.2.3.4.5; do
+	check "an unusable LAN_IP_ADDR is refused: $bad" yes \
+		"$(err "$(pt LAN_IP_ADDR "$bad")" 'not valid for its type')"
+done
+for bad in 255.0.255.0 0.0.0.0 255.255.255.255 255.255.255.254 254.0.0.0 255.255.255.1; do
+	check "an unusable LAN_SUBNET is refused: $bad" yes \
+		"$(err "$(pt LAN_SUBNET "$bad")" 'not valid for its type')"
+done
+check "a /30 netmask passes" yes \
+	"$(err "$(pt LAN_SUBNET 255.255.255.252)" '"ok":true,"value":"255.255.255.252"')"
+check "a /8 netmask passes" yes \
+	"$(err "$(pt LAN_SUBNET 255.0.0.0)" '"ok":true,"value":"255.0.0.0"')"
+check "a usable LAN_IP_ADDR passes" yes \
+	"$(err "$(pt LAN_IP_ADDR 10.20.30.1)" '"ok":true,"value":"10.20.30.1"')"
+# The network and broadcast address of the mask are no host's, and network.sh
+# refuses them at boot: the daemon judges the address against the netmask
+# of the same request, else the stored one (the store here holds none, so /24,
+# as network.sh assumes), and the netmask against the address.
+for bad in 192.168.1.0 192.168.1.255 10.0.0.0; do
+	check "the network or broadcast address of the /24 is refused: $bad" yes \
+		"$(err "$(pt LAN_IP_ADDR "$bad")" 'network or broadcast address')"
+done
+check "the broadcast address of a /23 is refused against the netmask in the same request" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.255&LAN_SUBNET=255.255.254.0' "http://127.0.0.1:$PORT/api/config")" 'network or broadcast address')"
+check "the same address passes a /16 in the same request" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.255&LAN_SUBNET=255.255.0.0' "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_IP_ADDR","ok":true')"
+check "a netmask that makes the address in the same request its broadcast is refused" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.3&LAN_SUBNET=255.255.255.252' "http://127.0.0.1:$PORT/api/config")" 'netmask that makes')"
+printf 'LAN_SUBNET=255.255.254.0\nLAN_IP_ADDR=192.168.0.0\n' > /etc/config/getfake
+check "an address alone is judged against the STORED netmask (/23 here)" yes \
+	"$(err "$(pt LAN_IP_ADDR 192.168.1.255)" 'network or broadcast address')"
+check "a netmask alone is judged against the STORED address (a /23 network address here)" yes \
+	"$(err "$(pt LAN_SUBNET 255.255.254.0)" 'netmask that makes')"
+check "and passes against a stored address it leaves a host (192.168.0.0 on a /8)" yes \
+	"$(err "$(pt LAN_SUBNET 255.0.0.0)" '"ok":true,"value":"255.0.0.0"')"
+rm -f /etc/config/getfake
+check "the second address is judged the same way" yes \
+	"$(err "$(pt LAN_IP_ADDR2 192.168.100.255)" 'network or broadcast address')"
+for bad in ODI12345678 ODI0123456789 ODI01234567G 'OD 012345678'; do
+	check "a bad GPON_SN is refused: $bad" yes \
+		"$(err "$(pti GPON_SN "$bad")" 'not valid for its type')"
+done
+check "a GPON_SN of four characters and eight hex digits passes" yes \
+	"$(err "$(pti GPON_SN ODI0123456aB)" '"ok":true,"value":"ODI0123456aB"')"
+for bad in 3132333435363738393 313233343536373839303132 12345678 zz323334353637383930; do
+	check "a bad GPON_PLOAM_PASSWD is refused: $bad" yes \
+		"$(err "$(pti GPON_PLOAM_PASSWD "$bad")" 'not valid for its type')"
+done
+check "a GPON_PLOAM_PASSWD of 20 hex digits passes" yes \
+	"$(err "$(pti GPON_PLOAM_PASSWD 31323334353637383930)" '"ok":true')"
+check "a 14-character OMCI_SW_VER1 passes" yes \
+	"$(err "$(pt OMCI_SW_VER1 V1.1.6-2402021)" '"ok":true')"
+check "a 15-character OMCI_SW_VER1 is refused" yes \
+	"$(err "$(pt OMCI_SW_VER1 V1.1.6-24020212)" 'not valid for its type')"
+check "a 21-character GPON_ONU_MODEL is refused" yes \
+	"$(err "$(pti GPON_ONU_MODEL 123456789012345678901)" 'not valid for its type')"
+check "a 25-character LOID is refused" yes \
+	"$(err "$(pt LOID 1234567890123456789012345)" 'not valid for its type')"
+check "a 24-character LOID passes" yes \
+	"$(err "$(pt LOID 123456789012345678901234)" '"ok":true')"
+check "a 13-character LOID_PASSWD is refused" yes \
+	"$(err "$(pt LOID_PASSWD 1234567890123)" 'not valid for its type')"
+check "a LOID with a quote is refused" yes \
+	"$(err "$(pt LOID 'a"b')" 'not valid for its type')"
+for bad in 010203040506 000000000000 0102030405 01020304050607; do
+	check "a bad ELAN_MAC_ADDR is refused: $bad" yes \
+		"$(err "$(pti ELAN_MAC_ADDR "$bad")" 'not valid for its type')"
+done
+check "HW_SERIAL_NO is not held to the unicast rule" yes \
+	"$(err "$(pt HW_SERIAL_NO 010203040506)" '"name":"HW_SERIAL_NO","ok":true')"
+check "a unicast ELAN_MAC_ADDR passes" yes \
+	"$(err "$(pti ELAN_MAC_ADDR 023a21282716)" '"ok":true')"
 check "OLT_SW_DOWNLOAD reject is written and needs nothing" yes \
 	"$(err "$(post 'OLT_SW_DOWNLOAD=reject')" '"needs":[],"stock":false,"interrupts":false')"
 check "OLT_SW_DOWNLOAD accept is written" yes \
@@ -546,7 +635,7 @@ check "and /api/settings answers an empty list" '[]' \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")"
 mv /tmp/settings.tsv.kept /etc/confd/settings.tsv
 check "an identity key needs confirmation" yes \
-	"$(err "$(post 'GPON_SN=ODI12345678')" '_confirm=identity')"
+	"$(err "$(post 'GPON_SN=ODI012345678')" '_confirm=identity')"
 check "an unknown key is refused" yes \
 	"$(err "$(post 'NOT_A_REAL_KEY=1')" 'not in the schema')"
 
@@ -1107,7 +1196,7 @@ r=$(post "SNMP_SYS_NAME=$long")
 check "a value too long for its buffer is refused" yes "$(err "$r" 'too long')"
 check "and is not reported as saved" no "$(err "$r" '"ok":true' | grep -q '^yes' && echo yes || echo no)"
 mid=$(python3 -c 'print("y" * 40)')
-r=$(post "SNMP_SYS_NAME=$mid&GPON_SN=ODI12345678&_confirm=identity")
+r=$(post "SNMP_SYS_NAME=$mid&GPON_SN=ODI012345678&_confirm=identity")
 check "a long value before _confirm does not hide the confirmation" yes \
 	"$(err "$r" '"name":"GPON_SN","ok":true')"
 check "a value too long for form_get is not truncated into a match" 400 \

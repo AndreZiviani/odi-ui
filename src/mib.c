@@ -8,6 +8,37 @@
 #include "mib.h"
 
 /*
+ * Four decimal octets, 0-255, separated by dots, none with a leading zero
+ * (busybox ifconfig reads 010 as octal: 192.168.010.1 is 192.168.8.1).
+ */
+static int quad(const char *v, unsigned long o[4])
+{
+	unsigned long i = 0, n, digits;
+
+	for (n = 0; n < 4; n++) {
+		o[n] = 0;
+		digits = 0;
+		while (v[i] >= '0' && v[i] <= '9') {
+			if (digits && !o[n])
+				return 0;          /* leading zero */
+			o[n] = o[n] * 10 + (unsigned long)(v[i] - '0');
+			digits++;
+			i++;
+			if (digits > 3 || o[n] > 255)
+				return 0;
+		}
+		if (!digits)
+			return 0;
+		if (n < 3) {
+			if (v[i] != '.')
+				return 0;
+			i++;
+		}
+	}
+	return !v[i];
+}
+
+/*
  * Type-level validation, server side.
  *
  * The browser also checks ranges and option lists from meta.tsv, but that is a
@@ -48,15 +79,91 @@ int type_ok(const char *type, const char *v)
 		}
 		return dots == 3 && digits && digits <= 3 && oct <= 255;
 	}
-	if (seq(type, "mac") || seq(type, "hex32") || seq(type, "hexascii")) {
-		unsigned long want = seq(type, "mac") ? 12 : (seq(type, "hex32") ? 32 : 0);
+	if (seq(type, "ipv4host") || seq(type, "netmask")) {
+		/* What the kernel will take as the address, or as the netmask,
+		 * of an interface. network.sh reads these at every boot from a
+		 * partition a reflash never touches, and a value the kernel
+		 * refuses leaves the stick with no way in: so it is not stored. */
+		unsigned long o[4];
+
+		if (!quad(v, o))
+			return 0;
+		if (seq(type, "ipv4host"))
+			/* 1-223 and not 127: no 0/8, loopback, multicast,
+			 * reserved or broadcast address. */
+			return o[0] >= 1 && o[0] <= 223 && o[0] != 127;
+		{
+			/* Ones then zeros, between /8 and /30. */
+			unsigned long m = (o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3];
+			unsigned long inv = ~m & 0xffffffffUL;
+
+			if (inv & (inv + 1))
+				return 0;          /* not contiguous */
+			return o[0] == 255 && (m & 3) == 0;
+		}
+	}
+	if (seq(type, "mac") || seq(type, "elanmac") || seq(type, "hex32") ||
+	    seq(type, "hexascii") || seq(type, "hex20")) {
+		unsigned long want = (seq(type, "mac") || seq(type, "elanmac")) ? 12 :
+			(seq(type, "hex32") ? 32 : (seq(type, "hex20") ? 20 : 0));
 
 		for (i = 0; v[i]; i++)
 			if (hexval(v[i]) < 0)
 				return 0;
 		if (i % 2)
 			return 0;                  /* hex is whole bytes */
+		if (seq(type, "mac"))
+			return i == want;
+		if (seq(type, "elanmac")) {
+			/* The MAC of eth0 and the bridge (ELAN_MAC_ADDR only; the
+			 * other MAC-shaped keys are plain 12 hex digits): unicast
+			 * (the low bit of the first octet clear) and not all
+			 * zero. ifconfig refuses anything else, and the driver
+			 * default 00:00:00:01:00:02 then stays on every stick. */
+			unsigned long z = 0;
+
+			if (i != want || (hexval(v[1]) & 1))
+				return 0;
+			while (v[z] == '0')
+				z++;
+			return z != i;
+		}
 		return want ? (i == want) : 1;
+	}
+	if (seq(type, "gponsn")) {
+		/* The serial number as the kernel gponsn verb takes it: four
+		 * characters of vendor id, then eight hex digits
+		 * (odi_gpon_parse_sn). Anything else is refused there, and the
+		 * ONU then activates with a zero serial. */
+		for (i = 0; v[i]; i++) {
+			unsigned char c = (unsigned char)v[i];
+
+			if (i < 4) {
+				if (c <= 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
+					return 0;
+			} else if (hexval((char)c) < 0) {
+				return 0;
+			}
+		}
+		return i == 12;
+	}
+	if (type[0] == 's' && type[1] == 't' && type[2] == 'r' && type[3] >= '0' && type[3] <= '9') {
+		/* strN: printable ASCII, at most N characters, N being the width
+		 * of the field the OLT reads the value into. The three characters
+		 * flash refuses are refused here first. */
+		unsigned long max = 0, k;
+
+		for (k = 3; type[k] >= '0' && type[k] <= '9'; k++)
+			max = max * 10 + (unsigned long)(type[k] - '0');
+		if (type[k] || !max)
+			return 0;
+		for (i = 0; v[i]; i++) {
+			unsigned char c = (unsigned char)v[i];
+
+			if (i >= max || c < 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
+				return 0;
+		}
+		return 1;
 	}
 	if (seq(type, "hostport")) {
 		/* host or host:port, the form busybox ntpd -p and syslogd -R
@@ -448,6 +555,64 @@ int meta_ok(const char *name, const char *v, const char **why)
 		}
 	}
 	return 1;
+}
+
+/*
+ * The stored value of a key, by `flash get` (the same call safe-mode.sh makes).
+ * 0 when the key is absent or empty, or the call fails.
+ */
+int read_key(const char *addr, char *out, unsigned long cap)
+{
+	char *argv[4];
+	char buf[512];
+	unsigned long i = 0, vs, n = 0;
+
+	out[0] = 0;
+	argv[0] = "flash";
+	argv[1] = "get";
+	argv[2] = (char *)addr;
+	argv[3] = 0;
+	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf), FLASH_TIMEOUT_MS) <= 0)
+		return 0;
+	while (buf[i] && buf[i] != '=')
+		i++;
+	if (!buf[i])
+		return 0;
+	vs = ++i;
+	while (buf[i] && buf[i] != '\n' && buf[i] != '\r')
+		i++;
+	while (vs + n < i && n + 1 < cap)
+		out[n] = buf[vs + n], n++;
+	out[n] = 0;
+	return n > 0;
+}
+
+/*
+ * An address against its netmask: the network address (host bits all zero)
+ * and the broadcast address (all one) cannot be a host's. The kernel takes
+ * them, so type_ok cannot see it, and network.sh refuses them at boot, falling
+ * back to 192.168.1.1/24. The web page makes the same check in
+ * web/validate.js (hostMaskProblem); the three must agree.
+ *
+ * Returns 0 only when both parse as an address and a netmask and the address is
+ * one of the two; an unusable netmask is its own refusal, not this one's.
+ */
+int host_in_mask_ok(const char *ip, const char *mask)
+{
+	unsigned long a[4], m[4], host_zero = 1, host_ones = 1, k;
+
+	if (!type_ok("ipv4host", ip) || !type_ok("netmask", mask) ||
+	    !quad(ip, a) || !quad(mask, m))
+		return 1;
+	for (k = 0; k < 4; k++) {
+		unsigned long h = a[k] & (255 - m[k]);
+
+		if (h)
+			host_zero = 0;
+		if (h != 255 - m[k])
+			host_ones = 0;
+	}
+	return !host_zero && !host_ones;
 }
 
 /*

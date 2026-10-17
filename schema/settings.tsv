@@ -1,6 +1,8 @@
 # What the odi-oss image does with each config key. Hand-written, per image,
-# and the reason the UI shows 21 keys instead of 184: a key with no row here is
-# read by nothing on this image. It stays in the store, and in backups and
+# and the reason the UI offers 31 keys for editing instead of all 194: a key with
+# no row here is not acted on by this image (omcid reads one bit of
+# OMCI_CUSTOM_ME for the VEIP slot, and `omcicli` prints the other masks, which
+# changes nothing). It stays in the store, and in backups and
 # restores, because the config partition is shared with the stock firmware in
 # the other slot, which does read it -- but it is not offered for editing.
 #
