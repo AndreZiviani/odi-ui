@@ -333,6 +333,21 @@ void serve(int conn)
 	if (n <= 0)
 		return;
 
+	/*
+	 * Which name and which kind of caller, before anything else: a rebound
+	 * DNS name or a foreign page gets no 401 prompt and no work done. Before
+	 * request_path() for the usual reason, it reads headers.
+	 */
+	{
+		const char *why = request_refusal(req);
+
+		if (why) {
+			respond(conn, "403 Forbidden", "text/plain", 0);
+			put_fd(conn, why);
+			return;
+		}
+	}
+
 	/* Authenticate BEFORE parsing, not after: request_path() NUL-terminates
 	 * the method and the path in place, and the first of those NULs stops
 	 * any later scan for a header dead. That cost an hour of a correct
@@ -602,8 +617,12 @@ void serve(int conn)
 				int found = 0;
 
 				for (i = 0; del[i]; i++) {
-					if (del[i] < '0' || del[i] > '9')
-						break;
+					if (del[i] < '0' || del[i] > '9') {
+						/* Not a number is not line 0. */
+						respond(conn, "400 Bad Request", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"delete must be a line number\"}");
+						return;
+					}
 					want = want * 10 + (unsigned long)(del[i] - '0');
 				}
 				/* Rewrite in place without the wanted line. */
@@ -630,7 +649,7 @@ void serve(int conn)
 					put_fd(conn, "{\"ok\":false,\"error\":\"no such key\"}");
 					return;
 				}
-				if (write_file(SSHKEYS_PATH, keys, out, 0600) < 0) {
+				if (write_file_atomic(SSHKEYS_PATH, keys, out, 0600) < 0) {
 					respond(conn, "500 Internal Server Error", "application/json", 0);
 					put_fd(conn, "{\"ok\":false,\"error\":\"could not write authorized_keys\"}");
 					return;
@@ -693,7 +712,7 @@ void serve(int conn)
 				run_to_buf("/bin/mkdir", mk, junk, sizeof(junk),
 					  MKDIR_TIMEOUT_MS);
 			}
-			if (write_file(SSHKEYS_PATH, keys, (unsigned long)n, 0600) < 0) {
+			if (write_file_atomic(SSHKEYS_PATH, keys, (unsigned long)n, 0600) < 0) {
 				respond(conn, "500 Internal Server Error", "application/json", 0);
 				put_fd(conn, "{\"ok\":false,\"error\":\"could not write authorized_keys\"}");
 				return;

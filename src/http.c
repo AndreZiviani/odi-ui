@@ -21,6 +21,19 @@ void respond(int fd, const char *status_line, const char *ctype,
 	put_fd(fd, "\r\nContent-Type: ");
 	put_fd(fd, ctype);
 	put_fd(fd, "\r\nCache-Control: no-store\r\nConnection: close\r\n");
+	/*
+	 * What a browser is told about this page, on every response. The page
+	 * must never be framed (a framed copy is a button an attacker can place
+	 * under the operator pointer: reboot, add an ssh key), never sniffed
+	 * into something else, and never leaks its address in a Referer.
+	 * No `default-src`: index.html has one inline script (the theme, which
+	 * has to run before first paint) and a script-src policy would block it.
+	 */
+	put_fd(fd, "X-Content-Type-Options: nosniff\r\n"
+		   "X-Frame-Options: DENY\r\n"
+		   "Referrer-Policy: no-referrer\r\n"
+		   "Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'; "
+		   "form-action 'self'; object-src 'none'\r\n");
 	if (extra)
 		put_fd(fd, extra);
 	put_fd(fd, "\r\n");
@@ -257,6 +270,164 @@ int same_origin(const char *r)
 	return seq(o, host);
 }
 
+
+/*
+ * Whether `host` (a Host header, port allowed) is one a browser could only
+ * have reached by addressing this stick on the LAN.
+ *
+ * DNS rebinding is a web page that answers a name it owns first with its own
+ * server and then with the stick's address: the browser then treats the stick
+ * as that page's own origin, so the Origin check above passes (Origin and
+ * Host are both the attacker's name) and the page can read and write
+ * everything. What it cannot do is make the browser send an IP literal or a
+ * name it does not own as the Host, so the defence is to answer only those:
+ *
+ *   - an IP literal, v4 or bracketed v6;
+ *   - a single label (no dot): `odi`, `localhost`, a search-domain name;
+ *   - the suffixes that are private by convention and cannot be registered:
+ *     .local .lan .localdomain .home.arpa .internal .localhost .home;
+ *   - a name listed in /etc/config/confd.hosts, one per line, for a site that
+ *     gives the stick a public-looking name in its own DNS.
+ *
+ * A trailing dot (`stick.`) is not a single label and is refused on purpose:
+ * it is how a browser is told "this is already fully qualified".
+ */
+static int lower_eq(char a, char b)
+{
+	if (a >= 'A' && a <= 'Z')
+		a = (char)(a - 'A' + 'a');
+	if (b >= 'A' && b <= 'Z')
+		b = (char)(b - 'A' + 'a');
+	return a == b;
+}
+
+static int name_ends(const char *name, unsigned long n, const char *suffix)
+{
+	unsigned long sl = slen(suffix), k;
+
+	if (n < sl)
+		return 0;
+	for (k = 0; k < sl; k++)
+		if (!lower_eq(name[n - sl + k], suffix[k]))
+			return 0;
+	return 1;
+}
+
+static int host_listed(const char *name, unsigned long n)
+{
+	char list[1024];
+	unsigned long i = 0;
+	long got = read_file(HOSTS_PATH, list, sizeof(list));
+
+	if (got <= 0)
+		return 0;
+	while (list[i]) {
+		unsigned long ls = i, le = i, k = 0;
+
+		while (list[le] && list[le] != '\n' && list[le] != '\r')
+			le++;
+		if (le - ls == n) {
+			while (k < n && lower_eq(list[ls + k], name[k]))
+				k++;
+			if (k == n)
+				return 1;
+		}
+		i = le;
+		while (list[i] == '\n' || list[i] == '\r')
+			i++;
+	}
+	return 0;
+}
+
+static int host_ok(const char *host)
+{
+	static const char *const suffix[] = { ".local", ".lan", ".localdomain",
+		".home.arpa", ".internal", ".localhost", ".home", 0 };
+	unsigned long n = 0, i;
+	int dots = 0, alldigit = 1;
+
+	if (host[0] == '[') {
+		/* IPv6 literal: hex, colons and dots between the brackets. */
+		for (i = 1; host[i] && host[i] != ']'; i++)
+			if (hexval(host[i]) < 0 && host[i] != ':' && host[i] != '.')
+				return 0;
+		return host[i] == ']' && i > 2;
+	}
+	while (host[n] && host[n] != ':')
+		n++;
+	if (!n)
+		return 0;
+	for (i = 0; i < n; i++) {
+		if (host[i] == '.')
+			dots++;
+		else if (host[i] < '0' || host[i] > '9')
+			alldigit = 0;
+	}
+	if (alldigit && dots == 3)
+		return 1;
+	if (!dots)
+		return 1;
+	for (i = 0; suffix[i]; i++)
+		if (name_ends(host, n, suffix[i]))
+			return 1;
+	return host_listed(host, n);
+}
+
+/*
+ * The checks that apply to every request, authenticated or not, before the
+ * credential is even looked at: 0 when the request is fine, else the reason
+ * (a plain-text line for the 403).
+ *
+ * Sec-Fetch-Site is sent by every current browser and by nothing else. A
+ * cross-site or same-site value means a page that is not this one caused the
+ * request. The Origin check covers writes; this is what stops a GET from a
+ * foreign page, such as the diagnostics bundle, which holds the only thread
+ * for up to a minute.
+ */
+/* Offset of the request target in "METHOD target HTTP/x"; read only. */
+static unsigned long path_off(const char *r)
+{
+	unsigned long i = 0;
+
+	while (r[i] && r[i] != ' ' && r[i] != '\r' && r[i] != '\n')
+		i++;
+	return r[i] == ' ' ? i + 1 : i;
+}
+
+const char *request_refusal(const char *r)
+{
+	char host[128], site[32], mode[16], dest[16];
+
+	/*
+	 * header_copy cuts a value that does not fit, and a cut Host can look
+	 * like something else: 127 characters of one long label, or a prefix
+	 * ending in ".lan", with the attacker's own domain after the cut. A
+	 * Host that fills the buffer is refused, never judged by its prefix.
+	 */
+	if (header_copy(r, "host", host, sizeof(host)) &&
+	    (slen(host) + 1 >= sizeof(host) || !host_ok(host)))
+		return "this name is not one for this stick; open it by its IP address "
+		       "or list the name in /etc/config/confd.hosts\n";
+	if (header_copy(r, "sec-fetch-site", site, sizeof(site)) &&
+	    (seq(site, "cross-site") || seq(site, "same-site"))) {
+		/*
+		 * A link followed from another page is a top-level navigation
+		 * and is the operator acting: the UI itself offers one, to the
+		 * stick new address after a move, and that is cross-site by
+		 * definition. A fetch, an image, a script or a frame is not.
+		 * Never for /api/: a followed link has no business there, and
+		 * it is where the work and the data are.
+		 */
+		if (!spre(r + path_off(r), "/api/") &&
+		    header_copy(r, "sec-fetch-mode", mode, sizeof(mode)) &&
+		    header_copy(r, "sec-fetch-dest", dest, sizeof(dest)) &&
+		    seq(mode, "navigate") && seq(dest, "document"))
+			return 0;
+		return "cross-site request refused\n";
+	}
+	return 0;
+}
+
 /*
  * Load the expected credential into credbuf.
  *
@@ -369,7 +540,7 @@ int set_credential(const char *user, const char *pass, const char **why)
 
 	/* 0600: the file sits in /etc/config next to the device identity, and
 	 * this daemon is not the only thing that can read that directory. */
-	if (write_file(AUTH_PATH, credbuf, n, 0600) < 0) {
+	if (write_file_atomic(AUTH_PATH, credbuf, n, 0600) < 0) {
 		*why = "could not write /etc/config/confd.auth";
 		return 0;
 	}
