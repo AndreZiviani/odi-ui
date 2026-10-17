@@ -165,9 +165,16 @@
  * fits with room, and something much larger would not. UPLOAD_MAX is the guard:
  * it refuses before writing rather than after filling the filesystem every
  * other process on this device is also using.
+ *
+ * Not 8 MiB: /tmp is /var/tmp, a tmpfs the image caps at size=8m (odi-oss
+ * rootfs/skeleton/etc/fstab), so an upload of exactly the old limit filled it
+ * and left nothing for the flasher's own files (/tmp/fwu.d, fwu.log,
+ * fwu.state) or for `flash set`, which stages its temp file there. A real
+ * image is at most kernel plus rootfs partition, 3,997,696 bytes, plus the tar
+ * headers, fwu.sh and md5.txt: well under this.
  */
 #define UPLOAD_PATH  "/tmp/img.tar"
-#define UPLOAD_MAX   (8u * 1024u * 1024u)
+#define UPLOAD_MAX   (6u * 1024u * 1024u)
 
 /* The image ships these; /etc/config wins so the UI can be iterated without a
  * reflash, exactly as the exporter binary can. */

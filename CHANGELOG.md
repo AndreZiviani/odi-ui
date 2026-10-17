@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware upload: the size limit is 6 MiB, not 8. `/tmp` is a tmpfs the image
+  caps at 8 MiB, so an upload of exactly the old limit filled it and left no
+  room for the flasher's own files or for `flash set`, which stages its temp
+  file there. A real image (kernel plus rootfs partition, about 3.8 MiB) is
+  well under the new limit. Found in the night audit of the update path
+  (odi-oss investigations/odi-sfp-re/AUDIT-night-flash.md, finding 6).
 - Robustness, from the night audit (AUDIT-night-confd K7): a child confd
   runs can no longer hold the whole daemon after its output ends. The drain
   kept nothing past a full buffer and then waited for the child with a
