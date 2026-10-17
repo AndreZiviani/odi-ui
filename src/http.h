@@ -37,6 +37,8 @@ int header_copy(const char *r, const char *name, char *out, unsigned long cap);
 long read_request(int conn, char *buf, unsigned long cap,
 		  unsigned long *body_have, unsigned long *body_want);
 int same_origin(const char *r);
+/* Host and Sec-Fetch-Site: 0 if the request may go on, else a reason line. */
+const char *request_refusal(const char *r);
 int authorised(const char *r);
 /* Whether the credential came from the file or from the built-in default.
  * Reported to the page, because a well-known default that nobody can see is
@@ -47,6 +49,7 @@ int set_credential(const char *user, const char *pass, const char **why);
 unsigned long url_decode(const char *in, unsigned long i, char stop,
 			 char *out, unsigned long cap);
 int form_get(const char *body, const char *want, char *out, unsigned long cap);
+unsigned long url_skip(const char *in, unsigned long i);
 void serve_static(int fd, const char *name, const char *ctype);
 
 /*
