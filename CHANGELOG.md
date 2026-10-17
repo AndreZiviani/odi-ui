@@ -12,7 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   its netmask (no 0/8, loopback, multicast or broadcast address; a netmask is
   ones then zeros, /8 to /30; no leading zeros, which `ifconfig` reads as
   octal), because `network.sh` re-reads them at every boot and one the kernel
-  refuses left the stick unreachable; `gponsn` for `GPON_SN` (four characters
+  refuses left the stick unreachable. The address and the netmask are also
+  judged together, as `network.sh` judges them: the network or broadcast
+  address of the mask (192.168.1.0 and 192.168.1.255 on a /24) is refused, for
+  the primary and the second address, against the netmask in the same request,
+  else the stored one, else /24, and a netmask is refused when it makes the
+  address one of the two; `gponsn` for `GPON_SN` (four characters
   and eight hex digits, as the kernel `gponsn` verb takes); `hex20` for
   `GPON_PLOAM_PASSWD` (exactly 10 bytes; the kernel reads a shorter value as
   literal text); `str14`/`str20`/`str24`/`str12` for the software versions, the
@@ -26,6 +31,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `OMCI_CUSTOM_*` masks are read only by the stock firmware (omcid reads one
   bit of `OMCI_CUSTOM_ME`), and the "21 of 184 keys" figure is corrected
   (22 of the 184 stock keys, plus keys of the image's own).
+
+- Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
+  K5, K9): a request now has a ten-second wall-clock deadline and the upload
+  body two minutes, where before only each single read was bounded (15 s), so
+  one client sending a byte every few seconds held the single-threaded daemon
+  (and the Firmware tab during an update) indefinitely. `POST /api/upload` is
+  refused with 409 while `fwu_starter.sh` has a write running, because the
+  flasher reads that same file for the eighty seconds it takes and a second
+  upload truncated it under it; the file is created fresh (`O_EXCL`) instead
+  of opened through whatever is at the path; bytes beyond the declared
+  `Content-Length` are no longer counted as still to come (a subtraction that
+  wrapped and copied whatever followed into `/tmp` until it was full). A
+  form value that does not fit its buffer is an error instead of being cut:
+  `/api/config` answers it per key (`the value is too long ...`) and no longer
+  reports `ok` for a truncated `OMCI_FIXED_ME`; a long value of one key no
+  longer hides `_confirm=identity` after it.
+- Firmware upload: the size limit is 6 MiB, not 8. `/tmp` is a tmpfs the image
+  caps at 8 MiB, so an upload of exactly the old limit filled it and left no
+  room for the flasher's own files or for `flash set`, which stages its temp
+  file there. A real image (kernel plus rootfs partition, about 3.8 MiB) is
+  well under the new limit. Found in the night audit of the update path
+  (odi-oss investigations/odi-sfp-re/AUDIT-night-flash.md, finding 6).
+- Robustness, from the night audit (AUDIT-night-confd K7): a child confd
+  runs can no longer hold the whole daemon after its output ends. The drain
+  kept nothing past a full buffer and then waited for the child with a
+  blocking `waitpid()`, so a command that printed more than the buffer
+  (`omcicli mib get` on a big MIB) and then stalled froze every request; it
+  now keeps reading and discarding under the same inactivity bound, and a
+  child that closes its output but does not exit within two seconds is
+  killed and reported as a timeout like any other. Children also start with
+  SIGPIPE at its default action again: the daemon ignores it for itself and
+  an ignored signal survives `execve`, so scripts ran with it ignored.
+- Security and robustness, from the night audit (AUDIT-night-confd K6, K10):
+  `/etc/config/confd.auth` and the ssh `authorized_keys` are written to a
+  temporary file beside them and renamed into place, instead of truncated and
+  rewritten. A power cut during a password change used to leave an empty
+  credential file, which the UI reads as "no credential" and answers with the
+  default one; during a key change it left a truncated key file on an image
+  that has no password login. `delete=` on `/api/sshkeys` with anything but a
+  line number is now a 400; it used to delete line 0 (`delete=abc`) or the
+  leading digits (`delete=1x`).
+- Security, from the night audit (AUDIT-night-confd K2, K8): confd answers only
+  requests whose `Host` is a name a browser can only have reached on the LAN: an
+  IP literal, a single label, or a private suffix (`.local`, `.lan`, `.home.arpa`
+  and the like). Any other name gets 403 before the password prompt, which stops
+  a web page from reaching the stick through DNS rebinding (the page then looks
+  same-origin to the browser and could drive every route with the default
+  password). A site that gives the stick a public-looking name lists it in
+  `/etc/config/confd.hosts`, one per line. A request that a browser marks
+  `Sec-Fetch-Site: cross-site` or `same-site` is refused unless it is a followed
+  link, so a page cannot make the browser fetch routes such as the diagnostics
+  bundle. Every response now carries `X-Frame-Options: DENY`, a CSP
+  `frame-ancestors 'none'`, `nosniff` and `Referrer-Policy: no-referrer`, so the
+  page cannot be framed under an operator pointer.
+
+- Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
+  (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
+  the web checks, AGENTS.md and comments, and the fixture README no longer
+  names an OLT vendor. Released sections of this file are unchanged.
 - Config, Expert settings: three new controls for what the stick presents to
   the OLT (odi-oss #104 has the keys): *Create a VEIP* (`OMCI_VEIP`, a select:
   create, the default, or none for a PPTP-only ONU), *VEIP slot*

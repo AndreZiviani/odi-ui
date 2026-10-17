@@ -555,6 +555,64 @@ int meta_ok(const char *name, const char *v, const char **why)
 }
 
 /*
+ * The stored value of a key, by `flash get` (the same call safe-mode.sh makes).
+ * 0 when the key is absent or empty, or the call fails.
+ */
+int read_key(const char *addr, char *out, unsigned long cap)
+{
+	char *argv[4];
+	char buf[512];
+	unsigned long i = 0, vs, n = 0;
+
+	out[0] = 0;
+	argv[0] = "flash";
+	argv[1] = "get";
+	argv[2] = (char *)addr;
+	argv[3] = 0;
+	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf), FLASH_TIMEOUT_MS) <= 0)
+		return 0;
+	while (buf[i] && buf[i] != '=')
+		i++;
+	if (!buf[i])
+		return 0;
+	vs = ++i;
+	while (buf[i] && buf[i] != '\n' && buf[i] != '\r')
+		i++;
+	while (vs + n < i && n + 1 < cap)
+		out[n] = buf[vs + n], n++;
+	out[n] = 0;
+	return n > 0;
+}
+
+/*
+ * An address against its netmask: the network address (host bits all zero)
+ * and the broadcast address (all one) cannot be a host's. The kernel takes
+ * them, so type_ok cannot see it, and network.sh refuses them at boot, falling
+ * back to 192.168.1.1/24. The web page makes the same check in
+ * web/validate.js (hostMaskProblem); the three must agree.
+ *
+ * Returns 0 only when both parse as an address and a netmask and the address is
+ * one of the two; an unusable netmask is its own refusal, not this one's.
+ */
+int host_in_mask_ok(const char *ip, const char *mask)
+{
+	unsigned long a[4], m[4], host_zero = 1, host_ones = 1, k;
+
+	if (!type_ok("ipv4host", ip) || !type_ok("netmask", mask) ||
+	    !quad(ip, a) || !quad(mask, m))
+		return 1;
+	for (k = 0; k < 4; k++) {
+		unsigned long h = a[k] & (255 - m[k]);
+
+		if (h)
+			host_zero = 0;
+		if (h != 255 - m[k])
+			host_ones = 0;
+	}
+	return !host_zero && !host_ones;
+}
+
+/*
  * Write one key and read it back.
  *
  * `flash set` is used rather than driving xmlconfig directly because it also

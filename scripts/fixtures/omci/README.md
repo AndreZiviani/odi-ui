@@ -58,13 +58,13 @@ side. Replace it with a real listing once one has been read off a stick.
 
 | file | stick | why it is here |
 |---|---|---|
-| `7-SWImage.txt` | Claro | the attribute names are `Active`/`Committed`/`Valid` — **not** `IsActive`/`IsCommitted`, which the Services card had assumed |
-| `131-OltG.txt` | Claro | `OltVendorId: 0x48575443` — "HWTC", Huawei |
-| `11-EthUni-claro.txt` | Claro | the physical UNI, entity `0x0101` |
-| `329-VEIP-claro.txt` / `-vero.txt` | both | same entity `0x0601`, opposite Admin/Oper state on two lines that both forward — which is why neither is decoded |
-| `47-MacBriPortCfgData-claro.txt` / `-vero.txt` | both | **the difference between the two lines**: Claro's bridge carries the UNI *and* the VEIP, Vero's carries the VEIP only |
-| `266-GemIwTp-claro.txt` | Claro | its entity ids are exactly the `TPType 3` pointers in ME 47, which is what validates the TP-type mapping |
-| `_tables-names.txt` | Claro | the 81 table names `omcicli get tables` reports, extracted from its `TableId [n] Name: X!` lines. **23 differ from the plugin filenames** (`AuthSecMethod` vs `Authen_Sec_Method`) and some contain spaces |
+| `7-SWImage.txt` | ISP1 | the attribute names are `Active`/`Committed`/`Valid` — **not** `IsActive`/`IsCommitted`, which the Services card had assumed |
+| `131-OltG.txt` | ISP1 | `OltVendorId: 0x48575443` — an OLT vendor code |
+| `11-EthUni-isp1.txt` | ISP1 | the physical UNI, entity `0x0101` |
+| `329-VEIP-isp1.txt` / `-isp2.txt` | both | same entity `0x0601`, opposite Admin/Oper state on two lines that both forward — which is why neither is decoded |
+| `47-MacBriPortCfgData-isp1.txt` / `-isp2.txt` | both | **the difference between the two lines**: ISP1's bridge carries the UNI *and* the VEIP, ISP2's carries the VEIP only |
+| `266-GemIwTp-isp1.txt` | ISP1 | its entity ids are exactly the `TPType 3` pointers in ME 47, which is what validates the TP-type mapping |
+| `_tables-names.txt` | ISP1 | the 81 table names `omcicli get tables` reports, extracted from its `TableId [n] Name: X!` lines. **23 differ from the plugin filenames** (`AuthSecMethod` vs `Authen_Sec_Method`) and some contain spaces |
 
 `84-VlanTagFilterData.txt` and `171-ExtVlanTagOperCfgData.txt` remain the
 thread captures: two attempts to replace them with fresh captures coincided

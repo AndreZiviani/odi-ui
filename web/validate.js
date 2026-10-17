@@ -128,6 +128,45 @@ function fixedMeProblem(raw) {
  * from this page. What they buy is telling the user before the write instead of
  * after it.
  */
+/*
+ * The management address and its netmask are judged together, as network.sh
+ * judges them at every boot (and src/mib.c, lan_pair_refusal, on the daemon
+ * side): an address that is the network or broadcast address of its mask is
+ * refused. The other half is the pending edit, else the stored value, else
+ * the /24 network.sh assumes for a missing mask. Null when fine, or when the
+ * other half is itself unusable (it has its own message).
+ */
+const LAN_PAIRS = {
+  LAN_IP_ADDR: ['LAN_SUBNET', true], LAN_SUBNET: ['LAN_IP_ADDR', false],
+  LAN_IP_ADDR2: ['LAN_SUBNET2', true], LAN_SUBNET2: ['LAN_IP_ADDR2', false],
+};
+function quadOf(v) {
+  const o = String(v).split('.');
+  if (o.length !== 4 || !o.every((x) => /^(0|[1-9]\d{0,2})$/.test(x) && Number(x) <= 255)) return null;
+  return o.map(Number);
+}
+function hostMaskProblem(name, raw) {
+  const pair = LAN_PAIRS[name];
+  if (!pair) return null;
+  const [other, isAddr] = pair;
+  let o = EDITS.has(other) ? EDITS.get(other) : S.VALUES[other];
+  if (isAddr && !o) o = '255.255.255.0';
+  if (!o) return null;
+  const ip = quadOf(isAddr ? raw : o);
+  const mk = quadOf(isAddr ? o : raw);
+  if (!ip || !mk) return null;
+  if (ip[0] < 1 || ip[0] > 223 || ip[0] === 127) return null;
+  const inv = (~(((mk[0] << 24) | (mk[1] << 16) | (mk[2] << 8) | mk[3]) >>> 0)) >>> 0;
+  if (mk[0] !== 255 || (inv & (inv + 1)) !== 0 || (inv & 3) !== 3) return null;
+  const host = ip.map((x, i) => x & (255 - mk[i]));
+  const zero = host.every((x) => x === 0);
+  const ones = host.every((x, i) => x === 255 - mk[i]);
+  if (!zero && !ones) return null;
+  return isAddr
+    ? 'the network or broadcast address of the netmask, which no host can use'
+    : 'a netmask that makes the management address its network or broadcast address';
+}
+
 function valueProblem(row, raw) {
   /* hostport keys (SYSLOG_SERVER, NTP_SERVER), ascii14 (ONU_HW_VERSION) and
      fixedme (OMCI_FIXED_ME) are odi-only and empty clears them. */
@@ -159,6 +198,8 @@ function valueProblem(row, raw) {
         return 'not a netmask the stick can use: ones then zeros, from /8 to /30 (255.255.255.0)';
       }
     }
+    const pairBad = hostMaskProblem(row.name, raw);
+    if (pairBad) return pairBad;
   }
   if (row.type === 'hostport') {
     const m = /^([A-Za-z0-9.-]+)(?::(\d{1,5}))?$/.exec(raw);
@@ -257,6 +298,6 @@ function invalidEdits() {
 }
 
 export {
-  rangeBad, valueProblem, hexAscii, validateInput, invalidEdits,
+  rangeBad, valueProblem, hostMaskProblem, hexAscii, validateInput, invalidEdits,
   fixedMeRowProblem, fixedMeRowProblems, fixedMeSetProblem, fixedMeParse, fixedMeSerialise, FME_MAX_ENTRIES,
 };

@@ -129,12 +129,12 @@ const OMCI = {
   171: fx('171-ExtVlanTagOperCfgData.txt'),
   7: fx('7-SWImage.txt'),
   131: fx('131-OltG.txt'),
-  11: fx('11-EthUni-claro.txt'),
-  329: fx('329-VEIP-claro.txt'),
-  47: fx('47-MacBriPortCfgData-claro.txt'),
+  11: fx('11-EthUni-isp1.txt'),
+  329: fx('329-VEIP-isp1.txt'),
+  47: fx('47-MacBriPortCfgData-isp1.txt'),
 };
-const OMCI_VERO_47 = fx('47-MacBriPortCfgData-vero.txt');
-const OMCI_CLARO_171 = fx('171-claro.txt');
+const OMCI_ISP2_47 = fx('47-MacBriPortCfgData-isp2.txt');
+const OMCI_ISP1_171 = fx('171-isp1.txt');
 
 /*
  * ME 7 has no capture yet. The FRAME below is verified -- it is the one the two
@@ -385,22 +385,22 @@ ok(/running/.test(text) && /committed/.test(text),
    'Active and Committed are read -- the card assumed IsActive/IsCommitted and showed neither');
 ok(/HWTC/.test(text), 'the OLT vendor code is decoded from its hex word');
 ok(/carries both the physical Ethernet UNI and the VEIP/.test(text),
-   'Claro: the bridge carries the UNI and the VEIP');
+   'ISP1: the bridge carries the UNI and the VEIP');
 
 /* The same card on the other line, which is the difference that matters. */
-OMCI[47] = OMCI_VERO_47;
+OMCI[47] = OMCI_ISP2_47;
 await renderServices(true);
-const veroText = JSON.stringify(doc.querySelector('#services-cards'),
+const isp2Text = JSON.stringify(doc.querySelector('#services-cards'),
                                 (k, v) => (k === 'classList' ? undefined : v));
-ok(/carries the VEIP, not the physical port/.test(veroText),
-   'Vero: the bridge carries the VEIP alone');
-OMCI[47] = fx('47-MacBriPortCfgData-claro.txt');
+ok(/carries the VEIP, not the physical port/.test(isp2Text),
+   'ISP2: the bridge carries the VEIP alone');
+OMCI[47] = fx('47-MacBriPortCfgData-isp1.txt');
 
-/* Claro's real ME 171: most rows add no tag at all (treatment PRI 15, a 3-bit
+/* ISP1's real ME 171: most rows add no tag at all (treatment PRI 15, a 3-bit
    field, so out of range and unspecified). Rendering those as "VLAN 0" is a
    VLAN id nobody set, printed as though the OLT had set it -- which is what
    the live page did until a stick showed it. */
-OMCI[171] = OMCI_CLARO_171;
+OMCI[171] = OMCI_ISP1_171;
 await renderServices(true);
 const c171 = JSON.stringify(doc.querySelector('#services-cards'),
                             (k, v) => (k === 'classList' ? undefined : v));
@@ -464,7 +464,7 @@ ok(/The MIB holds none/.test(noneText), 'a good empty read of an OLT-created tab
 Object.assign(OMCI, SAVED);
 
 /* T-CONTs the OLT never assigned carry Alloc-ID 255 (G.988 9.2.2), and a
-   live claro stick has eleven of them beside five in use. SYNTHETIC, in the
+   live ISP1 stick has eleven of them beside five in use. SYNTHETIC, in the
    odi-oss dump shape, with that stick's five Alloc-IDs. */
 {
   const rows = [282, 794, 1050, 1306, 538, ...Array(11).fill(255)];
@@ -730,6 +730,33 @@ ok(['10.20.30.1', '192.168.100.1', '1.0.0.1', '223.255.255.254'].every((v) => !v
    'ipv4host accepts addresses the kernel takes');
 ok(['0.0.0.0', '127.0.0.1', '224.0.0.1', '255.255.255.255', '192.168.010.1', '192.168.1', '1.2.3.4.5', '256.1.1.1']
   .every((v) => vp('ipv4host', v)), 'ipv4host rejects 0/8, loopback, multicast, broadcast, leading zeros and malformed');
+/* The address and its netmask are judged together (src/mib.c lan_pair_refusal,
+   network.sh valid_host): the same values are accepted and refused. */
+{
+  const { S: St, EDITS: Ed } = await import(join(root, 'web', 'state.js'));
+  const addr = (v, name = 'LAN_IP_ADDR') => valueProblem({ name, type: 'ipv4host' }, v);
+  const mask = (v, name = 'LAN_SUBNET') => valueProblem({ name, type: 'netmask' }, v);
+  const keep = St.VALUES;
+  St.VALUES = {};
+  Ed.clear();
+  ok(['192.168.1.0', '192.168.1.255', '10.0.0.0', '10.255.255.255'].every((v) => /network or broadcast/.test(addr(v))),
+     'with no stored netmask the address is judged on a /24: network and broadcast are refused');
+  ok(['192.168.1.1', '192.168.1.254', '10.0.0.1'].every((v) => !addr(v)), 'and its neighbours are accepted');
+  ok(/network or broadcast/.test(addr('192.168.100.255', 'LAN_IP_ADDR2')) && !addr('192.168.100.1', 'LAN_IP_ADDR2'),
+     'the second address is held to the same rule');
+  St.VALUES = { LAN_SUBNET: '255.255.254.0', LAN_IP_ADDR: '192.168.0.0' };
+  ok(/network or broadcast/.test(addr('192.168.1.255')) && !addr('192.168.1.0') && /network or broadcast/.test(addr('192.168.0.0')),
+     'against the stored /23: 192.168.1.255 and 192.168.0.0 are refused, 192.168.1.0 is a host');
+  ok(/netmask that makes/.test(mask('255.255.254.0')) && !mask('255.0.0.0'),
+     'a netmask is judged against the stored address: the /23 makes 192.168.0.0 a network address, a /8 does not');
+  Ed.set('LAN_SUBNET', '255.255.255.252');
+  ok(/network or broadcast/.test(addr('192.168.1.7')) && /network or broadcast/.test(addr('192.168.1.4')) && !addr('192.168.1.5'),
+     'a pending netmask edit counts: on a /30, .4 and .7 are refused, .5 is a host');
+  Ed.clear();
+  St.VALUES = { LAN_SUBNET: '255.0.255.0' };
+  ok(!addr('192.168.1.255'), 'an unusable stored netmask is not this check (it has its own message)');
+  St.VALUES = keep;
+}
 ok(['255.255.255.0', '255.0.0.0', '255.255.255.252', '255.255.128.0'].every((v) => !vp('netmask', v)),
    'netmask accepts ones then zeros from /8 to /30');
 ok(['255.0.255.0', '0.0.0.0', '255.255.255.255', '255.255.255.254', '254.0.0.0', '255.255.255.1', '255.255.255.00']
