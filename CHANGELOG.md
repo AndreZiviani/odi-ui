@@ -15,6 +15,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that has no password login. `delete=` on `/api/sshkeys` with anything but a
   line number is now a 400; it used to delete line 0 (`delete=abc`) or the
   leading digits (`delete=1x`).
+- Security, from the night audit (AUDIT-night-confd K2, K8): confd answers only
+  requests whose `Host` is a name a browser can only have reached on the LAN: an
+  IP literal, a single label, or a private suffix (`.local`, `.lan`, `.home.arpa`
+  and the like). Any other name gets 403 before the password prompt, which stops
+  a web page from reaching the stick through DNS rebinding (the page then looks
+  same-origin to the browser and could drive every route with the default
+  password). A site that gives the stick a public-looking name lists it in
+  `/etc/config/confd.hosts`, one per line. A request that a browser marks
+  `Sec-Fetch-Site: cross-site` or `same-site` is refused unless it is a followed
+  link, so a page cannot make the browser fetch routes such as the diagnostics
+  bundle. Every response now carries `X-Frame-Options: DENY`, a CSP
+  `frame-ancestors 'none'`, `nosniff` and `Referrer-Policy: no-referrer`, so the
+  page cannot be framed under an operator pointer.
 
 - Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
   (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
