@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.5.0 (2026-10-17)
+
 - Web: the page no longer judges an address or netmask twice (an older copy
   of the rule, left by a merge, ran before the current one and gave the older
   error messages).
