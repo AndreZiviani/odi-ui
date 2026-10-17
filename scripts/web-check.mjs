@@ -769,8 +769,12 @@ ok(['3132333435363738393', '313233343536373839303132', '1234', 'zz32333435363738
    'hex20 rejects odd, longer, shorter and non-hex values (the kernel would read a shorter one as text)');
 ok(!vp('str14', 'V1.1.6-2402021') && vp('str14', 'V1.1.6-24020212') && vp('str14', 'a"b') && vp('str14', 'caf\u00e9'),
    'strN accepts up to N printable characters and rejects one more, a quote and non-ASCII');
-ok(!vp('mac', '023a21282716') && vp('mac', '010203040506') && vp('mac', '000000000000') && vp('mac', '0102030405'),
-   'mac rejects a multicast and an all-zero address');
+ok(!vp('elanmac', '023a21282716') && vp('elanmac', '010203040506') && vp('elanmac', '000000000000') && vp('elanmac', '0102030405'),
+   'elanmac rejects a multicast and an all-zero address');
+ok(!vp('mac', '023a21282716') && !vp('mac', '010203040506') && !vp('mac', '000000000000') && vp('mac', '0102030405'),
+   'mac is plain 12 hex digits: HW_SERIAL_NO and WLAN_MAC_ADDR are not held to the unicast rule');
+ok(S.SCHEMA.find((r) => r.name === 'ELAN_MAC_ADDR').type === 'elanmac'
+   && S.SCHEMA.find((r) => r.name === 'HW_SERIAL_NO').type === 'mac', 'only ELAN_MAC_ADDR has the unicast type');
 ok(['LAN_IP_ADDR', 'LAN_IP_ADDR2'].every((n) => S.SCHEMA.find((r) => r.name === n).type === 'ipv4host')
    && ['LAN_SUBNET', 'LAN_SUBNET2'].every((n) => S.SCHEMA.find((r) => r.name === n).type === 'netmask')
    && S.SCHEMA.find((r) => r.name === 'GPON_SN').type === 'gponsn'

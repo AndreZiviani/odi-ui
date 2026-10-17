@@ -102,9 +102,9 @@ int type_ok(const char *type, const char *v)
 			return o[0] == 255 && (m & 3) == 0;
 		}
 	}
-	if (seq(type, "mac") || seq(type, "hex32") || seq(type, "hexascii") ||
-	    seq(type, "hex20")) {
-		unsigned long want = seq(type, "mac") ? 12 :
+	if (seq(type, "mac") || seq(type, "elanmac") || seq(type, "hex32") ||
+	    seq(type, "hexascii") || seq(type, "hex20")) {
+		unsigned long want = (seq(type, "mac") || seq(type, "elanmac")) ? 12 :
 			(seq(type, "hex32") ? 32 : (seq(type, "hex20") ? 20 : 0));
 
 		for (i = 0; v[i]; i++)
@@ -112,11 +112,14 @@ int type_ok(const char *type, const char *v)
 				return 0;
 		if (i % 2)
 			return 0;                  /* hex is whole bytes */
-		if (seq(type, "mac")) {
-			/* The MAC of eth0 and the bridge: unicast (the low bit of
-			 * the first octet clear) and not all zero. ifconfig
-			 * refuses anything else, and the driver default
-			 * 00:00:00:01:00:02 then stays on every stick. */
+		if (seq(type, "mac"))
+			return i == want;
+		if (seq(type, "elanmac")) {
+			/* The MAC of eth0 and the bridge (ELAN_MAC_ADDR only; the
+			 * other MAC-shaped keys are plain 12 hex digits): unicast
+			 * (the low bit of the first octet clear) and not all
+			 * zero. ifconfig refuses anything else, and the driver
+			 * default 00:00:00:01:00:02 then stays on every stick. */
 			unsigned long z = 0;
 
 			if (i != want || (hexval(v[1]) & 1))

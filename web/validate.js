@@ -219,10 +219,13 @@ function valueProblem(row, raw) {
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';
   }
-  if (row.type === 'mac' && (parseInt(raw[1], 16) & 1)) {
+  if (row.type === 'elanmac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
+    return 'must be 12 hex digits, no separators';
+  }
+  if (row.type === 'elanmac' && (parseInt(raw[1], 16) & 1)) {
     return 'a multicast address (the second digit must be even); the stick cannot use it';
   }
-  if (row.type === 'mac' && /^0+$/.test(raw)) return 'all zeros is not an address';
+  if (row.type === 'elanmac' && /^0+$/.test(raw)) return 'all zeros is not an address';
   if (row.type === 'gponsn' && !/^[\x21-\x7e]{4}[0-9a-fA-F]{8}$/.test(raw)) {
     return 'four characters of vendor id and eight hex digits, 12 in all';
   }

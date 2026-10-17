@@ -564,6 +564,8 @@ for bad in 010203040506 000000000000 0102030405 01020304050607; do
 	check "a bad ELAN_MAC_ADDR is refused: $bad" yes \
 		"$(err "$(pti ELAN_MAC_ADDR "$bad")" 'not valid for its type')"
 done
+check "HW_SERIAL_NO is not held to the unicast rule" yes \
+	"$(err "$(pt HW_SERIAL_NO 010203040506)" '"name":"HW_SERIAL_NO","ok":true')"
 check "a unicast ELAN_MAC_ADDR passes" yes \
 	"$(err "$(pti ELAN_MAC_ADDR 023a21282716)" '"ok":true')"
 check "OLT_SW_DOWNLOAD reject is written and needs nothing" yes \

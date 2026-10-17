@@ -25,7 +25,7 @@ WRITABLE = {"yes", "never", "identity"}
 # anything else -- so a typo here is a key that cannot be written at all, which
 # is the safe direction but still a bug, and one nothing else would report.
 # Keep the two in step: adding a type means adding it in both places.
-TYPES = {"int", "ipv4", "ipv4host", "netmask", "mac", "hex32", "hexascii", "hex20", "gponsn",
+TYPES = {"int", "ipv4", "ipv4host", "netmask", "mac", "elanmac", "hex32", "hexascii", "hex20", "gponsn",
          "hostport", "ascii14", "fixedme", "string"}
 STRN = re.compile(r"^str[1-9][0-9]*$")   # strN: printable ASCII, at most N characters
 

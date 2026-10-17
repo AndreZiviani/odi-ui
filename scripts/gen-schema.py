@@ -82,6 +82,9 @@ TYPE_OVERRIDE = {
     # re-read at every boot and leaves the stick with no way in.
     "LAN_IP_ADDR": "ipv4host", "LAN_IP_ADDR2": "ipv4host",
     "LAN_SUBNET": "netmask", "LAN_SUBNET2": "netmask",
+    # The MAC network.sh puts on eth0 and the bridge: unicast and not all zero,
+    # or ifconfig refuses it. The other MAC-shaped keys keep the plain type.
+    "ELAN_MAC_ADDR": "elanmac",
     # 4 characters and 8 hex digits: what the kernel gponsn verb takes.
     "GPON_SN": "gponsn",
     # Exactly 10 bytes as hex: the kernel reads shorter values as literal text.

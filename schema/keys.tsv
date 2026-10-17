@@ -136,7 +136,7 @@ AUTO_PVC_SEARCH_TBL[7].VCI	cs	AUTO_PVC_SEARCH_TBL.7.VCI	switch	int	unknown	yes	n
 SUPER_NAME	hs	SUPER_NAME	accounts	string	unknown	yes	no
 SUPER_PASSWORD	hs	SUPER_PASSWORD	accounts	string	unknown	yes	no
 TEST_MAC_ADDR	hs	TEST_MAC_ADDR	other	string	unknown	yes	no
-ELAN_MAC_ADDR	hs	ELAN_MAC_ADDR	hardware	mac	unknown	identity	yes
+ELAN_MAC_ADDR	hs	ELAN_MAC_ADDR	hardware	elanmac	unknown	identity	yes
 WLAN_MAC_ADDR	hs	WLAN_MAC_ADDR	hardware	mac	unknown	identity	no
 MAC_KEY	hs	MAC_KEY	hardware	hex32	unknown	identity	yes
 RESTORE_DEFAULT_EN	hs	RESTORE_DEFAULT_EN	other	int	unknown	yes	no

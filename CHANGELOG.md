@@ -22,8 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `GPON_PLOAM_PASSWD` (exactly 10 bytes; the kernel reads a shorter value as
   literal text); `str14`/`str20`/`str24`/`str12` for the software versions, the
   model and the LOID keys, the width of the field the OLT reads (omcid answered
-  a longer value as absent). `ELAN_MAC_ADDR` refuses a multicast or all-zero
-  MAC. `scripts/gen-schema.py` keeps the types in `TYPE_OVERRIDE`.
+  a longer value as absent). `ELAN_MAC_ADDR`, with its own type `elanmac`, refuses a
+  multicast or all-zero MAC (the other MAC-shaped keys, `HW_SERIAL_NO` and
+  `WLAN_MAC_ADDR`, stay plain 12 hex digits). `scripts/gen-schema.py` keeps the types in `TYPE_OVERRIDE`.
 - Config: the VEIP slot row says when it has no effect: omcid applies the slot
   only while `OMCI_CUSTOM_ME` has bit 256, the stock default of that key does
   not, and it is read-only on the Stock keys tab. The row shows the value to
