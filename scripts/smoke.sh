@@ -841,6 +841,19 @@ check "a bad partition is refused before nv is asked" 400 \
 	"$(code -u "$AUTH" -X POST -d 'action=commit&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
 check "and nv was not run" no "$(test -e /tmp/nv.calls && echo yes || echo no)"
 
+# Try. A slot is armed only when its kernel partition holds a uImage the
+# bootloader would boot (src/uimage.h); here there is no /proc/mtd partition
+# named k0 or k1, so both are refused, and nv is never asked to write
+# sw_tryactive. The CRC logic itself is scripts/uimage-test.sh.
+echo "== try"
+rm -f /tmp/nv.calls
+r=$(fw 'action=try&partition=1')
+check "a trial of a slot with no bootable kernel is refused" yes "$(err "$r" '"ok":false,"error":"partition 1 does not hold a kernel the bootloader would boot')"
+check "and nv was not asked to arm it" no "$(test -e /tmp/nv.calls && grep -q 'sw_tryactive' /tmp/nv.calls && echo yes || echo no)"
+check "a bad partition is refused before anything is read" 400 \
+	"$(code -u "$AUTH" -X POST -d 'action=try&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
+rm -f /tmp/nv.calls
+
 # A background write, as odi-oss fwu_starter.sh leaves it: the state and the
 # log are reported so the page can follow it.
 printf 'running 4242 1\n' > /tmp/fwu.state

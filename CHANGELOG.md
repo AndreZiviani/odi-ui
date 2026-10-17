@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: Try refuses a partition whose kernel U-Boot would not boot. The
+  daemon checks the uImage magic, header CRC and data CRC of the kernel
+  partition (the same checks bootm makes, `src/uimage.h`, read in 64 KB steps
+  with no child process) before it writes `sw_tryactive`, and the page shows
+  a hint instead of the button for a partition with no uImage at all. An
+  erased partition, or one whose flash was cut short, used to be armed like
+  any other and ended at the bootloader prompt. Found in an audit of the
+  update path; odi-oss writes the kernel last since then, so an interrupted
+  flash always fails this check.
+  `scripts/uimage-test.sh` checks the CRC code against python's zlib.
+
 - Validation of every input, stacked on the config-key work above (night audit
   2026-10-16, "make sure the web UI validates all inputs"). The daemon first,
   then the page with the same rule, and one table of accepted and refused
