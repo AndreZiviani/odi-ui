@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- The page uses the full window width: `main`, the banners, the error box and the save bar no longer stop at 1180 px, and callouts (the default password notice among them), help text, tab ledes and the "+ more" disclosures no longer stop at 70-72 characters.
+- The page uses the full window width: `main`, the banners, the error box and the save bar no longer stop at 1180 px.
 - Config: a setting's input or dropdown fills its column
 - Status: the receive and transmit meters sit side by side when there is room for both (320 px each), and stack as before on a phone; the "class B+..." line under each is centred.
 - Forwarding and Learned addresses share a row in two columns above 900 px, and a rule separates Raw diag output from them.
