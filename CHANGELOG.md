@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
+  (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
+  the web checks, AGENTS.md and comments, and the fixture README no longer
+  names an OLT vendor. Released sections of this file are unchanged.
 - Config, Expert settings: three new controls for what the stick presents to
   the OLT (odi-oss #104 has the keys): *Create a VEIP* (`OMCI_VEIP`, a select:
   create, the default, or none for a PPTP-only ONU), *VEIP slot*
