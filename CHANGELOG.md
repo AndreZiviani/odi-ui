@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Restore: the differences are a table headed Setting / On the stick / In the backup, with the stick's value muted, the backup's in the blue of a pending change, and identity keys tagged as on the Config tab.
+
 ## v1.5.1 (2026-10-17)
 
 - The page uses the full window width: `main`, the banners, the error box and the save bar no longer stop at 1180px.
