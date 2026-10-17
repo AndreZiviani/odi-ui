@@ -1176,7 +1176,7 @@ r=$(post "SNMP_SYS_NAME=$long")
 check "a value too long for its buffer is refused" yes "$(err "$r" 'too long')"
 check "and is not reported as saved" no "$(err "$r" '"ok":true' | grep -q '^yes' && echo yes || echo no)"
 mid=$(python3 -c 'print("y" * 40)')
-r=$(post "SNMP_SYS_NAME=$mid&GPON_SN=ODI12345678&_confirm=identity")
+r=$(post "SNMP_SYS_NAME=$mid&GPON_SN=ODI012345678&_confirm=identity")
 check "a long value before _confirm does not hide the confirmation" yes \
 	"$(err "$r" '"name":"GPON_SN","ok":true')"
 check "a value too long for form_get is not truncated into a match" 400 \
