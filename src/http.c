@@ -531,7 +531,7 @@ int set_credential(const char *user, const char *pass, const char **why)
 
 	/* 0600: the file sits in /etc/config next to the device identity, and
 	 * this daemon is not the only thing that can read that directory. */
-	if (write_file(AUTH_PATH, credbuf, n, 0600) < 0) {
+	if (write_file_atomic(AUTH_PATH, credbuf, n, 0600) < 0) {
 		*why = "could not write /etc/config/confd.auth";
 		return 0;
 	}
