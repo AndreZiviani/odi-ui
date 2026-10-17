@@ -334,7 +334,7 @@ button.apply .cost { padding: 1px 6px; }
 .s-control { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .s-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .s-inline .s-ro { padding: 0; }
-.s-field input, .s-field select { width: 100%; }
+.s-field input, .s-field select { width: min(100%, 560px); }
 .s-ro { display: inline-block; padding: 7px 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .s-aside { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
 .setting.wide { grid-template-columns: minmax(0, 1fr); }
