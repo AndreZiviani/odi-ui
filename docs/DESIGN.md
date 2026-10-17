@@ -26,6 +26,22 @@ data change** — no new handler, no recompile, no reflash.
 That is the one thing the vendor design got wrong, and it is why this is a few
 hundred lines instead of 88 handlers.
 
+**The `type` column is what the code that reads the key accepts.** A type is
+implemented twice, in `type_ok()` (`src/mib.c`, the one that enforces it) and in
+`valueProblem()` (`web/validate.js`, which only tells the user before the
+write), and listed in `scripts/check-schema.py`. Beside `int`, `mac`, `hex32`,
+`hostport`, `ascii14`, `fixedme` and `string` there are: `ipv4host` and
+`netmask` (an address and a mask the kernel will put on an interface, because
+`network.sh` re-reads them at every boot and a refused one leaves the stick with
+no way in), `gponsn` (four characters and eight hex digits, what the kernel
+`gponsn` verb takes), `hex20` (exactly ten bytes of PLOAM password; the kernel
+reads a shorter value as literal text), and `strN` (printable ASCII, at most N
+characters, the width of the field the OLT reads the value into; omcid answers a
+longer value as absent). A type the daemon does not know is refused. The types
+are chosen by what reads the key, not by the stock value it holds:
+`scripts/gen-schema.py` carries them in `TYPE_OVERRIDE`, so regenerating the
+schema keeps them.
+
 ## Tabs
 
 Four sections, each with subtabs. The location hash names the pair
@@ -65,8 +81,8 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
     exists, without reading or touching `confd.auth`) and a past safe-mode boot not yet
     acknowledged (Acknowledge runs `safe-mode.sh ack`);
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
-  - *Stock keys* (was *All settings*) &mdash; on odi-oss, the 163 keys only the
-    stock firmware reads, read-only, for inspecting what a backup carries. On a
+  - *Stock keys* (was *All settings*) &mdash; on odi-oss, the stock keys this
+    image does not act on, read-only, for inspecting what a backup carries. On a
     stock-based image this subtab is *All keys*: all 184, editable, with the
     `OMCI_CUSTOM_*` bitmasks decoded.
 
@@ -159,9 +175,10 @@ follow from this split.
 
 ## On the odi-oss image
 
-odi-oss replaces the stock userland, and reads 21 of the 184 keys; the other
-163 are still in the store because the config partition is shared with the
-stock firmware in the other slot. `schema/settings.tsv` is that image's own
+odi-oss replaces the stock userland, and acts on 22 of the 184 stock keys (and
+one bit of a twenty-third, `OMCI_CUSTOM_ME`, for the VEIP slot) besides keys of
+its own; the other 161 are still in the store because the config
+partition is shared with the stock firmware in the other slot. `schema/settings.tsv` is that image's own
 answer to "what does this key do here": its apply class, the action that
 applies it, the key it is written with, who reads it, and why it costs what it
 does. Its presence is what switches the page into this mode; `docs/SETTINGS.md`

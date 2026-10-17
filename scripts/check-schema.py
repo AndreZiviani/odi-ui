@@ -25,7 +25,9 @@ WRITABLE = {"yes", "never", "identity"}
 # anything else -- so a typo here is a key that cannot be written at all, which
 # is the safe direction but still a bug, and one nothing else would report.
 # Keep the two in step: adding a type means adding it in both places.
-TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "hostport", "ascii14", "fixedme", "string"}
+TYPES = {"int", "ipv4", "ipv4host", "netmask", "mac", "elanmac", "hex32", "hexascii", "hex20", "gponsn",
+         "hostport", "ascii14", "fixedme", "string"}
+STRN = re.compile(r"^str[1-9][0-9]*$")   # strN: printable ASCII, at most N characters
 
 problems = []
 
@@ -77,7 +79,7 @@ for name, store, addr, section, typ, apply_, writable, common in keys:
         note(name, f"address {addr!r} is in display form, not dotted")
     if apply_ not in APPLY_CLASSES:
         note(name, f"apply {apply_!r} is not a known class")
-    if typ not in TYPES:
+    if typ not in TYPES and not STRN.match(typ):
         note(name, f"type {typ!r} is not a type the daemon implements")
     if writable not in WRITABLE:
         note(name, f"writable {writable!r} is not a known value")

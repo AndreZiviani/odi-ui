@@ -12,6 +12,45 @@
 #include "routes.h"
 
 /*
+ * The management address and its netmask are one setting spread over two keys,
+ * and network.sh judges them together at every boot: an address that is the
+ * network or broadcast address of its mask is refused there and the stick
+ * falls back to 192.168.1.1/24. So a write of either key is checked against
+ * the other, from the same request when it carries it, else from the store,
+ * else the /24 network.sh assumes for a missing netmask. NULL when fine.
+ */
+static const char *lan_pair_refusal(const char *name, const char *value,
+				    const char *body)
+{
+	const char *other;
+	char o[64];
+	int is_addr;
+
+	if (seq(name, "LAN_IP_ADDR"))
+		other = "LAN_SUBNET", is_addr = 1;
+	else if (seq(name, "LAN_SUBNET"))
+		other = "LAN_IP_ADDR", is_addr = 0;
+	else if (seq(name, "LAN_IP_ADDR2"))
+		other = "LAN_SUBNET2", is_addr = 1;
+	else if (seq(name, "LAN_SUBNET2"))
+		other = "LAN_IP_ADDR2", is_addr = 0;
+	else
+		return 0;
+
+	if (!form_get(body, other, o, sizeof(o)) && !read_key(other, o, sizeof(o)))
+		o[0] = 0;
+	if (is_addr) {
+		if (!host_in_mask_ok(value, o[0] ? o : "255.255.255.0"))
+			return "the network or broadcast address of the netmask, "
+			       "which no host can use";
+	} else if (o[0] && !host_in_mask_ok(o, value)) {
+		return "a netmask that makes the management address its network "
+		       "or broadcast address";
+	}
+	return 0;
+}
+
+/*
  * POST /api/config — write keys, one report line each.
  *
  * Nothing is applied implicitly. The response says which apply class the
@@ -143,6 +182,8 @@ static void handle_write(int conn, const char *body)
 			err = "cannot be cleared: flash set refuses an empty value";
 		else if (!type_ok(type, value))
 			err = "not valid for its type";
+		else if ((err = lan_pair_refusal(name, value, body)))
+			;
 		else
 			meta_ok(name, value, &err);   /* sets err, or clears it */
 

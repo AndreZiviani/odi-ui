@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Validation: a value is accepted when the code that reads the key accepts
+  it (night audit 2026-10-16). New schema types, enforced by the daemon and
+  checked by the page: `ipv4host` and `netmask` for the management address and
+  its netmask (no 0/8, loopback, multicast or broadcast address; a netmask is
+  ones then zeros, /8 to /30; no leading zeros, which `ifconfig` reads as
+  octal), because `network.sh` re-reads them at every boot and one the kernel
+  refuses left the stick unreachable. The address and the netmask are also
+  judged together, as `network.sh` judges them: the network or broadcast
+  address of the mask (192.168.1.0 and 192.168.1.255 on a /24) is refused, for
+  the primary and the second address, against the netmask in the same request,
+  else the stored one, else /24, and a netmask is refused when it makes the
+  address one of the two; `gponsn` for `GPON_SN` (four characters
+  and eight hex digits, as the kernel `gponsn` verb takes); `hex20` for
+  `GPON_PLOAM_PASSWD` (exactly 10 bytes; the kernel reads a shorter value as
+  literal text); `str14`/`str20`/`str24`/`str12` for the software versions, the
+  model and the LOID keys, the width of the field the OLT reads (omcid answered
+  a longer value as absent). `ELAN_MAC_ADDR`, with its own type `elanmac`, refuses a
+  multicast or all-zero MAC (the other MAC-shaped keys, `HW_SERIAL_NO` and
+  `WLAN_MAC_ADDR`, stay plain 12 hex digits). `scripts/gen-schema.py` keeps the types in `TYPE_OVERRIDE`.
+
+- Config: the VEIP slot row says when it has no effect: omcid applies the slot
+  only while `OMCI_CUSTOM_ME` has bit 256, the stock default of that key does
+  not, and it is read-only on the Stock keys tab. The row shows the value to
+  set with `flash set`. The reset, restore and counts text no longer say the
+  `OMCI_CUSTOM_*` masks are read only by the stock firmware (omcid reads one
+  bit of `OMCI_CUSTOM_ME`), and the "21 of 184 keys" figure is corrected
+  (22 of the 184 stock keys, plus keys of the image's own).
+
 - This changelog no longer cites files of a private workspace.
 
 - No OLT or ONT make is named in the UI or its fixtures. The MIB tab lists the
