@@ -133,6 +133,7 @@ long read_request(int conn, char *buf, unsigned long cap,
 		  unsigned long *body_have, unsigned long *body_want)
 {
 	unsigned long got = 0, hdr = 0, want = 0;
+	unsigned long t0 = mono_ms();
 	int have_hdr = 0;
 
 	*body_have = 0;
@@ -164,6 +165,14 @@ long read_request(int conn, char *buf, unsigned long cap,
 		if (!have_hdr && got + 1 >= cap)
 			return REQ_TOO_LARGE;
 
+		/* The sum of the waits is bounded, not just each one: see
+		 * REQUEST_DEADLINE_MS. */
+		{
+			long left = REQUEST_DEADLINE_MS - (long)(mono_ms() - t0);
+
+			if (left <= 0 || !wait_readable(conn, left))
+				return REQ_INCOMPLETE;
+		}
 		n = syscall3(__NR_read, conn, (long)(buf + got), cap - got - 1);
 		if (n <= 0)
 			return REQ_INCOMPLETE;
@@ -430,10 +439,30 @@ unsigned long url_decode(const char *in, unsigned long i, char stop,
 		} else {
 			i++;
 		}
-		if (o + 1 < cap)
-			out[o++] = c;
+		/*
+		 * A token that does not fit is refused like a bad escape, not
+		 * cut. Cut, it was validated, written and read back against
+		 * itself, and the page was told a value it never typed was
+		 * saved (the same failure read_request describes for a whole
+		 * body, here for one field).
+		 */
+		if (o + 1 >= cap) {
+			out[0] = 0;
+			return 0;
+		}
+		out[o++] = c;
 	}
 	out[o] = 0;
+	return i;
+}
+
+/* Step over one token without decoding it: the index of its end. For the
+ * fields of a form body that the caller is not asking about, so that a long
+ * value it does not want cannot fail the one it does. */
+unsigned long url_skip(const char *in, unsigned long i)
+{
+	while (in[i] && in[i] != '&')
+		i++;
 	return i;
 }
 
@@ -452,11 +481,16 @@ int form_get(const char *body, const char *want, char *out, unsigned long cap)
 		i = k;
 		if (body[i] == '=')
 			i++;
-		i = url_decode(body, i, 0, out, cap);
-		if (!i)
-			return 0;
-		if (seq(name, want))
+		if (seq(name, want)) {
+			/* Too long or badly encoded: no value, not a prefix. */
+			i = url_decode(body, i, 0, out, cap);
+			if (!i) {
+				out[0] = 0;
+				return 0;
+			}
 			return 1;
+		}
+		i = url_skip(body, i);
 		if (body[i] == '&')
 			i++;
 	}

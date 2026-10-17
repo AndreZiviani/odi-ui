@@ -166,6 +166,16 @@
  * it refuses before writing rather than after filling the filesystem every
  * other process on this device is also using.
  */
+/*
+ * Wall-clock budgets, from the moment the request starts to be read. SO_RCVTIMEO
+ * (main.c) bounds one read(), so a client sending a byte every 14 s never
+ * tripped it and held the whole single-threaded daemon for as long as it
+ * liked: these bound the sum. A browser sends a request in one go, so ten
+ * seconds is generous for the headers and any body that fits the buffer; the
+ * upload streams megabytes over whatever the link is and gets two minutes.
+ */
+#define REQUEST_DEADLINE_MS 10000
+#define UPLOAD_DEADLINE_MS  120000
 #define UPLOAD_PATH  "/tmp/img.tar"
 #define UPLOAD_MAX   (8u * 1024u * 1024u)
 
