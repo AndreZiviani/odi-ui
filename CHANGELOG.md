@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- This changelog no longer cites files of a private workspace.
+
 - No OLT or ONT make is named in the UI or its fixtures. The MIB tab lists the
   six entities the stock firmware registers under such names as
   `PrivateQueueMap`, `Me350`, `Me370`, `Me373`, `PrivateMcastTag` and
@@ -14,8 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the OLT reports, without a name lookup. Released sections of this file are
   unchanged. Refs odi-oss#114
 
-- Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
-  K5, K9): a request now has a ten-second wall-clock deadline and the upload
+- Security and robustness, from the night audit: a request now has a ten-second wall-clock deadline and the upload
   body two minutes, where before only each single read was bounded (15 s), so
   one client sending a byte every few seconds held the single-threaded daemon
   (and the Firmware tab during an update) indefinitely. `POST /api/upload` is
@@ -33,9 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   caps at 8 MiB, so an upload of exactly the old limit filled it and left no
   room for the flasher's own files or for `flash set`, which stages its temp
   file there. A real image (kernel plus rootfs partition, about 3.8 MiB) is
-  well under the new limit. Found in the night audit of the update path
-  (odi-oss investigations/odi-sfp-re/AUDIT-night-flash.md, finding 6).
-- Robustness, from the night audit (AUDIT-night-confd K7): a child confd
+  well under the new limit. Found in an audit of the update path.
+- Robustness, from the night audit: a child confd
   runs can no longer hold the whole daemon after its output ends. The drain
   kept nothing past a full buffer and then waited for the child with a
   blocking `waitpid()`, so a command that printed more than the buffer
@@ -45,7 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   killed and reported as a timeout like any other. Children also start with
   SIGPIPE at its default action again: the daemon ignores it for itself and
   an ignored signal survives `execve`, so scripts ran with it ignored.
-- Security and robustness, from the night audit (AUDIT-night-confd K6, K10):
+- Security and robustness, from the night audit:
   `/etc/config/confd.auth` and the ssh `authorized_keys` are written to a
   temporary file beside them and renamed into place, instead of truncated and
   rewritten. A power cut during a password change used to leave an empty
@@ -54,7 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that has no password login. `delete=` on `/api/sshkeys` with anything but a
   line number is now a 400; it used to delete line 0 (`delete=abc`) or the
   leading digits (`delete=1x`).
-- Security, from the night audit (AUDIT-night-confd K2, K8): confd answers only
+- Security, from the night audit: confd answers only
   requests whose `Host` is a name a browser can only have reached on the LAN: an
   IP literal, a single label, or a private suffix (`.local`, `.lan`, `.home.arpa`
   and the like). Any other name gets 403 before the password prompt, which stops
