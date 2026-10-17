@@ -229,7 +229,12 @@ async function renderFirmware() {
     /* Try only the slot you are NOT running: a trial of the running one
        boots what is already up. Committing the running slot is the same act
        as the trial banner Commit to this image, and goes through the same code. */
-    if (p !== committed && p !== booted) {
+    if (p !== committed && p !== booted && k.kind === 'unknown') {
+      /* No uImage magic in the kernel partition: erased, or cut short by an
+         interrupted write. The bootloader would refuse it, and the daemon
+         refuses to arm it, so the button would only fail. */
+      acts.append(el('span', 'hint', 'Partition ' + p + ' holds no kernel the bootloader would boot. Write an image to it first.'));
+    } else if (p !== committed && p !== booted) {
       const b = el('button', null, 'Try partition ' + p);
       b.type = 'button';
       b.onclick = () => fwAction('try', p,
