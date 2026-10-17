@@ -52,7 +52,8 @@ const CLASS_CONFIRMS = new Set(['reboot', 'internet']);
 /* The badge, one markup for every place a cost is shown. */
 function costBadge(cls, text) {
   const b = el('span', 'cost cost-' + cls);
-  b.append(el('i', 'bars'), document.createTextNode(text || CLASS_LABEL[cls] || cls));
+  /* The words in their own span, so a row can show the bars alone. */
+  b.append(el('i', 'bars'), el('span', 'cost-text', text || CLASS_LABEL[cls] || cls));
   if (CLASS_MEANS[cls]) b.title = CLASS_LABEL[cls] + ': ' + CLASS_MEANS[cls];
   return b;
 }

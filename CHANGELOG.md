@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Config: field help moves behind a `?` beside each setting's name. Clicking it opens the one-line help, with "+ Details" under it as before; warnings about what is wrong now stay visible.
   A "Full help" button in the header (Config tab only, remembered across reloads) opens every field's help at once.
 - Config, ONU identity: while the identity switch is off, each key carries a "Not reported" tag instead of repeating the same sentence on every row (the sentence is in its help), and the switch's explanation sits behind a `?`.
+- Config: a setting's tags sit on the same line as its input, to the right, in a column of one width so the inputs line up, and on a desktop as tall as the input; the fixed entity answers table has its tags right after it, level with its first row. The cost badge there shows only its bars, since the legend above the rows names each one; screen readers get the full text from its `aria-label`, and on a phone or a touch screen without hover the words show beside the bars as before.
 - Restore: the differences are a table headed Setting / On the stick / In the backup, with the stick's value muted, the backup's in the blue of a pending change, and identity keys tagged as on the Config tab.
 
 ## v1.5.1 (2026-10-17)

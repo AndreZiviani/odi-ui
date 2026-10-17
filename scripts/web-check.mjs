@@ -892,15 +892,15 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
      'fixedMeRowProblems names the fields that are wrong');
   /* The editor: one table row per entry, and a row it adds. */
   const ed = renderFixedMeEditor('200:0011aa,188:0x8001:1:ff', () => {});
-  const trs = ed.children[0].children[1].children;
+  const trs = ed.tableLine.children[0].children[1].children;
   ok(trs.length === 2 && trs[0].inputs.map((i) => i.value).join('|') === '200|any|any|0011aa'
      && trs[1].inputs.map((i) => i.value).join('|') === '188|0x8001|1|ff',
      'the expert editor shows one row per entry, the legacy form as any/any');
   let seen = null;
   const ed2 = renderFixedMeEditor('', (v) => { seen = v; });
-  ok(ed2.children[0].children[1].children.length === 0, 'the expert editor with no value has no rows');
+  ok(ed2.tableLine.children[0].children[1].children.length === 0, 'the expert editor with no value has no rows');
   ed2.children[2].onclick();
-  const row0 = ed2.children[0].children[1].children[0];
+  const row0 = ed2.tableLine.children[0].children[1].children[0];
   row0.inputs[0].value = '188'; row0.inputs[0].oninput();
   ok(seen === '188:', 'a half-typed row is handed on as typed, so the check holds the save');
   row0.inputs[1].value = '0x8001'; row0.inputs[1].oninput();
@@ -908,7 +908,7 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   row0.inputs[3].value = '0011aa'; row0.inputs[3].oninput();
   ok(seen === '188:0x8001:1:0011aa' && !fme(seen), 'a finished row serialises to the entry form');
   ed2.children[2].onclick();
-  const r1 = ed2.children[0].children[1].children[1];
+  const r1 = ed2.tableLine.children[0].children[1].children[1];
   r1.inputs[0].value = '188'; r1.inputs[0].oninput();
   r1.inputs[3].value = '00'; r1.inputs[3].oninput();
   ok(fme(seen) && /both forms/.test(fme(seen)), 'a legacy row for a class that has an entity says both forms');

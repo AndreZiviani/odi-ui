@@ -115,6 +115,7 @@ function renderValue(row, raw, readonly = false) {
     });
     ed.classList.toggle('changed', EDITS.has(row.name));
     box.append(ed);
+    box.tableLine = ed.tableLine;
     return box;
   }
 
@@ -311,16 +312,28 @@ function renderRow(row, readonly) {
   }
   wrap.append(left);
 
+  /* The control and its tags on one line: the tags sit to the right of the field. The `.cost-text` shows its bars only,
+  since the legend above the rows names each one. A screen reader still gets the full text from the aria-label, and
+  where there is no legend or no hover to show the title (a phone, a touch screen) style.css shows the words again. */
   const right = el('div', 's-control');
-  right.append(renderValue(row, S.VALUES[row.name], readonly));
+  const fieldWithTags = el('div', 's-fieldline');
+  const field = renderValue(row, S.VALUES[row.name], readonly);
+  fieldWithTags.append(field);
   const tags = el('div', 's-tags');
+  const addCostIcon = (cls, text) => {
+    const badge = costBadge(cls, text);
+    badge.classList.add('icon-only');
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', badge.title || text || CLASS_LABEL[cls] || cls);
+    tags.append(badge);
+  };
   if (imageAware()) {
     /* The apply class this image gives the key: what saving it costs. */
-    if (set) tags.append(costBadge(set.apply));
+    if (set) addCostIcon(set.apply);
   } else {
     const ap = applyOf(row);
-    if (ap === 'restart:omci') tags.append(costBadge('internet', 'Restarts OMCI'));
-    if (ap === 'reboot') tags.append(costBadge('reboot'));
+    if (ap === 'restart:omci') addCostIcon('internet', 'Restarts OMCI');
+    if (ap === 'reboot') addCostIcon('reboot');
   }
   if (row.writable === 'never') tags.append(el('span', 'tag', 'Never written'));
   if (row.writable === 'identity' && !readonly) {
@@ -338,7 +351,10 @@ function renderRow(row, readonly) {
     if (prov.was !== undefined) t.title = `${prov.from}: ${prov.was === '' ? '(empty)' : prov.was}`;
     tags.append(t);
   }
-  if (tags.children.length) right.append(tags);
+  /* The OMCI_FIXED_ME editor is a table, not one field:
+  its tags go right after the table rather than at the far end of the row. */
+  if (tags.children.length) (field.tableLine || fieldWithTags).append(tags);
+  right.append(fieldWithTags);
   wrap.append(right);
   return wrap;
 }
