@@ -11,6 +11,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Status: the receive and transmit meters sit side by side when there is room for both (320 px each), and stack as before on a phone; the "class B+..." line under each is centred.
 - Forwarding and Learned addresses share a row in two columns above 900 px, and a rule separates Raw diag output from them.
 - Backup & reset tab: Backup and Restore share a row in two columns above 900 px.
+- Security and robustness, from the night audit (AUDIT-night-confd K6, K10):
+  `/etc/config/confd.auth` and the ssh `authorized_keys` are written to a
+  temporary file beside them and renamed into place, instead of truncated and
+  rewritten. A power cut during a password change used to leave an empty
+  credential file, which the UI reads as "no credential" and answers with the
+  default one; during a key change it left a truncated key file on an image
+  that has no password login. `delete=` on `/api/sshkeys` with anything but a
+  line number is now a 400; it used to delete line 0 (`delete=abc`) or the
+  leading digits (`delete=1x`).
+- Security, from the night audit (AUDIT-night-confd K2, K8): confd answers only
+  requests whose `Host` is a name a browser can only have reached on the LAN: an
+  IP literal, a single label, or a private suffix (`.local`, `.lan`, `.home.arpa`
+  and the like). Any other name gets 403 before the password prompt, which stops
+  a web page from reaching the stick through DNS rebinding (the page then looks
+  same-origin to the browser and could drive every route with the default
+  password). A site that gives the stick a public-looking name lists it in
+  `/etc/config/confd.hosts`, one per line. A request that a browser marks
+  `Sec-Fetch-Site: cross-site` or `same-site` is refused unless it is a followed
+  link, so a page cannot make the browser fetch routes such as the diagnostics
+  bundle. Every response now carries `X-Frame-Options: DENY`, a CSP
+  `frame-ancestors 'none'`, `nosniff` and `Referrer-Policy: no-referrer`, so the
+  page cannot be framed under an operator pointer.
+
 - Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
   (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
   the web checks, AGENTS.md and comments, and the fixture README no longer
