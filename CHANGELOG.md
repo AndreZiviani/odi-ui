@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Web: the page no longer judges an address or netmask twice (an older copy
+  of the rule, left by a merge, ran before the current one and gave the older
+  error messages).
+
 - Firmware: Try refuses a partition whose kernel U-Boot would not boot. The
   daemon checks the uImage magic, header CRC and data CRC of the kernel
   partition (the same checks bootm makes, `src/uimage.h`, read in 64 KB steps
