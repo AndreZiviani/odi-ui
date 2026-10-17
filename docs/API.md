@@ -5,6 +5,13 @@ authenticates as described in [`DESIGN.md`](DESIGN.md#authentication) — this
 page is the wire contract, not the rationale. See `DESIGN.md` for why each
 route behaves the way it does.
 
+Every request, before the credential is looked at, must carry a `Host` that is an
+IP literal, a single label or a private suffix (`.local`, `.lan`, `.home.arpa`,
+`.localdomain`, `.internal`, `.localhost`, `.home`), or a name listed in
+`/etc/config/confd.hosts`; anything else is `403` (DNS rebinding). A request a
+browser marks `Sec-Fetch-Site: cross-site` or `same-site` is `403` unless it is a
+top-level navigation.
+
 All writes require the same HTTP Basic credential as the page, refuse a
 cross-site `Origin`, and (for `/api/config`) read every value back before
 reporting success.
