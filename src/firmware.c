@@ -6,6 +6,7 @@
 #include "http.h"
 #include "firmware.h"
 #include "buffers.h"
+#include "uimage.h"
 
 /*
  * Boot selection.
@@ -70,6 +71,108 @@ static int mtd_index(const char *mtds, const char *name)
 			i++;
 	}
 	return -1;
+}
+
+/* The size of the partition `name`, in bytes, from the same /proc/mtd text
+ * (hex, the second field), or 0. */
+static unsigned long mtd_size(const char *mtds, const char *name)
+{
+	unsigned long i = 0;
+
+	while (mtds[i]) {
+		unsigned long ls = i, q;
+
+		while (mtds[i] && mtds[i] != '\n')
+			i++;
+		if (spre(mtds + ls, "mtd")) {
+			for (q = ls; q < i && mtds[q] != '"'; q++)
+				;
+			if (q < i && spre(mtds + q + 1, name)
+			    && mtds[q + 1 + str_len(name)] == '"') {
+				unsigned long v = 0;
+
+				for (q = ls; q < i && mtds[q] != ':'; q++)
+					;
+				for (q++; q < i && mtds[q] == ' '; q++)
+					;
+				for (; q < i; q++) {
+					char c = mtds[q];
+
+					if (c >= '0' && c <= '9')
+						v = v * 16 + (unsigned long)(c - '0');
+					else if (c >= 'a' && c <= 'f')
+						v = v * 16 + (unsigned long)(c - 'a') + 10;
+					else
+						break;
+				}
+				return v;
+			}
+		}
+		if (mtds[i] == '\n')
+			i++;
+	}
+	return 0;
+}
+
+/*
+ * 1 when the kernel partition k<p> holds a uImage that U-Boot would boot: the
+ * magic, the header CRC and the data CRC all hold (what bootm checks first).
+ * An erased slot, one whose flash was cut short (the flasher writes the kernel
+ * last, so a short write leaves it incomplete) and one holding something that
+ * is not a uImage all fail. Reads the kernel partition once, through filebuf,
+ * 64 KB at a time, with no child process; about 1.3 MB, a fraction of a second.
+ */
+int slot_kernel_ok(char p)
+{
+	char part[3] = { 'k', p, 0 };
+	char dev[16] = "/dev/mtd";
+	char mtds[1024];
+	unsigned long n = 8, size, left, cap;
+	unsigned int crc = 0, want;
+	long fd, got;
+	int idx;
+
+	if (read_file("/proc/mtd", mtds, sizeof(mtds)) <= 0)
+		return 0;
+	idx = mtd_index(mtds, part);
+	cap = mtd_size(mtds, part);
+	if (idx < 0 || idx > 99 || !cap)
+		return 0;
+	if (idx >= 10)
+		dev[n++] = (char)('0' + idx / 10);
+	dev[n++] = (char)('0' + idx % 10);
+	dev[n] = 0;
+	fd = syscall3(__NR_open, (long)dev, O_RDONLY, 0);
+	if (fd < 0)
+		return 0;
+	/* The header: read(2) on an mtd character device may return less. */
+	for (n = 0; n < UIMAGE_HDR_LEN;) {
+		got = syscall3(__NR_read, fd, (long)(filebuf + n), (long)(UIMAGE_HDR_LEN - n));
+		if (got <= 0) {
+			syscall3(__NR_close, fd, 0, 0);
+			return 0;
+		}
+		n += (unsigned long)got;
+	}
+	size = uimage_header_ok((const unsigned char *)filebuf, cap);
+	want = uimage_be32((const unsigned char *)filebuf + 24);
+	if (!size) {
+		syscall3(__NR_close, fd, 0, 0);
+		return 0;
+	}
+	for (left = size; left;) {
+		unsigned long chunk = left < sizeof(filebuf) ? left : sizeof(filebuf);
+
+		got = syscall3(__NR_read, fd, (long)filebuf, (long)chunk);
+		if (got <= 0) {
+			syscall3(__NR_close, fd, 0, 0);
+			return 0;
+		}
+		crc = uimage_crc32(crc, (const unsigned char *)filebuf, (unsigned long)got);
+		left -= (unsigned long)got;
+	}
+	syscall3(__NR_close, fd, 0, 0);
+	return crc == want;
 }
 
 static void emit_slot(int fd, const char *mtds, char p)

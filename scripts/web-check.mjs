@@ -201,6 +201,66 @@ ok(valueProblem(vlan, '100') === null, 'an in-range VLAN is accepted');
 const ip = SCHEMA.find((r) => r.name === 'LAN_IP_ADDR');
 ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
 
+/* The shared table of what every input accepts and refuses: scripts/smoke.sh
+   posts the same rows to the daemon, so a rule cannot change in one layer. */
+{
+  const V = await import(join(root, 'web', 'validate.js'));
+  const rows = readFileSync(join(root, 'scripts', 'fixtures', 'validation-vectors.tsv'), 'utf8')
+    .split('\n').filter((l) => l && !l[0].match(/[#]/)).map((l) => l.split('\t'))
+    .filter((r) => r[0] !== 'kind');
+  const dec = (x) => decodeURIComponent(x.replace(/\+/g, ' '));
+  const lines = [];
+  let seen = 0;
+  for (const [kind, name, value, expect] of rows) {
+    const raw = dec(value);
+    let bad;
+    if (kind === 'key') {
+      const row = SCHEMA.find((r) => r.name === name);
+      bad = row ? V.valueProblem(row, raw) : 'no such key in the schema';
+    } else if (kind === 'password') bad = V.passwordProblem(dec(name), raw);
+    else if (kind === 'sshkey') {
+      bad = V.sshKeyProblem(raw, lines);
+      if (!bad) lines.push(raw);
+    } else if (kind === 'ping') bad = V.pingProblem(raw);
+    else if (kind === 'me') bad = V.meProblem(raw);
+    else if (kind === 'entity') bad = V.entityProblem(raw);
+    else bad = 'unknown kind ' + kind;
+    seen++;
+    if ((bad === null) !== (expect === 'ok')) {
+      ok(false, `vector ${kind} ${name} ${value.slice(0, 50)}: the page says ${bad === null ? 'ok' : bad}, the table says ${expect}`);
+    }
+  }
+  ok(seen > 150, `${seen} validation vectors agree with the page`);
+
+  /* Rules that read another key: the page judges them from the pending edits,
+     then the stored values, as the daemon does from the request, then the store. */
+  const { EDITS } = await import(join(root, 'web', 'state.js'));
+  const ip2 = SCHEMA.find((r) => r.name === 'LAN_IP_ADDR2');
+  const en2 = SCHEMA.find((r) => r.name === 'LAN_ENABLE_IP2');
+  const was = { ...S.VALUES };
+  S.VALUES.LAN_IP_ADDR = '192.168.1.1';
+  S.VALUES.LAN_ENABLE_IP2 = '0';
+  ok(V.valueProblem(ip2, '192.168.1.1') === null, 'the second address may equal the first while it is off');
+  EDITS.set('LAN_ENABLE_IP2', '1');
+  ok(V.valueProblem(ip2, '192.168.1.1') !== null, 'the second address may not equal the first while it is on');
+  ok(V.valueProblem(ip2, '192.168.100.1') === null, 'a different second address is fine');
+  EDITS.set('LAN_IP_ADDR2', '192.168.1.1');
+  ok(V.valueProblem(en2, '1') !== null, 'turning the second address on with it equal to the first is refused');
+  EDITS.clear();
+  Object.assign(S.VALUES, was);
+
+  ok(V.tarProblem(new Uint8Array(512)) !== null, 'a header of zeros is not a tar archive');
+  const th = new Uint8Array(512);
+  th[0] = 0x61;
+  th.set([0x75, 0x73, 0x74, 0x61, 0x72], 257);
+  ok(V.tarProblem(th) === null, 'a 512-byte header with ustar at 257 is a tar archive');
+  ok(V.tarProblem(th.slice(0, 300)) !== null, 'a short file is not a tar archive');
+  ok(V.uploadSizeProblem(0) !== null && V.uploadSizeProblem(V.UPLOAD_MAX + 1) !== null
+     && V.uploadSizeProblem(V.UPLOAD_MAX) === null, 'the upload size limit is 6 MiB, and empty is refused');
+  ok(V.passwordProblem('admin', 'secret1', 'secret2') !== null, 'a repeated password that differs is refused');
+  ok(V.passwordProblem('admin', 'secret1', 'secret1') === null, 'a repeated password that matches is fine');
+}
+
 renderStatus(API['/api/status'].raw);
 ok(true, 'renderStatus runs against a diag capture');
 
@@ -329,6 +389,23 @@ ok(!plan.change.some(([n]) => n === 'GPON_SN'),
 const same = classify(parseBackup('<Value Name="LAN_IP_ADDR" Value="1"/>'));
 ok(same.same.includes('LAN_IP_ADDR') && same.change.length === 0,
    'a value that already matches is not rewritten');
+
+/* What the daemon would refuse is said before anything is written, and the
+   backup is judged as a whole: an address is checked against the mask in the
+   same file, not the one on the stick. */
+const inv = classify(parseBackup([
+  '<Value Name="DNS1" Value="192.168.010.001"/>',
+  '<Value Name="SNMP_SYS_NAME" Value="a&amp;b"/>',
+  '<Value Name="LAN_IP_ADDR" Value="192.168.0.0"/>',
+  '<Value Name="LAN_SUBNET" Value="255.255.255.0"/>',
+  '<Value Name="VLAN_MANU_TAG_VID" Value="110"/>',
+].join('\n')));
+ok(inv.invalid.map(([n]) => n).sort().join() === 'DNS1,LAN_IP_ADDR,LAN_SUBNET,SNMP_SYS_NAME',
+   'values the daemon would refuse are listed as skipped, not queued: ' + JSON.stringify(inv.invalid));
+ok(inv.change.some(([n]) => n === 'VLAN_MANU_TAG_VID') && !inv.change.some(([n]) => n === 'DNS1'),
+   'and the rest of the backup still restores');
+const wide = classify(parseBackup('<Value Name="LAN_IP_ADDR" Value="192.168.1.0"/><Value Name="LAN_SUBNET" Value="255.255.0.0"/>'));
+ok(wide.invalid.length === 0, 'an address is judged under the mask the backup carries (192.168.1.0 is a host on a /16): ' + JSON.stringify(wide.invalid));
 
 /* --- the OMCI_CUSTOM_* bitmask decode ------------------------------------ */
 const { decodeMask } = await import(join(root, 'web', 'state.js'));
@@ -615,8 +692,12 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(/Committed/.test(t) && !/Kept/.test(t), 'and the committed slot is badged Committed');
   t = await fwText({ ...trialFW, exe: '/etc/config/confd/confd' });
   ok(/override in \/etc\/config is in use/.test(t), 'a confd run from /etc/config is an override');
-  t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd' });
+  t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd',
+                     slots: { 0: { kernel: 'Linux Kernel Image', built: 1600000000 } } });
   ok(/Try partition 0/.test(t) && !/Try partition 1/.test(t), 'committed, Try is offered on the other slot only');
+  t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd' });
+  ok(!/Try partition/.test(t) && /holds no kernel the bootloader would boot/.test(t),
+     'a slot with no uImage header gets no Try button, and says why');
   API['/api/firmware'] = keep;
 }
 
@@ -724,6 +805,62 @@ ok(!hwv('HW-2.1') && !hwv('12345678901234') && !hwv(''),
    'ascii14 accepts up to 14 printable characters, and empty (it clears the key)');
 ok(['123456789012345', 'a"b', 'a<b', 'a&b', 'caf\u00e9', 'a\tb'].every((v) => hwv(v)),
    'ascii14 rejects 15 characters, a quote, < and &, and anything outside printable ASCII');
+/* Types chosen by what reads the key: the page and the daemon (src/mib.c) agree. */
+const vp = (type, v) => valueProblem({ name: 'X', type }, v);
+ok(['10.20.30.1', '192.168.100.1', '1.0.0.1', '223.255.255.254'].every((v) => !vp('ipv4host', v)),
+   'ipv4host accepts addresses the kernel takes');
+ok(['0.0.0.0', '127.0.0.1', '224.0.0.1', '255.255.255.255', '192.168.010.1', '192.168.1', '1.2.3.4.5', '256.1.1.1']
+  .every((v) => vp('ipv4host', v)), 'ipv4host rejects 0/8, loopback, multicast, broadcast, leading zeros and malformed');
+/* The address and its netmask are judged together (src/mib.c lan_pair_refusal,
+   network.sh valid_host): the same values are accepted and refused. */
+{
+  const { S: St, EDITS: Ed } = await import(join(root, 'web', 'state.js'));
+  const addr = (v, name = 'LAN_IP_ADDR') => valueProblem({ name, type: 'ipv4host' }, v);
+  const mask = (v, name = 'LAN_SUBNET') => valueProblem({ name, type: 'netmask' }, v);
+  const keep = St.VALUES;
+  St.VALUES = {};
+  Ed.clear();
+  ok(['192.168.1.0', '192.168.1.255', '10.0.0.0', '10.255.255.255'].every((v) => /network or broadcast/.test(addr(v))),
+     'with no stored netmask the address is judged on a /24: network and broadcast are refused');
+  ok(['192.168.1.1', '192.168.1.254', '10.0.0.1'].every((v) => !addr(v)), 'and its neighbours are accepted');
+  ok(/network or broadcast/.test(addr('192.168.100.255', 'LAN_IP_ADDR2')) && !addr('192.168.100.1', 'LAN_IP_ADDR2'),
+     'the second address is held to the same rule');
+  St.VALUES = { LAN_SUBNET: '255.255.254.0', LAN_IP_ADDR: '192.168.0.0' };
+  ok(/network or broadcast/.test(addr('192.168.1.255')) && !addr('192.168.1.0') && /network or broadcast/.test(addr('192.168.0.0')),
+     'against the stored /23: 192.168.1.255 and 192.168.0.0 are refused, 192.168.1.0 is a host');
+  ok(/netmask that makes/.test(mask('255.255.254.0')) && !mask('255.0.0.0'),
+     'a netmask is judged against the stored address: the /23 makes 192.168.0.0 a network address, a /8 does not');
+  Ed.set('LAN_SUBNET', '255.255.255.252');
+  ok(/network or broadcast/.test(addr('192.168.1.7')) && /network or broadcast/.test(addr('192.168.1.4')) && !addr('192.168.1.5'),
+     'a pending netmask edit counts: on a /30, .4 and .7 are refused, .5 is a host');
+  Ed.clear();
+  St.VALUES = { LAN_SUBNET: '255.0.255.0' };
+  ok(!addr('192.168.1.255'), 'an unusable stored netmask is not this check (it has its own message)');
+  St.VALUES = keep;
+}
+ok(['255.255.255.0', '255.0.0.0', '255.255.255.252', '255.255.128.0'].every((v) => !vp('netmask', v)),
+   'netmask accepts ones then zeros from /8 to /30');
+ok(['255.0.255.0', '0.0.0.0', '255.255.255.255', '255.255.255.254', '254.0.0.0', '255.255.255.1', '255.255.255.00']
+  .every((v) => vp('netmask', v)), 'netmask rejects a gap in the ones, /0, /31, /32, shorter than /8 and leading zeros');
+ok(!vp('gponsn', 'ODI0123456aB') && !vp('gponsn', 'TMBB0077D9B9'), 'gponsn accepts four characters and eight hex digits');
+ok(['ODI12345678', 'ODI0123456789', 'ODI01234567G', 'OD 012345678', 'ODI"01234567', ''].every((v) => vp('gponsn', v)),
+   'gponsn rejects 11 and 13 characters, a non-hex serial, a space and a quote');
+ok(!vp('hex20', '31323334353637383930'), 'hex20 accepts 20 hex digits');
+ok(['3132333435363738393', '313233343536373839303132', '1234', 'zz323334353637383930'].every((v) => vp('hex20', v)),
+   'hex20 rejects odd, longer, shorter and non-hex values (the kernel would read a shorter one as text)');
+ok(!vp('str14', 'V1.1.6-2402021') && vp('str14', 'V1.1.6-24020212') && vp('str14', 'a"b') && vp('str14', 'caf\u00e9'),
+   'strN accepts up to N printable characters and rejects one more, a quote and non-ASCII');
+ok(!vp('elanmac', '023a21282716') && vp('elanmac', '010203040506') && vp('elanmac', '000000000000') && vp('elanmac', '0102030405'),
+   'elanmac rejects a multicast and an all-zero address');
+ok(!vp('mac', '023a21282716') && !vp('mac', '010203040506') && !vp('mac', '000000000000') && vp('mac', '0102030405'),
+   'mac is plain 12 hex digits: HW_SERIAL_NO and WLAN_MAC_ADDR are not held to the unicast rule');
+ok(S.SCHEMA.find((r) => r.name === 'ELAN_MAC_ADDR').type === 'elanmac'
+   && S.SCHEMA.find((r) => r.name === 'HW_SERIAL_NO').type === 'mac', 'only ELAN_MAC_ADDR has the unicast type');
+ok(['LAN_IP_ADDR', 'LAN_IP_ADDR2'].every((n) => S.SCHEMA.find((r) => r.name === n).type === 'ipv4host')
+   && ['LAN_SUBNET', 'LAN_SUBNET2'].every((n) => S.SCHEMA.find((r) => r.name === n).type === 'netmask')
+   && S.SCHEMA.find((r) => r.name === 'GPON_SN').type === 'gponsn'
+   && S.SCHEMA.find((r) => r.name === 'GPON_PLOAM_PASSWD').type === 'hex20',
+   'the schema gives the address, mask, serial number and PLOAM keys their checks');
 const fme = (v) => valueProblem({ name: 'OMCI_FIXED_ME', type: 'fixedme' }, v);
 ok(!fme('200:0x0011aa') && !fme('200:0x0011aa,201:01020304') && !fme('1:aa 65535:0XAB, 7:'+'ff'.repeat(25)) && !fme(''),
    'fixedme accepts one or more CLASS:HEX entries, either separator, and empty (it clears the key)');
@@ -915,6 +1052,21 @@ EDITS.clear();
     ok(invalidEdits().some(([k, why]) => k === 'VLAN_MANU_TAG_VID' && /ignored by the firmware/.test(why)),
        'gated: Save refuses a leftover edit to an ignored key');
     EDITS.clear();
+    renderAll();
+  }
+
+  /* OMCI_VEIP_SLOT_ID does nothing without bit 256 of OMCI_CUSTOM_ME, which
+     the page cannot edit: the row says so, and says what to run. */
+  {
+    const slotRow = () => rowsOf('#set-expert').find((r) => r.dataset.name === 'OMCI_VEIP_SLOT_ID');
+    S.VALUES.OMCI_CUSTOM_ME = '65536';
+    renderAll();
+    ok(slotRow() && /Has no effect yet/.test(textOf(slotRow())) && /flash set OMCI_CUSTOM_ME 65792/.test(textOf(slotRow())),
+       'VEIP slot: without bit 256 the row says it does nothing and gives the value to set');
+    S.VALUES.OMCI_CUSTOM_ME = '65792';
+    renderAll();
+    ok(slotRow() && !/Has no effect yet/.test(textOf(slotRow())), 'VEIP slot: with bit 256 set there is no warning');
+    S.VALUES.OMCI_CUSTOM_ME = '1';
     renderAll();
   }
 

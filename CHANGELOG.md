@@ -13,6 +13,100 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Backup & reset tab: Backup and Restore share a row in two columns above 900 px.
 - Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
   K5, K9): a request now has a ten-second wall-clock deadline and the upload
+## v1.5.0 (2026-10-17)
+
+- Web: the page no longer judges an address or netmask twice (an older copy
+  of the rule, left by a merge, ran before the current one and gave the older
+  error messages).
+
+- Firmware: Try refuses a partition whose kernel U-Boot would not boot. The
+  daemon checks the uImage magic, header CRC and data CRC of the kernel
+  partition (the same checks bootm makes, `src/uimage.h`, read in 64 KB steps
+  with no child process) before it writes `sw_tryactive`, and the page shows
+  a hint instead of the button for a partition with no uImage at all. An
+  erased partition, or one whose flash was cut short, used to be armed like
+  any other and ended at the bootloader prompt. Found in an audit of the
+  update path; odi-oss writes the kernel last since then, so an interrupted
+  flash always fails this check.
+  `scripts/uimage-test.sh` checks the CRC code against python's zlib.
+
+- Validation of every input, stacked on the config-key work above (night audit
+  2026-10-16, "make sure the web UI validates all inputs"). The daemon first,
+  then the page with the same rule, and one table of accepted and refused
+  examples (`scripts/fixtures/validation-vectors.tsv`) that `make check` runs
+  through the page and `make smoke` posts to the daemon, so neither can change
+  a rule alone:
+  - config keys: `int` is at most ten digits and 4294967295 (a 400-digit value
+    was written, and omcid's 15-character buffer read it as absent);
+    `string` is printable ASCII of at most 255 characters with no quote, `<`
+    or `&` (a tab or carriage return was stored, and flash refused the other
+    three with a bare "did not stick"); `ipv4` has no leading zeros (octal in
+    busybox); `hostport` checks the labels (`a..b`, a 64-character label and
+    `999.1.1.1` passed and made ntpd exit and respawn); `PON_VENDOR_ID` is at
+    most four characters; `OMCI_VEIP_SLOT_ID` refuses 128, which omcid
+    ignores; the second management address may not equal the first while it is
+    on (network.sh refused to add it, silently); a `%00` in any form field is
+    refused instead of ending the value there; and a full `OMCI_FIXED_ME` table
+    (up to 1071 bytes, which the grammar and omcid accept) is no longer cut at
+    511 bytes by the daemon.
+  - the password form: the page checks the rules the daemon already had and
+    asks for the password twice; a name or password too long for the daemon's
+    buffer is told its limit instead of "required".
+  - ssh keys: the type must be ssh-ed25519, ssh-rsa, ecdsa-sha2-nistp256/384/521
+    or an sk- type, the blob must parse as length-prefixed fields that name that
+    type and add up exactly (a truncated paste, a private key or a fingerprint
+    no longer pass), a duplicate is refused, and removing a key asks first.
+  - firmware upload: the page refuses an empty file, one over 6 MiB, or one that
+    does not start like a tar archive before sending it, and the daemon checks
+    the tar header too and keeps nothing else. `make check` compares the two size
+    limits.
+  - ping takes an address a host can have (1-223, not 127, no leading zeros);
+    the MIB browser checks the class id (1-65535) and the entity (16 bits) in the
+    page and in the daemon.
+  - restore lists the values the daemon would refuse before writing anything,
+    judges a backup as a whole (an address with its mask, as in the file), refuses
+    a file over 1 MiB, and asks once more, naming the keys, before writing
+    identity keys.
+
+- Validation: a value is accepted when the code that reads the key accepts
+  it (night audit 2026-10-16). New schema types, enforced by the daemon and
+  checked by the page: `ipv4host` and `netmask` for the management address and
+  its netmask (no 0/8, loopback, multicast or broadcast address; a netmask is
+  ones then zeros, /8 to /30; no leading zeros, which `ifconfig` reads as
+  octal), because `network.sh` re-reads them at every boot and one the kernel
+  refuses left the stick unreachable. The address and the netmask are also
+  judged together, as `network.sh` judges them: the network or broadcast
+  address of the mask (192.168.1.0 and 192.168.1.255 on a /24) is refused, for
+  the primary and the second address, against the netmask in the same request,
+  else the stored one, else /24, and a netmask is refused when it makes the
+  address one of the two; `gponsn` for `GPON_SN` (four characters
+  and eight hex digits, as the kernel `gponsn` verb takes); `hex20` for
+  `GPON_PLOAM_PASSWD` (exactly 10 bytes; the kernel reads a shorter value as
+  literal text); `str14`/`str20`/`str24`/`str12` for the software versions, the
+  model and the LOID keys, the width of the field the OLT reads (omcid answered
+  a longer value as absent). `ELAN_MAC_ADDR`, with its own type `elanmac`, refuses a
+  multicast or all-zero MAC (the other MAC-shaped keys, `HW_SERIAL_NO` and
+  `WLAN_MAC_ADDR`, stay plain 12 hex digits). `scripts/gen-schema.py` keeps the types in `TYPE_OVERRIDE`.
+
+- Config: the VEIP slot row says when it has no effect: omcid applies the slot
+  only while `OMCI_CUSTOM_ME` has bit 256, the stock default of that key does
+  not, and it is read-only on the Stock keys tab. The row shows the value to
+  set with `flash set`. The reset, restore and counts text no longer say the
+  `OMCI_CUSTOM_*` masks are read only by the stock firmware (omcid reads one
+  bit of `OMCI_CUSTOM_ME`), and the "21 of 184 keys" figure is corrected
+  (22 of the 184 stock keys, plus keys of the image's own).
+
+- This changelog no longer cites files of a private workspace.
+
+- No OLT or ONT make is named in the UI or its fixtures. The MIB tab lists the
+  six entities the stock firmware registers under such names as
+  `PrivateQueueMap`, `Me350`, `Me370`, `Me373`, `PrivateMcastTag` and
+  `PrivateSntp` and queries them by class id (243, 350, 370, 373, 65282,
+  65294); the Services card shows the OLT vendor code as the four characters
+  the OLT reports, without a name lookup. Released sections of this file are
+  unchanged. Refs odi-oss#114
+
+- Security and robustness, from the night audit: a request now has a ten-second wall-clock deadline and the upload
   body two minutes, where before only each single read was bounded (15 s), so
   one client sending a byte every few seconds held the single-threaded daemon
   (and the Firmware tab during an update) indefinitely. `POST /api/upload` is
@@ -30,9 +124,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   caps at 8 MiB, so an upload of exactly the old limit filled it and left no
   room for the flasher's own files or for `flash set`, which stages its temp
   file there. A real image (kernel plus rootfs partition, about 3.8 MiB) is
-  well under the new limit. Found in the night audit of the update path
-  (odi-oss investigations/odi-sfp-re/AUDIT-night-flash.md, finding 6).
-- Robustness, from the night audit (AUDIT-night-confd K7): a child confd
+  well under the new limit. Found in an audit of the update path.
+- Robustness, from the night audit: a child confd
   runs can no longer hold the whole daemon after its output ends. The drain
   kept nothing past a full buffer and then waited for the child with a
   blocking `waitpid()`, so a command that printed more than the buffer
@@ -42,7 +135,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   killed and reported as a timeout like any other. Children also start with
   SIGPIPE at its default action again: the daemon ignores it for itself and
   an ignored signal survives `execve`, so scripts ran with it ignored.
-- Security and robustness, from the night audit (AUDIT-night-confd K6, K10):
+- Security and robustness, from the night audit:
   `/etc/config/confd.auth` and the ssh `authorized_keys` are written to a
   temporary file beside them and renamed into place, instead of truncated and
   rewritten. A power cut during a password change used to leave an empty
@@ -51,7 +144,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that has no password login. `delete=` on `/api/sshkeys` with anything but a
   line number is now a 400; it used to delete line 0 (`delete=abc`) or the
   leading digits (`delete=1x`).
-- Security, from the night audit (AUDIT-night-confd K2, K8): confd answers only
+- Security, from the night audit: confd answers only
   requests whose `Host` is a name a browser can only have reached on the LAN: an
   IP literal, a single label, or a private suffix (`.local`, `.lan`, `.home.arpa`
   and the like). Any other name gets 403 before the password prompt, which stops
@@ -64,7 +157,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bundle. Every response now carries `X-Frame-Options: DENY`, a CSP
   `frame-ancestors 'none'`, `nosniff` and `Referrer-Policy: no-referrer`, so the
   page cannot be framed under an operator pointer.
-
 - Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
   (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
   the web checks, AGENTS.md and comments, and the fixture README no longer

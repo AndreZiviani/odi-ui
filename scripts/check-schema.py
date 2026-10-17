@@ -25,7 +25,9 @@ WRITABLE = {"yes", "never", "identity"}
 # anything else -- so a typo here is a key that cannot be written at all, which
 # is the safe direction but still a bug, and one nothing else would report.
 # Keep the two in step: adding a type means adding it in both places.
-TYPES = {"int", "ipv4", "mac", "hex32", "hexascii", "hostport", "ascii14", "fixedme", "string"}
+TYPES = {"int", "ipv4", "ipv4host", "netmask", "mac", "elanmac", "hex32", "hexascii", "hex20", "gponsn",
+         "hostport", "ascii14", "fixedme", "string"}
+STRN = re.compile(r"^str[1-9][0-9]*$")   # strN: printable ASCII, at most N characters
 
 problems = []
 
@@ -77,7 +79,7 @@ for name, store, addr, section, typ, apply_, writable, common in keys:
         note(name, f"address {addr!r} is in display form, not dotted")
     if apply_ not in APPLY_CLASSES:
         note(name, f"apply {apply_!r} is not a known class")
-    if typ not in TYPES:
+    if typ not in TYPES and not STRN.match(typ):
         note(name, f"type {typ!r} is not a type the daemon implements")
     if writable not in WRITABLE:
         note(name, f"writable {writable!r} is not a known value")
@@ -208,6 +210,36 @@ for fname, bufs in READS_INTO.items():
             note(fname, f"buffer {b!r} is not in src/buffers.c")
         elif size >= sizes[b]:
             note(fname, f"{size} bytes does not fit {b}[{sizes[b]}]: confd would drop its tail")
+
+
+# --- the shared validation vectors ------------------------------------------
+# scripts/fixtures/validation-vectors.tsv is what the page (web-check.mjs) and
+# the daemon (smoke.sh) are both held to. A row naming a key the schema does not
+# have, or a kind neither runner knows, would pass silently in one of them.
+VEC_KINDS = {"key", "password", "sshkey", "ping", "me", "entity"}
+vec_path = os.path.join(HERE, "scripts", "fixtures", "validation-vectors.tsv")
+vec_rows = 0
+per_kind = {}
+for n, line in enumerate(open(vec_path, encoding="utf-8").read().split("\n"), 1):
+    if not line or line.startswith("#") or line.startswith("kind\t"):
+        continue
+    f = line.split("\t")
+    if len(f) < 4 or f[3] not in ("ok", "bad"):
+        note(f"validation-vectors.tsv:{n}", "a row is kind, name, value, ok|bad, why")
+        continue
+    if f[0] not in VEC_KINDS:
+        note(f"validation-vectors.tsv:{n}", f"kind {f[0]!r} is not one the runners know")
+    elif f[0] == "key" and f[1] not in {k[0] for k in keys}:
+        note(f"validation-vectors.tsv:{n}", f"key {f[1]!r} is not in keys.tsv")
+    vec_rows += 1
+    per_kind.setdefault((f[0], f[3]), 0)
+    per_kind[(f[0], f[3])] += 1
+# Every kind needs an example of each answer, or a runner that always says one
+# thing would pass the whole table.
+for kind in sorted(VEC_KINDS):
+    for expect in ("ok", "bad"):
+        if not per_kind.get((kind, expect)) and not (kind == "entity" and expect == "ok" and False):
+            note("validation-vectors.tsv", f"no {kind} row expects {expect}")
 
 # --- report ----------------------------------------------------------------
 if problems:

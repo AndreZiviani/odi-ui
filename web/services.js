@@ -45,18 +45,6 @@ const CARDS = [
  * having created nothing.
  */
 
-/*
- * Vendor codes are four ASCII characters and the OLT reports them as a 32-bit
- * hex word. Only vendors seen on these threads are named; anything else shows
- * the code, which is still the useful half.
- */
-const VENDORS = {
-  ALCL: 'Nokia (Alcatel-Lucent)',
-  HWTC: 'Huawei',
-  ZTEG: 'ZTE',
-  FHTT: 'FiberHome',
-};
-
 /* `PRI 8,VID 35, TPID 0, EthType 0x00` -> { PRI: '8', VID: '35', ... } */
 function fields(v) {
   const out = {};
@@ -155,7 +143,7 @@ function renderOlt(box, dump) {
   const dl = el('dl', 'me-kv');
 
   dl.append(el('dt', '', 'Vendor'),
-            el('dd', '', code ? (VENDORS[code] ? code + ' — ' + VENDORS[code] : code)
+            el('dd', '', code ? code
                               : String(hex || 'not reported')));
   if (inst) {
     for (const [k, v] of inst.attrs) {

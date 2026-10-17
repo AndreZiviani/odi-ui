@@ -22,6 +22,8 @@ int schema_lookup(const char *buf, const char *name,
 int tsv_field(const char *buf, const char *name, unsigned long col,
 	      char *out, unsigned long cap);
 int meta_ok(const char *name, const char *v, const char **why);
+int read_key(const char *addr, char *out, unsigned long cap);
+int host_in_mask_ok(const char *ip, const char *mask);
 int write_key(const char *addr, const char *value, char *out, unsigned long cap);
 int apply_omci(void);
 long load_values(void);

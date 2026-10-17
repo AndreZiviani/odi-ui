@@ -38,6 +38,15 @@
 #define DEFAULT_PORT 8080
 #define BACKLOG      8
 
+/*
+ * The longest value /api/config takes in one piece. OMCI_FIXED_ME is the one
+ * key that needs more than a few hundred bytes: 16 entries of up to 66
+ * characters and a separator each is 1071, and omcid reads the key into a
+ * buffer of 16 x 80 = 1280 bytes. Every other type is bounded far below this
+ * by its own rule.
+ */
+#define VALUE_MAX 1279
+
 #define FLASH_PATH "/etc/scripts/flash"
 #define DIAG_PATH  "/bin/diag"
 #define OMCICLI_PATH "/bin/omcicli"
