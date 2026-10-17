@@ -29,7 +29,12 @@ hundred lines instead of 88 handlers.
 **The `type` column is what the code that reads the key accepts.** A type is
 implemented twice, in `type_ok()` (`src/mib.c`, the one that enforces it) and in
 `valueProblem()` (`web/validate.js`, which only tells the user before the
-write), and listed in `scripts/check-schema.py`. Beside `int`, `mac`, `hex32`,
+write), and listed in `scripts/check-schema.py`. The two are held to one table,
+`scripts/fixtures/validation-vectors.tsv`: an accepted and a refused example of
+every rule, which `make check` runs through the page and `make smoke` posts to
+the daemon. The inputs that are not config keys (the password, an ssh key, ping,
+the MIB browser, the upload) have a rule in each layer in the same way, and
+their rows are in the same table. Beside `int`, `mac`, `hex32`,
 `hostport`, `ascii14`, `fixedme` and `string` there are: `ipv4host` and
 `netmask` (an address and a mask the kernel will put on an interface, because
 `network.sh` re-reads them at every boot and a refused one leaves the stick with
@@ -37,7 +42,14 @@ no way in), `gponsn` (four characters and eight hex digits, what the kernel
 `gponsn` verb takes), `hex20` (exactly ten bytes of PLOAM password; the kernel
 reads a shorter value as literal text), and `strN` (printable ASCII, at most N
 characters, the width of the field the OLT reads the value into; omcid answers a
-longer value as absent). A type the daemon does not know is refused. The types
+longer value as absent). The plain types are bounded too: `int` is at most ten
+digits and 4294967295, `ipv4` has no leading zeros, `string` is printable ASCII
+of at most 255 characters (the longest stock value is 191), and none of them
+may hold a quote, `<` or `&`, which `flash set` refuses. `hostport` takes a
+name of 1-63 character labels, or a whole IPv4 address. A value that names
+another key is judged with it: the VEIP slot is not 128, and the second
+management address differs from the first while it is on. A type the daemon
+does not know is refused. The types
 are chosen by what reads the key, not by the stock value it holds:
 `scripts/gen-schema.py` carries them in `TYPE_OVERRIDE`, so regenerating the
 schema keeps them.

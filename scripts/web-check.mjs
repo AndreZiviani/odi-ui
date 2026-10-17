@@ -201,6 +201,66 @@ ok(valueProblem(vlan, '100') === null, 'an in-range VLAN is accepted');
 const ip = SCHEMA.find((r) => r.name === 'LAN_IP_ADDR');
 ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
 
+/* The shared table of what every input accepts and refuses: scripts/smoke.sh
+   posts the same rows to the daemon, so a rule cannot change in one layer. */
+{
+  const V = await import(join(root, 'web', 'validate.js'));
+  const rows = readFileSync(join(root, 'scripts', 'fixtures', 'validation-vectors.tsv'), 'utf8')
+    .split('\n').filter((l) => l && !l[0].match(/[#]/)).map((l) => l.split('\t'))
+    .filter((r) => r[0] !== 'kind');
+  const dec = (x) => decodeURIComponent(x.replace(/\+/g, ' '));
+  const lines = [];
+  let seen = 0;
+  for (const [kind, name, value, expect] of rows) {
+    const raw = dec(value);
+    let bad;
+    if (kind === 'key') {
+      const row = SCHEMA.find((r) => r.name === name);
+      bad = row ? V.valueProblem(row, raw) : 'no such key in the schema';
+    } else if (kind === 'password') bad = V.passwordProblem(dec(name), raw);
+    else if (kind === 'sshkey') {
+      bad = V.sshKeyProblem(raw, lines);
+      if (!bad) lines.push(raw);
+    } else if (kind === 'ping') bad = V.pingProblem(raw);
+    else if (kind === 'me') bad = V.meProblem(raw);
+    else if (kind === 'entity') bad = V.entityProblem(raw);
+    else bad = 'unknown kind ' + kind;
+    seen++;
+    if ((bad === null) !== (expect === 'ok')) {
+      ok(false, `vector ${kind} ${name} ${value.slice(0, 50)}: the page says ${bad === null ? 'ok' : bad}, the table says ${expect}`);
+    }
+  }
+  ok(seen > 150, `${seen} validation vectors agree with the page`);
+
+  /* Rules that read another key: the page judges them from the pending edits,
+     then the stored values, as the daemon does from the request, then the store. */
+  const { EDITS } = await import(join(root, 'web', 'state.js'));
+  const ip2 = SCHEMA.find((r) => r.name === 'LAN_IP_ADDR2');
+  const en2 = SCHEMA.find((r) => r.name === 'LAN_ENABLE_IP2');
+  const was = { ...S.VALUES };
+  S.VALUES.LAN_IP_ADDR = '192.168.1.1';
+  S.VALUES.LAN_ENABLE_IP2 = '0';
+  ok(V.valueProblem(ip2, '192.168.1.1') === null, 'the second address may equal the first while it is off');
+  EDITS.set('LAN_ENABLE_IP2', '1');
+  ok(V.valueProblem(ip2, '192.168.1.1') !== null, 'the second address may not equal the first while it is on');
+  ok(V.valueProblem(ip2, '192.168.100.1') === null, 'a different second address is fine');
+  EDITS.set('LAN_IP_ADDR2', '192.168.1.1');
+  ok(V.valueProblem(en2, '1') !== null, 'turning the second address on with it equal to the first is refused');
+  EDITS.clear();
+  Object.assign(S.VALUES, was);
+
+  ok(V.tarProblem(new Uint8Array(512)) !== null, 'a header of zeros is not a tar archive');
+  const th = new Uint8Array(512);
+  th[0] = 0x61;
+  th.set([0x75, 0x73, 0x74, 0x61, 0x72], 257);
+  ok(V.tarProblem(th) === null, 'a 512-byte header with ustar at 257 is a tar archive');
+  ok(V.tarProblem(th.slice(0, 300)) !== null, 'a short file is not a tar archive');
+  ok(V.uploadSizeProblem(0) !== null && V.uploadSizeProblem(V.UPLOAD_MAX + 1) !== null
+     && V.uploadSizeProblem(V.UPLOAD_MAX) === null, 'the upload size limit is 6 MiB, and empty is refused');
+  ok(V.passwordProblem('admin', 'secret1', 'secret2') !== null, 'a repeated password that differs is refused');
+  ok(V.passwordProblem('admin', 'secret1', 'secret1') === null, 'a repeated password that matches is fine');
+}
+
 renderStatus(API['/api/status'].raw);
 ok(true, 'renderStatus runs against a diag capture');
 
@@ -329,6 +389,23 @@ ok(!plan.change.some(([n]) => n === 'GPON_SN'),
 const same = classify(parseBackup('<Value Name="LAN_IP_ADDR" Value="1"/>'));
 ok(same.same.includes('LAN_IP_ADDR') && same.change.length === 0,
    'a value that already matches is not rewritten');
+
+/* What the daemon would refuse is said before anything is written, and the
+   backup is judged as a whole: an address is checked against the mask in the
+   same file, not the one on the stick. */
+const inv = classify(parseBackup([
+  '<Value Name="DNS1" Value="192.168.010.001"/>',
+  '<Value Name="SNMP_SYS_NAME" Value="a&amp;b"/>',
+  '<Value Name="LAN_IP_ADDR" Value="192.168.0.0"/>',
+  '<Value Name="LAN_SUBNET" Value="255.255.255.0"/>',
+  '<Value Name="VLAN_MANU_TAG_VID" Value="110"/>',
+].join('\n')));
+ok(inv.invalid.map(([n]) => n).sort().join() === 'DNS1,LAN_IP_ADDR,LAN_SUBNET,SNMP_SYS_NAME',
+   'values the daemon would refuse are listed as skipped, not queued: ' + JSON.stringify(inv.invalid));
+ok(inv.change.some(([n]) => n === 'VLAN_MANU_TAG_VID') && !inv.change.some(([n]) => n === 'DNS1'),
+   'and the rest of the backup still restores');
+const wide = classify(parseBackup('<Value Name="LAN_IP_ADDR" Value="192.168.1.0"/><Value Name="LAN_SUBNET" Value="255.255.0.0"/>'));
+ok(wide.invalid.length === 0, 'an address is judged under the mask the backup carries (192.168.1.0 is a host on a /16): ' + JSON.stringify(wide.invalid));
 
 /* --- the OMCI_CUSTOM_* bitmask decode ------------------------------------ */
 const { decodeMask } = await import(join(root, 'web', 'state.js'));

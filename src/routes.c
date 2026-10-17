@@ -50,6 +50,52 @@ static const char *lan_pair_refusal(const char *name, const char *value,
 	return 0;
 }
 
+/* A key's value as the next boot will read it: this request's, else the
+ * store's, else `def`. */
+static void effective(const char *body, const char *key, const char *def,
+		      char *out, unsigned long cap)
+{
+	if (!form_get(body, key, out, cap) && !read_key(key, out, cap))
+		str_copy(out, def, cap);
+}
+
+/*
+ * Rules that name one key and a fact about another, which a type cannot say.
+ * NULL when fine.
+ *
+ *  - OMCI_VEIP_SLOT_ID: omcid takes 2 to 254 and not 128, and logs "ignored"
+ *    for anything else; meta.tsv's range cannot leave a hole in it.
+ *  - The second management address must differ from the first while it is on:
+ *    network.sh then refuses to add it twice, and says so only in a log. Judged
+ *    from whichever of the three keys the request carries, else the store,
+ *    else network.sh's defaults.
+ */
+static const char *key_refusal(const char *name, const char *value,
+			       const char *body)
+{
+	char ip1[64], ip2[64], en[8];
+
+	if (seq(name, "OMCI_VEIP_SLOT_ID")) {
+		unsigned long n = 0, i;
+
+		for (i = 0; value[i] >= '0' && value[i] <= '9'; i++)
+			n = n * 10 + (unsigned long)(value[i] - '0');
+		if (!value[i] && n == 128)
+			return "slot 128 is not usable: omcid ignores it (2 to 254, not 128)";
+		return 0;
+	}
+	if (!seq(name, "LAN_IP_ADDR") && !seq(name, "LAN_IP_ADDR2") &&
+	    !seq(name, "LAN_ENABLE_IP2"))
+		return 0;
+	effective(body, "LAN_ENABLE_IP2", "0", en, sizeof(en));
+	effective(body, "LAN_IP_ADDR", "192.168.1.1", ip1, sizeof(ip1));
+	effective(body, "LAN_IP_ADDR2", "", ip2, sizeof(ip2));
+	if (seq(en, "1") && ip2[0] && seq(ip1, ip2))
+		return "the same as the other management address: the second "
+		       "address would silently not be added";
+	return 0;
+}
+
 /*
  * POST /api/config — write keys, one report line each.
  *
@@ -61,7 +107,7 @@ static const char *lan_pair_refusal(const char *name, const char *value,
  */
 static void handle_write(int conn, const char *body)
 {
-	char name[128], value[512], got[512], addr[160];
+	char name[128], value[VALUE_MAX + 1], got[VALUE_MAX + 1], addr[160];
 	char type[32], writable[32], apply[32];
 	unsigned long i = 0;
 	int first = 1, confirm = 0;
@@ -183,6 +229,8 @@ static void handle_write(int conn, const char *body)
 		else if (!type_ok(type, value))
 			err = "not valid for its type";
 		else if ((err = lan_pair_refusal(name, value, body)))
+			;
+		else if ((err = key_refusal(name, value, body)))
 			;
 		else
 			meta_ok(name, value, &err);   /* sets err, or clears it */
@@ -357,6 +405,130 @@ static int fwu_running(void)
 	/* Signal 0 only tests that the process exists. EPERM would also mean
 	 * it does; confd runs as root, so only ESRCH (gone) says no. */
 	return syscall3(__NR_kill, (long)pid, 0, 0) == 0;
+}
+
+/*
+ * The shape of one OpenSSH public key line, as `ssh-keygen` prints it:
+ * TYPE BLOB [COMMENT]. NULL when it is one, else what is wrong, in words that
+ * say what is allowed. The page makes the same checks (web/validate.js,
+ * sshKeyProblem); `existing` is the file as it is now, for the duplicate.
+ *
+ * What it proves: the type is one dropbear takes, the blob is whole base64
+ * (a multiple of four, padding only at the end, as long as the shortest real
+ * key), and the blob names the same type inside itself, which a private key,
+ * a fingerprint or a half-pasted line never does. What it cannot prove is
+ * that the key bytes are good: dropbear decides that at login.
+ */
+static const char *const sshkey_types[] = {
+	"ssh-ed25519", "ssh-rsa", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384",
+	"ecdsa-sha2-nistp521", "sk-ssh-ed25519@openssh.com",
+	"sk-ecdsa-sha2-nistp256@openssh.com", 0
+};
+
+static const char *sshkey_refusal(const char *key, const char *existing)
+{
+	static const char shape[] = "not an OpenSSH public key line: paste the whole "
+		"contents of the .pub file, TYPE BLOB and an optional comment, one line "
+		"(ssh-ed25519, ssh-rsa, ecdsa-sha2-nistp256/384/521 or an sk- type)";
+	unsigned long t = 0, b, e, i, k, tl;
+	const char *type = 0;
+
+	for (i = 0; key[i]; i++)
+		if ((unsigned char)key[i] < 32 || (unsigned char)key[i] > 126)
+			return "a key is one line of printable text; remove the line "
+			       "breaks and anything that is not plain text";
+	while (key[t] && key[t] != ' ')
+		t++;
+	for (k = 0; sshkey_types[k]; k++) {
+		tl = str_len(sshkey_types[k]);
+		if (tl == t && spre(key, sshkey_types[k]))
+			type = sshkey_types[k];
+	}
+	if (!type || key[t] != ' ')
+		return shape;
+	tl = t;
+	b = t + 1;
+	for (e = b; key[e] && key[e] != ' '; e++) {
+		if (b64val(key[e]) < 0 && key[e] != '=')
+			return shape;
+	}
+	if (e - b < 68 || (e - b) % 4)
+		return shape;
+	for (k = b; k < e; k++)
+		if (key[k] == '=' && (e - k > 2 || key[e - 1] != '='))
+			return shape;
+	/* The blob is a run of length-prefixed strings (RFC 4253, section 6.6):
+	 * the type name first, then the key material. Decoded and walked to its
+	 * end, it must name the type it was declared with and add up exactly, so
+	 * a truncated paste, a private key or a fingerprint cannot pass. */
+	{
+		char raw[1024];
+		long rn = b64decode(key + b, e - b, raw, sizeof(raw));
+		unsigned long pos = 0, fields = 0;
+
+		if (rn < 0)
+			return shape;
+		while (pos < (unsigned long)rn) {
+			unsigned long l;
+
+			if (pos + 4 > (unsigned long)rn)
+				return shape;
+			l = ((unsigned long)(unsigned char)raw[pos] << 24) |
+			    ((unsigned long)(unsigned char)raw[pos + 1] << 16) |
+			    ((unsigned long)(unsigned char)raw[pos + 2] << 8) |
+			    (unsigned long)(unsigned char)raw[pos + 3];
+			pos += 4;
+			if (!l || l > (unsigned long)rn - pos)
+				return shape;
+			if (!fields) {
+				if (l != tl)
+					return shape;
+				for (k = 0; k < tl; k++)
+					if (raw[pos + k] != key[k])
+						return "the key says one type outside and another inside; "
+						       "paste the line as ssh-keygen printed it";
+			}
+			pos += l;
+			fields++;
+		}
+		if (fields < 2)
+			return shape;
+	}
+	/* Already there: the same type and blob on a line of the file. */
+	for (i = 0; existing[i]; ) {
+		unsigned long ls = i, le = i;
+
+		while (existing[le] && existing[le] != '\n')
+			le++;
+		if (le - ls >= e - b + tl + 1 &&
+		    spre(existing + ls, type) && existing[ls + tl] == ' ') {
+			for (k = 0; k < e - b && existing[ls + tl + 1 + k] == key[b + k]; k++)
+				;
+			if (k == e - b && (existing[ls + tl + 1 + k] == ' ' ||
+					   ls + tl + 1 + k == le))
+				return "that key is already in the list";
+		}
+		i = existing[le] ? le + 1 : le;
+	}
+	return 0;
+}
+
+/*
+ * Whether the file just uploaded starts like a tar archive: a 512-byte header
+ * whose magic field (offset 257) reads "ustar", which both the POSIX and the
+ * GNU formats carry. An image is a tarball (fwu_starter.sh extracts fwu.sh and
+ * md5.txt from it), and a file that is not one used to be kept in /tmp until
+ * Write failed with "is it an image tarball?" a click later. This proves the
+ * format, not the contents: fwu.sh checks those before it erases anything.
+ */
+static int upload_is_tar(void)
+{
+	char head[520];
+	long n = read_file(UPLOAD_PATH, head, 513);
+
+	return n >= 512 && head[0] &&
+	       head[257] == 'u' && head[258] == 's' && head[259] == 't' &&
+	       head[260] == 'a' && head[261] == 'r';
 }
 
 void serve(int conn)
@@ -551,6 +723,14 @@ void serve(int conn)
 			return;
 		}
 
+		if (!upload_is_tar()) {
+			syscall3(__NR_unlink, (long)UPLOAD_PATH, 0, 0);
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"that is not a tar archive; "
+				     "an image is the .tar that make image builds\"}");
+			return;
+		}
+
 		respond(conn, "200 OK", "application/json", 0);
 		put_fd(conn, "{\"ok\":true,\"bytes\":");
 		put_u32_fd(conn, (unsigned long)wrote);
@@ -699,40 +879,20 @@ void serve(int conn)
 				put_fd(conn, "{\"ok\":true}");
 				return;
 			}
-			if (!form_get(body, "key", key, sizeof(key)) || !key[0]) {
+			if (!form_get(body, "key", key, sizeof(key)) || !key[0] ||
+			    str_len(key) > 1000) {
 				respond(conn, "400 Bad Request", "application/json", 0);
-				put_fd(conn, "{\"ok\":false,\"error\":\"key is required\"}");
+				put_fd(conn, "{\"ok\":false,\"error\":\"a key is required: one line, up to 1000 characters\"}");
 				return;
 			}
-			/* Shape: <type> <base64> [comment], one line, printable. */
 			{
-				unsigned long t = 0, b, e;
-				int ok;
+				const char *why = sshkey_refusal(key, keys);
 
-				while (key[t] && key[t] != ' ')
-					t++;
-				ok = t > 4 && key[t] == ' ' &&
-				     ((key[0] == 's' && key[1] == 's' && key[2] == 'h' && key[3] == '-') ||
-				      (key[0] == 'e' && key[1] == 'c' && key[2] == 'd' && key[3] == 's' && key[4] == 'a') ||
-				      (key[0] == 's' && key[1] == 'k' && key[2] == '-'));
-				b = t + 1;
-				e = b;
-				while (ok && key[e] && key[e] != ' ') {
-					char c = key[e];
-
-					if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-					      (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '='))
-						ok = 0;
-					e++;
-				}
-				if (e - b < 16)
-					ok = 0;
-				for (i = 0; ok && key[i]; i++)
-					if (key[i] < 32 || key[i] > 126)
-						ok = 0;
-				if (!ok) {
+				if (why) {
 					respond(conn, "400 Bad Request", "application/json", 0);
-					put_fd(conn, "{\"ok\":false,\"error\":\"not an OpenSSH public key line (type, base64, optional comment)\"}");
+					put_fd(conn, "{\"ok\":false,\"error\":\"");
+					put_json_cstr(conn, why);
+					put_fd(conn, "\"}");
 					return;
 				}
 			}
@@ -798,13 +958,17 @@ void serve(int conn)
 	}
 
 	if (seq(path, "/api/password") && seq(method, "POST")) {
-		char user[96], pass[160];
+		/* Room for far more than the rules allow, so that a name or a
+		 * password that is too long is told its limit by set_credential
+		 * and not "required" because it did not fit a buffer. */
+		char user[256], pass[512];
 		const char *why = 0;
 
 		if (!form_get(body, "user", user, sizeof(user)) ||
 		    !form_get(body, "password", pass, sizeof(pass))) {
 			respond(conn, "400 Bad Request", "application/json", 0);
-			put_fd(conn, "{\"ok\":false,\"error\":\"user and password are required\"}");
+			put_fd(conn, "{\"ok\":false,\"error\":\"user and password are required, "
+				     "and must be 64 and 128 characters at most\"}");
 			return;
 		}
 		if (!set_credential(user, pass, &why)) {
@@ -891,7 +1055,6 @@ void serve(int conn)
 	if (seq(path, "/api/ping") && seq(method, "POST")) {
 		char host[64];
 		char *argv[6];
-		unsigned long i, digits = 0, dots = 0;
 		long got, code = -1;
 
 		if (!form_get(body, "host", host, sizeof(host))) {
@@ -899,15 +1062,13 @@ void serve(int conn)
 			put_fd(conn, "{\"ok\":false,\"error\":\"host is required\"}");
 			return;
 		}
-		for (i = 0; host[i]; i++) {
-			if (host[i] >= '0' && host[i] <= '9') { digits++; continue; }
-			if (host[i] == '.') { dots++; continue; }
-			digits = 0;
-			break;
-		}
-		if (!digits || dots != 3 || i > 15) {
+		/* Four numbers 0-255 without leading zeros (busybox ping reads 010
+		 * as octal), first one 1-223 and not 127: an address that can be
+		 * pinged, not 0.0.0.0, loopback, multicast or broadcast. */
+		if (!type_ok("ipv4host", host)) {
 			respond(conn, "400 Bad Request", "application/json", 0);
-			put_fd(conn, "{\"ok\":false,\"error\":\"an IPv4 address, and only an IPv4 address\"}");
+			put_fd(conn, "{\"ok\":false,\"error\":\"an IPv4 address like 192.168.1.254, "
+				     "and only an address (no name, no leading zeros)\"}");
 			return;
 		}
 

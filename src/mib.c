@@ -38,6 +38,29 @@ static int quad(const char *v, unsigned long o[4])
 	return !v[i];
 }
 
+
+/*
+ * Text the store and the readers can take: printable ASCII, at most `max`
+ * characters, and none of the three characters `flash set` refuses (a quote,
+ * < and &, which would end or break the XML attribute the value lands in).
+ * Control characters and bytes above 0x7e are refused: nothing on the device
+ * shows or reads them, and a tab or CR in the XML is what no parser here
+ * promises to survive. Empty is fine; the caller decides whether a key may be
+ * empty.
+ */
+static int printable_ok(const char *v, unsigned long max)
+{
+	unsigned long i;
+
+	for (i = 0; v[i]; i++) {
+		unsigned char c = (unsigned char)v[i];
+
+		if (i >= max || c < 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
+			return 0;
+	}
+	return 1;
+}
+
 /*
  * Type-level validation, server side.
  *
@@ -47,37 +70,34 @@ static int quad(const char *v, unsigned long o[4])
  */
 int type_ok(const char *type, const char *v)
 {
-	unsigned long i, dots = 0, digits = 0;
+	unsigned long i;
 
 	if (seq(type, "int")) {
+		/* Decimal digits, and a value that fits 32 bits (4294967295 is
+		 * the largest the stock store holds, OMCI_LOGFILE_MASK). Without
+		 * the cap a 400-digit number was written, and the readers that
+		 * take a 15-character buffer (omcid cfg_num) read it as absent. */
+		unsigned long n = 0, d;
+
 		if (!v[0])
 			return 0;
-		for (i = 0; v[i]; i++)
-			if (v[i] < '0' || v[i] > '9')
+		for (i = 0; v[i]; i++) {
+			if (v[i] < '0' || v[i] > '9' || i >= 10)
 				return 0;
+			d = (unsigned long)(v[i] - '0');
+			if (n > (0xffffffffUL - d) / 10)
+				return 0;
+			n = n * 10 + d;
+		}
 		return 1;
 	}
 	if (seq(type, "ipv4")) {
-		unsigned long oct = 0;
+		/* Four decimal numbers 0-255, no leading zeros: busybox reads
+		 * 010 as octal, so 192.168.010.1 would be 192.168.8.1. 0.0.0.0
+		 * is allowed, it is what the stock DNS keys hold when unset. */
+		unsigned long o[4];
 
-		/* Counting dots and digits is not enough: it accepts
-		 * 1.2.3.400 and 999.999.999.999. Seven keys carry this type,
-		 * LAN_IP_ADDR among them -- the address this UI is reached on. */
-		for (i = 0; v[i]; i++) {
-			if (v[i] == '.') {
-				if (!digits || digits > 3 || oct > 255)
-					return 0;
-				digits = 0;
-				oct = 0;
-				dots++;
-			} else if (v[i] >= '0' && v[i] <= '9') {
-				oct = oct * 10 + (unsigned long)(v[i] - '0');
-				digits++;
-			} else {
-				return 0;
-			}
-		}
-		return dots == 3 && digits && digits <= 3 && oct <= 255;
+		return quad(v, o);
 	}
 	if (seq(type, "ipv4host") || seq(type, "netmask")) {
 		/* What the kernel will take as the address, or as the netmask,
@@ -157,21 +177,22 @@ int type_ok(const char *type, const char *v)
 			max = max * 10 + (unsigned long)(type[k] - '0');
 		if (type[k] || !max)
 			return 0;
-		for (i = 0; v[i]; i++) {
-			unsigned char c = (unsigned char)v[i];
-
-			if (i >= max || c < 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
-				return 0;
-		}
-		return 1;
+		return printable_ok(v, max);
 	}
 	if (seq(type, "hostport")) {
 		/* host or host:port, the form busybox ntpd -p and syslogd -R
 		 * both take: an IPv4 literal or a hostname, letters, digits,
 		 * dots and hyphens, then an optional :1-65535. No spaces or
 		 * quotes, which is the point: svc-syslogd.sh and svc-ntpd.sh
-		 * read this value back out of the store into a command line. */
-		unsigned long hlen = 0, port = 0, pdigits = 0;
+		 * read this value back out of the store into a command line.
+		 * A hostname is labels of 1-63 characters between dots, none
+		 * starting or ending with a hyphen; a name made only of digits
+		 * and dots must be a whole IPv4 address, because the resolver
+		 * would otherwise read it as one (or fail on it, and ntpd
+		 * would exit and be respawned for ever). */
+		unsigned long hlen = 0, port = 0, pdigits = 0, lab = 0, numeric = 1;
+		unsigned long o[4];
+		char host[256];
 
 		/* Empty clears the key (odi-oss flash removes it): remote
 		 * logging and NTP off. */
@@ -184,10 +205,25 @@ int type_ok(const char *type, const char *v)
 			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
 			      (c >= '0' && c <= '9') || c == '.' || c == '-'))
 				return 0;
-			hlen++;
+			if (c == '.') {
+				if (!lab || lab > 63 || v[i - 1] == '-')
+					return 0;
+				lab = 0;
+			} else {
+				if (c == '-' && !lab)
+					return 0;
+				if (c < '0' || c > '9')
+					numeric = 0;
+				lab++;
+			}
+			if (hlen >= 253)
+				return 0;
+			host[hlen++] = c;
 		}
-		if (!hlen || hlen > 253 || v[0] == '.' || v[0] == '-' ||
-		    v[hlen - 1] == '.' || v[hlen - 1] == '-')
+		if (!hlen || !lab || lab > 63 || v[i - 1] == '-')
+			return 0;
+		host[hlen] = 0;
+		if (numeric && !quad(host, o))
 			return 0;
 		if (v[i] == ':') {
 			for (i++; v[i]; i++) {
@@ -205,15 +241,7 @@ int type_ok(const char *type, const char *v)
 		 * (odi-oss flash removes it, and omcid then reports the device
 		 * id). The three flash refuses -- a quote, < and & -- are
 		 * refused here first. */
-		if (!v[0])
-			return 1;
-		for (i = 0; v[i]; i++) {
-			unsigned char c = (unsigned char)v[i];
-
-			if (i >= 14 || c < 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
-				return 0;
-		}
-		return 1;
+		return printable_ok(v, 14);
 	}
 	if (seq(type, "fixedme")) {
 		/* OMCI_FIXED_ME: up to 16 entries separated by commas or
@@ -306,8 +334,12 @@ int type_ok(const char *type, const char *v)
 		}
 		return n > 0;
 	}
-	if (seq(type, "string"))
-		return 1;
+	if (seq(type, "string")) {
+		/* A stock text key. The longest value on the stock store is 191
+		 * characters, all printable ASCII. 255 leaves room and stays well
+		 * inside what the daemon reads in one piece. */
+		return printable_ok(v, 255);
+	}
 
 	/*
 	 * An unrecognised type is refused, not waved through.
@@ -632,7 +664,7 @@ int host_in_mask_ok(const char *ip, const char *mask)
 int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 {
 	char *argv[5];
-	char buf[512];
+	char buf[VALUE_MAX + 256];
 	unsigned long i = 0, vs;
 
 	argv[0] = "flash";
