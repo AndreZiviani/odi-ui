@@ -150,6 +150,9 @@ p { margin: 0 0 10px; }
 .top-end form { margin: 0; }
 /* The theme toggle: an icon button the size of a tap target. It shows the
    theme it switches TO, and the label says so. */
+button.helptoggle { gap: 6px; }
+button.helptoggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button.helptoggle[aria-pressed=true] { color: var(--blue-ink); border-color: color-mix(in srgb, var(--blue) 60%, transparent); }
 button.themetoggle { padding: 0; width: 36px; height: 36px; justify-content: center; }
 button.themetoggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -326,6 +329,20 @@ button.apply .cost { padding: 1px 6px; }
 .s-key { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
 .s-help { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
 .s-warn { margin: 6px 0 0; color: var(--yellow-ink); font-size: 13.5px; }
+.s-title { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0; }
+.help-toggle {
+  width: 18px; height: 18px; padding: 0; margin: 0 8px 0 -2px; flex: none; align-self: center;
+  display: inline-grid; place-items: center; border-radius: 50%;
+  border: 1px solid var(--line-2); background: none; color: var(--ink-3);
+  font: 600 11.5px/1 var(--sans); cursor: pointer;
+}
+.help-toggle:hover { color: var(--ink); border-color: var(--ink-3); }
+.help-toggle[aria-expanded=true], html[data-help=full] .help-toggle { color: var(--blue-ink); border-color: var(--blue); }
+.s-helpbox { display: none; margin-top: 6px; padding: 2px 0 2px 10px; border-left: 2px solid var(--line-2); }
+.s-helpbox.open, html[data-help=full] .s-helpbox { display: block; }
+.s-helpbox .s-help { margin-top: 0; }
+.s-helpbox .s-help + .s-help { margin-top: 4px; }
+.s-helpbox .s-more { margin-top: 4px; }
 .s-more { margin-top: 6px; }
 .s-more dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 13.5px; color: var(--ink-2); }
 .s-more dt { color: var(--ink-3); }
@@ -556,7 +573,7 @@ table.diff .tag { margin-left: 8px; font-family: var(--sans); }
      the details. The label column dissolves so its parts can be ordered. */
   .setting { display: flex; flex-direction: column; gap: 8px; }
   .s-label { display: contents; }
-  .s-label > .s-more { order: 3; margin-top: 0; }
+  .s-label > .s-more, .s-label > .s-helpbox { order: 1; margin-top: -4px; }
   .s-control { order: 2; }
   .s-help, .s-warn { margin-top: -4px; }
   .legend { display: none; }
@@ -579,6 +596,7 @@ table.diff .tag { margin-left: 8px; font-family: var(--sans); }
   .logline { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 3px 12px; }
   .logline .lvl { font-size: 11px; }
   .top-end { gap: 8px; }
+  .helptoggle span { display: none; }
   .linepill .num { display: none; }
 }
 @media (max-width: 480px) {

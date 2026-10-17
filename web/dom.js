@@ -76,4 +76,43 @@ const bytes = (n) => {
   return (i ? n.toFixed(n < 10 ? 2 : 1) : String(Math.round(n * 100) / 100)) + ' ' + u[i];
 };
 
-export { $, el, fail, get, bytes, currentTheme, setTheme, wireTheme, THEME_KEY };
+/*
+ * The ? beside a field name. It shows or hides `helpBox`, which starts
+ * closed. Full help (data-help="full" on <html>) shows every box at once
+ * without changing what each ? has open on its own.
+ */
+function createHelpToggle(helpBox, fieldLabel) {
+  const button = el('button', 'help-toggle', '?');
+  button.type = 'button';
+  button.title = 'Help';
+  button.setAttribute('aria-label', 'Help: ' + fieldLabel);
+  button.setAttribute('aria-expanded', 'false');
+  if (helpBox.id) button.setAttribute('aria-controls', helpBox.id);
+  button.addEventListener('click', () => {
+    const isOpen = !helpBox.classList.contains('open');
+    helpBox.classList.toggle('open', isOpen);
+    button.setAttribute('aria-expanded', String(isOpen));
+  });
+  return button;
+}
+
+/*
+ * Full help: every field's help open at once, from the header button, which
+ * only the Config tab shows (app.js route()). It is data-help="full" on
+ * <html> (style.css opens every .s-helpbox under it) and is kept in
+ * localStorage under HELP_KEY, read back in the head like the theme.
+ */
+const HELP_KEY = 'odi-fullhelp';
+const isFullHelpOn = () => document.documentElement.dataset.help === 'full';
+function setFullHelp(enabled) {
+  if (enabled) document.documentElement.dataset.help = 'full';
+  else delete document.documentElement.dataset.help;
+  try { localStorage.setItem(HELP_KEY, enabled ? '1' : '0'); } catch (error) { /* not persisted */ }
+  $('#helptoggle').setAttribute('aria-pressed', String(enabled));
+}
+function wireHelp() {
+  $('#helptoggle').addEventListener('click', () => setFullHelp(!isFullHelpOn()));
+  $('#helptoggle').setAttribute('aria-pressed', String(isFullHelpOn()));
+}
+
+export { $, el, fail, get, bytes, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };

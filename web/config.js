@@ -8,7 +8,7 @@
  * section maps to, or under Other.
  */
 
-import { $, el } from './dom.js';
+import { $, el, createHelpToggle } from './dom.js';
 import {
   S, EDITS, provenance, applyOf, dependsUnmet, gatesOthers, dropIgnoredEdits, decodeMask,
   CLASS_LABEL, CLASS_MEANS, costBadge, imageAware, settingOf, identitySwitchOn,
@@ -234,12 +234,16 @@ function renderRow(row, readonly) {
   const name = el('label', 's-name', meta.label || row.name);
   const unmet = dependsUnmet(row);
   if (!(row.writable === 'never' || readonly || (set && set.pair) || unmet)) name.htmlFor = 'f-' + row.name;
-  const title = el('div', 's-title');
-  title.append(name, el('span', 's-key mono', row.name));
-  left.append(title);
 
-  const h = splitHelp(meta.help, set && set.note);
-  if (h.first) left.append(el('p', 's-help', h.first));
+  /* The help sits behind the ? by the name.
+  The ? opens the one-line help, with the long reason still one more click away under Details. */
+  const helpText = splitHelp(meta.help, set && set.note);
+  const helpBox = el('div', 's-helpbox');
+  helpBox.id = 'help-' + row.name;
+  const helpButton = createHelpToggle(helpBox, meta.label || row.name);
+  const title = el('div', 's-title');
+  title.append(name, helpButton, el('span', 's-key mono', row.name));
+  left.append(title, helpBox);
 
   /* The things that are wrong NOW stay visible: a value the firmware is
      currently ignoring is not a detail. */
@@ -258,18 +262,17 @@ function renderRow(row, readonly) {
         + ', then Apply now.'));
     }
   }
-  if (set && /omci-identity\.on/.test(set.reader) && !identitySwitchOn()) {
-    left.append(el('p', 's-warn', 'Not reported to the OLT: the identity switch is off, so '
-      + 'saving it changes nothing on the line and does not drop the service.'));
-  }
+  /* Said once by the identity switch above the rows, so each row carries only
+     a tag, and the sentence goes in its help. */
+  const isNotReportedToOlt = !!(set && /omci-identity\.on/.test(set.reader) && !identitySwitchOn());
   if (unmet) {
     left.append(el('p', 's-warn', 'Not editable now: the firmware ignores this key unless '
       + unmet.join(' and ') + '. Change that first.'));
   }
 
   const more = [];
-  if (h.rest) more.push(['', h.rest]);
-  if (h.note) more.push(['', h.note]);
+  if (helpText.rest) more.push(['', helpText.rest]);
+  if (helpText.note) more.push(['', helpText.note]);
   if (set && set.pair) more.push(['Written with', set.pair + ': edit that one.']);
   if (meta.options) {
     more.push(['Accepts', meta.options.split('|').map((p) => p.slice(0, p.indexOf('='))).join(', ')]);
@@ -285,6 +288,11 @@ function renderRow(row, readonly) {
     more.push(['Stored', `${S.VALUES[row.name] === '' ? '(empty)' : S.VALUES[row.name]} (used again once ${unmet.join(' and ')})`]);
   }
   if (prov && prov.was !== undefined) more.push(['Was', `${prov.was === '' ? '(empty)' : prov.was} (${prov.from})`]);
+  if (helpText.first) helpBox.append(el('p', 's-help', helpText.first));
+  if (isNotReportedToOlt) {
+    helpBox.append(el('p', 's-warn', 'Not reported to the OLT: the identity switch is off, so '
+      + 'saving it changes nothing on the line and does not drop the service.'));
+  }
   if (more.length) {
     const d = el('details', 's-more');
     d.append(el('summary', null, 'Details'));
@@ -294,7 +302,12 @@ function renderRow(row, readonly) {
       dl.append(el('dd', k ? null : 'wide', v));
     }
     d.append(dl);
-    left.append(d);
+    helpBox.append(d);
+  }
+  /* Nothing to say: no ? at all, and no empty box for Full help to open. */
+  if (!helpText.first && !more.length && !isNotReportedToOlt) {
+    helpButton.hidden = true;
+    helpBox.hidden = true;
   }
   wrap.append(left);
 
@@ -314,6 +327,11 @@ function renderRow(row, readonly) {
     const t = el('span', 'tag identity', 'Identity');
     t.title = 'The line authenticates on this key. Saving it asks you to confirm.';
     tags.append(t);
+  }
+  if (isNotReportedToOlt) {
+    const notReportedTag = el('span', 'tag warn', 'Not reported');
+    notReportedTag.title = 'The identity switch is off: the OLT is not told this value.';
+    tags.append(notReportedTag);
   }
   if (prov && !unmet) {
     const t = el('span', 'tag ' + prov.cls, prov.label === 'image default' ? 'Default' : 'Changed');
