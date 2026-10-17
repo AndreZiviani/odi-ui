@@ -956,6 +956,48 @@ check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
 
+echo "== a child that outlives its output must not hold the daemon"
+U="http://127.0.0.1:$PORT"
+cp /bin/omcicli /tmp/omcicli.kept
+# Prints more than the 32 KB answer buffer, then waits on something that never
+# comes: the drain used to stop at "full" and block in waitpid() for the sleep.
+cat > /bin/omcicli <<'STUB'
+#!/bin/sh
+head -c 40000 /dev/zero | tr '\0' x
+sleep 30
+STUB
+t0=$(date +%s)
+r=$(curl -s --max-time 25 -u "$AUTH" "$U/api/omci?cmd=me&me=84")
+t1=$(date +%s)
+check "a child that fills the buffer and then hangs is cut off in a few seconds" yes \
+	"$([ $((t1 - t0)) -lt 10 ] && echo yes || echo "no: $((t1 - t0)) s")"
+check "and the answer says it timed out, with what fit" yes "$(err "$r" 'timed out')"
+# Closes its output and then does not exit: EOF, then a blocking waitpid().
+cat > /bin/omcicli <<'STUB'
+#!/bin/sh
+echo started
+exec >&- 2>&-
+sleep 30
+STUB
+t0=$(date +%s)
+r=$(curl -s --max-time 25 -u "$AUTH" "$U/api/omci?cmd=me&me=84")
+t1=$(date +%s)
+check "a child that closes its output and hangs is cut off in a few seconds" yes \
+	"$([ $((t1 - t0)) -lt 10 ] && echo yes || echo "no: $((t1 - t0)) s")"
+check "and the server answers right after" 200 "$(code -u "$AUTH" "$U/api/schema")"
+# SIGPIPE is the default again in a child (the daemon ignores it itself).
+cat > /bin/omcicli <<'STUB'
+#!/bin/sh
+grep SigIgn /proc/self/status
+STUB
+r=$(curl -s -u "$AUTH" "$U/api/omci?cmd=me&me=84")
+sigign=$(printf '%s' "$r" | sed -n 's/.*SigIgn:\\u0009\([0-9a-f]*\).*/\1/p')
+check "the child reported its signal mask" yes "$([ -n "$sigign" ] && echo yes || echo "no: $r")"
+check "a child does not inherit an ignored SIGPIPE" 0 \
+	"$(( 0x${sigign:-1} & 0x1000 ))"
+cp /tmp/omcicli.kept /bin/omcicli
+rm -f /tmp/omcicli.kept
+
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to
 # block every other request indefinitely -- a port scanner holding a socket, or

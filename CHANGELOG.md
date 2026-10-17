@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Robustness, from the night audit (AUDIT-night-confd K7): a child confd
+  runs can no longer hold the whole daemon after its output ends. The drain
+  kept nothing past a full buffer and then waited for the child with a
+  blocking `waitpid()`, so a command that printed more than the buffer
+  (`omcicli mib get` on a big MIB) and then stalled froze every request; it
+  now keeps reading and discarding under the same inactivity bound, and a
+  child that closes its output but does not exit within two seconds is
+  killed and reported as a timeout like any other. Children also start with
+  SIGPIPE at its default action again: the daemon ignores it for itself and
+  an ignored signal survives `execve`, so scripts ran with it ignored.
+
 - Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
   (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
   the web checks, AGENTS.md and comments, and the fixture README no longer
