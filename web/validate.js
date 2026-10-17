@@ -142,6 +142,24 @@ function valueProblem(row, raw) {
       return 'must be four numbers 0\u2013255 separated by dots';
     }
   }
+  if (row.type === 'ipv4host' || row.type === 'netmask') {
+    /* Four numbers, no leading zeros (busybox ifconfig reads 010 as octal). */
+    const oct = raw.split('.');
+    if (oct.length !== 4 || !oct.every((o) => /^(0|[1-9]\d{0,2})$/.test(o) && Number(o) <= 255)) {
+      return 'must be four numbers 0–255 separated by dots, without leading zeros';
+    }
+    const n = oct.map(Number);
+    if (row.type === 'ipv4host' && (n[0] < 1 || n[0] > 223 || n[0] === 127)) {
+      return 'not an address the stick can use (it must start with 1–223, not 127)';
+    }
+    if (row.type === 'netmask') {
+      const m = ((n[0] << 24) | (n[1] << 16) | (n[2] << 8) | n[3]) >>> 0;
+      const inv = (~m) >>> 0;
+      if ((inv & (inv + 1)) !== 0 || n[0] !== 255 || (m & 3) !== 0) {
+        return 'not a netmask the stick can use: ones then zeros, from /8 to /30 (255.255.255.0)';
+      }
+    }
+  }
   if (row.type === 'hostport') {
     const m = /^([A-Za-z0-9.-]+)(?::(\d{1,5}))?$/.exec(raw);
     if (!m || /^[.-]|[.-]$/.test(m[1]) || m[1].length > 253
@@ -159,6 +177,23 @@ function valueProblem(row, raw) {
   if (row.type === 'fixedme') return fixedMeProblem(raw);
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';
+  }
+  if (row.type === 'mac' && (parseInt(raw[1], 16) & 1)) {
+    return 'a multicast address (the second digit must be even); the stick cannot use it';
+  }
+  if (row.type === 'mac' && /^0+$/.test(raw)) return 'all zeros is not an address';
+  if (row.type === 'gponsn' && !/^[\x21-\x7e]{4}[0-9a-fA-F]{8}$/.test(raw)) {
+    return 'four characters of vendor id and eight hex digits, 12 in all';
+  }
+  if (row.type === 'gponsn' && /["<&]/.test(raw)) return 'a quote, < or & cannot be stored';
+  if (row.type === 'hex20' && !/^[0-9a-fA-F]{20}$/.test(raw)) {
+    return 'must be exactly 20 hex digits (10 bytes)';
+  }
+  const strN = /^str(\d+)$/.exec(row.type);
+  if (strN) {
+    if (!/^[\x20-\x7e]*$/.test(raw)) return 'printable ASCII only';
+    if (/["<&]/.test(raw)) return 'a quote, < or & cannot be stored';
+    if (raw.length > Number(strN[1])) return `at most ${strN[1]} characters`;
   }
   if (row.type === 'hex32' && !/^[0-9a-fA-F]{32}$/.test(raw)) {
     return 'must be 32 hex digits';

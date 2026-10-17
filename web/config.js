@@ -157,7 +157,7 @@ function renderValue(row, raw, readonly = false) {
     input.spellcheck = false;
     input.autocomplete = 'off';
     if (row.type === 'int') input.inputMode = 'numeric';
-    if (row.type !== 'string' && row.type !== 'hostport' && row.type !== 'ascii14') input.classList.add('mono');
+    if (row.type !== 'string' && row.type !== 'hostport' && row.type !== 'ascii14' && !/^str\d+$/.test(row.type)) input.classList.add('mono');
     if (meta.range) input.placeholder = meta.range.replace('-', '–');
   }
   input.id = 'f-' + row.name;
@@ -215,7 +215,7 @@ function renderValue(row, raw, readonly = false) {
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form
      beside the field it is stored in. */
-  if (row.type === 'hexascii') {
+  if (row.type === 'hexascii' || row.type === 'hex20') {
     const txt = hexAscii(raw);
     box.append(el('div', 's-aside', txt === null ? 'Not printable ASCII' : 'Reads as “' + txt + '”'));
   }
@@ -245,6 +245,18 @@ function renderRow(row, readonly) {
      currently ignoring is not a detail. */
   if (row.name === 'LAN_IP_ADDR' && S.FW.lanip_override) {
     left.append(el('p', 's-warn', 'Ignored while /etc/config/lan-ip exists: that file sets the address, with a /24 mask.'));
+  }
+  /* omcid moves the VEIP to the slot only while OMCI_CUSTOM_ME has bit 0x100,
+     as the stock firmware does, and that key is on the read-only Stock keys
+     tab: without the bit this field saves a value that does nothing. */
+  if (row.name === 'OMCI_VEIP_SLOT_ID') {
+    const me = Number(S.VALUES.OMCI_CUSTOM_ME);
+    if (!(me & 0x100)) {
+      left.append(el('p', 's-warn', 'Has no effect yet: OMCI_CUSTOM_ME ('
+        + (Number.isFinite(me) ? me : 'not set') + ') does not have bit 256 (0x100), so the VEIP stays in slot 6. '
+        + 'Over ssh: flash set OMCI_CUSTOM_ME ' + ((Number.isFinite(me) ? me : 0) | 0x100)
+        + ', then Apply now.'));
+    }
   }
   if (set && /omci-identity\.on/.test(set.reader) && !identitySwitchOn()) {
     left.append(el('p', 's-warn', 'Not reported to the OLT: the identity switch is off, so '

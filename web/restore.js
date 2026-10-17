@@ -175,7 +175,7 @@ function wireRestore() {
     out.append(line('warn', 'Written, not applied. Each restored key takes effect '
       + 'the way its class on the Config tab says: the addresses at once when '
       + 'you save them again there, the OMCI keys with Apply now, the rest at '
-      + 'the next reboot. Keys only the stock firmware reads change nothing here.'));
+      + 'the next reboot. Keys only the stock firmware reads change nothing here, except OMCI_CUSTOM_ME, whose bit 256 decides whether the VEIP slot applies.'));
   };
 }
 
