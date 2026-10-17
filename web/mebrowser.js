@@ -39,7 +39,7 @@ const TABLES = [
   'ExtendedMcastOperProf', 'ExtendedOnuG', 'ExtIpHostCfgData',
   'ExtVlanTagOperCfgData', 'FecPmhd', 'GalEthProf', 'GemIwTp', 'GemPortCtp',
   'GemPortPmhd', 'GeneralPurposeBuffer', 'GenericStatusPortal', 'GpncPmhd',
-  'HSQDefault', 'HW ME350', 'HW ME370', 'HW ME373', 'IpHostCfgData',
+  'HSQDefault', 'Me350', 'Me370', 'Me373', 'IpHostCfgData',
   'LargeString', 'LargeString', 'LctUni', 'LoIdAuth', 'LoopDetect',
   'MacBridgePortFilterPreassign', 'MacBridgePortFilterTable',
   'MacBridgePortPmMonitorHistoryData', 'MacBriPortBriTblData',
@@ -52,7 +52,7 @@ const TABLES = [
   'Scheduler', 'SWImage', 'Tcont', 'TcpUdpCfgData', 'ThresholdData1',
   'ThresholdData2', 'TR069ManageServer', 'TrafficDescriptor', 'Unig', 'VEIP',
   'VlanTagFilterData', 'VlanTagOpCfgData', 'WANConfigCata',
-  'WANConfigCataDeti', 'ZTE ME243', 'ZteMcastTag', 'ZteSntp'
+  'WANConfigCataDeti', 'PrivateQueueMap', 'PrivateMcastTag', 'PrivateSntp'
 ];
 
 /*
@@ -66,6 +66,10 @@ const CLASS_IDS = {
   SWImage: 7, EthUni: 11, MacBriPortCfgData: 47, OltG: 131,
   ExtVlanTagOperCfgData: 171, Tcont: 262, GemIwTp: 266, GemPortCtp: 268,
   VlanTagFilterData: 84, VEIP: 329,
+  /* Entities the stock firmware registers under names of the make they were
+     written for; they are asked for by class id, and listed under neutral names. */
+  PrivateQueueMap: 243, Me350: 350, Me370: 370, Me373: 373,
+  PrivateMcastTag: 65282, PrivateSntp: 65294,
 };
 
 const DUMPS = [

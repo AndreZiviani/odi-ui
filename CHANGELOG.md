@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- No OLT or ONT make is named in the UI or its fixtures. The MIB tab lists the
+  six entities the stock firmware registers under such names as
+  `PrivateQueueMap`, `Me350`, `Me370`, `Me373`, `PrivateMcastTag` and
+  `PrivateSntp` and queries them by class id (243, 350, 370, 373, 65282,
+  65294); the Services card shows the OLT vendor code as the four characters
+  the OLT reports, without a name lookup. Released sections of this file are
+  unchanged. Refs odi-oss#114
 - Security, from the night audit (AUDIT-night-confd K2, K8): confd answers only
   requests whose `Host` is a name a browser can only have reached on the LAN: an
   IP literal, a single label, or a private suffix (`.local`, `.lan`, `.home.arpa`
