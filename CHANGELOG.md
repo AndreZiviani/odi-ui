@@ -16,8 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the OLT reports, without a name lookup. Released sections of this file are
   unchanged. Refs odi-oss#114
 
-- Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
-  K5, K9): a request now has a ten-second wall-clock deadline and the upload
+- Security and robustness, from the night audit: a request now has a ten-second wall-clock deadline and the upload
   body two minutes, where before only each single read was bounded (15 s), so
   one client sending a byte every few seconds held the single-threaded daemon
   (and the Firmware tab during an update) indefinitely. `POST /api/upload` is
