@@ -18,6 +18,7 @@ import { wireRestore } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
 import { renderHostlink, wireHostlink } from './hostlink.js';
+import { passwordProblem, sshKeyProblem } from './validate.js';
 
 /*
  * Four sections, each with subtabs, and the location hash naming the pair:
@@ -163,8 +164,14 @@ async function savePassword() {
   const out = $('#pw-out');
   const user = $('#pw-user').value.trim();
   const pass = $('#pw-pass').value;
+  const again = $('#pw-pass2').value;
 
   out.textContent = '';
+  /* The daemon checks the same rules, but a typo in a password with no repeat
+     field is the one mistake it cannot catch: the credential is saved as typed
+     and the next request answers 401. */
+  const bad = passwordProblem(user, pass, again);
+  if (bad) { out.append(el('div', 'bad', bad)); return; }
   try {
     const r = await fetch('/api/password', {
       method: 'POST',
@@ -181,6 +188,7 @@ async function savePassword() {
       'Your browser is still using the old one. Sign out, then sign back in as '
       + user + '.'));
     $('#pw-pass').value = '';
+    $('#pw-pass2').value = '';
     await checkAuth();
   } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
 }
@@ -190,11 +198,16 @@ async function savePassword() {
  * key added over ssh by hand shows up here too, and a delete names the line
  * number the server reported rather than re-sending the key text.
  */
+/* The lines on the stick as last listed, for the duplicate check and for the
+   warning before the last one is removed. */
+let SSH_LINES = [];
+
 async function renderSshKeys() {
   const box = $('#sshkeys');
   box.textContent = '';
   try {
     const j = await get('/api/sshkeys');
+    SSH_LINES = j.keys.map((k) => k.line);
     if (!j.keys.length) { box.append(el('p', 'hint', 'No keys yet: SSH accepts the root password only.')); return; }
     const t = el('ul', 'keylist');
     for (const k of j.keys) {
@@ -219,6 +232,8 @@ async function addSshKey() {
   const out = $('#sshkey-out');
   const key = $('#sshkey-new').value.trim();
   out.textContent = '';
+  const bad = sshKeyProblem(key, SSH_LINES);
+  if (bad) { out.append(el('div', 'bad', bad)); return; }
   try {
     const r = await fetch('/api/sshkeys', {
       method: 'POST',
@@ -236,6 +251,13 @@ async function addSshKey() {
 async function delSshKey(i) {
   const out = $('#sshkey-out');
   out.textContent = '';
+  /* The only way into a keys-only stick, and a removal that cannot be undone
+     from here: the key has to be pasted again. */
+  if (!confirm('Remove this key?\n\n'
+      + (SSH_LINES.length <= 1
+        ? 'It is the last one: on an image whose root password is locked, nothing else lets you log in over ssh. '
+        : 'Whoever holds its private half can no longer log in. ')
+      + 'To get it back you have to paste it again.\n\nContinue?')) return;
   try {
     const r = await fetch('/api/sshkeys', {
       method: 'POST',

@@ -74,6 +74,13 @@ all)
 		<Value Name="NTP_SERVER" Value="192.168.0.2"/>
 XML
 	;;
+get)
+	# The stored value of one key, as `flash get` prints it: from the same XML.
+	# Prints nothing for a key the store does not hold.
+	# A key in /etc/config/getfake ("K=V" lines) wins: a test stores one there.
+	grep "^$2=" /etc/config/getfake 2>/dev/null && exit 0
+	"$0" all cs | sed -n "s/.*Name=\"$2\" Value=\"\([^\"]*\)\".*/$2=\1/p" | head -n 1
+	;;
 set)
 	echo "$2=$3"
 	;;
@@ -211,6 +218,8 @@ check "the file was created 0600" 600 \
 	"$(stat -c '%a' /etc/config/confd.auth 2>/dev/null)"
 check "the new credential works" 200 \
 	"$(code -u op:hunter22 "http://127.0.0.1:$PORT/api/schema")"
+check "no temp file is left beside the credential" no \
+	"$([ -e /etc/config/confd.auth.new ] && echo yes || echo no)"
 check "the default stops working once one is set" 401 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "and the default is no longer reported" false \
@@ -275,7 +284,7 @@ check "a line that is not a key is refused" 400 \
 check "an empty key is refused" 400 \
 	"$(code -u "$AUTH" -X POST -d 'key=' "http://127.0.0.1:$PORT/api/sshkeys")"
 K1='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxJq2sL3o5p8Qh1u7v9wXyZaBcDeFgHiJkLmNoPqRsT laptop'
-K2='ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0m8v2xFakeKeyBlobForTheSmokeTest0123456789abcdefghijklmnopqrstuvwxyz desk'
+K2='ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQADChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8 desk'
 check "a key is added" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
 check "and a second one" yes \
@@ -288,6 +297,23 @@ check "deleting the first leaves the second at line 0" yes \
 	"$(curl -s -u "$AUTH" -X POST -d 'delete=0' "http://127.0.0.1:$PORT/api/sshkeys" >/dev/null; err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '"keys":[{"i":0,"line":"ssh-rsa')"
 check "deleting a line that is not there is 404" 404 \
 	"$(code -u "$AUTH" -X POST -d 'delete=7' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "delete with a non-number is refused, not read as line 0" 400 \
+	"$(code -u "$AUTH" -X POST -d 'delete=abc' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "delete with trailing junk is refused too" 400 \
+	"$(code -u "$AUTH" -X POST -d 'delete=0x' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "and the key is still there" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '"keys":[{"i":0,"line":"ssh-rsa')"
+# Written by rename: a leftover temp file from an interrupted write is replaced,
+# never followed, and nothing is left behind afterwards.
+echo stale > /tmp/planted
+ln -sf /tmp/planted /etc/config/dropbear.d/authorized_keys.new
+check "a key is added past a stale temp file that is a link" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "the link target was not written" stale "$(cat /tmp/planted)"
+check "no temp file is left beside the keys" no \
+	"$([ -e /etc/config/dropbear.d/authorized_keys.new ] || [ -L /etc/config/dropbear.d/authorized_keys.new ] && echo yes || echo no)"
+check "the key file holds both lines" 2 "$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ')"
+rm -f /tmp/planted
 check "without a credential the keys are not readable" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/sshkeys")"
 rm -f /etc/config/dropbear.d/authorized_keys
@@ -338,6 +364,48 @@ check "same-origin POST is allowed" 200 \
 check "no Origin still works (curl, scripts)" 200 \
 	"$(code -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.1' \
 		"http://127.0.0.1:$PORT/api/config")"
+
+echo "== host name and foreign pages"
+U="http://127.0.0.1:$PORT"
+hcode() { curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -H "Host: $1" "$U/api/schema"; }
+check "an IPv4 Host is answered" 200 "$(hcode 192.168.1.1)"
+check "an IPv4 Host with a port is answered" 200 "$(hcode 192.168.1.1:8080)"
+check "an IPv6 literal Host is answered" 200 "$(hcode '[fe80::1]')"
+check "a single-label Host is answered" 200 "$(hcode odi)"
+check "a .lan Host is answered" 200 "$(hcode stick.lan)"
+check "a public name is refused (DNS rebinding)" 403 "$(hcode rebind.example.com)"
+check "a public name with a port is refused" 403 "$(hcode rebind.example.com:80)"
+check "a look-alike IP-prefixed name is refused" 403 "$(hcode 192.168.1.1.example.com)"
+check "a fully qualified single label is refused" 403 "$(hcode stick.)"
+check "a rebound name gets no credential prompt" 403 \
+	"$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: rebind.example.com' "$U/api/schema")"
+printf 'stick.example.org\n' > /etc/config/confd.hosts
+check "a name listed in confd.hosts is answered" 200 "$(hcode Stick.Example.org)"
+check "an unlisted name is still refused" 403 "$(hcode other.example.org)"
+rm -f /etc/config/confd.hosts
+check "a fetch from another site is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: no-cors' \
+		-H 'Sec-Fetch-Dest: image' "$U/api/diag")"
+check "a fetch from a sibling port is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: same-site' -H 'Sec-Fetch-Mode: cors' "$U/api/values")"
+check "a followed link (top-level navigation) is allowed" 200 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+		-H 'Sec-Fetch-Dest: document' "$U/")"
+check "a followed link to an API route is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+		-H 'Sec-Fetch-Dest: document' "$U/api/diag")"
+long=$(python3 -c 'print("a"*130)')
+check "a Host filling the buffer is refused, not judged by its prefix" 403 "$(hcode "$long.example.com")"
+check "a long label whose cut prefix has no dot is refused" 403 "$(hcode "$long")"
+check "a prefix cut at .lan is refused" 403 "$(hcode "$(python3 -c 'print("a"*123)').lan.evil.example")"
+check "a same-origin fetch is allowed" 200 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Mode: cors' "$U/api/schema")"
+hdrs=$(curl -s -D - -o /dev/null -u "$AUTH" "$U/api/schema")
+check "responses forbid framing" yes "$(err "$hdrs" 'X-Frame-Options: DENY')"
+check "responses forbid sniffing" yes "$(err "$hdrs" 'X-Content-Type-Options: nosniff')"
+check "responses carry frame-ancestors none" yes "$(err "$hdrs" "frame-ancestors 'none'")"
+hdrs=$(curl -s -D - -o /dev/null "$U/api/schema")
+check "a 401 carries the headers too" yes "$(err "$hdrs" 'X-Frame-Options: DENY')"
 
 echo "== validation"
 post() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/config"; }
@@ -418,6 +486,88 @@ for bad in '123456789012345' 'a"b' 'a&b' 'a<b'; do
 done
 check "a non-ASCII ONU_HW_VERSION is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "ONU_HW_VERSION=caf$(printf '\303\251')" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
+# What the code that reads a key will accept is what the daemon accepts: an
+# address or mask the kernel refuses, a serial number the gponsn verb refuses,
+# a PLOAM password of the wrong length, a string wider than its OLT field.
+# A refused value is never stored, so none of these reaches flash.
+pt() {  # pt NAME VALUE: post one value, URL-encoded
+	curl -s -u "$AUTH" -X POST --data-urlencode "$1=$2" "http://127.0.0.1:$PORT/api/config"
+}
+pti() {  # pti NAME VALUE: the same, for an identity key, with the confirmation
+	curl -s -u "$AUTH" -X POST --data-urlencode "$1=$2" --data '_confirm=identity' "http://127.0.0.1:$PORT/api/config"
+}
+for bad in 0.0.0.0 127.0.0.1 224.0.0.1 255.255.255.255 192.168.010.1 192.168.1 1.2.3.4.5; do
+	check "an unusable LAN_IP_ADDR is refused: $bad" yes \
+		"$(err "$(pt LAN_IP_ADDR "$bad")" 'not valid for its type')"
+done
+for bad in 255.0.255.0 0.0.0.0 255.255.255.255 255.255.255.254 254.0.0.0 255.255.255.1; do
+	check "an unusable LAN_SUBNET is refused: $bad" yes \
+		"$(err "$(pt LAN_SUBNET "$bad")" 'not valid for its type')"
+done
+check "a /30 netmask passes" yes \
+	"$(err "$(pt LAN_SUBNET 255.255.255.252)" '"ok":true,"value":"255.255.255.252"')"
+check "a /8 netmask passes" yes \
+	"$(err "$(pt LAN_SUBNET 255.0.0.0)" '"ok":true,"value":"255.0.0.0"')"
+check "a usable LAN_IP_ADDR passes" yes \
+	"$(err "$(pt LAN_IP_ADDR 10.20.30.1)" '"ok":true,"value":"10.20.30.1"')"
+# The network and broadcast address of the mask are no host's, and network.sh
+# refuses them at boot: the daemon judges the address against the netmask
+# of the same request, else the stored one (the store here holds none, so /24,
+# as network.sh assumes), and the netmask against the address.
+for bad in 192.168.1.0 192.168.1.255 10.0.0.0; do
+	check "the network or broadcast address of the /24 is refused: $bad" yes \
+		"$(err "$(pt LAN_IP_ADDR "$bad")" 'network or broadcast address')"
+done
+check "the broadcast address of a /23 is refused against the netmask in the same request" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.255&LAN_SUBNET=255.255.254.0' "http://127.0.0.1:$PORT/api/config")" 'network or broadcast address')"
+check "the same address passes a /16 in the same request" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.255&LAN_SUBNET=255.255.0.0' "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_IP_ADDR","ok":true')"
+check "a netmask that makes the address in the same request its broadcast is refused" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.3&LAN_SUBNET=255.255.255.252' "http://127.0.0.1:$PORT/api/config")" 'netmask that makes')"
+printf 'LAN_SUBNET=255.255.254.0\nLAN_IP_ADDR=192.168.0.0\n' > /etc/config/getfake
+check "an address alone is judged against the STORED netmask (/23 here)" yes \
+	"$(err "$(pt LAN_IP_ADDR 192.168.1.255)" 'network or broadcast address')"
+check "a netmask alone is judged against the STORED address (a /23 network address here)" yes \
+	"$(err "$(pt LAN_SUBNET 255.255.254.0)" 'netmask that makes')"
+check "and passes against a stored address it leaves a host (192.168.0.0 on a /8)" yes \
+	"$(err "$(pt LAN_SUBNET 255.0.0.0)" '"ok":true,"value":"255.0.0.0"')"
+rm -f /etc/config/getfake
+check "the second address is judged the same way" yes \
+	"$(err "$(pt LAN_IP_ADDR2 192.168.100.255)" 'network or broadcast address')"
+for bad in ODI12345678 ODI0123456789 ODI01234567G 'OD 012345678'; do
+	check "a bad GPON_SN is refused: $bad" yes \
+		"$(err "$(pti GPON_SN "$bad")" 'not valid for its type')"
+done
+check "a GPON_SN of four characters and eight hex digits passes" yes \
+	"$(err "$(pti GPON_SN ODI0123456aB)" '"ok":true,"value":"ODI0123456aB"')"
+for bad in 3132333435363738393 313233343536373839303132 12345678 zz323334353637383930; do
+	check "a bad GPON_PLOAM_PASSWD is refused: $bad" yes \
+		"$(err "$(pti GPON_PLOAM_PASSWD "$bad")" 'not valid for its type')"
+done
+check "a GPON_PLOAM_PASSWD of 20 hex digits passes" yes \
+	"$(err "$(pti GPON_PLOAM_PASSWD 31323334353637383930)" '"ok":true')"
+check "a 14-character OMCI_SW_VER1 passes" yes \
+	"$(err "$(pt OMCI_SW_VER1 V1.1.6-2402021)" '"ok":true')"
+check "a 15-character OMCI_SW_VER1 is refused" yes \
+	"$(err "$(pt OMCI_SW_VER1 V1.1.6-24020212)" 'not valid for its type')"
+check "a 21-character GPON_ONU_MODEL is refused" yes \
+	"$(err "$(pti GPON_ONU_MODEL 123456789012345678901)" 'not valid for its type')"
+check "a 25-character LOID is refused" yes \
+	"$(err "$(pt LOID 1234567890123456789012345)" 'not valid for its type')"
+check "a 24-character LOID passes" yes \
+	"$(err "$(pt LOID 123456789012345678901234)" '"ok":true')"
+check "a 13-character LOID_PASSWD is refused" yes \
+	"$(err "$(pt LOID_PASSWD 1234567890123)" 'not valid for its type')"
+check "a LOID with a quote is refused" yes \
+	"$(err "$(pt LOID 'a"b')" 'not valid for its type')"
+for bad in 010203040506 000000000000 0102030405 01020304050607; do
+	check "a bad ELAN_MAC_ADDR is refused: $bad" yes \
+		"$(err "$(pti ELAN_MAC_ADDR "$bad")" 'not valid for its type')"
+done
+check "HW_SERIAL_NO is not held to the unicast rule" yes \
+	"$(err "$(pt HW_SERIAL_NO 010203040506)" '"name":"HW_SERIAL_NO","ok":true')"
+check "a unicast ELAN_MAC_ADDR passes" yes \
+	"$(err "$(pti ELAN_MAC_ADDR 023a21282716)" '"ok":true')"
 check "OLT_SW_DOWNLOAD reject is written and needs nothing" yes \
 	"$(err "$(post 'OLT_SW_DOWNLOAD=reject')" '"needs":[],"stock":false,"interrupts":false')"
 check "OLT_SW_DOWNLOAD accept is written" yes \
@@ -485,7 +635,7 @@ check "and /api/settings answers an empty list" '[]' \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")"
 mv /tmp/settings.tsv.kept /etc/confd/settings.tsv
 check "an identity key needs confirmation" yes \
-	"$(err "$(post 'GPON_SN=ODI12345678')" '_confirm=identity')"
+	"$(err "$(post 'GPON_SN=ODI012345678')" '_confirm=identity')"
 check "an unknown key is refused" yes \
 	"$(err "$(post 'NOT_A_REAL_KEY=1')" 'not in the schema')"
 
@@ -584,13 +734,26 @@ echo "== firmware upload"
 # request buffer. So the check uses a REAL multi-megabyte body and compares
 # md5s end to end -- a small one would pass whether the streaming loop works or
 # the whole thing still fits in one read.
-dd if=/dev/urandom of=/tmp/fake.tar bs=1024 count=3072 2>/dev/null
+# A real tar, not random bytes: the daemon looks for the ustar header and
+# refuses anything else. One 3 MB member of random data gives a multi-megabyte
+# body whose md5 can be compared end to end.
+mkdir -p /tmp/payload.d
+dd if=/dev/urandom of=/tmp/payload.d/payload bs=1024 count=3072 2>/dev/null
+tar -cf /tmp/fake.tar -C /tmp/payload.d payload
+rm -rf /tmp/payload.d
+FAKE_BYTES=$(wc -c < /tmp/fake.tar | tr -d ' ')
+# A small one for the checks that only need an upload to succeed.
+mkdir -p /tmp/small.d
+echo small > /tmp/small.d/small
+tar -cf /tmp/small.tar -C /tmp/small.d small
+rm -rf /tmp/small.d
+SMALL_BYTES=$(wc -c < /tmp/small.tar | tr -d ' ')
 LOCAL_MD5=$(md5sum /tmp/fake.tar | cut -d" " -f1)
 UP=$(curl -s -u "$AUTH" -X POST --data-binary @/tmp/fake.tar \
 	-H 'Content-Type: application/octet-stream' \
 	"http://127.0.0.1:$PORT/api/upload")
 check "a 3 MB image uploads" yes "$(err "$UP" '"ok":true')"
-check "every byte arrives" yes "$(err "$UP" '"bytes":3145728')"
+check "every byte arrives" yes "$(err "$UP" "\"bytes\":$FAKE_BYTES")"
 check "and the file on disk is byte-identical" "$LOCAL_MD5" \
 	"$(md5sum /tmp/img.tar 2>/dev/null | cut -d' ' -f1)"
 check "the daemon reports that same md5" yes "$(err "$UP" "$LOCAL_MD5")"
@@ -610,7 +773,7 @@ check "an upload declaring more than the limit is refused" 413 \
 	   -H 'Content-Length: 20000000' -H 'Content-Type: application/octet-stream' \
 	   --data-binary @/tmp/lie.bin "http://127.0.0.1:$PORT/api/upload")"
 check "and it wrote nothing" no \
-	"$([ -f /tmp/img.tar ] && [ "$(wc -c < /tmp/img.tar)" -lt 3145728 ] && echo yes || echo no)"
+	"$([ -f /tmp/img.tar ] && [ "$(wc -c < /tmp/img.tar)" -lt "$FAKE_BYTES" ] && echo yes || echo no)"
 rm -f /tmp/lie.bin
 check "an empty upload is refused" 413 \
 	"$(code -u "$AUTH" -X POST -H 'Content-Type: application/octet-stream' \
@@ -769,12 +932,12 @@ for bad in 'host=example.com' 'host=1.2.3' 'host=1.2.3.4.5' 'host=' \
 		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/ping")"
 done
 check "ping accepts an IPv4 literal" 200 \
-	"$(code -u "$AUTH" -X POST -d 'host=127.0.0.1' "http://127.0.0.1:$PORT/api/ping")"
+	"$(code -u "$AUTH" -X POST -d 'host=192.0.2.1' "http://127.0.0.1:$PORT/api/ping")"
 # There is no /bin/ping in the toolchain container, which makes this the case
 # worth pinning: a missing binary must not read as "no reply", or it sends you
 # to look at the network instead of at the image.
 check "a missing ping says so, rather than 'no reply'" yes \
-	"$(err "$(curl -s -u "$AUTH" -X POST -d 'host=127.0.0.1' "http://127.0.0.1:$PORT/api/ping")" 'no ping in this image')"
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'host=192.0.2.1' "http://127.0.0.1:$PORT/api/ping")" 'no ping in this image')"
 check "the kernel log comes back" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/log")" '"truncated"')"
 check "and it is not empty" yes \
@@ -968,6 +1131,220 @@ check "the next boot: the saved credential again" 200 "$(code -u "$AUTH" "http:/
 check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
+
+echo "== request deadlines, and a body that is not what it declared"
+U="http://127.0.0.1:$PORT"
+
+# SO_RCVTIMEO bounds one read(), so a client sending a byte every second never
+# tripped it and held the single thread for hours. The request has a deadline
+# of its own (REQUEST_DEADLINE_MS, 10 s): the connection is closed on it even
+# though bytes keep arriving. The probe sends one byte a second and reports
+# whether the server hung up within 15 s.
+slow=$(python3 - "$PORT" <<'PY'
+import socket, sys, time
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=5)
+t0 = time.time()
+req = b"GET /api/schema HTTP/1.0\r\nX-Pad: " + b"a" * 200
+closed = None
+for b in req:
+    try:
+        s.sendall(bytes([b]))
+        s.settimeout(0.05)
+        try:
+            if s.recv(1) == b"":
+                closed = time.time() - t0
+                break
+        except socket.timeout:
+            pass
+    except OSError:
+        closed = time.time() - t0
+        break
+    time.sleep(1.0)
+    if time.time() - t0 > 25:
+        break
+print("closed" if closed is not None and closed < 15 else "open")
+PY
+)
+check "a client that dribbles bytes is cut off by the request deadline" closed "$slow"
+check "and the server answers right after" 200 "$(code -u "$AUTH" "$U/api/schema")"
+
+# More body than declared: `left = want - have` wrapped to four billion and the
+# loop wrote whatever came next into /tmp until it was full. The extra bytes
+# are not part of the body now. Ten declared, four thousand sent in one segment.
+over=$(python3 - "$PORT" "$AUTH" /tmp/small.tar <<'PY'
+import base64, socket, sys
+port, auth = int(sys.argv[1]), sys.argv[2]
+img = open(sys.argv[3], "rb").read()
+cred = base64.b64encode(auth.encode()).decode()
+s = socket.create_connection(("127.0.0.1", port), timeout=10)
+s.sendall(b"POST /api/upload HTTP/1.0\r\nAuthorization: Basic " + cred.encode() +
+          b"\r\nContent-Length: " + str(len(img)).encode() + b"\r\n\r\n" + img + b"A" * 4000)
+out = b""
+while True:
+    d = s.recv(4096)
+    if not d:
+        break
+    out += d
+print(out.decode("utf-8", "replace").split("\r\n\r\n", 1)[-1])
+PY
+)
+check "bytes past the declared length are not part of the upload" yes "$(err "$over" "\"ok\":true,\"bytes\":$SMALL_BYTES")"
+check "and the file is exactly the declared length" "$SMALL_BYTES" "$(wc -c < /tmp/img.tar | tr -d ' ')"
+
+# A write in progress reads that file. The state file is the script's own
+# (fwu_starter.sh): running, a live pid.
+sleep 300 &
+LIVE=$!
+printf 'running %s 1\n' "$LIVE" > /tmp/fwu.state
+check "an upload is refused while a firmware write is running" 409 \
+	"$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
+check "and the image it was reading is untouched" "$SMALL_BYTES" "$(wc -c < /tmp/img.tar | tr -d ' ')"
+kill "$LIVE" 2>/dev/null || true
+wait "$LIVE" 2>/dev/null || true
+check "a state naming a dead process does not block an upload" 200 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "$U/api/upload")"
+rm -f /tmp/fwu.state
+
+# The upload name is made fresh, not opened through whatever is there.
+echo keep > /tmp/target.keep
+rm -f /tmp/img.tar
+ln -s /tmp/target.keep /tmp/img.tar
+check "an upload through a planted link still succeeds" 200 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "$U/api/upload")"
+check "but does not write through the link" keep "$(cat /tmp/target.keep)"
+check "and the image is a regular file" yes "$([ -f /tmp/img.tar ] && [ ! -L /tmp/img.tar ] && echo yes || echo no)"
+rm -f /tmp/target.keep /tmp/img.tar
+
+# A field that does not fit its buffer is an error, not a prefix: cut at the
+# buffer (1279 bytes, VALUE_MAX) it was validated, written and read back against itself, and reported
+# saved.
+long=$(python3 -c 'print("x" * 1400)')
+r=$(post "SNMP_SYS_NAME=$long")
+check "a value too long for its buffer is refused" yes "$(err "$r" 'too long')"
+check "and is not reported as saved" no "$(err "$r" '"ok":true' | grep -q '^yes' && echo yes || echo no)"
+mid=$(python3 -c 'print("y" * 40)')
+r=$(post "SNMP_SYS_NAME=$mid&GPON_SN=ODI012345678&_confirm=identity")
+check "a long value before _confirm does not hide the confirmation" yes \
+	"$(err "$r" '"name":"GPON_SN","ok":true')"
+check "a value too long for form_get is not truncated into a match" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=writeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&partition=1' "$U/api/firmware")"
+echo "== a child that outlives its output must not hold the daemon"
+U="http://127.0.0.1:$PORT"
+cp /bin/omcicli /tmp/omcicli.kept
+# Prints more than the 32 KB answer buffer, then waits on something that never
+# comes: the drain used to stop at "full" and block in waitpid() for the sleep.
+cat > /bin/omcicli <<'STUB'
+#!/bin/sh
+head -c 40000 /dev/zero | tr '\0' x
+sleep 30
+STUB
+t0=$(date +%s)
+r=$(curl -s --max-time 25 -u "$AUTH" "$U/api/omci?cmd=me&me=84")
+t1=$(date +%s)
+check "a child that fills the buffer and then hangs is cut off in a few seconds" yes \
+	"$([ $((t1 - t0)) -lt 10 ] && echo yes || echo "no: $((t1 - t0)) s")"
+check "and the answer says it timed out, with what fit" yes "$(err "$r" 'timed out')"
+# Closes its output and then does not exit: EOF, then a blocking waitpid().
+cat > /bin/omcicli <<'STUB'
+#!/bin/sh
+echo started
+exec >&- 2>&-
+sleep 30
+STUB
+t0=$(date +%s)
+r=$(curl -s --max-time 25 -u "$AUTH" "$U/api/omci?cmd=me&me=84")
+t1=$(date +%s)
+check "a child that closes its output and hangs is cut off in a few seconds" yes \
+	"$([ $((t1 - t0)) -lt 10 ] && echo yes || echo "no: $((t1 - t0)) s")"
+check "and the server answers right after" 200 "$(code -u "$AUTH" "$U/api/schema")"
+# SIGPIPE is the default again in a child (the daemon ignores it itself).
+cat > /bin/omcicli <<'STUB'
+#!/bin/sh
+grep SigIgn /proc/self/status
+STUB
+r=$(curl -s -u "$AUTH" "$U/api/omci?cmd=me&me=84")
+sigign=$(printf '%s' "$r" | sed -n 's/.*SigIgn:\\u0009\([0-9a-f]*\).*/\1/p')
+check "the child reported its signal mask" yes "$([ -n "$sigign" ] && echo yes || echo "no: $r")"
+check "a child does not inherit an ignored SIGPIPE" 0 \
+	"$(( 0x${sigign:-1} & 0x1000 ))"
+cp /tmp/omcicli.kept /bin/omcicli
+rm -f /tmp/omcicli.kept
+
+echo "== validation vectors"
+# scripts/fixtures/validation-vectors.tsv is the table of what every input
+# accepts and refuses; scripts/web-check.mjs runs the same rows through the
+# page. A row is posted to the route that owns the input, and what comes back
+# must be the table's word: ok accepted, bad refused.
+VEC=scripts/fixtures/validation-vectors.tsv
+cp /etc/config/confd.auth /etc/config/confd.auth.vec
+rm -f /etc/config/dropbear.d/authorized_keys
+vec_n=0
+vec_bad=0
+# Tabs become a separator that is not whitespace, or read would fold the empty
+# fields (a row with no name, or no value) into their neighbours.
+while IFS=$'\037' read -r kind name value expect why; do
+	case "$kind" in ''|'#'*|kind) continue ;; esac
+	vec_n=$((vec_n + 1))
+	got=bad
+	case "$kind" in
+	key)
+		r=$(curl -s -u "$AUTH" -X POST --data "$name=$value&_confirm=identity" "http://127.0.0.1:$PORT/api/config")
+		case "$r" in *'"ok":true'*) got=ok ;; esac ;;
+	password)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "user=$name&password=$value" "http://127.0.0.1:$PORT/api/password")
+		[ "$c" = 200 ] && got=ok
+		# put the credential back so the next row, and the checks after, still sign in
+		cp /etc/config/confd.auth.vec /etc/config/confd.auth ;;
+	sshkey)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "key=$value" "http://127.0.0.1:$PORT/api/sshkeys")
+		[ "$c" = 200 ] && got=ok ;;
+	ping)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "host=$value" "http://127.0.0.1:$PORT/api/ping")
+		[ "$c" = 200 ] && got=ok ;;
+	me)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=$value")
+		[ "$c" = 200 ] && got=ok ;;
+	entity)
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&entity=$value")
+		[ "$c" = 200 ] && got=ok ;;
+	esac
+	if [ "$got" != "$expect" ]; then
+		vec_bad=$((vec_bad + 1))
+		check "vector $kind $name ${value:0:40} ($why)" "$expect" "$got"
+	fi
+done < <(tr '\t' '\037' < "$VEC")
+mv /etc/config/confd.auth.vec /etc/config/confd.auth
+rm -f /etc/config/dropbear.d/authorized_keys
+check "$vec_n validation vectors agree with the daemon" 0 "$vec_bad"
+check "the credential survived the password vectors" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+
+# What a vector cannot say: a refusal that depends on the request, or on bytes.
+# The second management address while it is on must differ from the first.
+check "the second address equal to the first, in one request, is refused" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_ENABLE_IP2=1&LAN_IP_ADDR=192.168.1.1&LAN_IP_ADDR2=192.168.1.1' "http://127.0.0.1:$PORT/api/config")" 'the same as the other management address')"
+check "the second address on while it differs from the first is accepted" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_ENABLE_IP2=1&LAN_IP_ADDR=192.168.1.1&LAN_IP_ADDR2=192.168.100.1' "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_IP_ADDR2","ok":true')"
+check "equal while the second address is off is accepted" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'LAN_ENABLE_IP2=0&LAN_IP_ADDR2=192.168.1.1' "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_IP_ADDR2","ok":true')"
+check "slot 128 says why" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'OMCI_VEIP_SLOT_ID=128' "http://127.0.0.1:$PORT/api/config")" 'omcid ignores it')"
+check "a NUL byte in a value is refused, not read as the text before it" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'GPON_SN=ODI012345678%00junk&_confirm=identity' "http://127.0.0.1:$PORT/api/config")" 'badly encoded')"
+check "a value of five hundred characters in a string key says what is allowed" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data "SNMP_SYS_NAME=$(printf 'a%.0s' $(seq 500))" "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
+
+# The upload must be a tar archive: a 512-byte header with ustar at offset 257.
+head -c 4096 /dev/zero > /tmp/notatar.bin
+check "an upload that is not a tar archive is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/notatar.bin "http://127.0.0.1:$PORT/api/upload")"
+check "and it is not kept" no "$([ -e /tmp/img.tar ] && echo yes || echo no)"
+head -c 600 /dev/urandom > /tmp/notatar.bin
+check "random bytes are not a tar archive either" 400 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/notatar.bin "http://127.0.0.1:$PORT/api/upload")"
+check "a tar archive is accepted" 200 \
+	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "http://127.0.0.1:$PORT/api/upload")"
+rm -f /tmp/notatar.bin /tmp/img.tar
 
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to

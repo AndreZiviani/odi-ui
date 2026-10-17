@@ -8,6 +8,60 @@
 #include "mib.h"
 
 /*
+ * Four decimal octets, 0-255, separated by dots, none with a leading zero
+ * (busybox ifconfig reads 010 as octal: 192.168.010.1 is 192.168.8.1).
+ */
+static int quad(const char *v, unsigned long o[4])
+{
+	unsigned long i = 0, n, digits;
+
+	for (n = 0; n < 4; n++) {
+		o[n] = 0;
+		digits = 0;
+		while (v[i] >= '0' && v[i] <= '9') {
+			if (digits && !o[n])
+				return 0;          /* leading zero */
+			o[n] = o[n] * 10 + (unsigned long)(v[i] - '0');
+			digits++;
+			i++;
+			if (digits > 3 || o[n] > 255)
+				return 0;
+		}
+		if (!digits)
+			return 0;
+		if (n < 3) {
+			if (v[i] != '.')
+				return 0;
+			i++;
+		}
+	}
+	return !v[i];
+}
+
+
+/*
+ * Text the store and the readers can take: printable ASCII, at most `max`
+ * characters, and none of the three characters `flash set` refuses (a quote,
+ * < and &, which would end or break the XML attribute the value lands in).
+ * Control characters and bytes above 0x7e are refused: nothing on the device
+ * shows or reads them, and a tab or CR in the XML is what no parser here
+ * promises to survive. Empty is fine; the caller decides whether a key may be
+ * empty.
+ */
+static int printable_ok(const char *v, unsigned long max)
+{
+	unsigned long i;
+
+	for (i = 0; v[i]; i++) {
+		unsigned char c = (unsigned char)v[i];
+
+		if (i >= max || c < 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
+			return 0;
+	}
+	return 1;
+}
+
+/*
  * Type-level validation, server side.
  *
  * The browser also checks ranges and option lists from meta.tsv, but that is a
@@ -16,55 +70,129 @@
  */
 int type_ok(const char *type, const char *v)
 {
-	unsigned long i, dots = 0, digits = 0;
+	unsigned long i;
 
 	if (seq(type, "int")) {
+		/* Decimal digits, and a value that fits 32 bits (4294967295 is
+		 * the largest the stock store holds, OMCI_LOGFILE_MASK). Without
+		 * the cap a 400-digit number was written, and the readers that
+		 * take a 15-character buffer (omcid cfg_num) read it as absent. */
+		unsigned long n = 0, d;
+
 		if (!v[0])
 			return 0;
-		for (i = 0; v[i]; i++)
-			if (v[i] < '0' || v[i] > '9')
+		for (i = 0; v[i]; i++) {
+			if (v[i] < '0' || v[i] > '9' || i >= 10)
 				return 0;
+			d = (unsigned long)(v[i] - '0');
+			if (n > (0xffffffffUL - d) / 10)
+				return 0;
+			n = n * 10 + d;
+		}
 		return 1;
 	}
 	if (seq(type, "ipv4")) {
-		unsigned long oct = 0;
+		/* Four decimal numbers 0-255, no leading zeros: busybox reads
+		 * 010 as octal, so 192.168.010.1 would be 192.168.8.1. 0.0.0.0
+		 * is allowed, it is what the stock DNS keys hold when unset. */
+		unsigned long o[4];
 
-		/* Counting dots and digits is not enough: it accepts
-		 * 1.2.3.400 and 999.999.999.999. Seven keys carry this type,
-		 * LAN_IP_ADDR among them -- the address this UI is reached on. */
-		for (i = 0; v[i]; i++) {
-			if (v[i] == '.') {
-				if (!digits || digits > 3 || oct > 255)
-					return 0;
-				digits = 0;
-				oct = 0;
-				dots++;
-			} else if (v[i] >= '0' && v[i] <= '9') {
-				oct = oct * 10 + (unsigned long)(v[i] - '0');
-				digits++;
-			} else {
-				return 0;
-			}
-		}
-		return dots == 3 && digits && digits <= 3 && oct <= 255;
+		return quad(v, o);
 	}
-	if (seq(type, "mac") || seq(type, "hex32") || seq(type, "hexascii")) {
-		unsigned long want = seq(type, "mac") ? 12 : (seq(type, "hex32") ? 32 : 0);
+	if (seq(type, "ipv4host") || seq(type, "netmask")) {
+		/* What the kernel will take as the address, or as the netmask,
+		 * of an interface. network.sh reads these at every boot from a
+		 * partition a reflash never touches, and a value the kernel
+		 * refuses leaves the stick with no way in: so it is not stored. */
+		unsigned long o[4];
+
+		if (!quad(v, o))
+			return 0;
+		if (seq(type, "ipv4host"))
+			/* 1-223 and not 127: no 0/8, loopback, multicast,
+			 * reserved or broadcast address. */
+			return o[0] >= 1 && o[0] <= 223 && o[0] != 127;
+		{
+			/* Ones then zeros, between /8 and /30. */
+			unsigned long m = (o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3];
+			unsigned long inv = ~m & 0xffffffffUL;
+
+			if (inv & (inv + 1))
+				return 0;          /* not contiguous */
+			return o[0] == 255 && (m & 3) == 0;
+		}
+	}
+	if (seq(type, "mac") || seq(type, "elanmac") || seq(type, "hex32") ||
+	    seq(type, "hexascii") || seq(type, "hex20")) {
+		unsigned long want = (seq(type, "mac") || seq(type, "elanmac")) ? 12 :
+			(seq(type, "hex32") ? 32 : (seq(type, "hex20") ? 20 : 0));
 
 		for (i = 0; v[i]; i++)
 			if (hexval(v[i]) < 0)
 				return 0;
 		if (i % 2)
 			return 0;                  /* hex is whole bytes */
+		if (seq(type, "mac"))
+			return i == want;
+		if (seq(type, "elanmac")) {
+			/* The MAC of eth0 and the bridge (ELAN_MAC_ADDR only; the
+			 * other MAC-shaped keys are plain 12 hex digits): unicast
+			 * (the low bit of the first octet clear) and not all
+			 * zero. ifconfig refuses anything else, and the driver
+			 * default 00:00:00:01:00:02 then stays on every stick. */
+			unsigned long z = 0;
+
+			if (i != want || (hexval(v[1]) & 1))
+				return 0;
+			while (v[z] == '0')
+				z++;
+			return z != i;
+		}
 		return want ? (i == want) : 1;
+	}
+	if (seq(type, "gponsn")) {
+		/* The serial number as the kernel gponsn verb takes it: four
+		 * characters of vendor id, then eight hex digits
+		 * (odi_gpon_parse_sn). Anything else is refused there, and the
+		 * ONU then activates with a zero serial. */
+		for (i = 0; v[i]; i++) {
+			unsigned char c = (unsigned char)v[i];
+
+			if (i < 4) {
+				if (c <= 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
+					return 0;
+			} else if (hexval((char)c) < 0) {
+				return 0;
+			}
+		}
+		return i == 12;
+	}
+	if (type[0] == 's' && type[1] == 't' && type[2] == 'r' && type[3] >= '0' && type[3] <= '9') {
+		/* strN: printable ASCII, at most N characters, N being the width
+		 * of the field the OLT reads the value into. The three characters
+		 * flash refuses are refused here first. */
+		unsigned long max = 0, k;
+
+		for (k = 3; type[k] >= '0' && type[k] <= '9'; k++)
+			max = max * 10 + (unsigned long)(type[k] - '0');
+		if (type[k] || !max)
+			return 0;
+		return printable_ok(v, max);
 	}
 	if (seq(type, "hostport")) {
 		/* host or host:port, the form busybox ntpd -p and syslogd -R
 		 * both take: an IPv4 literal or a hostname, letters, digits,
 		 * dots and hyphens, then an optional :1-65535. No spaces or
 		 * quotes, which is the point: svc-syslogd.sh and svc-ntpd.sh
-		 * read this value back out of the store into a command line. */
-		unsigned long hlen = 0, port = 0, pdigits = 0;
+		 * read this value back out of the store into a command line.
+		 * A hostname is labels of 1-63 characters between dots, none
+		 * starting or ending with a hyphen; a name made only of digits
+		 * and dots must be a whole IPv4 address, because the resolver
+		 * would otherwise read it as one (or fail on it, and ntpd
+		 * would exit and be respawned for ever). */
+		unsigned long hlen = 0, port = 0, pdigits = 0, lab = 0, numeric = 1;
+		unsigned long o[4];
+		char host[256];
 
 		/* Empty clears the key (odi-oss flash removes it): remote
 		 * logging and NTP off. */
@@ -77,10 +205,25 @@ int type_ok(const char *type, const char *v)
 			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
 			      (c >= '0' && c <= '9') || c == '.' || c == '-'))
 				return 0;
-			hlen++;
+			if (c == '.') {
+				if (!lab || lab > 63 || v[i - 1] == '-')
+					return 0;
+				lab = 0;
+			} else {
+				if (c == '-' && !lab)
+					return 0;
+				if (c < '0' || c > '9')
+					numeric = 0;
+				lab++;
+			}
+			if (hlen >= 253)
+				return 0;
+			host[hlen++] = c;
 		}
-		if (!hlen || hlen > 253 || v[0] == '.' || v[0] == '-' ||
-		    v[hlen - 1] == '.' || v[hlen - 1] == '-')
+		if (!hlen || !lab || lab > 63 || v[i - 1] == '-')
+			return 0;
+		host[hlen] = 0;
+		if (numeric && !quad(host, o))
 			return 0;
 		if (v[i] == ':') {
 			for (i++; v[i]; i++) {
@@ -98,15 +241,7 @@ int type_ok(const char *type, const char *v)
 		 * (odi-oss flash removes it, and omcid then reports the device
 		 * id). The three flash refuses -- a quote, < and & -- are
 		 * refused here first. */
-		if (!v[0])
-			return 1;
-		for (i = 0; v[i]; i++) {
-			unsigned char c = (unsigned char)v[i];
-
-			if (i >= 14 || c < 0x20 || c > 0x7e || c == '"' || c == '<' || c == '&')
-				return 0;
-		}
-		return 1;
+		return printable_ok(v, 14);
 	}
 	if (seq(type, "fixedme")) {
 		/* OMCI_FIXED_ME: up to 16 entries separated by commas or
@@ -199,8 +334,12 @@ int type_ok(const char *type, const char *v)
 		}
 		return n > 0;
 	}
-	if (seq(type, "string"))
-		return 1;
+	if (seq(type, "string")) {
+		/* A stock text key. The longest value on the stock store is 191
+		 * characters, all printable ASCII. 255 leaves room and stays well
+		 * inside what the daemon reads in one piece. */
+		return printable_ok(v, 255);
+	}
 
 	/*
 	 * An unrecognised type is refused, not waved through.
@@ -451,6 +590,64 @@ int meta_ok(const char *name, const char *v, const char **why)
 }
 
 /*
+ * The stored value of a key, by `flash get` (the same call safe-mode.sh makes).
+ * 0 when the key is absent or empty, or the call fails.
+ */
+int read_key(const char *addr, char *out, unsigned long cap)
+{
+	char *argv[4];
+	char buf[512];
+	unsigned long i = 0, vs, n = 0;
+
+	out[0] = 0;
+	argv[0] = "flash";
+	argv[1] = "get";
+	argv[2] = (char *)addr;
+	argv[3] = 0;
+	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf), FLASH_TIMEOUT_MS) <= 0)
+		return 0;
+	while (buf[i] && buf[i] != '=')
+		i++;
+	if (!buf[i])
+		return 0;
+	vs = ++i;
+	while (buf[i] && buf[i] != '\n' && buf[i] != '\r')
+		i++;
+	while (vs + n < i && n + 1 < cap)
+		out[n] = buf[vs + n], n++;
+	out[n] = 0;
+	return n > 0;
+}
+
+/*
+ * An address against its netmask: the network address (host bits all zero)
+ * and the broadcast address (all one) cannot be a host's. The kernel takes
+ * them, so type_ok cannot see it, and network.sh refuses them at boot, falling
+ * back to 192.168.1.1/24. The web page makes the same check in
+ * web/validate.js (hostMaskProblem); the three must agree.
+ *
+ * Returns 0 only when both parse as an address and a netmask and the address is
+ * one of the two; an unusable netmask is its own refusal, not this one's.
+ */
+int host_in_mask_ok(const char *ip, const char *mask)
+{
+	unsigned long a[4], m[4], host_zero = 1, host_ones = 1, k;
+
+	if (!type_ok("ipv4host", ip) || !type_ok("netmask", mask) ||
+	    !quad(ip, a) || !quad(mask, m))
+		return 1;
+	for (k = 0; k < 4; k++) {
+		unsigned long h = a[k] & (255 - m[k]);
+
+		if (h)
+			host_zero = 0;
+		if (h != 255 - m[k])
+			host_ones = 0;
+	}
+	return !host_zero && !host_ones;
+}
+
+/*
  * Write one key and read it back.
  *
  * `flash set` is used rather than driving xmlconfig directly because it also
@@ -467,7 +664,7 @@ int meta_ok(const char *name, const char *v, const char **why)
 int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 {
 	char *argv[5];
-	char buf[512];
+	char buf[VALUE_MAX + 256];
 	unsigned long i = 0, vs;
 
 	argv[0] = "flash";

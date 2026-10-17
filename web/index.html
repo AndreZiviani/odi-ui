@@ -329,9 +329,11 @@
       <section class="block">
         <h2>Sign-in for this page</h2>
         <div class="formrow">
-          <label>Username <input id="pw-user" autocomplete="username" value="admin"></label>
+          <label>Username <input id="pw-user" autocomplete="username" value="admin" maxlength="64"></label>
           <label>New password <input id="pw-pass" type="password"
-                 autocomplete="new-password" placeholder="at least 4 characters"></label>
+                 autocomplete="new-password" placeholder="4 to 128 characters" maxlength="128"></label>
+          <label>Again <input id="pw-pass2" type="password"
+                 autocomplete="new-password" placeholder="the same password" maxlength="128"></label>
           <button id="pw-save" class="primary" type="button">Save password</button>
         </div>
         <p class="help">Signs you in to this page only: not SSH, and nothing the OLT sees.</p>
@@ -434,7 +436,8 @@
             <ul>
               <li>the four LOID keys, emptied</li>
               <li><code>DEVICE_TYPE</code>, <code>DUAL_MGMT_MODE</code> and the three
-                  <code>OMCI_CUSTOM</code> masks, which only the stock firmware reads</li>
+                  <code>OMCI_CUSTOM</code> masks, which the stock firmware reads
+                  (this image reads one bit of <code>OMCI_CUSTOM_ME</code>, the VEIP slot, which reset clears)</li>
             </ul>
           </div>
         </div>
@@ -488,7 +491,7 @@
       <section class="block">
         <h2>Ping</h2>
         <div class="formrow">
-          <label>IPv4 address <input id="ping-host" autocomplete="off" inputmode="decimal" placeholder="192.168.1.254"></label>
+          <label>IPv4 address <input id="ping-host" autocomplete="off" inputmode="decimal" placeholder="192.168.1.254" maxlength="15"></label>
           <button id="ping-go" type="button">Ping</button>
         </div>
         <p class="help">From the stick itself, over the management LAN. Addresses only: a name lookup would hang this page.</p>

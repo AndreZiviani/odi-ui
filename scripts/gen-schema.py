@@ -75,7 +75,33 @@ def section_of(name):
     return "other"
 
 
+# Types chosen by what reads the key, not by the stock value it happens to hold.
+# Each is a type src/mib.c type_ok implements; the reason is in the daemon.
+TYPE_OVERRIDE = {
+    # An interface address and netmask the kernel will take: a refused one is
+    # re-read at every boot and leaves the stick with no way in.
+    "LAN_IP_ADDR": "ipv4host", "LAN_IP_ADDR2": "ipv4host",
+    "LAN_SUBNET": "netmask", "LAN_SUBNET2": "netmask",
+    # The MAC network.sh puts on eth0 and the bridge: unicast and not all zero,
+    # or ifconfig refuses it. The other MAC-shaped keys keep the plain type.
+    "ELAN_MAC_ADDR": "elanmac",
+    # 4 characters and 8 hex digits: what the kernel gponsn verb takes.
+    "GPON_SN": "gponsn",
+    # Exactly 10 bytes as hex: the kernel reads shorter values as literal text.
+    "GPON_PLOAM_PASSWD": "hex20",
+    # The width of the field the OLT reads each one into; a longer value is
+    # answered as absent.
+    "OMCI_SW_VER1": "str14", "OMCI_SW_VER2": "str14", "GPON_ONU_MODEL": "str20",
+    "LOID": "str24", "LOID_OLD": "str24",
+    "LOID_PASSWD": "str12", "LOID_PASSWD_OLD": "str12",
+    # The first four characters of GPON_SN (meta.tsv).
+    "PON_VENDOR_ID": "str4",
+}
+
+
 def type_of(name, value):
+    if name in TYPE_OVERRIDE:
+        return TYPE_OVERRIDE[name]
     if name in HEX_ASCII:
         return "hexascii"
     if value == "":

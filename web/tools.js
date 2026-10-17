@@ -4,6 +4,7 @@
  */
 
 import { $, el, get } from './dom.js';
+import { pingProblem } from './validate.js';
 
 /*
  * Kernel messages carry a priority in angle brackets. The kernel writes a
@@ -83,6 +84,10 @@ async function runPing() {
 
   out.textContent = '';
   if (!host) return;
+  /* Three packets at one a second, and the daemon serves nothing else while
+     they go: a name or a malformed address is refused before it costs that. */
+  const bad = pingProblem(host);
+  if (bad) { out.append(el('div', 'bad', bad)); return; }
   btn.disabled = true;
   out.append(el('div', 'hint', `Pinging ${host}\u2026`));
   try {

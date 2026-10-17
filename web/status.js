@@ -189,7 +189,7 @@ function renderStatus(raw) {
 
   /*
    * Loss of signal costs you more than the fibre. The stick reports RX_LOS on
-   * its SFP pins, and most hosts -- Mikrotik and Ubiquiti among them -- take
+   * its SFP pins, and most routers and switches take
    * that as "this transceiver has nothing to say" and disable the Ethernet
    * side, so the management page goes with it. That is the single most common
    * "my stick is bricked" report on this hardware, and it is not a fault in

@@ -16,6 +16,7 @@
 
 import { $, el } from './dom.js';
 import { S } from './state.js';
+import { valueProblem, restoreSizeProblem } from './validate.js';
 
 /*
  * `flash all` prints the config store as <Value Name="X" Value="Y"/> nested in
@@ -40,7 +41,11 @@ function parseBackup(text) {
 /* What the schema says we may write, and what it costs. */
 function classify(backup) {
   const rows = new Map(S.SCHEMA.map((r) => [r.name, r]));
-  const plan = { same: [], change: [], identity: [], refused: [], unknown: [] };
+  const plan = { same: [], change: [], identity: [], refused: [], unknown: [], invalid: [] };
+  /* A backup is judged as a whole: the address and its mask, the second
+     address and whether it is on are each read from the file first, as the
+     daemon reads them from the same request. */
+  const ctx = { get: (k) => (backup.has(k) ? backup.get(k) : S.VALUES[k]) };
 
   for (const [name, value] of backup) {
     const row = rows.get(name);
@@ -55,6 +60,9 @@ function classify(backup) {
       continue;
     }
     if (S.VALUES[name] === value) { plan.same.push(name); continue; }
+    /* What the daemon will refuse, said now and not after the write. */
+    const why = valueProblem(row, value, ctx);
+    if (why) { plan.invalid.push([name, value, why]); continue; }
     (row.writable === 'identity' ? plan.identity : plan.change).push([name, value]);
   }
   return plan;
@@ -67,8 +75,11 @@ function renderPlan(plan, host) {
   const n = plan.change.length + plan.identity.length;
 
   if (!n) {
-    host.append(line('good', 'This backup matches what the stick already holds. '
-      + 'Nothing to restore.'));
+    host.append(plan.invalid.length
+      ? line('bad', 'Nothing in this backup can be restored: every difference is a value the stick would refuse.')
+      : line('good', 'This backup matches what the stick already holds. Nothing to restore.'));
+    for (const [name, value, why] of plan.invalid)
+      host.append(line('warn', `${name} = ${value === '' ? '(empty)' : value} is skipped: ${why}.`));
     return false;
   }
 
@@ -88,6 +99,8 @@ function renderPlan(plan, host) {
   }
   host.append(list);
 
+  for (const [name, value, why] of plan.invalid)
+    host.append(line('warn', `${name} = ${value === '' ? '(empty)' : value} is skipped: ${why}.`));
   if (plan.refused.length)
     host.append(line('warn', 'Not restorable, and skipped: ' + plan.refused.join(', ')
       + '. A wrong SerDes mode costs every management path at once, so this '
@@ -138,6 +151,8 @@ function wireRestore() {
     const f = file.files && file.files[0];
 
     if (!f) return;
+    const big = restoreSizeProblem(f.size);
+    if (big) { out.append(line('bad', big)); return; }
     const text = await f.text();
     const backup = parseBackup(text);
 
@@ -157,6 +172,13 @@ function wireRestore() {
     const pairs = [...PLAN.change, ...(withIdentity ? PLAN.identity : [])];
 
     if (!pairs.length) return;
+    /* Identity keys are what the OLT authenticates this ONU by: written onto
+       another stick they put two ONUs on the line with one serial. The tick
+       box says so, and this asks once more with the keys named. */
+    if (withIdentity && PLAN.identity.length
+        && !confirm('Write ' + PLAN.identity.length + ' identity key(s) (' + PLAN.identity.map(([k]) => k).join(', ')
+          + ')?\n\nOnly do this onto the stick the backup came from: on another stick the OLT would see '
+          + 'the same serial number twice.\n\nContinue?')) return;
     go.disabled = true;
     out.append(line(null, `Writing ${pairs.length} setting(s)…`));
 
@@ -175,7 +197,7 @@ function wireRestore() {
     out.append(line('warn', 'Written, not applied. Each restored key takes effect '
       + 'the way its class on the Config tab says: the addresses at once when '
       + 'you save them again there, the OMCI keys with Apply now, the rest at '
-      + 'the next reboot. Keys only the stock firmware reads change nothing here.'));
+      + 'the next reboot. Keys only the stock firmware reads change nothing here, except OMCI_CUSTOM_ME, whose bit 256 decides whether the VEIP slot applies.'));
   };
 }
 

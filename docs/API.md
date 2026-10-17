@@ -5,6 +5,13 @@ authenticates as described in [`DESIGN.md`](DESIGN.md#authentication) — this
 page is the wire contract, not the rationale. See `DESIGN.md` for why each
 route behaves the way it does.
 
+Every request, before the credential is looked at, must carry a `Host` that is an
+IP literal, a single label or a private suffix (`.local`, `.lan`, `.home.arpa`,
+`.localdomain`, `.internal`, `.localhost`, `.home`), or a name listed in
+`/etc/config/confd.hosts`; anything else is `403` (DNS rebinding). A request a
+browser marks `Sec-Fetch-Site: cross-site` or `same-site` is `403` unless it is a
+top-level navigation.
+
 All writes require the same HTTP Basic credential as the page, refuse a
 cross-site `Origin`, and (for `/api/config`) read every value back before
 reporting success.
@@ -34,12 +41,17 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 ## MIB and services
 
     GET  /api/omci      cmd=...          `omcicli mib get` passthrough; refuses
-                                          `get tables` outright (see DESIGN.md)
+                                          `get tables` outright (see DESIGN.md).
+                                          `me` is a class id (1-65535) or a table
+                                          name (letters, digits, `_`, 32 at most);
+                                          `entity` is optional hex, 1-4 digits (16
+                                          bits), `0x` allowed
 
 ## Status and diagnostics
 
     GET  /api/log                        kernel ring buffer, via klogctl
-    POST /api/ping       host=<IPv4>      literals only, no DNS
+    POST /api/ping       host=<IPv4>      a literal a host can have (first number
+                                          1-223, not 127, no leading zeros), no DNS
     GET  /api/l2                         `diag l2-table get entry address valid`
                                           (stock and odi-oss, different column sets)
     GET  /api/diag                       the diagnostics bundle, a tar.gz download:
@@ -52,7 +64,10 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
 ## Firmware
 
-    POST /api/upload                     raw tarball as the body (not multipart)
+    POST /api/upload                     raw tarball as the body (not multipart);
+                                          1 byte to 6 MiB, and it must start like a
+                                          tar archive (`ustar` at offset 257), else
+                                          400 and nothing is kept
     POST /api/firmware   action=write&partition=N
     GET  /api/firmware                    partitions, versions, build manifest,
                                           `defaultauth`, `switches`, write progress;
@@ -93,7 +108,13 @@ Restoring a backup has no dedicated endpoint: the browser replays it through
 ## Admin
 
     POST /api/password   user=...&password=...
+                                          user 1-64 printable characters, no space or
+                                          colon; password 4-128 printable ASCII
     GET  /api/sshkeys                     {"path":..., "keys":[{"i":0,"line":"ssh-ed25519 AAAA... comment"}]}
-    POST /api/sshkeys    key=<line>       append; shape-checked (type word, base64
-                                          blob, one printable line)
+    POST /api/sshkeys    key=<line>       append; the type is one of ssh-ed25519,
+                                          ssh-rsa, ecdsa-sha2-nistp256/384/521 or an
+                                          sk- type, the blob is whole base64 that
+                                          parses to that same type, one printable
+                                          line of at most 1000 characters; a key
+                                          already in the file is refused
     POST /api/sshkeys    delete=<i>       rewrite the file without line i

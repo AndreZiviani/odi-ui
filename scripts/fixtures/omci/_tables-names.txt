@@ -24,9 +24,9 @@ GeneralPurposeBuffer
 GenericStatusPortal
 GpncPmhd
 HSQDefault
-HW ME350
-HW ME370
-HW ME373
+Me350
+Me370
+Me373
 IpHostCfgData
 LargeString
 LargeString
@@ -76,6 +76,6 @@ VlanTagFilterData
 VlanTagOpCfgData
 WANConfigCata
 WANConfigCataDeti
-ZTE ME243
-ZteMcastTag
-ZteSntp
+PrivateQueueMap
+PrivateMcastTag
+PrivateSntp
