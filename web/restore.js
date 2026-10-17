@@ -87,17 +87,29 @@ function renderPlan(plan, host) {
     + (plan.identity.length ? `, plus ${plan.identity.length} identity key${plan.identity.length === 1 ? '' : 's'}` : '')
     + `. ${plan.same.length} already match.`));
 
-  const list = el('table');
+  const list = el('table', 'data diff');
+  const head = el('tr');
+  for (const h of ['Setting', 'On the stick', 'In the backup'])
+    head.append(el('th', null, h));
+  list.append(head);
+  const identity = new Set(plan.identity.map(([name]) => name));
+
   for (const [name, value] of [...plan.change, ...plan.identity]) {
     const tr = el('tr');
     const now = S.VALUES[name];
 
-    tr.append(el('td', null, name));
-    tr.append(el('td', 'mono', now === undefined || now === '' ? '(empty)' : now));
-    tr.append(el('td', 'mono', value === '' ? '(empty)' : value));
+    const key = el('td', 'mono', name);
+    tr.append(key);
+    if (identity.has(name)) key.append(el('span', 'tag identity', 'Identity'));
+
+    tr.append(key);
+    tr.append(el('td', 'mono was', now === undefined || now === '' ? '(empty)' : now));
+    tr.append(el('td', 'mono now', value === '' ? '(empty)' : value));
     list.append(tr);
   }
-  host.append(list);
+  const wrap = el('div', 'tablewrap');
+  wrap.append(list);
+  host.append(wrap);
 
   for (const [name, value, why] of plan.invalid)
     host.append(line('warn', `${name} = ${value === '' ? '(empty)' : value} is skipped: ${why}.`));
