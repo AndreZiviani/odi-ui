@@ -12,7 +12,7 @@
 # O5 on a working line and the parser gets tested against the real thing.
 #
 #   scripts/capture-omci.sh admin@192.168.1.1
-#   SSH_OPTS='-S /tmp/odi_ctl' scripts/capture-omci.sh admin@sfp-claro
+#   SSH_OPTS='-S /tmp/odi_ctl' scripts/capture-omci.sh admin@sfp-isp1
 #
 # These sticks want password auth and legacy algorithms, so the connection is
 # not hardcoded; put whatever ssh needs in SSH_OPTS. An already-open multiplex

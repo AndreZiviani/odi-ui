@@ -129,12 +129,12 @@ const OMCI = {
   171: fx('171-ExtVlanTagOperCfgData.txt'),
   7: fx('7-SWImage.txt'),
   131: fx('131-OltG.txt'),
-  11: fx('11-EthUni-claro.txt'),
-  329: fx('329-VEIP-claro.txt'),
-  47: fx('47-MacBriPortCfgData-claro.txt'),
+  11: fx('11-EthUni-isp1.txt'),
+  329: fx('329-VEIP-isp1.txt'),
+  47: fx('47-MacBriPortCfgData-isp1.txt'),
 };
-const OMCI_VERO_47 = fx('47-MacBriPortCfgData-vero.txt');
-const OMCI_CLARO_171 = fx('171-claro.txt');
+const OMCI_ISP2_47 = fx('47-MacBriPortCfgData-isp2.txt');
+const OMCI_ISP1_171 = fx('171-isp1.txt');
 
 /*
  * ME 7 has no capture yet. The FRAME below is verified -- it is the one the two
@@ -385,22 +385,22 @@ ok(/running/.test(text) && /committed/.test(text),
    'Active and Committed are read -- the card assumed IsActive/IsCommitted and showed neither');
 ok(/HWTC/.test(text), 'the OLT vendor code is decoded from its hex word');
 ok(/carries both the physical Ethernet UNI and the VEIP/.test(text),
-   'Claro: the bridge carries the UNI and the VEIP');
+   'ISP1: the bridge carries the UNI and the VEIP');
 
 /* The same card on the other line, which is the difference that matters. */
-OMCI[47] = OMCI_VERO_47;
+OMCI[47] = OMCI_ISP2_47;
 await renderServices(true);
-const veroText = JSON.stringify(doc.querySelector('#services-cards'),
+const isp2Text = JSON.stringify(doc.querySelector('#services-cards'),
                                 (k, v) => (k === 'classList' ? undefined : v));
-ok(/carries the VEIP, not the physical port/.test(veroText),
-   'Vero: the bridge carries the VEIP alone');
-OMCI[47] = fx('47-MacBriPortCfgData-claro.txt');
+ok(/carries the VEIP, not the physical port/.test(isp2Text),
+   'ISP2: the bridge carries the VEIP alone');
+OMCI[47] = fx('47-MacBriPortCfgData-isp1.txt');
 
-/* Claro's real ME 171: most rows add no tag at all (treatment PRI 15, a 3-bit
+/* ISP1's real ME 171: most rows add no tag at all (treatment PRI 15, a 3-bit
    field, so out of range and unspecified). Rendering those as "VLAN 0" is a
    VLAN id nobody set, printed as though the OLT had set it -- which is what
    the live page did until a stick showed it. */
-OMCI[171] = OMCI_CLARO_171;
+OMCI[171] = OMCI_ISP1_171;
 await renderServices(true);
 const c171 = JSON.stringify(doc.querySelector('#services-cards'),
                             (k, v) => (k === 'classList' ? undefined : v));
@@ -464,7 +464,7 @@ ok(/The MIB holds none/.test(noneText), 'a good empty read of an OLT-created tab
 Object.assign(OMCI, SAVED);
 
 /* T-CONTs the OLT never assigned carry Alloc-ID 255 (G.988 9.2.2), and a
-   live claro stick has eleven of them beside five in use. SYNTHETIC, in the
+   live ISP1 stick has eleven of them beside five in use. SYNTHETIC, in the
    odi-oss dump shape, with that stick's five Alloc-IDs. */
 {
   const rows = [282, 794, 1050, 1306, 538, ...Array(11).fill(255)];

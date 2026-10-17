@@ -132,7 +132,7 @@ v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
 - **Every wait on another process is bounded.** confd is single-threaded and
   serial, so anything that blocks on a child blocks every OTHER request too,
   not just the route that forked it (mirrors a hardware incident in the
-  sibling exporter, rc3, claro, 2026-09-28: a stuck omcid left a forked child
+  sibling exporter, rc3, ISP1, 2026-09-28: a stuck omcid left a forked child
   never answering, and a blind `read()` on it took the whole daemon down).
   `run_to_buf()`, `run_to_buf_ex()` and `run_script_to_buf()` (`src/syscall.h`)
   all take a `timeout_ms` and poll the child's pipe rather than block on it,
