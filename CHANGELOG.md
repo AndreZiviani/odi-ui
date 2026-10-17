@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- The page uses the full window width: `main`, the banners, the error box and the save bar no longer stop at 1180px.
+- Config: a setting's input or dropdown fills its column
+- Status: the receive and transmit meters sit side by side when there is room for both (320 px each), and stack as before on a phone; the "class B+..." line under each is centred.
+- Forwarding and Learned addresses share a row in two columns above 900 px, and a rule separates Raw diag output from them.
+- Backup & reset tab: Backup and Restore share a row in two columns above 900 px.
+
 ## v1.5.0 (2026-10-17)
 
 - Web: the page no longer judges an address or netmask twice (an older copy
