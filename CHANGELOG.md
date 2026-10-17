@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Security and robustness, from the night audit (AUDIT-night-confd K6, K10):
+  `/etc/config/confd.auth` and the ssh `authorized_keys` are written to a
+  temporary file beside them and renamed into place, instead of truncated and
+  rewritten. A power cut during a password change used to leave an empty
+  credential file, which the UI reads as "no credential" and answers with the
+  default one; during a key change it left a truncated key file on an image
+  that has no password login. `delete=` on `/api/sshkeys` with anything but a
+  line number is now a 400; it used to delete line 0 (`delete=abc`) or the
+  leading digits (`delete=1x`).
+
 - Security and robustness, from the night audit (AUDIT-night-confd K3, K4,
   K5, K9): a request now has a ten-second wall-clock deadline and the upload
   body two minutes, where before only each single read was bounded (15 s), so

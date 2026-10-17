@@ -211,6 +211,8 @@ check "the file was created 0600" 600 \
 	"$(stat -c '%a' /etc/config/confd.auth 2>/dev/null)"
 check "the new credential works" 200 \
 	"$(code -u op:hunter22 "http://127.0.0.1:$PORT/api/schema")"
+check "no temp file is left beside the credential" no \
+	"$([ -e /etc/config/confd.auth.new ] && echo yes || echo no)"
 check "the default stops working once one is set" 401 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "and the default is no longer reported" false \
@@ -288,6 +290,23 @@ check "deleting the first leaves the second at line 0" yes \
 	"$(curl -s -u "$AUTH" -X POST -d 'delete=0' "http://127.0.0.1:$PORT/api/sshkeys" >/dev/null; err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '"keys":[{"i":0,"line":"ssh-rsa')"
 check "deleting a line that is not there is 404" 404 \
 	"$(code -u "$AUTH" -X POST -d 'delete=7' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "delete with a non-number is refused, not read as line 0" 400 \
+	"$(code -u "$AUTH" -X POST -d 'delete=abc' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "delete with trailing junk is refused too" 400 \
+	"$(code -u "$AUTH" -X POST -d 'delete=0x' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "and the key is still there" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '"keys":[{"i":0,"line":"ssh-rsa')"
+# Written by rename: a leftover temp file from an interrupted write is replaced,
+# never followed, and nothing is left behind afterwards.
+echo stale > /tmp/planted
+ln -sf /tmp/planted /etc/config/dropbear.d/authorized_keys.new
+check "a key is added past a stale temp file that is a link" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "the link target was not written" stale "$(cat /tmp/planted)"
+check "no temp file is left beside the keys" no \
+	"$([ -e /etc/config/dropbear.d/authorized_keys.new ] || [ -L /etc/config/dropbear.d/authorized_keys.new ] && echo yes || echo no)"
+check "the key file holds both lines" 2 "$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ')"
+rm -f /tmp/planted
 check "without a credential the keys are not readable" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/sshkeys")"
 rm -f /etc/config/dropbear.d/authorized_keys
