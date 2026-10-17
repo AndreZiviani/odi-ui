@@ -32,6 +32,8 @@
 #define __NR_open  4005
 #define __NR_chmod 4015
 #define __NR_unlink 4010
+#define __NR_rename 4038
+#define __NR_fsync  4118
 #define __NR_close 4006
 
 #define __NR_fork       4002
@@ -86,6 +88,7 @@ struct pollfd {
 #define O_WRONLY 1
 #define O_CREAT  0x100
 #define O_TRUNC  0x200
+#define O_EXCL   0x400
 
 /*
  * MIPS does not use the generic socket ABI values. All three of these differ
@@ -287,6 +290,49 @@ __attribute__((unused)) static long write_file(const char *path, const char *buf
 	if (n < 0 || (unsigned long)n != len)
 		return -1;
 	return syscall3(__NR_chmod, (long)path, mode, 0);
+}
+
+/*
+ * Replace a file whole or not at all: write `path.new`, fsync, rename over.
+ *
+ * write_file truncates first, so a power cut between the truncate and the
+ * write leaves an empty file. For confd.auth an empty file means "no
+ * credential", which falls back to the default one (the UI then opens to
+ * admin:admin by accident, not by a reset); for authorized_keys it is a stick
+ * with no way in. A rename within one filesystem is atomic on jffs2, the same
+ * trick the image `flash` script uses. The temp name sits beside the target,
+ * never in /tmp, so it is the same filesystem.
+ */
+__attribute__((unused)) static long write_file_atomic(const char *path, const char *buf,
+						      unsigned long len, long mode)
+{
+	char tmp[160];
+	unsigned long n = 0, k;
+	long fd, w;
+
+	for (k = 0; path[k] && n + 5 < sizeof(tmp); k++)
+		tmp[n++] = path[k];
+	if (path[k])
+		return -1;
+	tmp[n++] = '.'; tmp[n++] = 'n'; tmp[n++] = 'e'; tmp[n++] = 'w'; tmp[n] = 0;
+
+	syscall3(__NR_unlink, (long)tmp, 0, 0);
+	fd = syscall3(__NR_open, (long)tmp, O_WRONLY | O_CREAT | O_EXCL, mode);
+	if (fd < 0)
+		return fd;
+	w = write_all((int)fd, buf, len);
+	if (w < 0 || (unsigned long)w != len || syscall3(__NR_fsync, fd, 0, 0) < 0 ||
+	    syscall3(__NR_chmod, (long)tmp, mode, 0) < 0) {
+		syscall3(__NR_close, fd, 0, 0);
+		syscall3(__NR_unlink, (long)tmp, 0, 0);
+		return -1;
+	}
+	syscall3(__NR_close, fd, 0, 0);
+	if (syscall3(__NR_rename, (long)tmp, (long)path, 0) < 0) {
+		syscall3(__NR_unlink, (long)tmp, 0, 0);
+		return -1;
+	}
+	return 0;
 }
 
 /*

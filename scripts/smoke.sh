@@ -211,6 +211,8 @@ check "the file was created 0600" 600 \
 	"$(stat -c '%a' /etc/config/confd.auth 2>/dev/null)"
 check "the new credential works" 200 \
 	"$(code -u op:hunter22 "http://127.0.0.1:$PORT/api/schema")"
+check "no temp file is left beside the credential" no \
+	"$([ -e /etc/config/confd.auth.new ] && echo yes || echo no)"
 check "the default stops working once one is set" 401 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "and the default is no longer reported" false \
@@ -288,6 +290,23 @@ check "deleting the first leaves the second at line 0" yes \
 	"$(curl -s -u "$AUTH" -X POST -d 'delete=0' "http://127.0.0.1:$PORT/api/sshkeys" >/dev/null; err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '"keys":[{"i":0,"line":"ssh-rsa')"
 check "deleting a line that is not there is 404" 404 \
 	"$(code -u "$AUTH" -X POST -d 'delete=7' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "delete with a non-number is refused, not read as line 0" 400 \
+	"$(code -u "$AUTH" -X POST -d 'delete=abc' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "delete with trailing junk is refused too" 400 \
+	"$(code -u "$AUTH" -X POST -d 'delete=0x' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "and the key is still there" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '"keys":[{"i":0,"line":"ssh-rsa')"
+# Written by rename: a leftover temp file from an interrupted write is replaced,
+# never followed, and nothing is left behind afterwards.
+echo stale > /tmp/planted
+ln -sf /tmp/planted /etc/config/dropbear.d/authorized_keys.new
+check "a key is added past a stale temp file that is a link" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "the link target was not written" stale "$(cat /tmp/planted)"
+check "no temp file is left beside the keys" no \
+	"$([ -e /etc/config/dropbear.d/authorized_keys.new ] || [ -L /etc/config/dropbear.d/authorized_keys.new ] && echo yes || echo no)"
+check "the key file holds both lines" 2 "$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ')"
+rm -f /tmp/planted
 check "without a credential the keys are not readable" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/sshkeys")"
 rm -f /etc/config/dropbear.d/authorized_keys
@@ -338,6 +357,48 @@ check "same-origin POST is allowed" 200 \
 check "no Origin still works (curl, scripts)" 200 \
 	"$(code -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.1' \
 		"http://127.0.0.1:$PORT/api/config")"
+
+echo "== host name and foreign pages"
+U="http://127.0.0.1:$PORT"
+hcode() { curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -H "Host: $1" "$U/api/schema"; }
+check "an IPv4 Host is answered" 200 "$(hcode 192.168.1.1)"
+check "an IPv4 Host with a port is answered" 200 "$(hcode 192.168.1.1:8080)"
+check "an IPv6 literal Host is answered" 200 "$(hcode '[fe80::1]')"
+check "a single-label Host is answered" 200 "$(hcode odi)"
+check "a .lan Host is answered" 200 "$(hcode stick.lan)"
+check "a public name is refused (DNS rebinding)" 403 "$(hcode rebind.example.com)"
+check "a public name with a port is refused" 403 "$(hcode rebind.example.com:80)"
+check "a look-alike IP-prefixed name is refused" 403 "$(hcode 192.168.1.1.example.com)"
+check "a fully qualified single label is refused" 403 "$(hcode stick.)"
+check "a rebound name gets no credential prompt" 403 \
+	"$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: rebind.example.com' "$U/api/schema")"
+printf 'stick.example.org\n' > /etc/config/confd.hosts
+check "a name listed in confd.hosts is answered" 200 "$(hcode Stick.Example.org)"
+check "an unlisted name is still refused" 403 "$(hcode other.example.org)"
+rm -f /etc/config/confd.hosts
+check "a fetch from another site is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: no-cors' \
+		-H 'Sec-Fetch-Dest: image' "$U/api/diag")"
+check "a fetch from a sibling port is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: same-site' -H 'Sec-Fetch-Mode: cors' "$U/api/values")"
+check "a followed link (top-level navigation) is allowed" 200 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+		-H 'Sec-Fetch-Dest: document' "$U/")"
+check "a followed link to an API route is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+		-H 'Sec-Fetch-Dest: document' "$U/api/diag")"
+long=$(python3 -c 'print("a"*130)')
+check "a Host filling the buffer is refused, not judged by its prefix" 403 "$(hcode "$long.example.com")"
+check "a long label whose cut prefix has no dot is refused" 403 "$(hcode "$long")"
+check "a prefix cut at .lan is refused" 403 "$(hcode "$(python3 -c 'print("a"*123)').lan.evil.example")"
+check "a same-origin fetch is allowed" 200 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Mode: cors' "$U/api/schema")"
+hdrs=$(curl -s -D - -o /dev/null -u "$AUTH" "$U/api/schema")
+check "responses forbid framing" yes "$(err "$hdrs" 'X-Frame-Options: DENY')"
+check "responses forbid sniffing" yes "$(err "$hdrs" 'X-Content-Type-Options: nosniff')"
+check "responses carry frame-ancestors none" yes "$(err "$hdrs" "frame-ancestors 'none'")"
+hdrs=$(curl -s -D - -o /dev/null "$U/api/schema")
+check "a 401 carries the headers too" yes "$(err "$hdrs" 'X-Frame-Options: DENY')"
 
 echo "== validation"
 post() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/config"; }
