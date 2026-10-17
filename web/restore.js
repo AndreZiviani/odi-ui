@@ -102,7 +102,6 @@ function renderPlan(plan, host) {
     tr.append(key);
     if (identity.has(name)) key.append(el('span', 'tag identity', 'Identity'));
 
-    tr.append(key);
     tr.append(el('td', 'mono was', now === undefined || now === '' ? '(empty)' : now));
     tr.append(el('td', 'mono now', value === '' ? '(empty)' : value));
     list.append(tr);
