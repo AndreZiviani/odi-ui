@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Security and robustness, from the night audit (AUDIT-night-confd K6, K10):
+  `/etc/config/confd.auth` and the ssh `authorized_keys` are written to a
+  temporary file beside them and renamed into place, instead of truncated and
+  rewritten. A power cut during a password change used to leave an empty
+  credential file, which the UI reads as "no credential" and answers with the
+  default one; during a key change it left a truncated key file on an image
+  that has no password login. `delete=` on `/api/sshkeys` with anything but a
+  line number is now a 400; it used to delete line 0 (`delete=abc`) or the
+  leading digits (`delete=1x`).
+
 - Tests and docs: the two lines are called ISP1 and ISP2 in the OMCI fixtures
   (files renamed `*-claro.txt` to `*-isp1.txt` and `*-vero.txt` to `*-isp2.txt`),
   the web checks, AGENTS.md and comments, and the fixture README no longer
