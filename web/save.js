@@ -17,7 +17,7 @@
  * restarting omci_app and a reboot.
  */
 
-import { $, el, get } from './dom.js';
+import { $, el, get, createHelpToggle } from './dom.js';
 import {
   S, EDITS, CLASS_LABEL, CLASS_RANK, costBadge, imageAware, settingOf,
   IDENTITY_SWITCH, identitySwitchOn, vlanRisk,
@@ -352,14 +352,20 @@ function renderIdentitySwitch() {
   if (!imageAware()) { host.hidden = true; return; }
   host.hidden = false;
   const on = identitySwitchOn();
+  /* The state is the title; what it means sits behind the ?, like the rows below. */
   const text = el('div', 'switch-text');
-  text.append(el('strong', null, on ? 'Reporting the stored identity' : 'Reporting the image defaults'));
-  text.append(el('p', 's-help', on
+  const titleText = on ? 'Reporting the stored identity' : 'Reporting the image defaults';
+  const helpBox = el('div', 's-helpbox');
+  helpBox.id = 'help-identity-switch';
+  helpBox.append(el('p', 's-help', on
     ? 'The OLT is told the versions, model, hardware version, OMCC version and product code below. An empty key keeps the default.'
     : 'The OLT is told software version 0.0.0, the device id as model and hardware version, OMCC 128 and product code 15, whatever the keys below hold.'));
-  text.append(el('p', 's-help', 'Some OLTs provision a service only for the identity they '
+  helpBox.append(el('p', 's-help', 'Some OLTs provision a service only for the identity they '
     + 'expect: one they do not expect can leave the ONU in O5 with no service. Switching '
     + 'interrupts internet while the ONU registers again.'));
+  const title = el('div', 's-title');
+  title.append(el('strong', 's-name', titleText), createHelpToggle(helpBox, titleText));
+  text.append(title, helpBox);
   const b = el('button', null, on ? 'Report the defaults' : 'Report the stored identity');
   b.type = 'button';
   b.onclick = async () => {

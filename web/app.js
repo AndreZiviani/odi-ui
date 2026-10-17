@@ -6,7 +6,7 @@
  * any of this.
  */
 
-import { $, el, fail, get, wireTheme } from './dom.js';
+import { $, el, fail, get, wireTheme, wireHelp } from './dom.js';
 import { S, EDITS } from './state.js';
 import { renderStatus } from './status.js';
 import { renderAll } from './config.js';
@@ -79,6 +79,8 @@ function route() {
      what you are looking at, and a small chip in the header everywhere else. */
   VIEW = view;
   showAuth();
+  /* Full help opens the field help, and only the Config tab has fields. */
+  $('#helptoggle').hidden = tab !== 'config';
   if (ON_SHOW[view]) ON_SHOW[view]();
 }
 
@@ -130,6 +132,7 @@ $('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;
 wireRestore();
 wireTheme();
+wireHelp();
 wireFirmware();
 wireHostlink();
 /* On demand, not on the poll: it is another diag fork and most visits to the

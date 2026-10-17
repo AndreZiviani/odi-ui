@@ -7,7 +7,7 @@
 <title>ODI DFP-34X-2C2</title>
 <!-- Set the theme before first paint, or a chosen theme flashes the other one.
      Storage may be blocked; then the page follows the browser. -->
-<script>try{var t=localStorage.getItem("odi-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{var t=localStorage.getItem("odi-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;if(localStorage.getItem("odi-fullhelp")==="1")document.documentElement.dataset.help="full"}catch(e){}</script>
 <link rel="stylesheet" href="/style.css">
 <!-- Suppress the browser's automatic /favicon.ico request: the daemon serves
      only what web_assets[] lists, so it answers 404 on every page load. -->
@@ -37,6 +37,10 @@
   </nav>
   <div class="top-end">
     <a class="authchip" id="authchip" href="#system/access" hidden>Default password</a>
+    <button id="helptoggle" class="quiet helptoggle" type="button" aria-pressed="false" hidden title="Show the help for every field">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      <span>Full help</span>
+    </button>
     <button id="themetoggle" class="quiet themetoggle" type="button" aria-label="Switch to light mode" title="Switch to light mode">
       <svg id="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
       <svg id="ico-moon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>

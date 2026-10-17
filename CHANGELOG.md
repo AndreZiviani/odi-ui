@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: field help moves behind a `?` beside each setting's name. Clicking it opens the one-line help, with "+ Details" under it as before; warnings about what is wrong now stay visible.
+  A "Full help" button in the header (Config tab only, remembered across reloads) opens every field's help at once.
+- Config, ONU identity: while the identity switch is off, each key carries a "Not reported" tag instead of repeating the same sentence on every row (the sentence is in its help), and the switch's explanation sits behind a `?`.
+
 ## v1.5.1 (2026-10-17)
 
 - The page uses the full window width: `main`, the banners, the error box and the save bar no longer stop at 1180px.
