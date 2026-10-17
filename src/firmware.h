@@ -12,6 +12,9 @@
 
 void emit_firmware_json(int fd);
 int nv_set(const char *key, const char *value);
+/* 1 when kernel partition k<p> ('0' or '1') holds a uImage whose header and
+ * data CRCs verify, i.e. one U-Boot's bootm would accept. */
+int slot_kernel_ok(char p);
 /*
  * Commit the running slot the one safe way: `nv commit <slot>` (odi-oss nv),
  * which refuses a slot that is not the running one and writes BOTH copies of

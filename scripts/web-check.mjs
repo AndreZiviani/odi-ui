@@ -615,8 +615,12 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(/Committed/.test(t) && !/Kept/.test(t), 'and the committed slot is badged Committed');
   t = await fwText({ ...trialFW, exe: '/etc/config/confd/confd' });
   ok(/override in \/etc\/config is in use/.test(t), 'a confd run from /etc/config is an override');
-  t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd' });
+  t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd',
+                     slots: { 0: { kernel: 'Linux Kernel Image', built: 1600000000 } } });
   ok(/Try partition 0/.test(t) && !/Try partition 1/.test(t), 'committed, Try is offered on the other slot only');
+  t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd' });
+  ok(!/Try partition/.test(t) && /holds no kernel the bootloader would boot/.test(t),
+     'a slot with no uImage header gets no Try button, and says why');
   API['/api/firmware'] = keep;
 }
 
