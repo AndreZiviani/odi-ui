@@ -1135,6 +1135,21 @@ void serve(int conn)
 
 			if (seq(action, "try")) {
 				respond(conn, "200 OK", "application/json", 0);
+				/*
+				 * Arm a slot only if its kernel is one U-Boot
+				 * would boot. A slot that was never written, or
+				 * whose flash was cut short, fails the header or
+				 * data CRC at the bootloader, which then stops
+				 * at its prompt until the watchdog or a power
+				 * cycle takes the stick back: nothing to learn
+				 * from that, and no reason to offer it.
+				 */
+				if (!slot_kernel_ok(part[0])) {
+					put_fd(conn, "{\"ok\":false,\"error\":\"partition ");
+					put_json_cstr(conn, part);
+					put_fd(conn, " does not hold a kernel the bootloader would boot (bad or missing header, or the data CRC fails); write an image to it first\"}");
+					return;
+				}
 				put_fd(conn, nv_set("sw_tryactive", part)
 					? "{\"ok\":true,\"note\":\"armed\"}"
 					: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
