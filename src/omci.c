@@ -49,7 +49,9 @@ static int me_token_ok(const char *s)
 	/* A class id is a 16-bit number (G.988); omcicli would refuse more. */
 	if (digits && (n < 1 || n > 65535))
 		return 0;
-	return i > 0 && i <= 32;
+	/* 39 fits emit_omci_json's me[40]; the longest captured table name,
+	 * MacBridgePortPmMonitorHistoryData, is 33. */
+	return i > 0 && i <= 39;
 }
 
 /* An entity id, in the form omcicli prints them: hex, 0x optional, and 16

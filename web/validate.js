@@ -432,7 +432,7 @@ function pingProblem(host) {
 
 /* The MIB browser (/api/omci): a class id or table name, and a 16-bit entity. */
 function meProblem(me) {
-  if (!/^[A-Za-z0-9_]{1,32}$/.test(me)) return 'a class id (1 to 65535) or a table name: letters, digits and _';
+  if (!/^[A-Za-z0-9_]{1,39}$/.test(me)) return 'a class id (1 to 65535) or a table name: letters, digits and _';
   if (/^\d+$/.test(me) && (Number(me) < 1 || Number(me) > 65535)) return 'a class id is 1 to 65535';
   return null;
 }

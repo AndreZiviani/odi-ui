@@ -43,7 +43,7 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
     GET  /api/omci      cmd=...          `omcicli mib get` passthrough; refuses
                                           `get tables` outright (see DESIGN.md).
                                           `me` is a class id (1-65535) or a table
-                                          name (letters, digits, `_`, 32 at most);
+                                          name (letters, digits, `_`, 39 at most);
                                           `entity` is optional hex, 1-4 digits (16
                                           bits), `0x` allowed
 

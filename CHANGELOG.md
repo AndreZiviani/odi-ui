@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- OMCI tab: a table name may be up to 39 characters, not 32, so MacBridgePortPmMonitorHistoryData (33) can be read.
 - Config, NTP_SERVER: a line under the field shows the stick's clock (and how far it is from this browser's) and what the time service last did: when it last synced and by how much it corrected the clock, "No sync yet" or "Lost sync". It says so when the clock is more than a minute off, or when NTP is off. It refreshes every 10 seconds while the Services tab is open. The daemon answers it from a new `GET /api/ntp`, which reads the one small status file the image keeps and passes on only known fields.
 
 ## v1.6.1 (2026-10-17)
