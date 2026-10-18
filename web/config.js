@@ -84,14 +84,17 @@ function splitHelp(help, note) {
 const utcDate = (t) => new Date(t * 1000).toISOString().slice(0, 10);
 const utcHms = (t) => new Date(t * 1000).toISOString().slice(11, 19);
 
+const span = (abs) => (abs < 60 ? abs + ' s' : abs < 3600 ? Math.round(abs / 60) + ' min'
+  : abs < 172800 ? Math.round(abs / 3600) + ' h' : abs < 63115200 ? Math.round(abs / 86400) + ' days'
+  : Math.round(abs / 31557600) + ' years');
+
 function ntpLine(d, seen, server) {
   const out = { clock: '', clockWarn: false, ntp: '', ntpWarn: false };
   const now = Number(d && d.now);
   if (Number.isFinite(now) && now > 0) {
     const diff = Math.round(now - seen / 1000);
     const abs = Math.abs(diff);
-    const gap = abs < 60 ? abs + ' s' : abs < 3600 ? Math.round(abs / 60) + ' min'
-      : abs < 172800 ? Math.round(abs / 3600) + ' h' : Math.round(abs / 86400) + ' days';
+    const gap = span(abs);
     out.clock = 'Stick clock ' + utcDate(now) + ' ' + utcHms(now) + ' UTC, ';
     if (abs < 2) out.clock += 'matches this browser';
     else out.clock += gap + (diff > 0 ? ' ahead of' : ' behind') + ' this browser';
@@ -115,7 +118,11 @@ function ntpLine(d, seen, server) {
     const at = num(n.last_sync) || num(n.time);
     const off = num(n.offset);
     out.ntp = 'Last NTP sync ' + (at ? hm(at) : 'time unknown');
-    if (off !== null) out.ntp += ', corrected ' + Math.abs(off).toString() + ' s';
+    /* The first sync after a boot steps the clock from 1970: an offset of
+       decades is "set the clock", not a correction worth printing to the
+       microsecond. */
+    if (off !== null && Math.abs(off) >= 60) out.ntp += ', set the clock (it was ' + span(Math.round(Math.abs(off))) + ' off)';
+    else if (off !== null) out.ntp += ', corrected ' + Math.abs(off).toString() + ' s';
   }
   return out;
 }

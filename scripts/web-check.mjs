@@ -301,7 +301,7 @@ ok(true, 'renderStatus runs against a diag capture');
      'ntp line: more than a minute off is a warning that says one of the clocks is wrong');
 
   p = ntpLine({ now: 3, ntp: null }, seen, 'pool.ntp.org');
-  ok(p.clockWarn && p.clock.includes('1970-01-01') && p.clock.includes('days'),
+  ok(p.clockWarn && p.clock.includes('1970-01-01') && p.clock.includes('57 years behind'),
      'ntp line: a stick that never set its clock shows 1970 and a warning');
 
   p = ntpLine({ now: at('07:52:10'), ntp: null }, seen, 'pool.ntp.org');
@@ -320,6 +320,8 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(p.ntp === 'Last NTP sync 07:52 UTC', 'ntp line: an empty offset is left out, the event time stands in for the sync');
   p = ntpLine({ now: at('07:52:10'), ntp: { ...synced, last_sync: String(at('07:52:10') - 86400 * 2) } }, seen, 'x');
   ok(/^Last NTP sync 2026-10-16 07:52 UTC/.test(p.ntp), 'ntp line: a sync on another day carries its date');
+  p = ntpLine({ now: at('07:52:10'), ntp: { ...synced, offset: '1792321465.657234' } }, seen, 'x');
+  ok(p.ntp === 'Last NTP sync 07:41 UTC, set the clock (it was 57 years off)', 'ntp line: the boot step from 1970 reads as setting the clock');
   p = ntpLine(null, seen, 'x');
   ok(p.clock === '' && p.ntp.startsWith('No sync yet'), 'ntp line: no answer at all does not throw');
 }
