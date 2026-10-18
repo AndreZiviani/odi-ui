@@ -301,14 +301,22 @@ miss this shape entirely.
 
 **MIB** runs `omcicli mib get` and shows exactly what it printed &mdash; which is
 what a support thread means when it asks you to post `omcicli mib get 84`. It
-is three linked panes, as an OMCI explorer is: **Tables** (class id, name, and
-how many entities the last read found), **Entities** of the selected table (id
+is three linked panes, as an OMCI explorer is: **Tables** (class id, official name with
+the vendor table name under it, and how many entities the last read found), **Entities** of the selected table (id
 in hex and decimal, attribute count), and **Attributes** of the selected entity,
 parsed or as the lines the device printed for it. On a phone the panes are shown
 one at a time, each with a way back.
 
-The table list is the 81 names captured from a stick once and shipped as data
-(80 rows: `LargeString` is registered twice). Opening a table is one
+The table list is every class odi-oss's OMCI model holds (82), each with its
+official name: the plugins' own description, which odi-oss spells as G.988 does
+where they differ, and the classes the stock firmware lacks (46) or our image
+adds (65529). `scripts/gen-mib-classes.py` writes the rows into
+`web/mebrowser.js` from odi-oss's `omci_mib.json`, so nothing is typed by
+hand. They live in that module rather than a `schema/` file because a new
+served file would need a route in `src/http.c` and a place in every asset list
+(the image build's `fetch-releases` copies a fixed set of tables). `LargeString`
+is two classes (157 and 307), so two rows. The filter matches the class id, the
+official name or the table name. Opening a table is one
 `mib get` for the whole table; entities and attributes come out of that one
 dump, so clicking through them asks the device nothing. Entity counts fill in as
 tables are opened; *Count entities* reads every table once, one at a time, only
@@ -318,9 +326,8 @@ still accepts a bare class id or name, with an optional entity, because that is
 the dialect threads are written in, and it is how to read one entity of a table
 too long for the daemon's buffer.
 
-A table with a class id confirmed against this hardware (the captures in
-`scripts/fixtures/omci/`) is read by that id; every other table is read by
-**name**, and its Class column is blank.
+Every table is read by its **class id**, the one thing that tells the two
+`LargeString` registrations apart.
 
 **Captured, not queried, and the reason matters: `omcicli get tables` breaks the
 MIB service.** It returns zero bytes and leaves every later `mib get` empty
