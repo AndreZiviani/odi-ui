@@ -1045,6 +1045,30 @@ check "a well-formed row in the same file still works" yes \
 	"$(err "$(post 'GOOD_ROW=7')" '"ok":true,"value":"7"')"
 rm -f /etc/config/confd/keys.tsv
 
+echo "== the stick clock and the ntpd status file"
+# GET /api/ntp answers the wall clock and the five fields ntpd leaves in
+# /tmp/ntp-status. The file is the image's, so only known keys and plain
+# numbers go out; anything else is blanked, and an unknown event is null.
+ntpj() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/ntp"; }
+rm -f /tmp/ntp-status
+check "no status file: the clock and a null status" yes \
+	"$(err "$(ntpj)" ',"ntp":null}')"
+check "the clock is a plausible epoch" yes \
+	"$(err "$(ntpj)" '{"now":1')"
+printf 'event=step\ntime=1760773900\noffset=-0.004\nstratum=2\nlast_sync=1760773900\n' > /tmp/ntp-status
+check "a status file is passed on, field by field" yes \
+	"$(err "$(ntpj)" '"ntp":{"event":"step","time":"1760773900","offset":"-0.004","stratum":"2","last_sync":"1760773900"}}')"
+printf 'event=unsync\ntime=1760773900\noffset=\nstratum=16\nlast_sync=\nextra=<script>\n' > /tmp/ntp-status
+check "empty values stay empty, unknown keys are dropped" yes \
+	"$(err "$(ntpj)" '"offset":"","stratum":"16","last_sync":""}}')"
+printf 'event=periodic\ntime=17\"x\noffset=1e5<b>\nstratum=2\nlast_sync=5\n' > /tmp/ntp-status
+check "a value with other characters is blanked, never echoed" yes \
+	"$(err "$(ntpj)" '"time":"","offset":"","stratum":"2","last_sync":"5"}}')"
+printf 'event=<b>hi</b>\ntime=1\n' > /tmp/ntp-status
+check "an unknown event is not a status" yes \
+	"$(err "$(ntpj)" ',"ntp":null}')"
+rm -f /tmp/ntp-status
+
 echo "== the host link and the safe mode: state, banner data, verbs, credential"
 # odi-oss keeps the state of this boot in /var/run/host-autoneg (key=value,
 # replaced by a rename), the flag of a safe-mode boot in /var/run/safe-mode

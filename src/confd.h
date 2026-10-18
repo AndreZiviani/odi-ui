@@ -91,6 +91,7 @@
 #define HOSTLINK_SAFEMODE "/etc/config/safe-mode"
 #define HOSTLINK_LINK     "/sys/module/odi_switch/parameters/host_link"
 #define UPTIME_FILE       "/proc/uptime"
+#define NTP_STATUS_FILE   "/tmp/ntp-status"
 /*
  * The odi-oss safe mode (safe-mode.sh): a recovery boot, entered by a run of
  * short power-ups, with the PON off, the host port on auto-negotiation and

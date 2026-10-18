@@ -8,7 +8,7 @@
  * section maps to, or under Other.
  */
 
-import { $, el, createHelpToggle } from './dom.js';
+import { $, el, get, createHelpToggle } from './dom.js';
 import {
   S, EDITS, provenance, applyOf, dependsUnmet, gatesOthers, dropIgnoredEdits, decodeMask,
   CLASS_LABEL, CLASS_MEANS, costBadge, imageAware, settingOf, identitySwitchOn,
@@ -67,6 +67,92 @@ function splitHelp(help, note) {
   const seen = new Set(h.map(norm));
   const n = sentences(note).filter((s) => !seen.has(norm(s)));
   return { first: h[0] || '', rest: h.slice(1).join(' '), note: n.join(' ') };
+}
+
+/*
+ * The stick's clock and NTP state, drawn under the NTP_SERVER field.
+ *
+ * Times are UTC, as the other dates this page prints (the backup file name,
+ * the build date), because the stick has no time zone of its own and a local
+ * time here would look like a disagreement with its log.
+ *
+ * `d` is the /api/ntp answer ({ now, ntp }, ntp null while the stick has no
+ * status file), `seen` is Date.now() when it arrived, `server` the stored
+ * NTP_SERVER. Returns { clock, clockWarn, ntp, ntpWarn }. Pure, so make check
+ * can drive it without a stick.
+ */
+const utcDate = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+const utcHms = (t) => new Date(t * 1000).toISOString().slice(11, 19);
+
+const span = (abs) => (abs < 60 ? abs + ' s' : abs < 3600 ? Math.round(abs / 60) + ' min'
+  : abs < 172800 ? Math.round(abs / 3600) + ' h' : abs < 63115200 ? Math.round(abs / 86400) + ' days'
+  : Math.round(abs / 31557600) + ' years');
+
+function ntpLine(d, seen, server) {
+  const out = { clock: '', clockWarn: false, ntp: '', ntpWarn: false };
+  const now = Number(d && d.now);
+  if (Number.isFinite(now) && now > 0) {
+    const diff = Math.round(now - seen / 1000);
+    const abs = Math.abs(diff);
+    const gap = span(abs);
+    out.clock = 'Stick clock ' + utcDate(now) + ' ' + utcHms(now) + ' UTC, ';
+    if (abs < 2) out.clock += 'matches this browser';
+    else out.clock += gap + (diff > 0 ? ' ahead of' : ' behind') + ' this browser';
+    /* Past a minute it is no rounding error: logs, certificates and the
+       OLT's timestamps will not line up with anything. */
+    if (abs > 60) { out.clockWarn = true; out.clock += ', one of the two clocks is wrong'; }
+  }
+  const hm = (t) => (utcDate(t) === utcDate(now) ? '' : utcDate(t) + ' ') + utcHms(t).slice(0, 5) + ' UTC';
+  const n = d && d.ntp;
+  const num = (v) => (v !== '' && v !== undefined && Number.isFinite(Number(v)) ? Number(v) : null);
+  if (!String(server || '').trim()) {
+    out.ntp = 'NTP is off';
+  } else if (!n) {
+    out.ntp = 'No sync yet (the time service is starting, or the server is not answering)';
+    out.ntpWarn = true;
+  } else if (n.event === 'unsync') {
+    const last = num(n.last_sync);
+    out.ntp = 'Lost sync (' + (last ? 'last sync ' + hm(last) : 'never synced') + ')';
+    out.ntpWarn = true;
+  } else {
+    const at = num(n.last_sync) || num(n.time);
+    const off = num(n.offset);
+    out.ntp = 'Last NTP sync ' + (at ? hm(at) : 'time unknown');
+    /* The first sync after a boot steps the clock from 1970: an offset of
+       decades is "set the clock", not a correction worth printing to the
+       microsecond. */
+    if (off !== null && Math.abs(off) >= 60) out.ntp += ', set the clock (it was ' + span(Math.round(Math.abs(off))) + ' off)';
+    else if (off !== null) out.ntp += ', corrected ' + Math.abs(off).toString() + ' s';
+  }
+  return out;
+}
+
+/* One shared timer, started with the first row: the rows are rebuilt on every
+   render, so it looks the line up each time and does nothing while the
+   Services subtab (or the whole tab) is hidden. */
+let ntpTimer = 0;
+async function refreshNtp() {
+  let d, seen;
+  try { d = await get('/api/ntp'); seen = Date.now(); } catch (e) { d = null; }
+  /* Looked up after the answer: the first call comes while the row is still
+     being built, before it is on the page. */
+  const box = document.querySelector('#set-services .ntpinfo');
+  if (!box) return;
+  box.textContent = '';
+  if (!d) return;
+  const p = ntpLine(d, seen, S.VALUES.NTP_SERVER);
+  const part = (text, warn) => { if (text) box.append(el('span', warn ? 's-warn' : null, text)); };
+  part(p.clock, p.clockWarn);
+  if (p.clock && p.ntp) box.append(document.createTextNode(' · '));
+  part(p.ntp, p.ntpWarn);
+}
+function startNtpTimer() {
+  refreshNtp();
+  if (ntpTimer || typeof setInterval !== 'function') return;
+  ntpTimer = setInterval(() => {
+    const box = document.querySelector('#set-services .ntpinfo');
+    if (box && box.offsetParent !== null && !document.hidden) refreshNtp();
+  }, 10000);
 }
 
 function renderValue(row, raw, readonly = false) {
@@ -219,6 +305,12 @@ function renderValue(row, raw, readonly = false) {
   if (row.type === 'hexascii' || row.type === 'hex20') {
     const txt = hexAscii(raw);
     box.append(el('div', 's-aside', txt === null ? 'Not printable ASCII' : 'Reads as “' + txt + '”'));
+  }
+
+  /* The clock line is filled in from /api/ntp once the row is on the page. */
+  if (row.name === 'NTP_SERVER') {
+    box.append(el('div', 's-aside ntpinfo', 'Reading the stick clock…'));
+    startNtpTimer();
   }
   return box;
 }
@@ -461,4 +553,4 @@ function renderAll() {
   markPending();
 }
 
-export { renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS, OWN_CONTROL };
+export { ntpLine, renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS, OWN_CONTROL };
