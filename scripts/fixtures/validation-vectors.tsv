@@ -206,13 +206,15 @@ me		65535	ok	class id or table name
 me		1	ok	class id or table name
 me		VlanTagFilterData	ok	class id or table name
 me		ONU2G	ok	class id or table name
+me		MacBridgePortPmMonitorHistoryData	ok	the longest captured table name, 33
+me		AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	ok	39 characters, the most
+me		AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	bad	40 characters, one too many
 me		0	bad	class id or table name
 me		65536	bad	class id or table name
 me		99999999999	bad	class id or table name
 me		-h	bad	class id or table name
 me		a%20b	bad	class id or table name
 me		a;b	bad	class id or table name
-me		xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	bad	class id or table name
 me			bad	class id or table name
 entity			ok	entity: up to 4 hex digits
 entity		0	ok	entity: up to 4 hex digits
