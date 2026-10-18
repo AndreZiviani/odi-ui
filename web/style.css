@@ -291,6 +291,13 @@ label.check { flex-direction: row !important; align-items: center; gap: 8px; fon
 .cost-restart { --c: var(--blue-ink); --b1: var(--c); --b2: var(--c); }
 .cost-internet { --c: var(--yellow-ink); --b1: var(--c); --b2: var(--c); --b3: var(--c); }
 .cost-reboot { --c: var(--red-ink); --b1: var(--c); --b2: var(--c); --b3: var(--c); --b4: var(--c); }
+.cost.icon-only { padding: 4px 6px; }
+.cost.icon-only .cost-text { display: none; }
+/* No legend (it is hidden on a phone) or no hover for the title: the words come back beside the bars. */
+@media (max-width: 720px), (hover: none) {
+  .cost.icon-only { padding: 2px 8px 2px 6px; }
+  .cost.icon-only .cost-text { display: inline; }
+}
 button.cost-reboot { --b1: currentColor; --b2: currentColor; --b3: currentColor; --b4: currentColor; }
 button.apply { margin: 6px 8px 6px 0; }
 button.apply .cost { padding: 1px 6px; }
@@ -371,6 +378,29 @@ details.expert[open] > summary { margin-bottom: 8px; }
 .bits div { white-space: pre-wrap; }
 .unknownbit { color: var(--yellow-ink); }
 .s-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* The field and its tags side by side; the tags line up with the input, not with a "Reads as" line under it.
+The tags column has one width on every row, so the inputs line up whatever tags a row has: wide enough for the
+most a row carries (cost, Identity, Not reported: 205px at desktop height), a fourth wraps. */
+.s-fieldline { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 210px); align-items: start; gap: 8px 12px; }
+.s-fieldline > .s-field { min-width: 0; }
+.s-fieldline > .s-tags { min-height: 36px; }
+.setting.wide .s-fieldline { grid-template-columns: minmax(0, max-content) auto; justify-content: start; }
+/* The fixed entity table and its tags: the tags start level with the first row of inputs, under the header line.
+With no room left (a phone) they wrap under the table. */
+.fme-tableline { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; max-width: 100%; }
+.fme-tableline > .s-tags { margin-top: 23.5px; }
+/* Beside the field, on a desktop, the tags are as tall as it is the height of a select, so never taller than either.
+The `cost` icon becomes a square. A phone keeps them small, under the field. */
+@media (min-width: 721px) and (hover: hover) {
+  .s-fieldline > .s-tags .tag,
+  .s-fieldline > .s-tags .cost.icon-only,
+  .fme-tableline > .s-tags .tag,
+  .fme-tableline > .s-tags .cost.icon-only {
+    box-sizing: border-box; height: 34px; display: inline-flex; align-items: center;
+  }
+  .s-fieldline > .s-tags .tag, .fme-tableline > .s-tags .tag { padding: 0 10px; }
+  .s-fieldline > .s-tags .cost.icon-only, .fme-tableline > .s-tags .cost.icon-only { padding: 0 10px; }
+}
 .settings.compact .setting { padding: 8px 0; gap: 2px 32px; }
 .settings.compact .s-help { font-size: 13px; margin-top: 2px; }
 .settings.compact .s-ro { padding: 0; }
@@ -575,6 +605,13 @@ table.diff .tag { margin-left: 8px; font-family: var(--sans); }
   .s-label { display: contents; }
   .s-label > .s-more, .s-label > .s-helpbox { order: 1; margin-top: -4px; }
   .s-control { order: 2; }
+  /* No room beside the field on a phone: the tags go back under it, and the
+     field takes the whole width, or a 560px cap leaves an empty strip beside
+     it between 592px and 720px. */
+  .s-fieldline, .setting.wide .s-fieldline { grid-template-columns: minmax(0, 1fr); }
+  .s-fieldline .s-field input:not([type=checkbox]), .s-fieldline .s-field select { width: 100%; }
+  .s-fieldline > .s-tags { min-height: 0; }
+  .fme-tableline > .s-tags { margin-top: 0; }
   .s-help, .s-warn { margin-top: -4px; }
   .legend { display: none; }
   .dim em { display: none; }

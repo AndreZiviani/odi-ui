@@ -114,7 +114,12 @@ function renderFixedMeEditor(value, onChange) {
   const thead = el('thead');
   thead.append(head);
   table.append(thead, body);
-  box.append(table, msg, add);
+  /* The table sits in a line of its own, so the row can put its tags beside it (config.js renderRow),
+  level with the first row of inputs. */
+  const tableLine = el('div', 'fme-tableline');
+  tableLine.append(table);
+  box.append(tableLine, msg, add);
+  box.tableLine = tableLine;
   draw();
   return box;
 }
