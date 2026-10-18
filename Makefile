@@ -99,6 +99,7 @@ verify: confd
 check:
 	scripts/check-schema.py
 	scripts/check-assets.py
+	scripts/check-api-doc.sh
 	scripts/parser-check.sh
 	scripts/uimage-test.sh
 	node scripts/web-check.mjs
