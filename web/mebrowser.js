@@ -35,7 +35,7 @@ import { meProblem, entityProblem } from './validate.js';
  * is two classes (157 and 307) and so two rows.
  */
 /* BEGIN GENERATED: scripts/gen-mib-classes.py */
-/* From odi-oss src/omci/generated/omci_mib.json at 7aa79f6. [class id, table name, official name] */
+/* From odi-oss src/omci/generated/omci_mib.json at 3db2b72. [class id, table name, official name] */
 const CLASSES = [
   [2, 'OntData', 'ONU data'],
   [5, 'Cardholder', 'Cardholder'],
