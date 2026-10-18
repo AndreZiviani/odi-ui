@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- OMCI, MIB browser: three linked panes in place of the one-table picker. Tables (class id, name, entity count, with a filter by name or class id), the selected table's entities (hex and decimal id, attribute count), and the selected entity's attributes, parsed or raw (that entity's lines as printed). Read again, an opt-in Count entities that reads every table once through the same API call, and Look up for a class id, name or single entity that is not in the list. A phone shows one pane at a time. Still read-only, and still never asks the device for its table list. No daemon change: it is the same `/api/omci?cmd=me` read.
+
 ## v1.6.2 (2026-10-18)
 
 - OMCI tab: a table name may be up to 39 characters, not 32, so MacBridgePortPmMonitorHistoryData (33) can be read.

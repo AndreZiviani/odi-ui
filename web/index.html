@@ -238,13 +238,45 @@
     </div>
 
     <div class="sub" id="o-mib" role="tabpanel" aria-labelledby="st-omci-mib" data-sub="mib" hidden>
-      <p class="lede">One managed entity at a time, exactly as <code>omcicli mib get</code> prints it. Read-only.</p>
-      <div class="formrow">
-        <label>Managed entity <select id="me-select"></select></label>
-        <label>or class id <input id="me-classid" autocomplete="off" inputmode="numeric" placeholder="84"></label>
-        <label>Entity <input id="me-entity" autocomplete="off" placeholder="all"></label>
-        <button id="me-go" class="primary" type="button">Read</button>
+      <div class="block-head">
+        <p class="lede">Every table, the entities in it and their attributes, exactly as <code>omcicli mib get</code> prints them. Read-only.</p>
+        <button id="me-refresh" type="button">Read again</button>
+        <button id="me-count" type="button" title="Reads every table once, one at a time">Count entities</button>
       </div>
+      <div class="formrow mib-tools">
+        <label class="mib-filter">Filter tables <input id="me-filter" type="search" autocomplete="off" placeholder="name or class id"></label>
+        <div class="mib-lookup">
+          <label>Look up class id or name <input id="me-classid" autocomplete="off" placeholder="84"></label>
+          <label>Entity <input id="me-entity" autocomplete="off" placeholder="all"></label>
+          <button id="me-go" class="primary" type="button">Read</button>
+        </div>
+      </div>
+      <p id="me-status" class="hint mib-status" aria-live="polite"></p>
+      <div class="mib" id="me-browser" data-pane="tables">
+        <section class="mib-pane mib-tables" aria-labelledby="me-h-tables">
+          <div class="mib-head"><h3 id="me-h-tables">Tables</h3><span class="mib-count" id="me-n-tables"></span></div>
+          <div class="mib-row mib-cols" aria-hidden="true"><span>Class</span><span>Name</span><span title="Entities">Ent</span></div>
+          <div class="mib-list" id="me-tables-list"></div>
+        </section>
+        <section class="mib-pane mib-entities" aria-labelledby="me-h-entities">
+          <button class="quiet mib-back" id="me-back-tables" type="button">&lsaquo; Tables</button>
+          <div class="mib-head"><h3 id="me-h-entities">Entities</h3><span class="mib-count" id="me-n-entities"></span></div>
+          <p class="me-src mib-src" id="me-entities-src"></p>
+          <div class="mib-row mib-cols" aria-hidden="true"><span>Entity</span><span>Dec</span><span>Attrs</span></div>
+          <div class="mib-list" id="me-entities-list"></div>
+        </section>
+        <section class="mib-pane mib-attrs" aria-labelledby="me-h-attrs">
+          <button class="quiet mib-back" id="me-back-entities" type="button">&lsaquo; Entities</button>
+          <div class="mib-head">
+            <h3 id="me-h-attrs">Attributes</h3><span class="mib-count" id="me-n-attrs"></span>
+            <span class="mib-seg" role="group" aria-label="Attribute view">
+              <button id="me-view-parsed" type="button" aria-pressed="true">Parsed</button><button id="me-view-raw" type="button" aria-pressed="false">Raw</button>
+            </span>
+          </div>
+          <div class="mib-list mib-body" id="me-attrs-body"></div>
+        </section>
+      </div>
+      <h3 class="mib-dumps-head">Data path</h3>
       <div class="chips" id="me-dumps" aria-label="Data path dumps"></div>
       <div id="me-out"></div>
       <details class="more">
@@ -257,7 +289,6 @@
            returns nothing and leaves the stock <code>omci_app</code> unable to
            answer anything until it is restarted. This image&rsquo;s omcid answers
            it safely, but the refusal stays for the stock slot.</p>
-        <pre id="me-tables"></pre>
       </details>
     </div>
   </section>

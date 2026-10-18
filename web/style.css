@@ -550,6 +550,61 @@ table.diff .tag { margin-left: 8px; font-family: var(--sans); }
 .me-inst { padding: 12px 0; border-top: 1px solid var(--line); }
 .me-inst h4 { font-family: var(--mono); font-size: 13.5px; margin: 0 0 6px; }
 .me-inst h5 { font-size: 13px; color: var(--ink-2); margin: 8px 0 4px; }
+
+/* The MIB browser: tables, the entities of the selected one, the attributes
+   of the selected entity, side by side. Each pane scrolls on its own so the
+   selection in the others stays in view. A selected row is marked in UPC
+   blue, the colour of anything interactive. */
+.mib, .mib-tools { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.8fr) minmax(0, 1.4fr); gap: 12px; }
+.mib { margin: 4px 0 20px; }
+/* The filter only narrows the Tables list, so it sits over that pane, as wide
+   as it; Look up reads any table and spans the other two. */
+.mib-tools { align-items: end; }
+.mib-filter input { width: 100%; }
+.mib-lookup { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.mib-lookup label { flex: 1 1 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.mib-lookup input { width: 100%; }
+.mib-pane {
+  display: flex; flex-direction: column; min-width: 0; height: min(68vh, 640px);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+}
+.mib-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; min-height: 44px; }
+.mib-head h3 { margin: 0; }
+.mib-count { font-size: 13px; color: var(--ink-3); font-family: var(--mono); }
+.mib-src { margin: -4px 12px 8px; overflow-wrap: anywhere; }
+.mib-src:empty { display: none; }
+.mib-list { position: relative; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 6px; }
+.mib-row {
+  display: grid; align-items: baseline; gap: 12px; width: 100%; text-align: left;
+  padding: 4px 12px; border: 0; border-radius: 0; background: none; color: var(--ink);
+  font-family: var(--mono); font-size: 13px; line-height: 1.5;
+}
+.mib-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.mib-row:hover { background: var(--well); }
+button.mib-row[aria-current=true] { background: color-mix(in srgb, var(--blue) 18%, transparent); box-shadow: inset 3px 0 0 var(--blue); }
+button.mib-row:focus-visible { outline-offset: -2px; }
+.mib-cols { font-family: var(--sans); font-size: 12px; color: var(--ink-3); border-bottom: 1px solid var(--line-2); padding-bottom: 6px; }
+.mib-tables .mib-row { grid-template-columns: 5ch minmax(0, 1fr) 3.5ch; }
+.mib-entities .mib-row { grid-template-columns: minmax(0, 1fr) 6ch 5ch; }
+.mib-tables .mib-row > span:last-child, .mib-entities .mib-row > span:nth-child(n+2) { text-align: right; }
+.mib-dim { color: var(--ink-3); }
+.mib-row .bad { color: var(--red-ink); }
+.mib-empty { margin: 10px 12px; }
+.mib-list > .me-note, .mib-list > .me-raw { margin: 10px 12px; }
+.mib-body { padding: 4px 12px 10px; border-top: 1px solid var(--line-2); }
+.mib-body .me-kv { margin: 6px 0 4px; }
+.mib-body .mib-empty { margin: 6px 0; }
+.mib-group { font-size: 13px; color: var(--ink-2); margin: 12px 0 4px; font-family: var(--mono); }
+.mib-pre { margin: 6px 0; max-height: none; }
+/* Parsed or raw: two halves of one control, the pressed half in blue. */
+.mib-seg { margin-left: auto; display: inline-flex; }
+.mib-seg button { padding: 3px 10px; font-size: 13px; }
+.mib-seg button:first-child { border-radius: var(--r) 0 0 var(--r); }
+.mib-seg button + button { border-radius: 0 var(--r) var(--r) 0; margin-left: -1px; }
+.mib-seg button[aria-pressed=true] { color: var(--blue-ink); border-color: color-mix(in srgb, var(--blue) 60%, transparent); position: relative; }
+.mib-back { display: none; }
+.mib-status { min-height: 1.5em; margin: -2px 0 8px; }
+.mib-dumps-head { margin-top: 4px; }
 #me-select { max-width: 320px; }
 
 /* ------------------------------------------------------------- system */
@@ -627,6 +682,21 @@ table.diff .tag { margin-left: 8px; font-family: var(--sans); }
   .saveacts button { flex: 1; justify-content: center; }
   .flow { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; }
   .cards { grid-template-columns: minmax(0, 1fr); }
+  /* One MIB pane at a time, in the order they are read: the list, a
+     table's entities, an entity's attributes, each with a way back. */
+  .mib, .mib-tools { grid-template-columns: minmax(0, 1fr); }
+  .mib-lookup { grid-column: auto; }
+  .mib-pane { height: auto; max-height: none; }
+  .mib-list { overflow: visible; }
+  .mib[data-pane=tables] .mib-entities, .mib[data-pane=tables] .mib-attrs,
+  .mib[data-pane=entities] .mib-tables, .mib[data-pane=entities] .mib-attrs,
+  .mib[data-pane=attributes] .mib-tables, .mib[data-pane=attributes] .mib-entities { display: none; }
+  .mib-back { display: inline-flex; align-self: flex-start; margin: 6px 4px 0; padding: 6px 8px; }
+  .mib-row { padding: 8px 12px; }
+  .mib { scroll-margin-top: 112px; }   /* clear of the sticky header */
+  /* Look up on one line: the class id and entity share it, Read beside them. */
+  .mib-lookup > label { flex: 1 1 30%; }
+  .mib-lookup > button { flex: 0 0 auto; }
   .keylist li { grid-template-columns: minmax(0, 1fr) max-content; }
   .keylist .k-blob { grid-column: 1; }
   .keylist .k-comment { display: none; }

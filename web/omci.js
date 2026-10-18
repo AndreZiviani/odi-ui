@@ -24,7 +24,8 @@ const isRule = (l) => /^={3,}\s*$/.test(l);
 /*
  * Parse one `omcicli mib get` dump.
  *
- * Returns { name, instances: [ { id, attrs: [[k, v]], groups: [{label, attrs}] } ] }.
+ * Returns { name, instances: [ { id, attrs: [[k, v]], groups: [{label, attrs}], raw } ] },
+ * where `raw` is the instance's own lines as printed.
  *
  * `name` is the table name omcicli itself printed, and the pages display it
  * rather than the label they asked for. That is the check that keeps a wrong
@@ -38,8 +39,14 @@ function parseOmci(text) {
   let cur = null;
   let group = null;
 
-  const flush = () => {
-    if (cur && (cur.attrs.length || cur.groups.length)) instances.push(cur);
+  /* `end` is the line that closed the instance, so each one keeps the lines
+     it was read from: the MIB browser's raw view shows one entity as the
+     device printed it, without a second parser to find it again. */
+  const flush = (end) => {
+    if (cur && (cur.attrs.length || cur.groups.length)) {
+      cur.raw = lines.slice(cur.from, end).join('\n').trimEnd();
+      instances.push(cur);
+    }
     cur = null;
     group = null;
   };
@@ -60,14 +67,14 @@ function parseOmci(text) {
     */
     const hdr = /^(\d+) (\S+) (\d+)(\s+\(row truncated\))?\s*$/.exec(line);
     if (hdr) {
-      flush();
+      flush(i);
       odi = true;
       name = hdr[2];
-      cur = { id: '0x' + Number(hdr[3]).toString(16).padStart(4, '0'), attrs: [], groups: [], truncated: !!hdr[4] };
+      cur = { id: '0x' + Number(hdr[3]).toString(16).padStart(4, '0'), attrs: [], groups: [], truncated: !!hdr[4], from: i };
       continue;
     }
     const cnt = /^(\d+) rows?\s*$/.exec(line);
-    if (cnt) { flush(); rows = Number(cnt[1]); continue; }
+    if (cnt) { flush(i); rows = Number(cnt[1]); continue; }
     if (odi && cur) {
       const a = /^ {4}(\S+)\s+([0-9a-fA-F]+)\s*$/.exec(line);
       if (a) { (group ? group.attrs : cur.attrs).push([a[1], hexValue(a[2])]); continue; }
@@ -85,11 +92,11 @@ function parseOmci(text) {
       }
       continue;
     }
-    if (isRule(line)) { flush(); continue; }
+    if (isRule(line)) { flush(i); continue; }
 
     const t = line.trim();
     if (!t) continue;
-    if (!cur) { cur = { id: '', attrs: [], groups: [] }; group = null; }
+    if (!cur) { cur = { id: '', attrs: [], groups: [], from: i }; group = null; }
 
     /*
        An INDENTED line continues the attribute above it rather than starting
@@ -121,7 +128,7 @@ function parseOmci(text) {
       cur.groups.push(group);
     }
   }
-  flush();
+  flush(lines.length);
   return { name, instances, rows };
 }
 
