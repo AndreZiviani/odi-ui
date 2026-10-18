@@ -20,62 +20,120 @@ import { fetchOmci, fetchMe, unavailable } from './omci.js';
 import { meProblem, entityProblem } from './validate.js';
 
 /*
- * The table names `omcicli get tables` reported, taken off a stick once.
+ * Every managed entity class this stack knows, as [class id, table name,
+ * official name]: the model odi-oss recovers from the stock firmware's OMCI
+ * plugins, which is also what omcid answers to. Regenerate it with
+ * scripts/gen-mib-classes.py; do not edit the rows.
  *
- * Captured rather than queried, because asking costs the MIB service: that
- * command returns zero bytes and wedges the stock omci_app responder until it
- * is restarted. omcid answers it safely, but this page also runs against the
- * stock daemon, so the refusal stays. See scripts/fixtures/omci/_tables-names.txt.
+ * Captured rather than queried, because `omcicli get tables` returns zero
+ * bytes and wedges the stock omci_app responder until it is restarted. omcid
+ * answers it safely, but this page also runs against the stock daemon, so the
+ * list stays static.
  *
- * NOT the /lib/omci/mib_*.so filenames, which is what this list used to be:
- * 23 of the 81 differ (`AuthSecMethod` against `Authen_Sec_Method`) and some
- * runtime names contain spaces. A name omcicli does not recognise produces
- * empty output rather than an error, so the filename form failed silently and
- * looked like an empty table.
- *
- * The device is still asked at load time and that answer wins -- only the
- * running stack knows what it registered. This is the list until it replies,
- * and for the case where it cannot.
+ * The official name leads each row. The table name is the one omcicli prints
+ * (the vendor's), kept as the secondary label and still searchable. LargeString
+ * is two classes (157 and 307) and so two rows.
  */
-const TABLES = [
-  'Anig', 'AuthSecMethod', 'Cardholder', 'CircuitPack',
-  'CTCOnuOnuLoopDetection', 'Dot1RateLimiter', 'EthExtPmData', 'EthPmData2',
-  'EthPmData3', 'EthPmDataDs', 'EthPmDataUs', 'EthPmHistoryData', 'EthUni',
-  'ExtendedMcastOperProf', 'ExtendedOnuG', 'ExtIpHostCfgData',
-  'ExtVlanTagOperCfgData', 'FecPmhd', 'GalEthProf', 'GemIwTp', 'GemPortCtp',
-  'GemPortPmhd', 'GeneralPurposeBuffer', 'GenericStatusPortal', 'GpncPmhd',
-  'HSQDefault', 'Me350', 'Me370', 'Me373', 'IpHostCfgData',
-  'LargeString', 'LargeString', 'LctUni', 'LoIdAuth', 'LoopDetect',
-  'MacBridgePortFilterPreassign', 'MacBridgePortFilterTable',
-  'MacBridgePortPmMonitorHistoryData', 'MacBriPortBriTblData',
-  'MacBriPortCfgData', 'MacBriServProf', 'Map8021pServProf', 'McastOperProf',
-  'McastSubConfInfo', 'McastSubMonitor', 'Me242', 'MultiGemIwTp',
-  'NetworkAddress', 'OltG', 'OLTLocationConfigData', 'Omci', 'Ont2g',
-  'OntData', 'Ontg', 'OntSelfLoopDetect', 'OntSystemMgmt', 'OnuCapability',
-  'OnuPwrShedding', 'OnuRemoteDebug', 'PriQ', 'PrivateTellionOntStatistics',
-  'PrivateTqCfg', 'PrivateVlanCfg', 'PseudowireMaintenanceProfile',
-  'Scheduler', 'SWImage', 'Tcont', 'TcpUdpCfgData', 'ThresholdData1',
-  'ThresholdData2', 'TR069ManageServer', 'TrafficDescriptor', 'Unig', 'VEIP',
-  'VlanTagFilterData', 'VlanTagOpCfgData', 'WANConfigCata',
-  'WANConfigCataDeti', 'PrivateQueueMap', 'PrivateMcastTag', 'PrivateSntp'
+/* BEGIN GENERATED: scripts/gen-mib-classes.py */
+/* From odi-oss src/omci/generated/omci_mib.json at 1d36d8b. [class id, table name, official name] */
+const CLASSES = [
+  [2, 'OntData', 'ONU data'],
+  [5, 'Cardholder', 'Cardholder'],
+  [6, 'CircuitPack', 'Circuit Pack'],
+  [7, 'SWImage', 'Software Image'],
+  [11, 'EthUni', 'PPTP Ethernet UNI'],
+  [24, 'EthPmHistoryData', 'Ethernet performance monitoring history data'],
+  [45, 'MacBriServProf', 'MAC Bridge Service Profile'],
+  [46, 'MacBriCfgData', 'MAC bridge configuration data'],
+  [47, 'MacBriPortCfgData', 'MAC Bridge Port Configuration Data'],
+  [49, 'MacBridgePortFilterTable', 'MAC bridge port filter table data'],
+  [50, 'MacBriPortBriTblData', 'MAC Bridge Port Bridge Table Data'],
+  [52, 'MacBridgePortPmMonitorHistoryData', 'MAC bridge port performance monitoring history data'],
+  [78, 'VlanTagOpCfgData', 'VLAN Tag Operate Configuration Data'],
+  [79, 'MacBridgePortFilterPreassign', 'MAC bridge port filter pre-assign table'],
+  [83, 'LctUni', 'PPTP LCT UNI'],
+  [84, 'VlanTagFilterData', 'VLAN Tag Filter Data'],
+  [89, 'EthPmData2', 'Ethernet PM History Data 2'],
+  [130, 'Map8021pServProf', '802.1p Mapper Service Profile'],
+  [131, 'OltG', 'OLT-G'],
+  [133, 'OnuPwrShedding', 'ONU power shedding'],
+  [134, 'IpHostCfgData', 'IP host config data'],
+  [136, 'TcpUdpCfgData', 'TCP/UDP config data'],
+  [137, 'NetworkAddress', 'Network address'],
+  [148, 'AuthSecMethod', 'Authentication security method'],
+  [157, 'LargeString', 'Large string'],
+  [158, 'OnuRemoteDebug', 'ONU remote debug'],
+  [171, 'ExtVlanTagOperCfgData', 'Extended VLAN tagging operation configure data'],
+  [240, 'OntSystemMgmt', 'ONT system management'],
+  [242, 'Me242', 'ME242'],
+  [243, 'PrivateQueueMap', 'Private queue map'],
+  [244, 'OntSelfLoopDetect', 'Ont Self Loop Detect'],
+  [245, 'HSQDefault', 'Default to factory'],
+  [248, 'WANConfigCata', 'config wan interface'],
+  [249, 'WANConfigCataDeti', 'config wan interface Deti'],
+  [250, 'ExtIpHostCfgData', 'Pppoe interface'],
+  [253, 'LoopDetect', 'Loop Detect'],
+  [255, 'PrivateTellionOntStatistics', 'Private ONU statistics'],
+  [256, 'Ontg', 'ONU-G'],
+  [257, 'Ont2g', 'ONU2-G'],
+  [262, 'Tcont', 'T-CONT'],
+  [263, 'Anig', 'ANI-G'],
+  [264, 'Unig', 'UNI-G'],
+  [266, 'GemIwTp', 'GEM Interworking TP'],
+  [267, 'GemPortPmhd', 'GEM port performance monitoring history data'],
+  [268, 'GemPortCtp', 'GEM port network CTP'],
+  [272, 'GalEthProf', 'GAL Ethernet profile'],
+  [273, 'ThresholdData1', 'Threshold data 1'],
+  [274, 'ThresholdData2', 'Threshold data 2'],
+  [277, 'PriQ', 'Priority Queue-G'],
+  [278, 'Scheduler', 'Traffic Scheduler-G'],
+  [280, 'TrafficDescriptor', 'Traffic Descriptor'],
+  [281, 'MultiGemIwTp', 'Multicast GEM Interworking TP'],
+  [284, 'PseudowireMaintenanceProfile', 'Pseudowire maintenance profile'],
+  [287, 'Omci', 'OMCI'],
+  [296, 'EthPmData3', 'Ethernet PM History Data 3'],
+  [298, 'Dot1RateLimiter', 'Dot1 rate limiter'],
+  [307, 'LargeString', 'Large string'],
+  [308, 'GeneralPurposeBuffer', 'General purpose buffer'],
+  [309, 'McastOperProf', 'Multicast Operation Profile'],
+  [310, 'McastSubConfInfo', 'Multicast subscriber configure inforation'],
+  [311, 'McastSubMonitor', 'Multicast subscriber monitor'],
+  [312, 'FecPmhd', 'FEC performance monitoring history data'],
+  [321, 'EthPmDataDs', 'Ethernet frame performance monitoring history data downstream'],
+  [322, 'EthPmDataUs', 'Ethernet frame performance monitoring history data upstream'],
+  [329, 'VEIP', 'Virtual Ethernet interface point'],
+  [330, 'GenericStatusPortal', 'Generic status portal'],
+  [334, 'EthExtPmData', 'Ethernet frame extended PM'],
+  [340, 'TR069ManageServer', 'TR-069 management server'],
+  [341, 'GpncPmhd', 'GEM port network CTP performance monitoring history data'],
+  [350, 'Me350', 'Private ME 350'],
+  [370, 'Me370', 'Private ME 370'],
+  [373, 'Me373', 'Private ME 373'],
+  [65282, 'PrivateMcastTag', 'Private multicast tag'],
+  [65294, 'PrivateSntp', 'Private SNTP'],
+  [65408, 'ExtendedOnuG', 'Extended ONU-G'],
+  [65527, 'OLTLocationConfigData', 'OLT Location Config Data'],
+  [65528, 'CTCOnuOnuLoopDetection', 'CTC Loop Detection'],
+  [65529, 'OnuCapability', 'ONU capability'],
+  [65530, 'LoIdAuth', 'LOID authentication'],
+  [65531, 'ExtendedMcastOperProf', 'Extended Multicast Operation Profiles'],
+  [65534, 'PrivateTqCfg', 'Private Tcont Queue Configuration'],
+  [65535, 'PrivateVlanCfg', 'Private Vlan Configuration'],
 ];
+/* END GENERATED */
 
 /*
- * Class ids confirmed against this device: from the captures in
- * scripts/fixtures/omci/, and the G.988 class each is defined as in the
- * README's "The MIB tabs" section. The rest of TABLES has no id confirmed
- * against this hardware, so it is asked for by name rather than by a guessed
- * number -- omcicli takes a table name just as well as a class id.
+ * One row per class, and every class is asked for by its id: omcicli takes a
+ * class id as well as a table name, and the id is unique where the name is not
+ * (LargeString), so it is the only thing that picks the right registration.
  */
-const CLASS_IDS = {
-  SWImage: 7, EthUni: 11, MacBriPortCfgData: 47, OltG: 131,
-  ExtVlanTagOperCfgData: 171, Tcont: 262, GemIwTp: 266, GemPortCtp: 268,
-  VlanTagFilterData: 84, VEIP: 329,
-  /* Entities the stock firmware registers under names of the make they were
-     written for; they are asked for by class id, and listed under neutral names. */
-  PrivateQueueMap: 243, Me350: 350, Me370: 370, Me373: 373,
-  PrivateMcastTag: 65282, PrivateSntp: 65294,
-};
+const CATALOG = CLASSES.map(([classId, name, title]) => ({
+  name,
+  title,
+  classId,
+  query: String(classId),
+  entity: '',
+}));
 
 const DUMPS = [
   ['conn', 'Data path connections'],
@@ -84,19 +142,7 @@ const DUMPS = [
   ['tasks', 'OMCI tasks'],
 ];
 
-/*
- * One row per table. LargeString is registered twice and both registrations
- * answer the same query, so it is listed once. `query` is what omcicli is
- * given: the confirmed class id where there is one, the name otherwise.
- */
-const CATALOG = [...new Set(TABLES)].map((name) => ({
-  name,
-  classId: CLASS_IDS[name] || null,
-  query: String(CLASS_IDS[name] || name),
-  entity: '',
-}));
-
-const DEFAULT_TABLE = 'VlanTagFilterData';
+const DEFAULT_TABLE = 84;   /* VLAN tag filter data */
 
 /*
  * What the browser holds. Dumps are kept per query for the page's life, so a
@@ -144,12 +190,6 @@ function entityCountCell(table) {
   return { text: String(dump.instances.length), cls: dump.instances.length ? '' : 'mib-dim', title: '' };
 }
 
-function classIdCell(table) {
-  return table.classId
-    ? { text: String(table.classId), cls: '' }
-    : { text: '–', cls: 'mib-dim', title: 'No confirmed class id: asked for by name' };
-}
-
 function rowButton(rowKey, cells, selected, onSelect) {
   const button = el('button', 'mib-row');
   button.type = 'button';
@@ -158,6 +198,8 @@ function rowButton(rowKey, cells, selected, onSelect) {
   for (const cell of cells) {
     const span = el('span', cell.cls || '', cell.text);
     if (cell.title) span.title = cell.title;
+    /* A second, smaller line: the vendor's table name under the official one. */
+    if (cell.sub) span.append(el('small', 'mib-sub', cell.sub));
     button.append(span);
   }
   button.onclick = onSelect;
@@ -198,8 +240,9 @@ function arrowKeys(list, selectOnMove) {
 
 function tableMatches(table, filter) {
   if (!filter) return true;
-  if (/^\d+$/.test(filter)) return table.classId !== null && String(table.classId).startsWith(filter);
-  return table.name.toLowerCase().includes(filter.toLowerCase());
+  if (/^\d+$/.test(filter)) return String(table.classId).startsWith(filter);
+  const wanted = filter.toLowerCase();
+  return table.title.toLowerCase().includes(wanted) || table.name.toLowerCase().includes(wanted);
 }
 
 function renderTables() {
@@ -215,8 +258,9 @@ function renderTables() {
     }
     for (const table of shown) {
       list.append(rowButton(
-        table.name,
-        [classIdCell(table), { text: table.name, cls: 'mib-name' }, entityCountCell(table)],
+        String(table.classId),
+        [{ text: String(table.classId), cls: '' },
+          { text: table.title, sub: table.name, cls: 'mib-name', title: `${table.title} (${table.name})` }, entityCountCell(table)],
         browser.table === table,
         () => openTable(table),
       ));
@@ -422,6 +466,7 @@ async function lookUp() {
     || table.name.toLowerCase() === query.toLowerCase());
   const table = listed && !entity ? listed : {
     name: listed ? listed.name : query,
+    title: listed ? listed.title : '',
     classId: listed ? listed.classId : (/^\d+$/.test(query) ? Number(query) : null),
     query: listed ? listed.query : query,
     entity,
@@ -530,7 +575,7 @@ function renderMeBrowser() {
   renderAll();
   /* The page opens on a phone at the list, and on a desktop with one table
      already read, so the three panes are not empty on arrival. */
-  return openTable(CATALOG.find((table) => table.name === DEFAULT_TABLE), { pane: 'tables' })
+  return openTable(CATALOG.find((table) => table.classId === DEFAULT_TABLE), { pane: 'tables' })
     .then(revealSelectedTable);
 }
 

@@ -587,6 +587,8 @@ button.mib-row:focus-visible { outline-offset: -2px; }
 .mib-tables .mib-row { grid-template-columns: 5ch minmax(0, 1fr) 3.5ch; }
 .mib-entities .mib-row { grid-template-columns: minmax(0, 1fr) 6ch 5ch; }
 .mib-tables .mib-row > span:last-child, .mib-entities .mib-row > span:nth-child(n+2) { text-align: right; }
+.mib-sub { display: block; font-size: 11px; line-height: 1.3; color: var(--ink-3); font-family: var(--mono); overflow-wrap: anywhere; }
+.mib-tables .mib-row > span.mib-name { font-family: var(--sans); white-space: normal; line-height: 1.35; padding: 2px 0; }
 .mib-dim { color: var(--ink-3); }
 .mib-row .bad { color: var(--red-ink); }
 .mib-empty { margin: 10px 12px; }

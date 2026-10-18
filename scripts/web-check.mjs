@@ -550,14 +550,24 @@ ok(unavailable({ ok: true, raw: OMCI[84], instances: parseOmci(OMCI[84]).instanc
   const { renderMeBrowser, CATALOG } = await import(join(root, 'web', 'mebrowser.js'));
   const rowsOf = (sel) => doc.querySelector(sel).children.filter((node) => node.tagName === 'button');
   await renderMeBrowser();
-  ok(rowsOf('#me-tables-list').length === CATALOG.length && CATALOG.length > 70,
-     `the MIB browser lists all ${CATALOG.length} captured tables`);
-  ok(new Set(CATALOG.map((table) => table.name)).size === CATALOG.length, 'each table once');
-  ok(CATALOG.filter((table) => !table.classId).every((table) => table.query === table.name),
-     'a table without a confirmed class id is asked for by name');
+  ok(rowsOf('#me-tables-list').length === CATALOG.length && CATALOG.length >= 82,
+     `the MIB browser lists all ${CATALOG.length} classes`);
+  ok(new Set(CATALOG.map((table) => table.classId)).size === CATALOG.length, 'each class id once');
+  ok(CATALOG.every((table) => Number.isInteger(table.classId) && table.title && table.name),
+     'every class has an id, an official name and a table name');
+  ok(CATALOG.every((table) => table.query === String(table.classId)), 'every class is asked for by its id');
+  const named = (id) => CATALOG.find((table) => table.classId === id);
+  ok(named(268).title === 'GEM port network CTP' && named(263).title === 'ANI-G'
+     && named(46).title === 'MAC bridge configuration data' && named(65529).title === 'ONU capability',
+     'official names, including the classes the stock firmware lacks (46) and ours adds');
+  ok(CATALOG.filter((table) => table.name === 'LargeString').map((table) => table.classId).join() === '157,307',
+     'LargeString is two classes, 157 and 307, and two rows');
   const { meProblem } = await import(join(root, 'web', 'validate.js'));
   ok(CATALOG.every((table) => meProblem(table.query) === null),
-     'every captured table name is one /api/omci accepts');
+     'every class id is one /api/omci accepts');
+  ok(textOf(rowsOf('#me-tables-list').find((row) => textOf(row).startsWith('268'))).includes('GEM port network CTP')
+     && textOf(rowsOf('#me-tables-list').find((row) => textOf(row).startsWith('268'))).includes('GemPortCtp'),
+     'a row shows the official name and, under it, the table name');
   ok(rowsOf('#me-entities-list').length === 2, 'the default table (84) opens with its two entities');
   ok(textOf(doc.querySelector('#me-attrs-body')).includes('VID 75'), 'and the first entity\'s attributes');
 
@@ -580,7 +590,15 @@ ok(unavailable({ ok: true, raw: OMCI[84], instances: parseOmci(OMCI[84]).instanc
   doc.querySelector('#me-filter').oninput();
   ok(rowsOf('#me-tables-list').some((row) => textOf(row).includes('ExtVlanTagOperCfgData'))
      && rowsOf('#me-tables-list').length < CATALOG.length, 'the filter matches a class id');
+  doc.querySelector('#me-filter').value = 'gem port network';
+  doc.querySelector('#me-filter').oninput();
+  ok(rowsOf('#me-tables-list').some((row) => textOf(row).startsWith('268')), 'the filter matches an official name');
+  doc.querySelector('#me-filter').value = 'macbriportcfg';
+  doc.querySelector('#me-filter').oninput();
+  ok(rowsOf('#me-tables-list').length === 1 && textOf(rowsOf('#me-tables-list')[0]).startsWith('47'),
+     'and the vendor table name');
   doc.querySelector('#me-filter').value = '';
+  doc.querySelector('#me-filter').oninput();
 }
 
 /* --- the odi-oss omcid dump shape -------------------------------------- */
