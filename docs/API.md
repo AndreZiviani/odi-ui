@@ -36,6 +36,23 @@ reporting success.
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file
                                           (currently just `omci-identity.on`)
 
+The page's data files, each a TSV from `/etc/confd/` (or its override in
+`/etc/config/confd/`) served as a JSON array of objects, one per row:
+
+    GET  /api/schema                     keys.tsv: name, store, address, section,
+                                          type, apply, writable, common;
+                                          500 {"error":"no schema"} when absent
+    GET  /api/meta                       meta.tsv: name, label, help, options,
+                                          depends, range; [] when absent
+    GET  /api/consumers                  consumers.tsv: name, apply, readers
+                                          (which programs read each key); [] when absent
+    GET  /api/features                   features.tsv: mask, bit, feature, module
+                                          (the OMCI_CUSTOM_* bits decoded); [] when absent
+    GET  /api/baseline                   baseline.tsv: name, value; [] when absent
+    GET  /api/defaults                   the image defaults, from /etc/config_default.xml
+                                          and /etc/config_default_hs.xml, in the
+                                          /api/values shape; {} when neither exists
+
 Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
 ## MIB and services
@@ -49,6 +66,15 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
 ## Status and diagnostics
 
+    GET  /api/status                     {"raw": one diag run (rx/tx power,
+                                          temperature, voltage, ONU state, alarms,
+                                          port counters)}; the page splits it on the
+                                          prompt. {"error":"diag failed"} on failure
+    GET  /api/ntp                        {"now": the stick's clock, epoch seconds,
+                                          "ntp": null, or {"event","time","offset",
+                                          "stratum","last_sync"} from /tmp/ntp-status
+                                          (odi-oss; known events only, values digits,
+                                          `.` and `-`)}
     GET  /api/log                        kernel ring buffer, via klogctl
     POST /api/ping       host=<IPv4>      a literal a host can have (first number
                                           1-223, not 127, no leading zeros), no DNS
@@ -107,6 +133,9 @@ Restoring a backup has no dedicated endpoint: the browser replays it through
 
 ## Admin
 
+    GET  /api/logout                     always 401 with a fresh Basic challenge and
+                                          a "Signed out" page, so the browser drops the
+                                          cached credential (any method)
     POST /api/password   user=...&password=...
                                           user 1-64 printable characters, no space or
                                           colon; password 4-128 printable ASCII
