@@ -361,6 +361,8 @@ button.apply .cost { padding: 1px 6px; }
 .s-field input, .s-field select { width: min(100%, 560px); }
 .s-ro { display: inline-block; padding: 7px 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .s-aside { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+/* A phone is narrower than the sentence; let it wrap rather than push the page sideways. */
+.ntpinfo { overflow-wrap: anywhere; }
 .setting.wide { grid-template-columns: minmax(0, 1fr); }
 details.expert { margin: 24px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
 details.expert[open] > summary { margin-bottom: 8px; }

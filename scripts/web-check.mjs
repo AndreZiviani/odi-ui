@@ -107,6 +107,7 @@ const API = {
   '/api/settings': SETT,
   '/api/hostlink': { supported: true, state: { setting: 'on', running: 'on', phase: 'steady', fallback: '0' },
                      safemode: null, link: '1', uptime: '300' },
+  '/api/ntp': { now: 1760773930, ntp: null },
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
   '/api/firmware': {
     running: 'ODI-260910-6861b53', confd: 'test', mem: '26 MB', build: {},
@@ -277,6 +278,50 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(doc.querySelector('#tx').className === 'meter v-warn', 'and +0.9 dBm, 0.4 dB off the minimum, is near it');
   renderStatus(tx('0.2'));
   ok(doc.querySelector('#tx').className === 'meter v-bad', 'and +0.2 dBm is out of the window');
+}
+
+/* --- the stick clock under NTP_SERVER ------------------------------------ */
+{
+  const { ntpLine } = await import(join(root, 'web', 'config.js'));
+  const seen = Date.UTC(2026, 9, 18, 7, 52, 10) ;           /* browser: 2026-10-18 07:52:10 UTC */
+  const at = (hms) => Date.UTC(2026, 9, 18, ...hms.split(':').map(Number)) / 1000;
+  const synced = { event: 'step', time: String(at('07:41:00')), offset: '0.004', stratum: '2', last_sync: String(at('07:41:00')) };
+
+  let p = ntpLine({ now: at('07:52:12'), ntp: synced }, seen, 'pool.ntp.org');
+  ok(p.clock === 'Stick clock 2026-10-18 07:52:12 UTC, 2 s ahead of this browser' && !p.clockWarn,
+     'ntp line: a stick 2 s ahead says so, without a warning');
+  ok(p.ntp === 'Last NTP sync 07:41 UTC, corrected 0.004 s' && !p.ntpWarn,
+     'ntp line: a synced stick shows the sync time and the correction');
+
+  p = ntpLine({ now: at('07:52:11'), ntp: synced }, seen, 'pool.ntp.org');
+  ok(p.clock.endsWith('matches this browser'), 'ntp line: under 2 s matches this browser');
+
+  p = ntpLine({ now: at('07:50:00'), ntp: synced }, seen, 'pool.ntp.org');
+  ok(p.clock.includes('2 min behind this browser') && p.clockWarn && p.clock.endsWith('one of the two clocks is wrong'),
+     'ntp line: more than a minute off is a warning that says one of the clocks is wrong');
+
+  p = ntpLine({ now: 3, ntp: null }, seen, 'pool.ntp.org');
+  ok(p.clockWarn && p.clock.includes('1970-01-01') && p.clock.includes('days'),
+     'ntp line: a stick that never set its clock shows 1970 and a warning');
+
+  p = ntpLine({ now: at('07:52:10'), ntp: null }, seen, 'pool.ntp.org');
+  ok(p.ntp.startsWith('No sync yet') && p.ntpWarn, 'ntp line: a server set and no status file is "No sync yet"');
+  p = ntpLine({ now: at('07:52:10'), ntp: null }, seen, '');
+  ok(p.ntp === 'NTP is off' && !p.ntpWarn, 'ntp line: no server is "NTP is off"');
+  p = ntpLine({ now: at('07:52:10'), ntp: { event: 'unsync', time: String(at('07:50:00')), offset: '', stratum: '16', last_sync: String(at('07:41:00')) } },
+    seen, 'pool.ntp.org');
+  ok(p.ntp === 'Lost sync (last sync 07:41 UTC)' && p.ntpWarn, 'ntp line: unsync names the last sync');
+  p = ntpLine({ now: at('07:52:10'), ntp: { event: 'unsync', time: '1', offset: '', stratum: '16', last_sync: '' } }, seen, 'x');
+  ok(p.ntp === 'Lost sync (never synced)', 'ntp line: unsync with no earlier sync says never synced');
+  p = ntpLine({ now: at('07:52:10'), ntp: { event: 'periodic', time: String(at('07:52:00')), offset: '-0.0125', stratum: '2', last_sync: String(at('07:52:00')) } },
+    seen, 'x');
+  ok(p.ntp === 'Last NTP sync 07:52 UTC, corrected 0.0125 s', 'ntp line: a negative offset is shown as a size');
+  p = ntpLine({ now: at('07:52:10'), ntp: { event: 'stratum', time: String(at('07:52:00')), offset: '', stratum: '3', last_sync: '' } }, seen, 'x');
+  ok(p.ntp === 'Last NTP sync 07:52 UTC', 'ntp line: an empty offset is left out, the event time stands in for the sync');
+  p = ntpLine({ now: at('07:52:10'), ntp: { ...synced, last_sync: String(at('07:52:10') - 86400 * 2) } }, seen, 'x');
+  ok(/^Last NTP sync 2026-10-16 07:52 UTC/.test(p.ntp), 'ntp line: a sync on another day carries its date');
+  p = ntpLine(null, seen, 'x');
+  ok(p.clock === '' && p.ntp.startsWith('No sync yet'), 'ntp line: no answer at all does not throw');
 }
 
 /* --- the kernel log ------------------------------------------------------- */

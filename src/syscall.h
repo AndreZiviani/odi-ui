@@ -60,6 +60,7 @@
 #define __NR_kill       4037
 #define __NR_poll       4188
 #define __NR_clock_gettime 4263
+#define CLOCK_REALTIME  0
 #define CLOCK_MONOTONIC 1
 
 #define SIGPIPE 13
@@ -229,6 +230,16 @@ __attribute__((unused)) static unsigned long mono_ms(void)
 	if (syscall3(__NR_clock_gettime, CLOCK_MONOTONIC, (long)ts, 0) < 0)
 		return 0;
 	return (unsigned long)ts[0] * 1000UL + (unsigned long)ts[1] / 1000000UL;
+}
+
+/* Seconds since the epoch on the wall clock; 0 when it cannot be read. */
+__attribute__((unused)) static unsigned long wall_s(void)
+{
+	long ts[2];
+
+	if (syscall3(__NR_clock_gettime, CLOCK_REALTIME, (long)ts, 0) < 0)
+		return 0;
+	return (unsigned long)ts[0];
 }
 
 /*
