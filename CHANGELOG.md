@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the help for OMCI_CUSTOM_ME names bit 64 (0x40), which creates the class 65529 entity, besides 0x100.
+
 ## v1.6.0 (2026-10-17)
 
 - Config: field help moves behind a `?` beside each setting's name. Clicking it opens the one-line help, with "+ Details" under it as before; warnings about what is wrong now stay visible.
