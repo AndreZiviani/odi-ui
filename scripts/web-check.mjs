@@ -541,6 +541,48 @@ ok(unavailable({ ok: true, raw: 'TableId [1] Name: Anig!\n', instances: [] }) !=
 ok(unavailable({ ok: true, raw: OMCI[84], instances: parseOmci(OMCI[84]).instances }) === null,
    'a real dump is not mistaken for a failure');
 
+/* --- the MIB browser: tables, then entities, then attributes ----------- */
+{
+  const p84rows = parseOmci(OMCI[84]).instances;
+  ok(p84rows.length === 2 && p84rows[0].raw.includes('EntityID: 0x04') && !p84rows[0].raw.includes('0x05'),
+     'each parsed entity keeps its own raw lines, and only its own');
+
+  const { renderMeBrowser, CATALOG } = await import(join(root, 'web', 'mebrowser.js'));
+  const rowsOf = (sel) => doc.querySelector(sel).children.filter((node) => node.tagName === 'button');
+  await renderMeBrowser();
+  ok(rowsOf('#me-tables-list').length === CATALOG.length && CATALOG.length > 70,
+     `the MIB browser lists all ${CATALOG.length} captured tables`);
+  ok(new Set(CATALOG.map((table) => table.name)).size === CATALOG.length, 'each table once');
+  ok(CATALOG.filter((table) => !table.classId).every((table) => table.query === table.name),
+     'a table without a confirmed class id is asked for by name');
+  const { meProblem } = await import(join(root, 'web', 'validate.js'));
+  ok(CATALOG.every((table) => meProblem(table.query) === null),
+     'every captured table name is one /api/omci accepts');
+  ok(rowsOf('#me-entities-list').length === 2, 'the default table (84) opens with its two entities');
+  ok(textOf(doc.querySelector('#me-attrs-body')).includes('VID 75'), 'and the first entity\'s attributes');
+
+  const table47 = rowsOf('#me-tables-list').find((row) => textOf(row).includes('MacBriPortCfgData'));
+  await table47.onclick();
+  const entities47 = parseOmci(OMCI[47]).instances;
+  ok(rowsOf('#me-entities-list').length === entities47.length && entities47.length > 1,
+     'opening a table lists every entity in its dump');
+  rowsOf('#me-entities-list')[1].onclick();
+  ok(doc.querySelector('#me-n-attrs').textContent.includes(
+       '0x' + parseInt(entities47[1].id, 16).toString(16).padStart(4, '0')),
+     'picking an entity shows that entity\'s attributes');
+  doc.querySelector('#me-view-raw').onclick();
+  ok(textOf(doc.querySelector('#me-attrs-body')) === entities47[1].raw, 'the raw view is that entity as printed');
+  doc.querySelector('#me-view-parsed').onclick();
+  ok(textOf(rowsOf('#me-tables-list').find((row) => textOf(row).includes('MacBriPortCfgData'))).endsWith(String(entities47.length)),
+     'the table row counts the entities it read');
+
+  doc.querySelector('#me-filter').value = '17';
+  doc.querySelector('#me-filter').oninput();
+  ok(rowsOf('#me-tables-list').some((row) => textOf(row).includes('ExtVlanTagOperCfgData'))
+     && rowsOf('#me-tables-list').length < CATALOG.length, 'the filter matches a class id');
+  doc.querySelector('#me-filter').value = '';
+}
+
 /* --- the odi-oss omcid dump shape -------------------------------------- */
 /* SYNTHETIC, and not in scripts/fixtures/omci/: no capture of it is in hand
    yet. Built from the printf in odi-oss src/omci/respond/show.c (cli_row)

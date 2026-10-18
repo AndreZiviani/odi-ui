@@ -103,7 +103,8 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   On a stock-based image the editable subtabs hold the 23 keys the line
   profiles in `odi-sandbox` carry.
 - **OMCI** &mdash; *Services*, what the OLT actually provisioned, in sentences;
-  and *MIB browser*, the same thing unedited, one managed entity at a time.
+  and *MIB browser*, the same thing unedited: every table, its entities, and
+  each entity's attributes.
 - **System** &mdash; *Firmware* (both partitions, what each one holds, image
   upload and write, the one-shot trial boot); *Access* (this page's
   credential, SSH keys, and *Locked out? The safe mode*, a closed-by-default
@@ -299,10 +300,27 @@ text &mdash; so the cards need no second code path. The GEM port card used to
 miss this shape entirely.
 
 **MIB** runs `omcicli mib get` and shows exactly what it printed &mdash; which is
-what a support thread means when it asks you to post `omcicli mib get 84`. The
-picker offers all 81 table names, captured from a stick once and shipped as
-data, and accepts a bare class id as well because that is the dialect threads
-are written in.
+what a support thread means when it asks you to post `omcicli mib get 84`. It
+is three linked panes, as an OMCI explorer is: **Tables** (class id, name, and
+how many entities the last read found), **Entities** of the selected table (id
+in hex and decimal, attribute count), and **Attributes** of the selected entity,
+parsed or as the lines the device printed for it. On a phone the panes are shown
+one at a time, each with a way back.
+
+The table list is the 81 names captured from a stick once and shipped as data
+(80 rows: `LargeString` is registered twice). Opening a table is one
+`mib get` for the whole table; entities and attributes come out of that one
+dump, so clicking through them asks the device nothing. Entity counts fill in as
+tables are opened; *Count entities* reads every table once, one at a time, only
+from its button, and stops on the first answer that says the MIB service itself
+has failed (a timeout, or the table listing in place of a table). *Look up*
+still accepts a bare class id or name, with an optional entity, because that is
+the dialect threads are written in, and it is how to read one entity of a table
+too long for the daemon's buffer.
+
+A table with a class id confirmed against this hardware (the captures in
+`scripts/fixtures/omci/`) is read by that id; every other table is read by
+**name**, and its Class column is blank.
 
 **Captured, not queried, and the reason matters: `omcicli get tables` breaks the
 MIB service.** It returns zero bytes and leaves every later `mib get` empty
