@@ -531,6 +531,83 @@ static int upload_is_tar(void)
 	       head[260] == 'a' && head[261] == 'r';
 }
 
+/*
+ * The ntpd hook leaves /tmp/ntp-status as five key=value lines (event, time,
+ * offset, stratum, last_sync). The file is the image's, not ours to trust:
+ * only those keys are passed on, and a value goes out only if it is short
+ * and made of digits, '.' and '-' (an empty one stays empty); the event must
+ * be one of the four known words. Anything else becomes "", so the file can
+ * never put arbitrary text into the answer. Returns 0, and writes nothing,
+ * when the file is absent or names no known event.
+ */
+static int emit_ntp_status(int conn)
+{
+	static const char *const keys[] = { "event", "time", "offset", "stratum", "last_sync" };
+	static const char *const events[] = { "unsync", "step", "stratum", "periodic" };
+	char buf[256], val[5][24];
+	unsigned long i = 0, k, j;
+	int seen_event = 0;
+	long got = read_file(NTP_STATUS_FILE, buf, sizeof(buf));
+
+	if (got <= 0)
+		return 0;
+	for (k = 0; k < 5; k++)
+		val[k][0] = 0;
+	while (buf[i]) {
+		unsigned long ls = i, le = i, eq;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		eq = ls;
+		while (eq < le && buf[eq] != '=')
+			eq++;
+		if (eq < le) {
+			for (k = 0; k < 5; k++) {
+				unsigned long n = eq - ls;
+
+				if (slen(keys[k]) != n)
+					continue;
+				for (j = 0; j < n && buf[ls + j] == keys[k][j]; j++)
+					;
+				if (j != n)
+					continue;
+				n = le - eq - 1;
+				if (n < sizeof(val[k])) {
+					for (j = 0; j < n; j++)
+						val[k][j] = buf[eq + 1 + j];
+					val[k][n] = 0;
+				}
+			}
+		}
+		i = buf[le] ? le + 1 : le;
+	}
+	for (k = 0; k < 4; k++)
+		if (seq(val[0], events[k]))
+			seen_event = 1;
+	if (!seen_event)
+		return 0;
+	put_fd(conn, "{");
+	for (k = 0; k < 5; k++) {
+		int good = 1;
+
+		if (k)
+			put_fd(conn, ",");
+		put_fd(conn, "\"");
+		put_fd(conn, keys[k]);
+		put_fd(conn, "\":\"");
+		if (k > 0)
+			for (j = 0; val[k][j]; j++)
+				if (!((val[k][j] >= '0' && val[k][j] <= '9')
+				      || val[k][j] == '.' || val[k][j] == '-'))
+					good = 0;
+		if (good)
+			put_fd(conn, val[k]);
+		put_fd(conn, "\"");
+	}
+	put_fd(conn, "}");
+	return 1;
+}
+
 void serve(int conn)
 {
 	char *path, *method, *body, *query;
@@ -1647,6 +1724,23 @@ void serve(int conn)
 			     "     /dev/mtd3 is what takes them away.\n"
 			     "     confd build " BUILD_ID " -->\n");
 		write_all(conn, values, slen(values));
+		return;
+	}
+
+	/*
+	 * The stick's own clock and what ntpd last said, for the Config tab:
+	 * "now" is read here, so the page can compare it with the browser.
+	 * No fork, one small file; "ntp" is null while the file is absent
+	 * (NTP off, or ntpd just started).
+	 */
+	if (seq(path, "/api/ntp")) {
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"now\":");
+		put_u32_fd(conn, wall_s());
+		put_fd(conn, ",\"ntp\":");
+		if (!emit_ntp_status(conn))
+			put_fd(conn, "null");
+		put_fd(conn, "}");
 		return;
 	}
 
