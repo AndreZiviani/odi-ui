@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Sign-in: the built-in admin:admin is used only when the credential file is missing or empty. A file that is there but cannot be read (a flash error, no file descriptor left) used to fall back to it too, putting the password everybody knows in force on a stick that has its own; now every sign-in is refused until the file reads again (safe mode still accepts the default).
+
 - docs/API.md lists every route: `/api/ntp`, `/api/status`, `/api/schema`, `/api/meta`, `/api/consumers`, `/api/features`, `/api/baseline`, `/api/defaults` and `/api/logout` were missing. `make check` now fails when a route in `src/routes.c` is not in the docs, or the docs list one that does not exist.
 
 ## v1.7.0 (2026-10-18)

@@ -267,6 +267,17 @@ check "the page is told the default is in force" true \
 check "an empty file falls back rather than locking out" 200 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 
+# A file that is there but cannot be read is not an absent one: falling back
+# would put admin:admin in force on a stick whose owner set a password. A
+# directory in its place makes the read fail (EISDIR) the way an I/O error
+# would; every login is refused until it reads again.
+rm -f /etc/config/confd.auth && mkdir /etc/config/confd.auth
+check "an unreadable credential file does not fall back to the default" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "and it refuses the real credential too, rather than guess" 401 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+rmdir /etc/config/confd.auth
+
 # And a real credential must still WIN over the default once it exists,
 # otherwise the fallback would be a permanent second key.
 mv /etc/config/confd.auth.kept /etc/config/confd.auth

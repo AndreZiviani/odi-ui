@@ -444,7 +444,17 @@ const char *request_refusal(const char *r)
  * obvious way to clear a password is to truncate the file, and treating the
  * result as "no credential accepted" would lock the operator out of the device
  * they were trying to change the password on.
+ *
+ * Only absent or empty falls back. A file that is there but cannot be read
+ * (an I/O error on the flash, no file descriptor left under load, a
+ * directory in its place) answers -1, and every login is refused until it
+ * reads again: falling back there would put the password everybody knows
+ * in force on a stick whose owner set another one. Safe mode is the way in
+ * if it never reads again.
  */
+/* ENOENT: 2 on MIPS o32 as everywhere (the low errno numbers are shared). */
+#define ENOENT_ 2
+
 static long load_credential(int *is_default)
 {
 	long want = file_exists(SAFEMODE_FLAG) ? 0 : read_file(AUTH_PATH, credbuf, sizeof(credbuf));
@@ -460,6 +470,8 @@ static long load_credential(int *is_default)
 			*is_default = 0;
 		return want;
 	}
+	if (want < 0 && want != -ENOENT_)
+		return -1;
 
 	for (k = 0; DEFAULT_AUTH[k] && k + 1 < sizeof(credbuf); k++)
 		credbuf[k] = DEFAULT_AUTH[k];
