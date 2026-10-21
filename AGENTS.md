@@ -92,9 +92,10 @@ v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
   removes the ISA-compatibility question entirely.
 - **Big-endian MIPS-I, targeting a specific trapping core.** The RLX5281
   core implements the MIPS instruction set in pieces: `movz`/`movn`/`ll`/
-  `sc`/`sync`/`bltzl`/`madd` are confirmed to work; `mul`, `clz` (and the
+  `sc`/`sync`/`madd` are confirmed to work; `mul`, `clz` (and the
   rest of the SPECIAL2 class), `teq`/`tne`/`tge`/`tlt`, and `beql`/`bnel`
-  are confirmed illegal and raise SIGILL. Every build uses `-march=mips1
+  are confirmed illegal and raise SIGILL; `bltzl` does not trap but
+  misexecutes (its delay slot always runs), so it is not used either. Every build uses `-march=mips1
   -mabi=32 -EB -msoft-float -G0 -fno-pic -mno-abicalls -ffreestanding
   -fno-builtin -fno-stack-protector`, plus `-flto` (splitting the daemon
   into translation units cost measurable code size back before LTO
