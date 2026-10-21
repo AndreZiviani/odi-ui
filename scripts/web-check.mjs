@@ -107,6 +107,7 @@ const API = {
   '/api/settings': SETT,
   '/api/hostlink': { supported: true, state: { setting: 'on', running: 'on', phase: 'steady', fallback: '0' },
                      safemode: null, link: '1', uptime: '300' },
+  '/api/netaddr': { supported: false, state: {}, via: '192.168.0.1', peer: '192.168.0.50', uptime: '300' },
   '/api/ntp': { now: 1760773930, ntp: null },
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
   '/api/firmware': {
@@ -173,7 +174,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'restore', 'l2', 'tools', 'hostlink'];
+              'omci', 'services', 'mebrowser', 'restore', 'l2', 'tools', 'hostlink', 'netaddr'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -779,6 +780,57 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   await renderHostlink();
   ok(doc.querySelector('#hostlink').hidden === true, 'host link: no block on an image without host-autoneg.sh');
   API['/api/hostlink'] = keep;
+}
+
+/* --- the management address trial ---------------------------------------- */
+{
+  const na = await import(join(root, 'web', 'netaddr.js'));
+  const st = (o) => ({ phase: 'trial', applied: '1', trial_deadline: '420', prev_ip: '192.168.0.1',
+                       old_LAN_ENABLE_IP2: '0', old_LAN_IP_ADDR2: '192.168.100.1',
+                       new_LAN_IP_ADDR: '10.1.1.1', new_LAN_ENABLE_IP2: '0', new_LAN_IP_ADDR2: '192.168.100.1', ...o });
+  const keep = API['/api/netaddr'];
+
+  ok(na.NET_KEYS.join() === 'LAN_IP_ADDR,LAN_SUBNET,LAN_ENABLE_IP2,LAN_IP_ADDR2,LAN_SUBNET2'
+     && na.isNetKey('LAN_SUBNET2') && !na.isNetKey('HOST_AUTONEG') && !na.isNetKey('LAN_SDS_MODE'),
+     'address trial: the five keys, and no other');
+  ok(na.trialLeft({ state: st({}), uptime: '330' }) === 90, 'address trial: the countdown comes from the stick clock');
+  ok(na.trialLeft({ state: st({ phase: 'steady' }), uptime: '330' }) === null, 'address trial: no trial, no countdown');
+  ok(na.freshAddrs({ state: st({}) }).join() === '10.1.1.1', 'address trial: the new primary is the address to keep on');
+  ok(na.freshAddrs({ state: st({ new_LAN_IP_ADDR: '192.168.0.1' }) }).length === 0,
+     'address trial: nothing is new when only the netmask moved');
+  ok(na.freshAddrs({ state: st({ new_LAN_IP_ADDR: '192.168.0.1', new_LAN_ENABLE_IP2: '1', new_LAN_IP_ADDR2: '172.20.0.1' }) }).join() === '172.20.0.1',
+     'address trial: a new second address is the one to keep on');
+  ok(na.freshAddrs({ state: st({ new_LAN_IP_ADDR: '192.168.100.1', old_LAN_ENABLE_IP2: '1' }) }).length === 0,
+     'address trial: the old second address as the new primary already answered');
+  let v = na.dialogView({ state: st({}), via: '192.168.0.1' });
+  ok(!v.canKeep && v.link === 'http://10.1.1.1/' && /already had/.test(v.text) && /Revert works from here/.test(v.text),
+     'address trial: on the old address the dialog points at the new one and offers no Keep');
+  v = na.dialogView({ state: st({}), via: '10.1.1.1' });
+  ok(v.canKeep && v.link === null && /new address \(10\.1\.1\.1\)/.test(v.text),
+     'address trial: on the new address Keep is offered');
+  v = na.dialogView({ state: st({ new_LAN_IP_ADDR: '192.168.0.1' }), via: '192.168.0.1' });
+  ok(v.canKeep && /netmask/.test(v.text), 'address trial: a netmask-only change leaves the decision to the stick');
+
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  for (const id of ['netaddr-dialog', 'netaddr-count', 'netaddr-text', 'netaddr-link', 'netaddr-keep', 'netaddr-revert',
+                    'netaddr-dialog-out', 'netaddr-result', 'netaddr-result-text', 'netaddr-result-link', 'netaddr-result-ok']) {
+    ok(html.includes(`id="${id}"`), `address trial: index.html has #${id}`);
+  }
+
+  API['/api/netaddr'] = { supported: true, state: { phase: 'steady' }, via: '192.168.0.1', peer: '192.168.0.50', uptime: '300' };
+  await na.renderNetaddr();
+  ok(na.netaddrActive(), 'address trial: an image with the script is active');
+  API['/api/netaddr'] = { supported: false, state: {}, via: '192.168.0.1', peer: '', uptime: '300' };
+  await na.renderNetaddr();
+  ok(!na.netaddrActive(), 'address trial: an image without it, or a safe-mode boot, is not');
+  API['/api/netaddr'] = { supported: true, state: st({}), via: '192.168.0.1', peer: '', uptime: '330' };
+  await na.renderNetaddr();
+  ok(doc.querySelector('#netaddr-dialog').hidden === false && doc.querySelector('#netaddr-keep').disabled === true
+     && /Reverting in 90 s/.test(textOf(doc.querySelector('#netaddr-count')))
+     && doc.querySelector('#netaddr-link').href === 'http://10.1.1.1/',
+     'address trial: a page loaded mid-trial raises the dialog with the countdown and the new address');
+  API['/api/netaddr'] = keep;
+  await na.renderNetaddr();
 }
 
 /* --- the Firmware subtab ------------------------------------------------ */

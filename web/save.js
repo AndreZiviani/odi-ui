@@ -24,6 +24,7 @@ import {
 } from './state.js';
 import { invalidEdits } from './validate.js';
 import { renderAll, markPending } from './config.js';
+import { isNetKey, netaddrActive, startTrial } from './netaddr.js';
 
 /* config.js raises this whenever a field changes; it does not import this
    module, so the dependency runs one way only. */
@@ -118,15 +119,42 @@ async function save() {
     }
   }
 
+  /* The management addresses are never stored by Save while the image has
+     the trial (mgmt-addr.sh): they go to the trial, which stores them only
+     when the new address answers. The rest is written as always. */
+  const net = netaddrActive() ? pairs.filter(([k]) => isNetKey(k)) : [];
+  const rest = net.length ? pairs.filter(([k]) => !isNetKey(k)) : pairs;
+  if (net.length) {
+    const ip = (net.find(([k]) => k === 'LAN_IP_ADDR') || [])[1];
+    if (!confirmClass('live', 'The management address is tried now'
+        + (ip ? `: the stick moves to ${ip}` : '')
+        + '. The address it has now keeps working beside it, and the stick goes back to it by '
+        + 'itself after 90 seconds unless you open the new address and press Keep there. '
+        + 'Nothing is stored until you do. Continue?')) {
+      out.append(el('div', 'warn', 'Not saved.'));
+      return;
+    }
+  }
+  const startNet = async () => {
+    if (!net.length) return;
+    if (await startTrial(net, out)) {
+      for (const [k] of net) EDITS.delete(k);
+      renderAll();
+    }
+  };
+
   $('#save').disabled = true;
   try {
-    const r = await fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: encode(pairs),
-    });
-    if (r.status === 401) { location.href = '/'; return; }
-    const res = await r.json();
+    let res = { results: [], needs: [], apply: 'none' };
+    if (rest.some(([k]) => k !== '_confirm')) {
+      const r = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: encode(rest),
+      });
+      if (r.status === 401) { location.href = '/'; return; }
+      res = await r.json();
+    }
     const written = [];
 
     for (const item of res.results || []) {
@@ -143,8 +171,10 @@ async function save() {
 
     if (imageAware()) {
       await followUp(res, written, out);
+      await startNet();
       return;
     }
+    await startNet();
 
     /* A stock-based image: omci_app restarts, or the stick reboots. */
     if (res.apply === 'restart:omci') {

@@ -17,6 +17,7 @@
 import { $, el } from './dom.js';
 import { S } from './state.js';
 import { valueProblem, restoreSizeProblem } from './validate.js';
+import { isNetKey, netaddrActive, startTrial } from './netaddr.js';
 
 /*
  * `flash all` prints the config store as <Value Name="X" Value="Y"/> nested in
@@ -193,7 +194,11 @@ function wireRestore() {
     go.disabled = true;
     out.append(line(null, `Writing ${pairs.length} setting(s)…`));
 
-    const results = await apply(pairs, withIdentity);
+    /* The management addresses go through the trial, not the store: the
+       stick keeps the old ones beside the new, and stores them only when the
+       new ones answer. */
+    const net = netaddrActive() ? pairs.filter(([k]) => isNetKey(k)) : [];
+    const results = await apply(net.length ? pairs.filter(([k]) => !isNetKey(k)) : pairs, withIdentity);
     const bad = results.filter((r) => !r.ok);
 
     out.append(line(bad.length ? 'warn' : 'good',
@@ -205,9 +210,16 @@ function wireRestore() {
         + 'alone. Tick the box above to include them — only do that when '
         + 'restoring onto the stick the backup came from.'));
 
+    if (net.length) {
+      out.append(line(null, 'The management address keys are tried, not written: the stick moves '
+        + 'to them and goes back by itself unless you keep them on the new address.'));
+      await startTrial(net, out);
+    }
+
     out.append(line('warn', 'Written, not applied. Each restored key takes effect '
-      + 'the way its class on the Config tab says: the addresses at once when '
-      + 'you save them again there, the OMCI keys with Apply now, the rest at '
+      + 'the way its class on the Config tab says: the addresses are tried when '
+      + 'the image has the trial and applied when you save them again there when it does not, '
+      + 'the OMCI keys with Apply now, the rest at '
       + 'the next reboot. Keys only the stock firmware reads change nothing here, except OMCI_CUSTOM_ME, whose bit 256 decides whether the VEIP slot applies.'));
   };
 }

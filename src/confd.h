@@ -104,6 +104,25 @@
 #define SAFEMODE_SCRIPT   "/etc/scripts/safe-mode.sh"
 
 /*
+ * The management addresses (odi-oss mgmt-addr.sh). A change of LAN_IP_ADDR,
+ * LAN_SUBNET, LAN_ENABLE_IP2, LAN_IP_ADDR2 or LAN_SUBNET2 is a trial the
+ * script applies in RAM, keeps the old primary beside, and reverts by itself
+ * unless confirmed over a new address, so a typo cannot take every way in with
+ * it. While the script exists (and this is not a safe-mode boot, where the
+ * rescue address is the way in and the keys are stored directly) POST
+ * /api/config refuses the five keys: only the script's confirm writes them,
+ * so a trial value is never in the store before it was seen to answer. The
+ * script is told which address the confirm arrived on and who sent it, from
+ * the socket; what the page shows is the state file the script keeps.
+ */
+#define NETADDR_SCRIPT    "/etc/scripts/mgmt-addr.sh"
+#define NETADDR_STATE     "/var/run/mgmt-addr"
+#define NETADDR_TIMEOUT_MS 30000  /* mgmt-addr.sh: up to 10 s for its lock, then
+				   * flash reads and one network.sh run; the
+				   * confirm writes up to five keys and reads
+				   * each back. try returns at once */
+
+/*
  * The diagnostics bundle (odi-oss /etc/scripts/diag-bundle.sh): the image
  * collects it, redacts every secret and writes one tar.gz; GET /api/diag only
  * runs the script and streams what it wrote. The collection lives in the

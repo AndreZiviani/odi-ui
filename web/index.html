@@ -69,6 +69,12 @@
 </header>
 
 <p id="err" class="callout bad" role="alert" hidden></p>
+<!-- How an address trial ended (netaddr.js): the save bar is gone by then. -->
+<div id="netaddr-result" class="callout banner" role="status" hidden>
+  <p id="netaddr-result-text"></p>
+  <span id="netaddr-result-link"></span>
+  <button id="netaddr-result-ok" type="button">Dismiss</button>
+</div>
 <div id="defaultauth" class="callout warn banner" hidden>
   <p>This page answers to the built-in <code>admin</code> / <code>admin</code>.
      Anyone who can reach it can change the line settings.</p>
@@ -567,6 +573,19 @@
   </div>
   <div id="saveout"></div>
 </div>
+
+<!-- The management address trial (netaddr.js): modal on every tab while one
+     runs, and on every page load that finds one. -->
+<dialog id="netaddr-dialog" aria-labelledby="netaddr-dialog-title">
+  <p id="netaddr-dialog-title"><strong>Keep the new management address?</strong> <span id="netaddr-count"></span></p>
+  <p class="help" id="netaddr-text"></p>
+  <p><a id="netaddr-link" href="#" hidden></a></p>
+  <div class="switchrow">
+    <button id="netaddr-keep" class="primary" type="button">Keep</button>
+    <button id="netaddr-revert" type="button">Revert</button>
+  </div>
+  <div id="netaddr-dialog-out"></div>
+</dialog>
 
 <script type="module" src="/app.js"></script>
 </body>

@@ -748,6 +748,7 @@ const struct web_asset web_assets[] = {
 	{ "/l2.js",         "l2.js",       "application/javascript" },
 	{ "/tools.js",      "tools.js",    "application/javascript" },
 	{ "/hostlink.js",   "hostlink.js", "application/javascript" },
+	{ "/netaddr.js",    "netaddr.js",  "application/javascript" },
 	{ 0, 0, 0 },
 };
 
