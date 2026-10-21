@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.7.1 (2026-10-21)
+
 - docs/DESIGN.md: the "no TLS" paragraph says what is measured and what is not. The cost of a handshake on this core was an estimate of ours; another open implementation for the board measured about 0.1 s per handshake and about 22 KiB compressed. The decision (cleartext on the host link) is unchanged, and the paragraph no longer cites `boa` and telnet, which the odi-oss image does not have. AGENTS.md no longer lists `bltzl` as confirmed to work: it decodes but misexecutes on the core (its delay slot always runs), and nothing here uses it.
 
 - Sign-in: the built-in admin:admin is used only when the credential file is missing or empty. A file that is there but cannot be read (a flash error, no file descriptor left) used to fall back to it too, putting the password everybody knows in force on a stick that has its own; now every sign-in is refused until the file reads again (safe mode still accepts the default).
