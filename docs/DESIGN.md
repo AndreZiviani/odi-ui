@@ -953,6 +953,68 @@ credential. Use a credential you do not reuse, treat the machine on the other
 end of the cable as the real perimeter, and prefer ssh keys (System > Access)
 for anything you do not need a browser for.
 
+## Moving the management address
+
+On an odi-oss image a change of the management address is a trial (odi-oss
+`mgmt-addr.sh`: applied in RAM, the old address kept on an alias, reverted after
+90 s unless a Keep arrives on a new address). The page moves the browser with it,
+by itself, in three steps.
+
+1. **`try` answers, the address moves a second later.** The page asks
+   `/api/netaddr` for the state, which lists the addresses the trial added
+   (`new_LAN_IP_ADDR`, and `new_LAN_IP_ADDR2` when the second address is on and
+   new; the ones the stick already answered on are not new).
+2. **The page on the old address looks for the new one.** Every two seconds,
+   until one answers or the trial ends, it probes each new address with a
+   `no-cors` `fetch` (`credentials: omit`, 2.5 s timeout). That works across
+   origins without weakening anything: the response is opaque, so the page learns
+   only that something speaks HTTP there. It needs no endpoint of its own: the
+   stick refuses a cross-site fetch with `403` before it looks at any
+   credential, which is also why the probe never costs the one-second delay of a
+   failed sign-in on the single thread. The primary is tried before the second
+   address; the first that answers is where the browser goes.
+3. **The browser navigates to it** (`location.assign`), keeping the scheme and
+   the port the page was loaded with, and the page there, loaded mid-trial,
+   opens the same dialog with the remaining countdown and a working Keep (its
+   `via` is a new address).
+
+If nothing ever answers (no route from this computer, a wrong address, an
+`https` page whose certificate does not name the new address) the page stays,
+keeps the countdown and the Revert button, and says what it is waiting for and
+what to do. A page on the new address that stops answering (the trial ended)
+offers a link back to the address before.
+
+**Once per trial per tab.** The redirect marks the trial in `sessionStorage`
+(its deadline), so a tab sent back by the Back button, after a cancelled
+password prompt, shows the dialog and the link and does not bounce again.
+
+**A netmask-only change** adds no address, so there is nothing to open and the
+page stays; the script accepts a Keep only from a client on the new netmask, and
+the dialog says so. **A changed second address** is a target like the primary
+when it is new. **A safe-mode boot** stores the keys directly: there is no
+trial and nothing to keep, and the page looks for the new address after the apply
+and opens it the same way, for up to a minute.
+
+### Why the password is asked again, and no token carries it over
+
+confd has no session to hand over. The credential is HTTP Basic, checked on every
+request (see Authentication above), and the browser keeps it per scheme, host
+and port: the new address is a different place and has none. The script cannot
+read it either; it is the browser's, not the page's.
+
+A token that logs the new address in would have to be a session, and this daemon
+is deliberately stateless: no cookie, no token, no expiry (above). Adding one
+for this would be the first of them, in a daemon that speaks cleartext HTTP, to
+carry a value in a URL that browsers keep in history and send as a `Referer`,
+accepted by the one code path that is the sign-in. A token that is only allowed
+to Keep or Revert is safe enough but buys nothing: the user then needs the
+password anyway to use the UI on the new address, so the number of prompts is
+the same (one). So the design is the second one the task allowed: the new
+address signs in as any other address, with the countdown visible on the page
+that opens. Nothing about the sign-in changed, so the sign-in that fails closed
+(a credential file that cannot be read refuses everyone) is untouched, and the
+password is never in a URL.
+
 ## SSH keys
 
 System > Access, "SSH keys": the public keys that log in as `root` over ssh without

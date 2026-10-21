@@ -24,7 +24,7 @@ import {
 } from './state.js';
 import { invalidEdits } from './validate.js';
 import { renderAll, markPending } from './config.js';
-import { isNetKey, netaddrActive, startTrial } from './netaddr.js';
+import { isNetKey, netaddrActive, startTrial, originOf, followAddresses } from './netaddr.js';
 
 /* config.js raises this whenever a field changes; it does not import this
    module, so the dependency runs one way only. */
@@ -128,8 +128,9 @@ async function save() {
     const ip = (net.find(([k]) => k === 'LAN_IP_ADDR') || [])[1];
     if (!confirmClass('live', 'The management address is tried now'
         + (ip ? `: the stick moves to ${ip}` : '')
-        + '. The address it has now keeps working beside it, and the stick goes back to it by '
-        + 'itself after 90 seconds unless you open the new address and press Keep there. '
+        + '. The address it has now keeps working beside it, and this page opens the new one by '
+        + 'itself when it answers (the browser asks for the password again there). The stick goes '
+        + 'back to the old address after 90 seconds unless you press Keep on the new one. '
         + 'Nothing is stored until you do. Continue?')) {
       out.append(el('div', 'warn', 'Not saved.'));
       return;
@@ -295,14 +296,18 @@ async function applyNetwork(out, moves) {
     out.append(el('div', res.ok ? 'good' : 'bad', res.ok
       ? 'Addresses applied.' : 'Not applied: ' + (res.error || 'see above')));
     if (res.ok && moves && S.VALUES.LAN_IP_ADDR && S.VALUES.LAN_IP_ADDR !== location.hostname) {
-      const a = el('a', 'fwbtn', `Continue on http://${S.VALUES.LAN_IP_ADDR}/`);
-      a.href = `http://${S.VALUES.LAN_IP_ADDR}/`;
-      out.append(a);
+      const a = el('a', 'fwbtn', `Continue on ${originOf(S.VALUES.LAN_IP_ADDR)}`);
+      a.href = originOf(S.VALUES.LAN_IP_ADDR);
+      const note = el('div', 'hint', '');
+      out.append(note, a);
+      /* Stored directly, so there is nothing to keep: open the new address
+         as soon as it answers. */
+      followAddresses([S.VALUES.LAN_IP_ADDR], (t) => { note.textContent = t; }, 60);
     }
   } catch (e) {
     /* The address moving under the request is one way this ends. */
     out.append(el('div', 'warn', 'No answer: if the address changed, the page '
-      + `is now at http://${S.VALUES.LAN_IP_ADDR}/.`));
+      + `is now at ${originOf(S.VALUES.LAN_IP_ADDR)}.`));
   }
 }
 

@@ -405,6 +405,28 @@ check "a followed link (top-level navigation) is allowed" 200 \
 check "a followed link to an API route is refused" 403 \
 	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
 		-H 'Sec-Fetch-Dest: document' "$U/api/diag")"
+# The address redirect (web/netaddr.js): the page on the old address looks for
+# the new one with a cross-site no-cors fetch and no credential, then navigates
+# there. The probe must get an HTTP answer that says nothing, at once (not the
+# one-second delay of a failed sign-in, which would stall the single thread
+# every two seconds); the navigation must land on the ordinary sign-in.
+probe=$(curl -s -o /tmp/probe.body -w '%{http_code} %{time_total}' -H 'Sec-Fetch-Site: cross-site' \
+	-H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Dest: empty' "$U/?probe=1700000000000")
+check "the redirect probe, with no credential, gets a 403" 403 "${probe%% *}"
+check "and it says nothing about the stick" "cross-site request refused" "$(tr -d '\n' < /tmp/probe.body)"
+check "and it is not delayed like a failed sign-in" yes \
+	"$(awk -v t="${probe#* }" 'BEGIN { print (t < 0.8) ? "yes" : "no" }')"
+nav=$(curl -s -D - -o /dev/null -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+	-H 'Sec-Fetch-Dest: document' "$U/")
+check "the redirect navigation, with no credential, lands on the Basic challenge" yes \
+	"$(err "$nav" 'WWW-Authenticate: Basic')"
+check "the page after the redirect is the same sign-in: 401, not a token path" 401 \
+	"$(code -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$U/?t=abcdef")"
+check "a followed link to /api/netaddr is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+		-H 'Sec-Fetch-Dest: document' "$U/api/netaddr")"
+check "the redirect probe never reaches the page or the API" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Dest: empty' "$U/api/netaddr")"
 long=$(python3 -c 'print("a"*130)')
 check "a Host filling the buffer is refused, not judged by its prefix" 403 "$(hcode "$long.example.com")"
 check "a long label whose cut prefix has no dot is refused" 403 "$(hcode "$long")"

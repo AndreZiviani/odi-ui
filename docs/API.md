@@ -153,6 +153,17 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           safe-mode boot), so a trial value is never in the
                                           store before it was confirmed
 
+There is no route for the redirect. The page on the old address looks for the
+new one with a `no-cors` `fetch` of `/` (`credentials: omit`, a throwaway query),
+which resolves for any HTTP answer and rejects when nothing answers, so it needs
+no CORS grant and sends no credential. The stick answers that fetch with `403`
+and the text `cross-site request refused` before it looks at any credential (and
+so without the one-second delay a failed sign-in costs); nothing else leaves the
+stick. Then it navigates to the new address, a top-level navigation, which is
+allowed and answers `401` with the Basic challenge: the browser asks for the
+password there, because it keeps a credential per address. There is no token or
+cookie to hand over (DESIGN.md, "Moving the management address").
+
 ## Backup and reset
 
     GET  /api/backup                      both config stores as a file, identity included

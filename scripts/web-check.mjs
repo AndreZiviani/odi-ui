@@ -789,6 +789,10 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
                        old_LAN_ENABLE_IP2: '0', old_LAN_IP_ADDR2: '192.168.100.1',
                        new_LAN_IP_ADDR: '10.1.1.1', new_LAN_ENABLE_IP2: '0', new_LAN_IP_ADDR2: '192.168.100.1', ...o });
   const keep = API['/api/netaddr'];
+  /* No real network and no real waiting: a loop left running would hold the process. */
+  na.deps.probe = async () => false;
+  na.deps.sleep = () => new Promise((r) => setImmediate(r));
+  na.deps.navigate = () => {};
 
   ok(na.NET_KEYS.join() === 'LAN_IP_ADDR,LAN_SUBNET,LAN_ENABLE_IP2,LAN_IP_ADDR2,LAN_SUBNET2'
      && na.isNetKey('LAN_SUBNET2') && !na.isNetKey('HOST_AUTONEG') && !na.isNetKey('LAN_SDS_MODE'),
@@ -813,7 +817,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
 
   const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
   for (const id of ['netaddr-dialog', 'netaddr-count', 'netaddr-text', 'netaddr-link', 'netaddr-keep', 'netaddr-revert',
-                    'netaddr-dialog-out', 'netaddr-result', 'netaddr-result-text', 'netaddr-result-link', 'netaddr-result-ok']) {
+                    'netaddr-dialog-out', 'netaddr-follow', 'netaddr-result', 'netaddr-result-text', 'netaddr-result-link', 'netaddr-result-ok']) {
     ok(html.includes(`id="${id}"`), `address trial: index.html has #${id}`);
   }
 
@@ -829,6 +833,103 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
      && /Reverting in 90 s/.test(textOf(doc.querySelector('#netaddr-count')))
      && doc.querySelector('#netaddr-link').href === 'http://10.1.1.1/',
      'address trial: a page loaded mid-trial raises the dialog with the countdown and the new address');
+  na.stopFollow();
+
+  /* The redirect: where the browser is sent, and how the page finds out the
+     new address answers. */
+  ok(na.originOf('10.1.1.1', {}) === 'http://10.1.1.1/'
+     && na.originOf('10.1.1.1', { protocol: 'https:', port: '8443' }) === 'https://10.1.1.1:8443/',
+     'redirect: the scheme and the port the page was loaded with are kept');
+  ok(na.redirectTargets({ state: st({}), via: '192.168.0.1' }).join() === 'http://10.1.1.1/',
+     'redirect: from the old address the target is the new one');
+  ok(na.redirectTargets({ state: st({}), via: '10.1.1.1' }).length === 0,
+     'redirect: a page already on the new address goes nowhere');
+  ok(na.redirectTargets({ state: st({ new_LAN_IP_ADDR: '192.168.0.1' }), via: '192.168.0.1' }).length === 0,
+     'redirect: a netmask-only change has no address to go to');
+  ok(na.redirectTargets({ state: st({ new_LAN_ENABLE_IP2: '1', new_LAN_IP_ADDR2: '172.20.0.1' }), via: '192.168.0.1' }).join()
+     === 'http://10.1.1.1/,http://172.20.0.1/',
+     'redirect: a new second address is a target too, after the primary');
+  ok(na.redirectTargets({ state: st({ new_LAN_IP_ADDR: '192.168.0.1', new_LAN_ENABLE_IP2: '1', new_LAN_IP_ADDR2: '172.20.0.1' }), via: '192.168.0.1' }).join()
+     === 'http://172.20.0.1/', 'redirect: only the second address changed, only it is a target');
+  const seen = [];
+  const answers = async (u, o) => { seen.push([u, o]); return {}; };
+  const refuses = async () => { throw new TypeError('Failed to fetch'); };
+  ok(await na.probeAddr('http://10.1.1.1/', answers, 50) === true
+     && seen[0][1].mode === 'no-cors' && seen[0][1].credentials === 'omit' && seen[0][1].cache === 'no-store'
+     && /^http:\/\/10\.1\.1\.1\/\?probe=\d+$/.test(seen[0][0]),
+     'redirect: the probe is a no-cors fetch with no credentials, which needs no CORS grant');
+  ok(await na.probeAddr('http://10.1.1.1/', refuses, 50) === false, 'redirect: an address that does not answer is not found');
+  const only = (want) => async (u) => u === want;
+  ok(await na.firstAnswering(['http://a/', 'http://b/'], only('http://b/')) === 'http://b/'
+     && await na.firstAnswering(['http://a/', 'http://b/'], async () => true) === 'http://a/'
+     && await na.firstAnswering(['http://a/'], async () => false) === null,
+     'redirect: the first address that answers wins, the primary before the second');
+  {
+    let round = 0;
+    const log = [], went = [];
+    const hit = await na.followLoop(['http://10.1.1.1/'], {
+      alive: () => true, probe: async () => ++round > 5, sleep: async () => {},
+      status: (k) => log.push(k), go: (u) => went.push(u),
+    });
+    ok(hit === 'http://10.1.1.1/' && went.join() === 'http://10.1.1.1/' && log[0] === 'looking'
+       && log.includes('stuck') && log[log.length - 1] === 'found',
+       'redirect: it keeps looking, says so when nothing answers, and goes when it does');
+    let n = 0;
+    const gone = [];
+    const none = await na.followLoop(['http://10.1.1.1/'], {
+      alive: () => ++n < 4, probe: async () => false, sleep: async () => {}, status: () => {}, go: (u) => gone.push(u),
+    });
+    ok(none === null && !gone.length, 'redirect: when the trial ends it stops and goes nowhere');
+  }
+  ok(/password again/.test(na.followText('found', 'http://10.1.1.1/')) && /Revert/.test(na.followText('stuck', ['http://10.1.1.1/'])),
+     'redirect: the page says the password is asked again, and what to do when nothing answers');
+  {
+    const store = new Map();
+    globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    const h = { state: st({}), via: '192.168.0.1' };
+    ok(!na.wasFollowed(h), 'redirect: a new trial has not been followed');
+    na.markFollowed(h);
+    ok(na.wasFollowed(h) && !na.wasFollowed({ state: st({ trial_deadline: '999' }) }),
+       'redirect: followed once per trial, so Back from the new address does not bounce again');
+    globalThis.sessionStorage = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+    ok(na.wasFollowed(h) === false, 'redirect: storage blocked, the page still works');
+    store.clear();
+    globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+    const went = [];
+    na.deps.navigate = (u) => went.push(u);
+    na.deps.sleep = () => new Promise((r) => setImmediate(r));
+    na.deps.probe = async () => true;
+    API['/api/netaddr'] = { supported: true, state: st({}), via: '192.168.0.1', peer: '', uptime: '330' };
+    await na.renderNetaddr();
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    ok(went.join() === 'http://10.1.1.1/' && store.get('odi-netaddr-followed') === '420',
+       'redirect: a page on the old address, mid-trial, opens the new address once it answers');
+    na.stopFollow();
+    API['/api/netaddr'] = keep;
+    await na.renderNetaddr();
+    went.length = 0;
+    API['/api/netaddr'] = { supported: true, state: st({}), via: '192.168.0.1', peer: '', uptime: '331' };
+    await na.renderNetaddr();
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    ok(!went.length && /does not do it again/.test(textOf(doc.querySelector('#netaddr-follow'))),
+       'redirect: coming back to the old page does not redirect again, and says so');
+    na.stopFollow();
+    store.clear();
+    API['/api/netaddr'] = { supported: true, state: st({ new_LAN_IP_ADDR: '192.168.0.1' }), via: '192.168.0.1', peer: '', uptime: '331' };
+    await na.renderNetaddr();
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    ok(!went.length, 'redirect: a netmask-only trial opens nothing');
+    na.stopFollow();
+    na.deps.probe = async () => false;
+    API['/api/netaddr'] = { supported: true, state: st({}), via: '192.168.0.1', peer: '', uptime: '331' };
+    await na.renderNetaddr();
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    ok(!went.length && /(Looking for the new address|does not answer from this computer yet)/.test(textOf(doc.querySelector('#netaddr-follow'))) && /10\.1\.1\.1/.test(textOf(doc.querySelector('#netaddr-follow'))),
+       'redirect: while nothing answers the page stays, says what it is waiting for');
+    na.stopFollow();
+    na.deps.probe = null; na.deps.sleep = null;
+    delete globalThis.sessionStorage;
+  }
   API['/api/netaddr'] = keep;
   await na.renderNetaddr();
 }
