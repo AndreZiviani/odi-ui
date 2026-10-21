@@ -18,6 +18,7 @@ import { wireRestore } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
 import { renderHostlink, wireHostlink } from './hostlink.js';
+import { renderNetaddr, wireNetaddr } from './netaddr.js';
 import { passwordProblem, sshKeyProblem } from './validate.js';
 
 /*
@@ -135,6 +136,7 @@ wireTheme();
 wireHelp();
 wireFirmware();
 wireHostlink();
+wireNetaddr();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. Both firmwares answer it: the stock diag, and
    odi-oss diag from its own L2 table readback, under the same command. */
@@ -366,6 +368,9 @@ async function refresh() {
   await checkAuth();
   /* The host-link banner: files read by confd, no fork. */
   await renderHostlink();
+  /* The address trial: whether the image has it (Save and Restore then go through it) and a trial that
+     is already running, which raises its dialog. Before the form is used. */
+  await renderNetaddr();
   await refresh();
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is
      deliberately unhurried. */

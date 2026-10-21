@@ -97,6 +97,61 @@ static const char *key_refusal(const char *name, const char *value,
 }
 
 /*
+ * The five keys of the management address (confd.h, NETADDR_*), which a trial
+ * writes and /api/config does not.
+ */
+static const char *const netaddr_keys[] = {
+	"LAN_IP_ADDR", "LAN_SUBNET", "LAN_ENABLE_IP2", "LAN_IP_ADDR2", "LAN_SUBNET2", 0
+};
+
+static int netaddr_key(const char *name)
+{
+	int i;
+
+	for (i = 0; netaddr_keys[i]; i++)
+		if (seq(name, netaddr_keys[i]))
+			return 1;
+	return 0;
+}
+
+/* Whether the address change goes through the trial: the image has the
+ * script, and this is not a safe-mode boot. */
+static int netaddr_trial(void)
+{
+	return file_exists(NETADDR_SCRIPT) && !file_exists(SAFEMODE_FLAG);
+}
+
+/* One end of a connection as dotted decimal in `out` (16 bytes at least):
+ * the address the request was sent to (peer 0) or the client's (peer 1).
+ * Empty when the kernel does not say or it is not IPv4. A struct sockaddr_in
+ * on this big-endian target is the family in two bytes, the port in two, the
+ * address in four. */
+static void conn_addr(int conn, int peer, char *out)
+{
+	unsigned char sa[32];
+	unsigned int len = sizeof(sa);
+	unsigned long o = 0;
+	int i;
+
+	out[0] = 0;
+	if (syscall3(peer ? __NR_getpeername : __NR_getsockname, conn, (long)sa,
+		     (long)&len) < 0 || len < 8 || sa[0] != 0 || sa[1] != AF_INET)
+		return;
+	for (i = 0; i < 4; i++) {
+		unsigned int v = sa[4 + i];
+
+		if (v >= 100)
+			out[o++] = (char)('0' + v / 100);
+		if (v >= 10)
+			out[o++] = (char)('0' + v / 10 % 10);
+		out[o++] = (char)('0' + v % 10);
+		if (i < 3)
+			out[o++] = '.';
+	}
+	out[o] = 0;
+}
+
+/*
  * POST /api/config — write keys, one report line each.
  *
  * Nothing is applied implicitly. The response says which apply class the
@@ -218,6 +273,12 @@ static void handle_write(int conn, const char *body)
 			err = "not writable";
 		else if (seq(writable, "identity") && !confirm)
 			err = "identity key: resend with _confirm=identity";
+		/* A trial value must not reach the store before it was seen to
+		 * answer: mgmt-addr.sh try applies it, its confirm stores it. */
+		else if (netaddr_key(name) && netaddr_trial())
+			err = "a management address is changed through the address trial "
+			      "(POST /api/netaddr), which stores it only when confirmed "
+			      "over the new address";
 		/* Only the odi-only hostport, ascii14, and fixedme keys
 		 * (SYSLOG_SERVER, NTP_SERVER, ONU_HW_VERSION, OMCI_FIXED_ME)
 		 * can be cleared: odi-oss flash keeps them in a plain file and
@@ -1497,6 +1558,138 @@ void serve(int conn)
 			}
 			got = run_to_buf_ex(script, argv, status, sizeof(status), &code,
 					   HOSTLINK_TIMEOUT_MS);
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "{\"ok\":");
+			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ",\"output\":\"");
+			if (got > 0)
+				put_json_cstr(conn, status);
+			put_fd(conn, got == -2 ? "\",\"error\":\"the script did not answer in time\"}" : "\"}");
+			return;
+		}
+	}
+
+	/*
+	 * The management addresses, as a trial (confd.h, NETADDR_*). GET reads
+	 * the state the image keeps, with no fork, and says which address this
+	 * request came in on (`via`) and who sent it (`peer`), so the page can
+	 * tell whether a Keep from here would be accepted. POST runs
+	 * mgmt-addr.sh: try with the keys the page changed, confirm with the
+	 * address and the client of THIS connection (taken from the socket, never
+	 * from the request), or revert. The script owns the trial, its timer and
+	 * the store; the page only relays what it said. try answers before the
+	 * address moves (the script applies it a second later).
+	 */
+	if (seq(path, "/api/netaddr")) {
+		if (seq(method, "GET")) {
+			char buf[1024], via[16], peer[16];
+			long got;
+
+			conn_addr(conn, 0, via);
+			conn_addr(conn, 1, peer);
+			respond(conn, "200 OK", "application/json", 0);
+			put_fd(conn, "{\"supported\":");
+			put_fd(conn, netaddr_trial() ? "true" : "false");
+			put_fd(conn, ",\"state\":{");
+			got = read_file(NETADDR_STATE, buf, sizeof(buf));
+			if (got > 0)
+				put_kv_members(conn, buf);
+			put_fd(conn, "},\"via\":\"");
+			put_json_cstr(conn, via);
+			put_fd(conn, "\",\"peer\":\"");
+			put_json_cstr(conn, peer);
+			put_fd(conn, "\",\"uptime\":\"");
+			got = read_file(UPTIME_FILE, buf, sizeof(buf));
+			if (got > 0) {
+				unsigned long k = 0;
+
+				while (buf[k] >= '0' && buf[k] <= '9')
+					k++;
+				put_json_str(conn, buf, k);
+			}
+			put_fd(conn, "\"}");
+			return;
+		}
+		if (seq(method, "POST")) {
+			char action[16], via[16], peer[16];
+			char kv[5][48];
+			char *argv[10];
+			const char *err = 0;
+			unsigned long argc = 0, nk = 0;
+			long code = -1, got;
+			int i;
+
+			if (!form_get(body, "action", action, sizeof(action)))
+				action[0] = 0;
+			argv[argc++] = "mgmt-addr.sh";
+			if (seq(action, "try")) {
+				argv[argc++] = "try";
+				for (i = 0; netaddr_keys[i]; i++) {
+					char val[32];
+					unsigned long j, k = 0;
+
+					if (!form_get(body, netaddr_keys[i], val, sizeof(val)))
+						continue;
+					/* Digits and dots, or the 0/1 of the switch: nothing
+					 * the script could read as anything but a value. The
+					 * script and network.sh judge the rest. */
+					if (!val[0])
+						err = "a value cannot be empty";
+					for (j = 0; val[j]; j++)
+						if (!((val[j] >= '0' && val[j] <= '9') || val[j] == '.'))
+							err = "a value is digits and dots";
+					if (!err && seq(netaddr_keys[i], "LAN_ENABLE_IP2") &&
+					    !seq(val, "0") && !seq(val, "1"))
+						err = "LAN_ENABLE_IP2 is 0 or 1";
+					if (!err && !seq(netaddr_keys[i], "LAN_ENABLE_IP2") &&
+					    !type_ok(seq(netaddr_keys[i], "LAN_SUBNET") ||
+						     seq(netaddr_keys[i], "LAN_SUBNET2") ? "netmask" : "ipv4host", val))
+						err = "not valid for its type";
+					if (!err)
+						err = lan_pair_refusal(netaddr_keys[i], val, body);
+					if (!err)
+						err = key_refusal(netaddr_keys[i], val, body);
+					if (err)
+						break;
+					/* KEY=VALUE, one argv word. */
+					for (j = 0; netaddr_keys[i][j]; j++)
+						kv[nk][k++] = netaddr_keys[i][j];
+					kv[nk][k++] = '=';
+					for (j = 0; val[j]; j++)
+						kv[nk][k++] = val[j];
+					kv[nk][k] = 0;
+					argv[argc++] = kv[nk++];
+				}
+				if (!err && !nk)
+					err = "no management address key to try";
+			} else if (seq(action, "confirm")) {
+				/* The proof that the new address works is the address
+				 * this request arrived on, so it is the socket that says. */
+				conn_addr(conn, 0, via);
+				conn_addr(conn, 1, peer);
+				argv[argc++] = "confirm";
+				argv[argc++] = via;
+				argv[argc++] = peer;
+			} else if (seq(action, "revert")) {
+				argv[argc++] = "revert";
+			} else {
+				err = "action must be try (with the keys), confirm or revert";
+			}
+			if (err) {
+				respond(conn, "400 Bad Request", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"");
+				put_json_cstr(conn, err);
+				put_fd(conn, "\"}");
+				return;
+			}
+			argv[argc] = 0;
+			if (!file_exists(NETADDR_SCRIPT)) {
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"this image has no " NETADDR_SCRIPT "\"}");
+				return;
+			}
+			got = run_to_buf_ex(NETADDR_SCRIPT, argv, status, sizeof(status), &code,
+					   NETADDR_TIMEOUT_MS);
 			respond(conn, "200 OK", "application/json", 0);
 			put_fd(conn, "{\"ok\":");
 			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");

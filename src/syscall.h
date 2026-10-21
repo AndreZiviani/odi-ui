@@ -83,6 +83,8 @@ struct pollfd {
 #define __NR_bind       4169
 #define __NR_listen     4174
 #define __NR_accept     4168
+#define __NR_getpeername 4171
+#define __NR_getsockname 4172
 #define __NR_setsockopt 4181
 
 /* MIPS O_* are not the generic values either: O_CREAT is 0x100, not 0x40.

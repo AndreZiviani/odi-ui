@@ -122,6 +122,48 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `HOST_AUTONEG` is never written by
                                           `/api/config`: only `confirm` stores it
 
+## Management address trial (odi-oss)
+
+    GET  /api/netaddr                     the state the image keeps (`/var/run/mgmt-addr`,
+                                          read with no fork: `phase`, `trial_deadline`,
+                                          `prev_ip`, `old_<KEY>`/`new_<KEY>` for the five
+                                          keys, the last `event`), `uptime`, and where this
+                                          request came from: `via`, the address it was sent
+                                          to, and `peer`, the client. `supported` is false
+                                          on an image without `mgmt-addr.sh` and in a
+                                          safe-mode boot, where the keys are stored directly
+    POST /api/netaddr   action=try&LAN_IP_ADDR=...&LAN_SUBNET=...
+                        action=confirm | revert
+                                          one of three fixed verbs, run as `mgmt-addr.sh`
+                                          and bounded at 30 s. `try` takes the keys it
+                                          changes (`LAN_IP_ADDR`, `LAN_SUBNET`,
+                                          `LAN_ENABLE_IP2`, `LAN_IP_ADDR2`, `LAN_SUBNET2`),
+                                          each checked like a write to `/api/config` (type,
+                                          the pair rules, the second address not equal to the
+                                          first) and then by `network.sh` itself, and answers
+                                          before the address moves; the stick applies it a
+                                          second later, keeps the old primary up beside it
+                                          and reverts after 90 s unless confirmed.
+                                          `confirm` passes the script the address and the
+                                          client of THIS connection, taken from the socket:
+                                          it is refused unless the request arrived on a new
+                                          address, which is the proof it works, and only then
+                                          are the keys stored. While the script exists
+                                          `/api/config` refuses these five keys (outside a
+                                          safe-mode boot), so a trial value is never in the
+                                          store before it was confirmed
+
+There is no route for the redirect. The page on the old address looks for the
+new one with a `no-cors` `fetch` of `/` (`credentials: omit`, a throwaway query),
+which resolves for any HTTP answer and rejects when nothing answers, so it needs
+no CORS grant and sends no credential. The stick answers that fetch with `403`
+and the text `cross-site request refused` before it looks at any credential (and
+so without the one-second delay a failed sign-in costs); nothing else leaves the
+stick. Then it navigates to the new address, a top-level navigation, which is
+allowed and answers `401` with the Basic challenge: the browser asks for the
+password there, because it keeps a credential per address. There is no token or
+cookie to hand over (DESIGN.md, "Moving the management address").
+
 ## Backup and reset
 
     GET  /api/backup                      both config stores as a file, identity included
@@ -129,7 +171,8 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `hs`, the hardware identity, is not reachable here)
 
 Restoring a backup has no dedicated endpoint: the browser replays it through
-`/api/config`, key by key — see DESIGN.md.
+`/api/config`, key by key — see DESIGN.md. The management address keys of a
+backup go through `/api/netaddr` instead when the image has the trial.
 
 ## Admin
 

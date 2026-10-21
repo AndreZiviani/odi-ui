@@ -405,6 +405,28 @@ check "a followed link (top-level navigation) is allowed" 200 \
 check "a followed link to an API route is refused" 403 \
 	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
 		-H 'Sec-Fetch-Dest: document' "$U/api/diag")"
+# The address redirect (web/netaddr.js): the page on the old address looks for
+# the new one with a cross-site no-cors fetch and no credential, then navigates
+# there. The probe must get an HTTP answer that says nothing, at once (not the
+# one-second delay of a failed sign-in, which would stall the single thread
+# every two seconds); the navigation must land on the ordinary sign-in.
+probe=$(curl -s -o /tmp/probe.body -w '%{http_code} %{time_total}' -H 'Sec-Fetch-Site: cross-site' \
+	-H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Dest: empty' "$U/?probe=1700000000000")
+check "the redirect probe, with no credential, gets a 403" 403 "${probe%% *}"
+check "and it says nothing about the stick" "cross-site request refused" "$(tr -d '\n' < /tmp/probe.body)"
+check "and it is not delayed like a failed sign-in" yes \
+	"$(awk -v t="${probe#* }" 'BEGIN { print (t < 0.8) ? "yes" : "no" }')"
+nav=$(curl -s -D - -o /dev/null -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+	-H 'Sec-Fetch-Dest: document' "$U/")
+check "the redirect navigation, with no credential, lands on the Basic challenge" yes \
+	"$(err "$nav" 'WWW-Authenticate: Basic')"
+check "the page after the redirect is the same sign-in: 401, not a token path" 401 \
+	"$(code -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$U/?t=abcdef")"
+check "a followed link to /api/netaddr is refused" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
+		-H 'Sec-Fetch-Dest: document' "$U/api/netaddr")"
+check "the redirect probe never reaches the page or the API" 403 \
+	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Dest: empty' "$U/api/netaddr")"
 long=$(python3 -c 'print("a"*130)')
 check "a Host filling the buffer is refused, not judged by its prefix" 403 "$(hcode "$long.example.com")"
 check "a long label whose cut prefix has no dot is refused" 403 "$(hcode "$long")"
@@ -1166,6 +1188,91 @@ check "the next boot: the saved credential again" 200 "$(code -u "$AUTH" "http:/
 check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
+
+echo "== the management address trial: state, verbs, the store refused the keys"
+# odi-oss mgmt-addr.sh applies a change of the five address keys as a trial and
+# stores them only when its confirm arrives over a new address. The page reads
+# its state through GET /api/netaddr, with no fork, together with the address
+# the request came in on and the client; confirm is passed THOSE, from the
+# socket. POST /api/config refuses the five keys while the script exists and
+# this is not a safe-mode boot. The stub echoes its arguments.
+na() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/netaddr"; }
+napost() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/netaddr"; }
+rm -f /etc/scripts/mgmt-addr.sh /var/run/mgmt-addr /var/run/safe-mode /etc/config/getfake
+check "without the script: not supported, no state" yes \
+	"$(err "$(na)" '"supported":false,"state":{},"via":"127.0.0.1"')"
+check "without the script: try is refused" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR=10.1.1.1')" 'this image has no /etc/scripts/mgmt-addr.sh')"
+check "without the script: the address key is stored as before" yes \
+	"$(err "$(pt LAN_IP_ADDR 10.20.30.1)" '"ok":true,"value":"10.20.30.1"')"
+cat > /etc/scripts/mgmt-addr.sh <<'NETADDR'
+#!/bin/sh
+echo "mgmt-addr.sh: $*"
+[ "$1" = confirm ] && [ -f /tmp/netaddr-refuse ] && { echo "mgmt-addr: not confirmed: it arrived on an old address" >&2; exit 1; }
+exit 0
+NETADDR
+chmod +x /etc/scripts/mgmt-addr.sh
+printf '%s\n' phase=trial applied=1 trial_deadline=420 prev_ip=192.168.0.1 new_LAN_IP_ADDR=10.1.1.1 \
+	'message=trying for 90 s: "quoted" \ back' > /var/run/mgmt-addr
+r=$(na)
+check "with the script: supported" yes "$(err "$r" '"supported":true')"
+check "the state reaches the page" yes \
+	"$(err "$r" '"phase":"trial","applied":"1","trial_deadline":"420","prev_ip":"192.168.0.1","new_LAN_IP_ADDR":"10.1.1.1","message":"trying for 90 s: \"quoted\" \\ back"')"
+check "the address the request came in on, from the socket" yes "$(err "$r" '"via":"127.0.0.1","peer":"127.0.0.1"')"
+check "the stick clock is there for the countdown" yes "$(err "$r" '"uptime":"')"
+check "try runs mgmt-addr.sh try with KEY=VALUE words" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR=10.1.1.1&LAN_SUBNET=255.255.0.0')" '"ok":true,"output":"mgmt-addr.sh: try LAN_IP_ADDR=10.1.1.1 LAN_SUBNET=255.255.0.0')"
+check "the second address keys go through too" yes \
+	"$(err "$(napost 'action=try&LAN_ENABLE_IP2=1&LAN_IP_ADDR2=172.20.0.1')" 'try LAN_ENABLE_IP2=1 LAN_IP_ADDR2=172.20.0.1')"
+check "a key that is not an address key is not passed" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR=10.1.1.1&HOST_AUTONEG=off&LAN_SDS_MODE=4')" 'try LAN_IP_ADDR=10.1.1.1\u000a"')"
+check "try with no address key is refused" yes \
+	"$(err "$(napost 'action=try&HOST_AUTONEG=off')" 'no management address key to try')"
+check "try with an unusable address is refused, nothing run" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR=1.2.3.999')" 'not valid for its type')"
+check "try with an address that is not digits and dots is refused" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR=1.2.3.4;reboot')" 'digits and dots')"
+check "try with an empty value is refused" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR2=')" 'cannot be empty')"
+check "try with an unusable netmask is refused" yes \
+	"$(err "$(napost 'action=try&LAN_SUBNET=255.0.255.0')" 'not valid for its type')"
+check "try with the broadcast address of its mask is refused, as /api/config does" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR=192.168.1.255&LAN_SUBNET=255.255.255.0')" 'network or broadcast address')"
+check "try with a second address equal to the first is refused" yes \
+	"$(err "$(napost 'action=try&LAN_IP_ADDR=10.1.1.1&LAN_ENABLE_IP2=1&LAN_IP_ADDR2=10.1.1.1')" 'the same as the other management address')"
+check "LAN_ENABLE_IP2 is 0 or 1" yes "$(err "$(napost 'action=try&LAN_ENABLE_IP2=2')" 'LAN_ENABLE_IP2 is 0 or 1')"
+check "confirm passes the address and the client of this connection" yes \
+	"$(err "$(napost 'action=confirm')" '"ok":true,"output":"mgmt-addr.sh: confirm 127.0.0.1 127.0.0.1')"
+check "a confirm cannot name its own address in the request" yes \
+	"$(err "$(napost 'action=confirm&via=10.1.1.1&LAN_IP_ADDR=10.1.1.1')" 'confirm 127.0.0.1 127.0.0.1\u000a"')"
+: > /tmp/netaddr-refuse
+r=$(napost 'action=confirm')
+check "a refused confirm says so, ok false" yes "$(err "$r" '"ok":false')"
+check "and why" yes "$(err "$r" 'it arrived on an old address')"
+rm -f /tmp/netaddr-refuse
+check "revert runs mgmt-addr.sh revert" yes "$(err "$(napost 'action=revert')" 'mgmt-addr.sh: revert')"
+check "an unknown action is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=boot' "http://127.0.0.1:$PORT/api/netaddr")"
+check "a cross-site POST is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'action=revert' "http://127.0.0.1:$PORT/api/netaddr")"
+check "the state is readable without a fork on every poll" yes "$(err "$(na)" '"supported":true')"
+# The store: while the script exists the five keys are refused by /api/config.
+for k in LAN_IP_ADDR=10.20.30.1 LAN_SUBNET=255.255.255.0 LAN_ENABLE_IP2=1 LAN_IP_ADDR2=172.20.0.1 LAN_SUBNET2=255.255.255.0; do
+	check "/api/config refuses ${k%%=*} while the trial exists" yes \
+		"$(err "$(post "$k")" 'through the address trial')"
+done
+check "  ... and says so in the apply class too: no network action" yes \
+	"$(err "$(post 'LAN_IP_ADDR=10.20.30.1')" '"needs":[]')"
+check "another key is written as always" yes "$(err "$(post 'VLAN_MANU_TAG_VID=100')" '"name":"VLAN_MANU_TAG_VID","ok":true')"
+# A safe-mode boot stores them directly: the rescue address is the way in.
+printf '%s\n' short_boots=5 > /var/run/safe-mode
+check "safe-mode boot: the trial is not offered" yes \
+	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/netaddr")" '"supported":false')"
+check "safe-mode boot: /api/config stores the address" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data-urlencode LAN_IP_ADDR=10.20.30.1 "http://127.0.0.1:$PORT/api/config")" '"ok":true,"value":"10.20.30.1"')"
+rm -f /var/run/safe-mode
+check "the netaddr page module is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/netaddr.js")"
+rm -f /etc/scripts/mgmt-addr.sh /var/run/mgmt-addr
 
 echo "== request deadlines, and a body that is not what it declared"
 U="http://127.0.0.1:$PORT"
