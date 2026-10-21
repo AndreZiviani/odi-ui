@@ -932,11 +932,26 @@ repo's own scripts, and an attacker who can set arbitrary headers is not doing
 CSRF in the first place. Every current browser sends `Origin` on a cross-origin
 POST, form submissions included.
 
-The credential travels in cleartext. There is no usable TLS stack in this image
-and a handshake on a ~300 BogoMIPS core is not worth the cost — the same
-exposure `boa` already has, and telnet is open on `:23` regardless. Use a
-credential you do not reuse, and treat the upstream router as the real
-perimeter.
+The credential travels in cleartext, because this server does not speak TLS.
+That is a decision, not something the hardware rules out. Our own estimate was
+that a handshake on a ~300 BogoMIPS core is not worth its cost, and that
+estimate was never measured here. Another open implementation for this same
+board has measured it: an embedded TLS 1.3 stack (Mongoose) completes a
+handshake in about 0.1 s on this core (92 ms from a host), adds about 22 KiB
+compressed to the image, and serves a 158 KB script in 0.15 s. It also needed
+three fixes in that library to run on a big-endian target (one cipher took the
+little-endian path, a signature was not DER-encoded and 4 of 400 handshakes
+were refused, and malformed key bytes), so adopting it here would be new code
+in a freestanding, syscall-only daemon, with its own licence and test cost,
+and a check first that the rootfs partition has the room. We have not done
+that work and the decision stands: no TLS, cleartext on the host link.
+
+What that exposes is the host link only, the one cable between the stick and
+the machine that manages it; on the odi-oss image the fibre side answers
+nothing but OMCI, so the UI is reachable from nowhere else. Someone on that link can read the
+credential. Use a credential you do not reuse, treat the machine on the other
+end of the cable as the real perimeter, and prefer ssh keys (System > Access)
+for anything you do not need a browser for.
 
 ## SSH keys
 
