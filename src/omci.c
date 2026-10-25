@@ -54,6 +54,34 @@ static int me_token_ok(const char *s)
 	return i > 0 && i <= 39;
 }
 
+/*
+ * Classes whose attributes carry a secret the OLT provisioned: 148
+ * (authentication security method), 157 and 307 (large string and octet
+ * string, which hold credentials among other things). omcid masks them in the
+ * dump, but an older image prints the bytes, so the route refuses these
+ * classes itself rather than rely on the daemon. LargeString is the table name
+ * of both 157 and 307, so the name is refused as a whole; "all" is every class
+ * at once. Matching is case-insensitive and numeric ids are compared as
+ * numbers, so 0148 is 148.
+ */
+static int me_secret(const char *s)
+{
+	static const char *const names[] = { "AuthSecMethod", "LargeString", "all" };
+	unsigned long i, n = 0;
+
+	for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+		const char *a = s, *b = names[i];
+
+		while (*a && *b && (*a | 0x20) == (*b | 0x20))
+			a++, b++;
+		if (!*a && !*b)
+			return 1;
+	}
+	for (i = 0; s[i] >= '0' && s[i] <= '9'; i++)
+		n = n * 10 + (unsigned long)(s[i] - '0');
+	return !s[i] && (n == 148 || n == 157 || n == 307);
+}
+
 /* An entity id, in the form omcicli prints them: hex, 0x optional, and 16
  * bits (G.988 entity ids are two bytes), so 1 to 4 digits. */
 static int entity_ok(const char *s)
@@ -198,6 +226,14 @@ void emit_omci_json(int fd, const char *query)
 		return;
 	}
 
+	if (me_secret(me)) {
+		respond(fd, "403 Forbidden", "application/json", 0);
+		put_fd(fd, "{\"error\":\"refused: this class holds secrets the OLT provisioned\"}");
+		return;
+	}
+
+	/* The argv is fixed: only `me` and `entity`, each domain-checked, ever
+	 * reach omcicli. No query field can add a flag, `--secrets` included. */
 	argv[0] = "omcicli"; argv[1] = "mib"; argv[2] = "get"; argv[3] = me;
 	argv[4] = 0;
 	argv[5] = 0;
