@@ -62,7 +62,7 @@ sett = load("settings.tsv", 7)
 # settings.tsv, the image's own view. The classes are the four the page
 # labels; the actions are the three apply.sh and the reboot button perform.
 SETT_CLASSES = {"live", "restart", "internet", "reboot"}
-SETT_ACTIONS = {"network", "omci", "syslog", "ntp", "reboot", "none"}
+SETT_ACTIONS = {"network", "omci", "syslog", "ntp", "igmp", "reboot", "none"}
 
 names = {r[0] for r in keys}
 if not names:
@@ -166,7 +166,7 @@ for name, apply_, action, pair, reader, note_, unset in sett:
     if (apply_, action) not in {("live", "network"), ("live", "omci"),
                                 ("live", "none"), ("internet", "omci"),
                                 ("reboot", "reboot"), ("restart", "syslog"),
-                                ("restart", "ntp")}:
+                                ("restart", "ntp"), ("restart", "igmp")}:
         note(name, f"class {apply_!r} does not match action {action!r}")
     if pair and pair not in sett_names:
         note(name, f"pair {pair!r} is not itself in settings.tsv")
@@ -241,6 +241,33 @@ for kind in sorted(VEC_KINDS):
         if not per_kind.get((kind, expect)) and not (kind == "entity" and expect == "ok" and False):
             note("validation-vectors.tsv", f"no {kind} row expects {expect}")
 
+# --- the odi-only keys of the image ------------------------------------------
+# odi-oss keeps the keys the stock firmware never had in /etc/config/odi.conf,
+# and lists them in ODI_KEYS in its etc/scripts/flash. A key on that list with
+# no schema row is a setting the image reads and this page cannot show. The two
+# repos cannot be checked against each other in CI, so this runs when the flash
+# script is at hand: ODI_OSS_FLASH=<path>, else a sibling checkout at
+# ../odi-oss (or ~/git/odi-oss). Otherwise it says it was skipped.
+flash = os.environ.get("ODI_OSS_FLASH")
+if not flash:
+    for cand in (os.path.join(HERE, "..", "odi-oss"), os.path.expanduser("~/git/odi-oss")):
+        p = os.path.join(cand, "rootfs", "skeleton", "etc", "scripts", "flash")
+        if os.path.exists(p):
+            flash = p
+            break
+odi_checked = None
+if flash and os.path.exists(flash):
+    m = re.search(r'^ODI_KEYS="([^"]*)"', open(flash, encoding="utf-8").read(), re.M)
+    if not m:
+        note(flash, "has no ODI_KEYS line; the odi-only key check cannot run")
+    else:
+        odi_checked = m.group(1).split()
+        for k in odi_checked:
+            if k not in names:
+                note(k, f"is in ODI_KEYS ({flash}) but not in the schema")
+            elif k not in sett_names and k != "HOST_AUTONEG":
+                note(k, "is in ODI_KEYS but not in settings.tsv, so the page cannot say what it costs")
+
 # --- report ----------------------------------------------------------------
 if problems:
     for p in problems:
@@ -248,5 +275,9 @@ if problems:
     print(f"\n{len(problems)} problem(s)")
     sys.exit(1)
 
+if odi_checked is None:
+    print("note: odi-oss flash script not found (set ODI_OSS_FLASH); the ODI_KEYS check was skipped")
+else:
+    print(f"all {len(odi_checked)} ODI_KEYS of {flash} are in the schema")
 print(f"consistent: {len(keys)} keys, {len(meta)} with guidance, "
       f"{len(cons)} classified, {len(sett)} used by this image")

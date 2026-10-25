@@ -8,7 +8,7 @@
  *
  *   LIVE                  network, and omci for the VLAN keys: applied straight
  *                         after the save (omcid rebuilds in place on SIGHUP)
- *   SERVICE RESTART       syslog, ntp: the daemon restarts straight after the save
+ *   SERVICE RESTART       syslog, ntp, igmp: the daemon restarts straight after the save
  *   INTERRUPTS INTERNET   omci: offered as "Apply now", behind a confirmation
  *                         (omcid re-registers the ONU)
  *   REBOOT                reboot: offered as "Reboot now", behind a confirmation
@@ -222,7 +222,7 @@ async function followUp(res, written, out) {
       out.append(applyButton('live', 'Apply the addresses now', () => applyNetwork(out, true)));
     }
   }
-  for (const [what, daemon] of [['syslog', 'syslogd'], ['ntp', 'ntpd']]) {
+  for (const [what, daemon] of [['syslog', 'syslogd'], ['ntp', 'ntpd'], ['igmp', 'igmpd']]) {
     if (needs.includes(what)) await applyService(out, what, daemon);
   }
   /* A key omcid reports only while the identity switch is on changes

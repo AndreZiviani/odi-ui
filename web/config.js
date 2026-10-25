@@ -23,16 +23,18 @@ import { renderFixedMeEditor } from './expert.js';
  * for them.
  */
 const GROUPS = {
-  line: ['GPON_SN', 'GPON_PLOAM_PASSWD', 'LOID', 'LOID_PASSWD', 'LOID_OLD', 'LOID_PASSWD_OLD'],
+  line: ['GPON_SN', 'GPON_PLOAM_PASSWD', 'LOID', 'LOID_PASSWD', 'LOID_OLD', 'LOID_PASSWD_OLD',
+    'GPON_KEEP_DISABLE', 'GPON_DYING_GASP', 'ODI_LASER_UNVERIFIED'],
   vlan: ['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI'],
   identity: ['OMCI_VENDOR_PRODUCT_CODE', 'GPON_ONU_MODEL', 'ONU_HW_VERSION', 'OMCI_SW_VER1', 'OMCI_SW_VER2', 'OMCC_VER',
-    'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT'],
+    'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNI_LOCK', 'OMCI_TCONT_ALLOC_UNSET'],
   /* Behind the Expert settings disclosure on the ONU identity subtab: keys
      that change how the stick presents itself to the OLT, for someone who has
      read what a native ONU reports. */
-  expert: ['OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME', 'OMCI_VEIP', 'OMCI_VEIP_SLOT_ID', 'OMCI_PRIVATE_ME'],
+  expert: ['OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME', 'OMCI_VEIP', 'OMCI_VEIP_SLOT_ID', 'OMCI_PRIVATE_ME',
+    'OMCI_POTS_PORTS', 'OMCI_POTS_SLOT_ID'],
   network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
-  services: ['SYSLOG_SERVER', 'NTP_SERVER'],
+  services: ['SYSLOG_SERVER', 'NTP_SERVER', 'IGMP_SNOOPING', 'IGMP_PON_DROP'],
 };
 /* Keys with a control of their own on their subtab, not a schema row there:
    HOST_AUTONEG is never written by Save or Restore (hostlink.js runs a trial
