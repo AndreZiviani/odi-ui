@@ -22,7 +22,12 @@ function fail(e) {
 
 async function get(path) {
   const r = await fetch(path, { cache: 'no-store' });
-  if (!r.ok) throw new Error(path + ' -> HTTP ' + r.status);
+  if (!r.ok) {
+    /* A refusal says why in {"error": ...}: show that, not only the status. */
+    let why = '';
+    try { why = (await r.json()).error || ''; } catch (e) { /* not JSON */ }
+    throw new Error(path + ' -> HTTP ' + r.status + (why ? ': ' + why : ''));
+  }
   return r.json();
 }
 

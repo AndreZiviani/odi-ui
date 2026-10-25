@@ -194,6 +194,9 @@ cat > /bin/omcicli <<'OMCICLI'
 #!/bin/sh
 echo "ARGV: $*"
 [ "$1 $2 $3" = "mib get 84" ] && cat /src/scripts/fixtures/omci/84-VlanTagFilterData.txt
+# An older omcid prints provisioned secrets unmasked; a daemon that masks them
+# would show ** here. The route must not depend on which one is installed.
+case "$3" in 148|157|307|0148|65530|LoIdAuth|loidauth|AuthSecMethod|authsecmethod|LargeString|all) echo "Secret: 0x53454352455431 SECRET1" ;; esac
 exit 0
 OMCICLI
 chmod +x /bin/omcicli
@@ -1048,6 +1051,22 @@ for bad in 'cmd=me&me=84;reboot' 'cmd=me&me=../../etc/passwd' 'cmd=me&me=-rf' \
 	check "refuses ?$bad" 400 \
 		"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?$bad")"
 done
+# Classes that hold OLT-provisioned secrets are refused here, whatever omcicli
+# prints: the stub above prints the bytes unmasked, as an older omcid does.
+for c in 148 0148 157 307 65530 LoIdAuth loidauth AuthSecMethod authsecmethod LargeString all; do
+	check "class $c is refused" 403 \
+		"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=$c")"
+	check "class $c never shows the secret bytes" none \
+		"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=$c&entity=0x01" | grep -c SECRET1 | sed 's/^0$/none/')"
+done
+# No way to pass an extra argument: a flag as the class, a second word in it,
+# or a stray query field never reaches omcicli.
+for bad in 'me=--secrets' 'me=148%20--secrets' 'me=84%20--secrets' 'me=84&entity=--secrets'; do
+	check "refuses ?cmd=me&$bad" 400 \
+		"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&$bad")"
+done
+check "a stray secrets field does not reach omcicli" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&secrets=1&--secrets=1&args=--secrets" | grep -c -e '--secrets' | sed 's/^0$/clean/')" clean)"
 check "a non-hex entity is refused" 400 \
 	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&entity=zz")"
 
