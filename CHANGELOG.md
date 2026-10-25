@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- MIB browser: `GET /api/omci?cmd=me` refuses classes 148 (authentication security method), 157 and 307 (large string, octet string) and 65530 (`LoIdAuth`, the line LOID and password), their table names (`AuthSecMethod`, `LargeString`, `LoIdAuth`) and `all` with 403, so a secret the OLT provisioned is never forwarded to the browser, even when `omcicli` prints it unmasked as it does on an image older than the omcid masking. confd builds the `omcicli` argv itself from the domain-checked class and entity only, so no query field can add `--secrets` or any other argument. `make smoke` checks both against a stub that prints the secret bytes. docs/API.md says so.
+- MIB browser: `GET /api/omci?cmd=me` refuses classes 148 (authentication security method), 157 and 307 (large string, octet string) and 65530 (`LoIdAuth`, the line LOID and password), their table names (`AuthSecMethod`, `LargeString`, `LoIdAuth`) and `all` with 403, so a secret the OLT provisioned is never forwarded to the browser, even when `omcicli` prints it unmasked as it does on an image older than the omcid masking. confd builds the `omcicli` argv itself from the domain-checked class and entity only, so no query field can add `--secrets` or any other argument. `make smoke` checks both against a stub that prints the secret bytes. docs/API.md says so. The page shows the reason a request was refused next to the HTTP status (any route that answers `{"error": ...}`), not the status alone.
 
 ## v1.8.0 (2026-10-21)
 
