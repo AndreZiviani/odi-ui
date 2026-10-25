@@ -57,7 +57,8 @@ static int me_token_ok(const char *s)
 /*
  * Classes whose attributes carry a secret the OLT provisioned: 148
  * (authentication security method), 157 and 307 (large string and octet
- * string, which hold credentials among other things). omcid masks them in the
+ * string, which hold credentials among other things) and 65530 (LoIdAuth: the
+ * LOID and password of the line). omcid masks them in the
  * dump, but an older image prints the bytes, so the route refuses these
  * classes itself rather than rely on the daemon. LargeString is the table name
  * of both 157 and 307, so the name is refused as a whole; "all" is every class
@@ -66,7 +67,7 @@ static int me_token_ok(const char *s)
  */
 static int me_secret(const char *s)
 {
-	static const char *const names[] = { "AuthSecMethod", "LargeString", "all" };
+	static const char *const names[] = { "AuthSecMethod", "LargeString", "LoIdAuth", "all" };
 	unsigned long i, n = 0;
 
 	for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
@@ -79,7 +80,8 @@ static int me_secret(const char *s)
 	}
 	for (i = 0; s[i] >= '0' && s[i] <= '9'; i++)
 		n = n * 10 + (unsigned long)(s[i] - '0');
-	return !s[i] && (n == 148 || n == 157 || n == 307);
+	return !s[i] && (n == 148 || n == 157 || n == 307 ||
+		     n == 65530);
 }
 
 /* An entity id, in the form omcicli prints them: hex, 0x optional, and 16

@@ -196,7 +196,7 @@ echo "ARGV: $*"
 [ "$1 $2 $3" = "mib get 84" ] && cat /src/scripts/fixtures/omci/84-VlanTagFilterData.txt
 # An older omcid prints provisioned secrets unmasked; a daemon that masks them
 # would show ** here. The route must not depend on which one is installed.
-case "$3" in 148|157|307|0148|AuthSecMethod|authsecmethod|LargeString|all) echo "Secret: 0x53454352455431 SECRET1" ;; esac
+case "$3" in 148|157|307|0148|65530|LoIdAuth|loidauth|AuthSecMethod|authsecmethod|LargeString|all) echo "Secret: 0x53454352455431 SECRET1" ;; esac
 exit 0
 OMCICLI
 chmod +x /bin/omcicli
@@ -1053,7 +1053,7 @@ for bad in 'cmd=me&me=84;reboot' 'cmd=me&me=../../etc/passwd' 'cmd=me&me=-rf' \
 done
 # Classes that hold OLT-provisioned secrets are refused here, whatever omcicli
 # prints: the stub above prints the bytes unmasked, as an older omcid does.
-for c in 148 0148 157 307 AuthSecMethod authsecmethod LargeString all; do
+for c in 148 0148 157 307 65530 LoIdAuth loidauth AuthSecMethod authsecmethod LargeString all; do
 	check "class $c is refused" 403 \
 		"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=$c")"
 	check "class $c never shows the secret bytes" none \

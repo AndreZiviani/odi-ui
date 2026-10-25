@@ -59,8 +59,8 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
     GET  /api/omci      cmd=...          `omcicli mib get` passthrough; refuses
                                           `get tables` outright (see DESIGN.md).
-                                          Also refuses (403) classes 148, 157 and
-                                          307, their names and `all`: they hold
+                                          Also refuses (403) classes 148, 157,
+                                          307 and 65530, their names and `all`: they hold
                                           secrets the OLT provisioned.
                                           `me` is a class id (1-65535) or a table
                                           name (letters, digits, `_`, 39 at most);
