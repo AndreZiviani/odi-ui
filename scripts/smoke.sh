@@ -485,6 +485,26 @@ check "SYSLOG_SERVER needs the syslog action" yes \
 	"$(err "$(post 'SYSLOG_SERVER=10.0.0.5:514')" '"needs":["syslog"]')"
 check "NTP_SERVER needs the ntp action" yes \
 	"$(err "$(post 'NTP_SERVER=pool.ntp.org')" '"needs":["ntp"]')"
+check "IGMP_SNOOPING needs the igmp action" yes \
+	"$(err "$(post 'IGMP_SNOOPING=1')" '"needs":["igmp"]')"
+check "IGMP_PON_DROP needs the igmp action" yes \
+	"$(err "$(post 'IGMP_PON_DROP=1')" '"needs":["igmp"]')"
+check "IGMP_PON_DROP outside 0 and 1 is refused" yes \
+	"$(err "$(post 'IGMP_PON_DROP=2')" 'not one of the values')"
+check "GPON_KEEP_DISABLE needs a reboot only" yes \
+	"$(err "$(post 'GPON_KEEP_DISABLE=1')" '"needs":["reboot"]')"
+check "OMCI_POTS_PORTS=2 interrupts" yes \
+	"$(err "$(post 'OMCI_POTS_PORTS=2')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "OMCI_POTS_PORTS=3 is refused" yes \
+	"$(err "$(post 'OMCI_POTS_PORTS=3')" 'not one of the values')"
+check "OMCI_POTS_SLOT_ID 9 is written and interrupts" yes \
+	"$(err "$(post 'OMCI_POTS_SLOT_ID=9')" '"needs":["omci"],"stock":false,"interrupts":true')"
+check "OMCI_POTS_SLOT_ID 1 is outside the range and refused" yes \
+	"$(err "$(post 'OMCI_POTS_SLOT_ID=1')" 'outside the range')"
+check "OMCI_UNI_LOCK=0 is written and needs nothing" yes \
+	"$(err "$(post 'OMCI_UNI_LOCK=0')" '"needs":[],"stock":false,"interrupts":false')"
+check "OMCI_TCONT_ALLOC_UNSET=unassigned is written and needs nothing" yes \
+	"$(err "$(post 'OMCI_TCONT_ALLOC_UNSET=unassigned')" '"needs":[],"stock":false,"interrupts":false')"
 check "both together need both" yes \
 	"$(err "$(post 'SYSLOG_SERVER=logs.lan&NTP_SERVER=192.168.1.10:123')" '"needs":["syslog","ntp"]')"
 check "an empty SYSLOG_SERVER clears it (hostport keys only)" yes \
@@ -923,6 +943,8 @@ check "apply syslog runs apply.sh syslog" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=syslog' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: syslog')"
 check "apply ntp runs apply.sh ntp" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=ntp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: ntp')"
+check "apply igmp runs apply.sh igmp" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=igmp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: igmp')"
 touch /tmp/apply-fail
 check "a failing apply is reported as not applied" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":false')"

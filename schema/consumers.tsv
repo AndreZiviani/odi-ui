@@ -194,3 +194,12 @@ GPON_SN	restart:omci	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/runomci.sh,et
 EPON_ONU_MODEL	unknown	bin/configd,bin/eponoamd,bin/led,bin/mib,bin/xmlconfig
 EPON_EXTONU_MODEL	unknown	bin/configd,bin/eponoamd,bin/led,bin/mib,bin/xmlconfig
 EPON_SILENT_MODE	unknown	bin/configd,bin/eponoamd,bin/led,bin/mib,bin/xmlconfig
+IGMP_SNOOPING	unknown	
+IGMP_PON_DROP	unknown	
+GPON_KEEP_DISABLE	unknown	
+GPON_DYING_GASP	unknown	
+ODI_LASER_UNVERIFIED	unknown	
+OMCI_UNI_LOCK	unknown	
+OMCI_TCONT_ALLOC_UNSET	unknown	
+OMCI_POTS_PORTS	unknown	
+OMCI_POTS_SLOT_ID	unknown	

@@ -1217,7 +1217,7 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   }
   ok(['ONU_HW_VERSION', 'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT'].every((n) => GROUPS.identity.includes(n)),
     'the new OLT-facing keys sit on the ONU identity subtab');
-  ok(GROUPS.expert.join() === 'OMCI_UNKNOWN_ME_OK,OMCI_FIXED_ME,OMCI_VEIP,OMCI_VEIP_SLOT_ID,OMCI_PRIVATE_ME'
+  ok(GROUPS.expert.join() === 'OMCI_UNKNOWN_ME_OK,OMCI_FIXED_ME,OMCI_VEIP,OMCI_VEIP_SLOT_ID,OMCI_PRIVATE_ME,OMCI_POTS_PORTS,OMCI_POTS_SLOT_ID'
      && !GROUPS.identity.includes('OMCI_FIXED_ME') && !GROUPS.identity.includes('OMCI_UNKNOWN_ME_OK'),
     'the unknown-entity, fixed-entity, VEIP and vendor-private keys are expert settings, not in the ONU identity list');
   ok(['OMCI_VEIP', 'OMCI_VEIP_SLOT_ID', 'OMCI_PRIVATE_ME'].every((n) => setting(n).apply === 'internet' && setting(n).action === 'omci'),
