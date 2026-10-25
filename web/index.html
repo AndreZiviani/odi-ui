@@ -233,6 +233,7 @@
     <nav class="subtabs" role="tablist" aria-label="OMCI">
       <button role="tab" id="st-omci-services" aria-controls="o-services" data-sub="services">Services</button>
       <button role="tab" id="st-omci-mib" aria-controls="o-mib" data-sub="mib">MIB browser</button>
+      <button role="tab" id="st-omci-phone" aria-controls="o-phone" data-sub="phone">Phone</button>
     </nav>
 
     <div class="sub" id="o-services" role="tabpanel" aria-labelledby="st-omci-services" data-sub="services">
@@ -241,6 +242,26 @@
         <button id="services-reload" type="button">Read again</button>
       </div>
       <div id="services-cards" class="cards"></div>
+    </div>
+
+    <div class="sub" id="o-phone" role="tabpanel" aria-labelledby="st-omci-phone" data-sub="phone" hidden>
+      <div class="block-head">
+        <p class="lede">The phone lines the OLT provisioned. The stick has no phone socket and registers nothing: the router behind it registers the line, with these values.</p>
+        <button id="phone-reload" type="button">Read again</button>
+      </div>
+      <div id="phone-off" class="me-card" hidden>
+        <p class="me-state">Phone ports are off</p>
+        <p class="hint">The stick tells the OLT it has no phone port, so no line is provisioned. To turn them on, go to Config, ONU identity, Expert settings and set the phone ports key to 1 or 2, then apply. That re-registers the ONU and interrupts the internet for a moment. The stick still has no phone socket: your router behind it registers the line.</p>
+      </div>
+      <div id="phone-tools" class="formrow" hidden>
+        <button id="phone-secrets" type="button">Show secrets</button>
+        <span id="phone-ask" hidden>
+          <label>Admin password <input id="phone-pass" type="password" autocomplete="current-password" maxlength="128"></label>
+          <button id="phone-show" type="button" class="primary">Show</button>
+        </span>
+        <span id="phone-msg" class="hint" role="status" aria-live="polite"></span>
+      </div>
+      <div id="phone-lines" class="cards"></div>
     </div>
 
     <div class="sub" id="o-mib" role="tabpanel" aria-labelledby="st-omci-mib" data-sub="mib" hidden>

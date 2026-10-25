@@ -174,7 +174,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'restore', 'l2', 'tools', 'hostlink', 'netaddr'];
+              'omci', 'services', 'mebrowser', 'phone', 'restore', 'l2', 'tools', 'hostlink', 'netaddr'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -1406,6 +1406,38 @@ ok(inputsOf('#sections') > 100,
   ok(rules.filter(([s]) => /\.m-read \.num\b/.test(s)).length === 1 &&
      rules.filter(([s]) => /\.m-read \.unit\b/.test(s)).length === 1,
      'readout: one rule for the number and one for the unit, shared by both meters');
+}
+
+/* --- the Phone view: the parser of `omcicli voip` ---------------------- */
+{
+  const { parseVoip } = await import(join(root, 'web', 'phone.js'));
+  const masked = [
+    'port 0x201 (voice CTP 0x1)',
+    '  sip user 0x1: aor MASKED-5678, display name MASKED-mple',
+    '  sip user login 0x3: username MASKED-user, password set (8 bytes), realm example.net',
+    '  sip agent 0x1',
+    '    proxy sip:proxy.example.net',
+    '    registrar registrar.example.net',
+    '    port 5060/udp',
+    '    expiry 3600 s',
+    '  media profile 0x1: codecs PCMU/20ms PCMA/20ms, dtmf out of band',
+    '    rtp ports 50000-50100 dscp 46',
+    '  voice vlan 100 priority 5 (IP host 0x1)',
+    '  line status config done (14)',
+  ].join('\n');
+  const v = parseVoip(masked);
+  const rows = Object.fromEntries(v.ports[0].rows);
+  ok(v.ports.length === 1 && v.ports[0].status === 'config done (14)', 'phone: one port, its line status');
+  ok(rows['SIP user'] === 'MASKED-5678' && rows.Password === 'set (8 bytes)' && rows.Realm === 'example.net',
+     'phone: the masked user and password are shown as printed');
+  ok(rows.Proxy === 'sip:proxy.example.net' && rows.Registrar === 'registrar.example.net' && rows['SIP port'] === '5060/udp',
+     'phone: proxy, registrar and port');
+  ok(rows.Codecs === 'PCMU/20ms PCMA/20ms' && rows['Voice VLAN'] === '100 priority 5 (IP host 0x1)',
+     'phone: codecs and the voice VLAN');
+  ok(!('Other' in rows), 'phone: every line of the output is understood');
+  ok(parseVoip('no voice provisioned\n').none === true, 'phone: no voice provisioned');
+  const sec = parseVoip('port 0x201 (voice CTP 0x1)\n  sip user login 0x3: username u, ok, password p, w, realm r.net\n');
+  ok(Object.fromEntries(sec.ports[0].rows).Password === 'p, w', 'phone: a password with a comma is kept whole');
 }
 
 await import(join(root, 'web', 'app.js'));

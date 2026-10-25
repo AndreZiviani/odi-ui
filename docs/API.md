@@ -67,6 +67,25 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `entity` is optional hex, 1-4 digits (16
                                           bits), `0x` allowed
 
+    GET  /api/voip                       the phone lines the OLT provisioned:
+                                          {"raw": `omcicli voip`, "truncated", "ok"},
+                                          or {"ok":false,"error"} with the raw text
+                                          (no omcicli, timeout, refused). The masked
+                                          view only: number, display name and login
+                                          are shortened (`MASKED-` and the last four
+                                          characters), the password is only said to be
+                                          set. The argv is fixed, so no field can add
+                                          `--secrets`
+    POST /api/voip/secrets  password=... the same view with the number, name, login and
+                                          password in clear, for a caller that repeats
+                                          the admin password in the body. 403 on a wrong
+                                          password (after a one-second delay) and while
+                                          the built-in admin:admin is in force, 400
+                                          without a password, 503 `{"ok":false}` and no
+                                          output when the image has no omcicli.
+                                          Nothing is logged and confd wipes the
+                                          password and the output after answering
+
 ## Status and diagnostics
 
     GET  /api/status                     {"raw": one diag run (rx/tx power,

@@ -1744,6 +1744,12 @@ void serve(int conn)
 		return;
 	}
 
+	/* The clear view of the phone lines; the password is checked inside. */
+	if (seq(path, "/api/voip/secrets") && seq(method, "POST")) {
+		emit_voip_secrets_json(conn, body);
+		return;
+	}
+
 	if (!seq(method, "GET")) {
 		respond(conn, "405 Method Not Allowed", "text/plain",
 			"Allow: GET, POST\r\n");
@@ -1976,6 +1982,12 @@ void serve(int conn)
 		return;
 	}
 
+	/* What the OLT provisioned for the phone ports, masked; the secrets view
+	 * needs the password again. See omci.c. */
+	if (seq(path, "/api/voip") && seq(method, "GET")) {
+		emit_voip_json(conn);
+		return;
+	}
 	if (!serve_asset(conn, path)) {
 		respond(conn, "404 Not Found", "text/plain", 0);
 		put_fd(conn, "not found\n");
