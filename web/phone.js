@@ -147,6 +147,15 @@ function hideSecrets() {
    is. Only a state word and an age: the stick never holds a number or a
    password for this. The OLT is told it only while the key is on and it is
    fresh (the daemon's ttl); the card says which of those it is. */
+const REPORT_LABEL = {
+  none: 'not registered', registered: 'registered', in_session: 'in session',
+  failed_icmp: 'registration failed (ICMP error)', failed_tcp: 'registration failed (TCP error)',
+  failed_auth: 'registration failed (authentication)', failed_timeout: 'registration failed (timeout)',
+  failed_server: 'registration failed (server fail code)', failed_invite_icmp: 'invite failed (ICMP error)',
+  failed_invite_tcp: 'invite failed (TCP error)', failed_invite_auth: 'invite failed (authentication)',
+  failed_invite_timeout: 'invite failed (timeout)', failed_invite_server: 'invite failed (server fail code)',
+};
+
 function drawReport(host, d) {
   const on = String(S.VALUES.OMCI_VOIP_LINE_REPORT || '0') === '1';
   const ports = (d && d.ok && d.ports) || [];
@@ -160,7 +169,7 @@ function drawReport(host, d) {
   } else {
     for (const p of ports) {
       const stale = p.age > ttl;
-      card.append(el('p', 'me-state', 'Port ' + p.port + ': ' + String(p.state).replace(/_/g, ' ')
+      card.append(el('p', 'me-state', 'Port ' + p.port + ': ' + (REPORT_LABEL[p.state] || String(p.state).replace(/_/g, ' '))
         + ', ' + p.age + ' s ago' + (stale ? ' (too old, ignored)' : '')));
     }
   }

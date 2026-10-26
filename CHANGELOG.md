@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Phone: a router can now tell the stick whether its SIP client is registered
+- Phone: a router can now tell the stick whether its SIP client is registered or why not
   (`POST /api/voip/status`, `port=1&state=registered`, same credentials as the
   rest of the UI, refused while the factory password is in force). With
   `OMCI_VOIP_LINE_REPORT=1` in the image, the OLT then reads that state as the

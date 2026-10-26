@@ -94,8 +94,11 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `port` is 1 or 2; `state` is one of `none`,
                                           `registered`, `in_session`, `failed_icmp`,
                                           `failed_tcp`, `failed_auth`, `failed_timeout`,
-                                          `failed_server` (G.988 voice server status
-                                          0 to 7). Nothing else is read: no number,
+                                          `failed_server` (registration failures),
+                                          `failed_invite_icmp`, `failed_invite_tcp`,
+                                          `failed_invite_auth`, `failed_invite_timeout`,
+                                          `failed_invite_server` (invite failures);
+                                          G.988 9.9.11 voice server status 0 to 12. Nothing else is read: no number,
                                           login or password belongs in the body, and
                                           none is stored or logged. 200 `{"ok":true}`,
                                           400 for a bad port or state, 403 while the

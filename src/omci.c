@@ -355,7 +355,9 @@ void emit_voip_secrets_json(int fd, char *body)
  */
 static const char *const voip_states[] = {
 	"none", "registered", "in_session", "failed_icmp", "failed_tcp",
-	"failed_auth", "failed_timeout", "failed_server", 0
+	"failed_auth", "failed_timeout", "failed_server", "failed_invite_icmp",
+	"failed_invite_tcp", "failed_invite_auth", "failed_invite_timeout",
+	"failed_invite_server", 0
 };
 
 /* The stick's uptime in whole seconds, -1 when /proc/uptime is unreadable. */
@@ -418,7 +420,9 @@ void emit_voip_status_post(int fd, char *body)
 	if (!voip_states[s]) {
 		respond(fd, "400 Bad Request", "application/json", 0);
 		put_fd(fd, "{\"ok\":false,\"error\":\"state is none, registered, in_session, "
-			   "failed_icmp, failed_tcp, failed_auth, failed_timeout or failed_server\"}");
+			   "failed_icmp, failed_tcp, failed_auth, failed_timeout, failed_server, "
+			   "failed_invite_icmp, failed_invite_tcp, failed_invite_auth, "
+			   "failed_invite_timeout or failed_invite_server\"}");
 		return;
 	}
 	if (up < 0) {

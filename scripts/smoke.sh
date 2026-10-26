@@ -1190,6 +1190,13 @@ check "status: both lines are held" 2 "$(grep -cE '^LINE[12]=[a-z_]+ [0-9]+$' "$
 check "status: GET lists port 1" yes "$(err "$(curl -s -u "$AUTH" "$R")" '"port":1,"state":"registered","age":')"
 check "status: GET lists port 2" yes "$(err "$(curl -s -u "$AUTH" "$R")" '"port":2,"state":"failed_auth","age":')"
 check "status: GET says the TTL" yes "$(err "$(curl -s -u "$AUTH" "$R")" '"ttl":300')"
+check "status: the longest state word is accepted" 200 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=failed_invite_timeout' "$R")"
+check "status: and stored whole" 1 "$(grep -c '^LINE1=failed_invite_timeout [0-9]*$' "$RF")"
+check "status: an invite failure word is accepted" 200 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=failed_invite_auth' "$R")"
+check "status: a truncated invite word is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=failed_invite' "$R")"
 check "status: a new report replaces the port, not the others" 200 \
 	"$(code -u "$AUTH" -X POST --data 'port=1&state=none' "$R")"
 check "status: port 1 is replaced" 1 "$(grep -c '^LINE1=none ' "$RF")"
