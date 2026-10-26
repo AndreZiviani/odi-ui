@@ -93,6 +93,16 @@
 #define UPTIME_FILE       "/proc/uptime"
 #define NTP_STATUS_FILE   "/tmp/ntp-status"
 /*
+ * What the router says its SIP client is doing, per phone port, for omcid to
+ * show the OLT (OMCI_VOIP_LINE_REPORT in odi-oss). One `LINE<port>=<state>
+ * <seconds>` line a port, the seconds being the stick's uptime when the report
+ * arrived: a clock that a missing RTC or an NTP step cannot move. On tmpfs, so
+ * a reboot forgets it; omcid ignores a line older than VOIP_REPORT_TTL_S.
+ */
+#define VOIP_REPORT_PATH  "/var/run/voip-line-status"
+#define VOIP_REPORT_TTL_S 300
+#define VOIP_PORTS_MAX    2
+/*
  * The odi-oss safe mode (safe-mode.sh): a recovery boot, entered by a run of
  * short power-ups, with the PON off, the host port on auto-negotiation and
  * the default credentials in memory, for that boot only. The flag of the

@@ -1153,6 +1153,61 @@ check "GET /api/voip says so when omcicli is missing" yes \
 	"$(err "$(curl -s -u "$AUTH" "$V")" 'no omcicli in this image')"
 mv /bin/omcicli.kept /bin/omcicli
 
+# The router's report of its SIP state: a port and a state word, nothing else.
+echo "== voip status"
+R="$V/status"
+RF=/var/run/voip-line-status
+mkdir -p /var/run
+rm -f "$RF" "$RF.new"
+check "status: GET needs a credential" 401 "$(code "$R")"
+check "status: POST needs a credential" 401 "$(code -X POST --data 'port=1&state=registered' "$R")"
+check "status: GET with nothing reported holds no port" yes \
+	"$(err "$(curl -s -u "$AUTH" "$R")" '"ports":[]')"
+check "status: no state is refused" 400 "$(code -u "$AUTH" -X POST --data 'port=1' "$R")"
+check "status: an unknown state is refused" 400 "$(code -u "$AUTH" -X POST --data 'port=1&state=ringing' "$R")"
+check "status: a state with a prefix of a word is refused" 400 "$(code -u "$AUTH" -X POST --data 'port=1&state=registere' "$R")"
+check "status: port 0 is refused" 400 "$(code -u "$AUTH" -X POST --data 'port=0&state=registered' "$R")"
+check "status: port 3 is refused" 400 "$(code -u "$AUTH" -X POST --data 'port=3&state=registered' "$R")"
+check "status: port 11 is refused" 400 "$(code -u "$AUTH" -X POST --data 'port=11&state=registered' "$R")"
+check "status: no port is refused" 400 "$(code -u "$AUTH" -X POST --data 'state=registered' "$R")"
+check "status: a refused report writes nothing" none "$([ -e "$RF" ] && echo there || echo none)"
+check "status: a cross-site POST is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'port=1&state=registered' "$R")"
+mv /etc/config/confd.auth /etc/config/confd.auth.kept
+check "status: refused while the factory password is in force" 403 \
+	"$(code -u admin:admin -X POST --data 'port=1&state=registered' "$R")"
+mv /etc/config/confd.auth.kept /etc/config/confd.auth
+check "status: still nothing written" none "$([ -e "$RF" ] && echo there || echo none)"
+check "status: a report is accepted" 200 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=registered&username=bobsip&password=SIPPASS9&number=5511999990000' "$R")"
+check "status: the file holds the port, the state and the uptime, nothing else" 1 \
+	"$(grep -cE '^LINE1=registered [0-9]+$' "$RF")"
+check "status: and only that line" 1 "$(wc -l < "$RF" | tr -d ' ')"
+check "status: no SIP value reached the file" none \
+	"$(grep -c -e bobsip -e SIPPASS9 -e 5511999990000 "$RF" | sed 's/^0$/none/')"
+check "status: no temporary file is left" none "$([ -e "$RF.new" ] && echo there || echo none)"
+check "status: the second port keeps the first" 200 \
+	"$(code -u "$AUTH" -X POST --data 'port=2&state=failed_auth' "$R")"
+check "status: both lines are held" 2 "$(grep -cE '^LINE[12]=[a-z_]+ [0-9]+$' "$RF")"
+check "status: GET lists port 1" yes "$(err "$(curl -s -u "$AUTH" "$R")" '"port":1,"state":"registered","age":')"
+check "status: GET lists port 2" yes "$(err "$(curl -s -u "$AUTH" "$R")" '"port":2,"state":"failed_auth","age":')"
+check "status: GET says the TTL" yes "$(err "$(curl -s -u "$AUTH" "$R")" '"ttl":300')"
+check "status: the longest state word is accepted" 200 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=failed_invite_timeout' "$R")"
+check "status: and stored whole" 1 "$(grep -c '^LINE1=failed_invite_timeout [0-9]*$' "$RF")"
+check "status: an invite failure word is accepted" 200 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=failed_invite_auth' "$R")"
+check "status: a truncated invite word is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=failed_invite' "$R")"
+check "status: a new report replaces the port, not the others" 200 \
+	"$(code -u "$AUTH" -X POST --data 'port=1&state=none' "$R")"
+check "status: port 1 is replaced" 1 "$(grep -c '^LINE1=none ' "$RF")"
+check "status: port 2 is kept" 1 "$(grep -c '^LINE2=failed_auth ' "$RF")"
+printf 'LINE1=registered 99999999\nLINE2=garbage\nLINE1x=1\n' > "$RF"
+check "status: a stamp from the future and a malformed line are not listed" yes \
+	"$(err "$(curl -s -u "$AUTH" "$R")" '"ports":[]')"
+rm -f "$RF"
+
 # The query string is split off the path for every route, not just this one.
 # Before that, a single `?` made /api/status a 404.
 check "a query string does not break another route" 200 \

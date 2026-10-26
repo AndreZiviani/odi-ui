@@ -21,4 +21,10 @@ void emit_voip_json(int fd);
  * admin password in `body`. Wipes `body` and its own buffers before returning. */
 void emit_voip_secrets_json(int fd, char *body);
 
+/* POST /api/voip/status: the router reports its SIP registration state for one
+ * phone port (`port=1&state=registered`); GET /api/voip/status says what is held
+ * and how old it is. Neither takes or keeps a SIP value. */
+void emit_voip_status_post(int fd, char *body);
+void emit_voip_status_get(int fd);
+
 #endif /* CONFD_OMCI_H */

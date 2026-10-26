@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 - Config: `MLD_SNOOPING` (experimental) is on the Services page next to `IGMP_SNOOPING` and `IGMP_PON_DROP`: `1` makes the snooping daemon follow the host's MLD as it follows its IGMP, so IPv6 multicast groups get a row each; it does nothing while `IGMP_SNOOPING` is off. Saving restarts `igmpd` through the existing `igmp` action (`apply.sh igmp`, no reboot). Pairs with odi-oss #224.
+- Phone: a router can now tell the stick whether its SIP client is registered or why not
+  (`POST /api/voip/status`, `port=1&state=registered`, same credentials as the
+  rest of the UI, refused while the factory password is in force). With
+  `OMCI_VOIP_LINE_REPORT=1` in the image, the OLT then reads that state as the
+  line status instead of "config done", for as long as the report is fresh
+  (300 s). The Phone tab shows the last report and its age. Only the port and
+  a state word are kept, in RAM; no number, login or password is accepted,
+  stored or logged. Needs odi-oss with `OMCI_VOIP_LINE_REPORT`.
 
 - OMCI, Phone: a new Phone view next to Services and MIB browser shows, per phone port, what the OLT provisioned for voice: line status, SIP user and login (masked), proxy, outbound proxy and registrar, port, DNS and expiry, codecs, DTMF, RTP ports and the voice VLAN, parsed from `omcicli voip`. It says plainly that the stick has no phone socket and registers nothing, so the router behind it registers the line with these values, and the status is the stick's own ("config done"), never "registered". While `OMCI_POTS_PORTS` is 0 it says phone ports are off and where to turn them on (Config, ONU identity, Expert settings). New `GET /api/voip` (masked view, fixed argv, the usual bounded wait and error shapes) and `POST /api/voip/secrets` (the clear view for a request that repeats the admin password; refused while the factory admin:admin is in force, wrong password costs a second, nothing logged, password and output wiped after use, 503 without omcicli). "Show secrets" asks for the password, keeps what comes back in memory only and drops it on Hide or when leaving the view. `make smoke` checks both routes against an `omcicli voip` stub (masked view, the stub password never in the GET, the secrets route refusing without or with a wrong password, with the factory password, cross-site and without omcicli). docs/API.md lists them. Pairs with odi-oss `omcicli voip`.
 

@@ -1750,6 +1750,12 @@ void serve(int conn)
 		return;
 	}
 
+	/* The router's report of its SIP registration state, for the line status. */
+	if (seq(path, "/api/voip/status") && seq(method, "POST")) {
+		emit_voip_status_post(conn, body);
+		return;
+	}
+
 	if (!seq(method, "GET")) {
 		respond(conn, "405 Method Not Allowed", "text/plain",
 			"Allow: GET, POST\r\n");
@@ -1984,6 +1990,10 @@ void serve(int conn)
 
 	/* What the OLT provisioned for the phone ports, masked; the secrets view
 	 * needs the password again. See omci.c. */
+	if (seq(path, "/api/voip/status") && seq(method, "GET")) {
+		emit_voip_status_get(conn);
+		return;
+	}
 	if (seq(path, "/api/voip") && seq(method, "GET")) {
 		emit_voip_json(conn);
 		return;

@@ -143,6 +143,42 @@ function hideSecrets() {
   }
 }
 
+/* What the router last said about its SIP client, per port, and how old that
+   is. Only a state word and an age: the stick never holds a number or a
+   password for this. The OLT is told it only while the key is on and it is
+   fresh (the daemon's ttl); the card says which of those it is. */
+const REPORT_LABEL = {
+  none: 'not registered', registered: 'registered', in_session: 'in session',
+  failed_icmp: 'registration failed (ICMP error)', failed_tcp: 'registration failed (TCP error)',
+  failed_auth: 'registration failed (authentication)', failed_timeout: 'registration failed (timeout)',
+  failed_server: 'registration failed (server fail code)', failed_invite_icmp: 'invite failed (ICMP error)',
+  failed_invite_tcp: 'invite failed (TCP error)', failed_invite_auth: 'invite failed (authentication)',
+  failed_invite_timeout: 'invite failed (timeout)', failed_invite_server: 'invite failed (server fail code)',
+};
+
+function drawReport(host, d) {
+  const on = String(S.VALUES.OMCI_VOIP_LINE_REPORT || '0') === '1';
+  const ports = (d && d.ok && d.ports) || [];
+  const ttl = (d && d.ttl) || 300;
+  const card = el('section', 'me-card');
+
+  host.textContent = '';
+  card.append(el('h3', '', 'Router report'));
+  if (!ports.length) {
+    card.append(el('p', 'me-state', 'No report from the router'));
+  } else {
+    for (const p of ports) {
+      const stale = p.age > ttl;
+      card.append(el('p', 'me-state', 'Port ' + p.port + ': ' + (REPORT_LABEL[p.state] || String(p.state).replace(/_/g, ' '))
+        + ', ' + p.age + ' s ago' + (stale ? ' (too old, ignored)' : '')));
+    }
+  }
+  card.append(el('p', 'hint', on
+    ? 'The OLT reads the router\'s state as the line status while a report is under ' + ttl + ' s old; otherwise "config done".'
+    : 'The OLT is told "config done". To let the router\'s state through, set the router-reported line status key to 1 in Config, ONU identity, Expert settings, and have the router post its state (docs/API.md, POST /api/voip/status).'));
+  host.append(card);
+}
+
 const portsOn = () => ['1', '2'].includes(String(S.VALUES.OMCI_POTS_PORTS || '0'));
 
 async function renderPhone() {
@@ -152,6 +188,7 @@ async function renderPhone() {
 
   hideSecrets();
   lastMasked = '';
+  $('#phone-report').textContent = '';
   if (!portsOn()) {
     off.hidden = false;
     tools.hidden = true;
@@ -178,6 +215,9 @@ async function renderPhone() {
   }
   lastMasked = d.raw;
   drawLines(lines, lastMasked);
+  let r = null;
+  try { r = await get('/api/voip/status'); } catch (e) { /* an older confd has no such route */ }
+  drawReport($('#phone-report'), r);
 }
 
 function wirePhone() {

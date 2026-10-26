@@ -73,3 +73,4 @@ OMCI_UNI_LOCK	live	none		omcid, at every ME 11 Set, MIB reset and start	Read eac
 OMCI_TCONT_ALLOC_UNSET	live	none		omcid, at every Get and MIB upload	Read at every Get and MIB upload, so a change needs no reload and no re-registration. An odi-only key, kept in odi.conf.	ploam
 OMCI_POTS_PORTS	internet	omci		omcid, at start and on SIGHUP (re-registers)	An odi-only key, kept in odi.conf. Applying re-registers the ONU: the phone entities appear or disappear and the OLT provisions it again.	0
 OMCI_POTS_SLOT_ID	internet	omci		omcid, at start and on SIGHUP (re-registers)	An odi-only key, kept in odi.conf: empty removes it. Applying re-registers the ONU.	
+OMCI_VOIP_LINE_REPORT	live	none		omcid, at every Get of the VoIP line status	Read at every Get of the line status, so a change needs no reload and no re-registration. An odi-only key, kept in odi.conf.	0
