@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.9.0 (2026-10-26)
+
 - Config: `MLD_SNOOPING` (experimental) is on the Services page next to `IGMP_SNOOPING` and `IGMP_PON_DROP`: `1` makes the snooping daemon follow the host's MLD as it follows its IGMP, so IPv6 multicast groups get a row each; it does nothing while `IGMP_SNOOPING` is off. Saving restarts `igmpd` through the existing `igmp` action (`apply.sh igmp`, no reboot). Pairs with odi-oss #224.
+
 - Phone: a router can now tell the stick whether its SIP client is registered or why not
   (`POST /api/voip/status`, `port=1&state=registered`, same credentials as the
   rest of the UI, refused while the factory password is in force). With
