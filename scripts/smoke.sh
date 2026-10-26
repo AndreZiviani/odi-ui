@@ -507,6 +507,8 @@ check "IGMP_PON_DROP needs the igmp action" yes \
 	"$(err "$(post 'IGMP_PON_DROP=1')" '"needs":["igmp"]')"
 check "IGMP_PON_DROP outside 0 and 1 is refused" yes \
 	"$(err "$(post 'IGMP_PON_DROP=2')" 'not one of the values')"
+check "MLD_SNOOPING needs the igmp action" yes \
+	"$(err "$(post 'MLD_SNOOPING=1')" '"needs":["igmp"]')"
 check "GPON_KEEP_DISABLE needs a reboot only" yes \
 	"$(err "$(post 'GPON_KEEP_DISABLE=1')" '"needs":["reboot"]')"
 check "OMCI_POTS_PORTS=2 interrupts" yes \

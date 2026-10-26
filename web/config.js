@@ -34,7 +34,7 @@ const GROUPS = {
   expert: ['OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME', 'OMCI_VEIP', 'OMCI_VEIP_SLOT_ID', 'OMCI_PRIVATE_ME',
     'OMCI_POTS_PORTS', 'OMCI_POTS_SLOT_ID'],
   network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
-  services: ['SYSLOG_SERVER', 'NTP_SERVER', 'IGMP_SNOOPING', 'IGMP_PON_DROP'],
+  services: ['SYSLOG_SERVER', 'NTP_SERVER', 'IGMP_SNOOPING', 'IGMP_PON_DROP', 'MLD_SNOOPING'],
 };
 /* Keys with a control of their own on their subtab, not a schema row there:
    HOST_AUTONEG is never written by Save or Restore (hostlink.js runs a trial
