@@ -197,6 +197,7 @@ EPON_EXTONU_MODEL	hs	EPON_EXTONU_MODEL	epon	string	unknown	yes	no
 EPON_SILENT_MODE	hs	EPON_SILENT_MODE	epon	int	unknown	yes	no
 IGMP_SNOOPING	cs	IGMP_SNOOPING	multicast	int	unknown	yes	no
 IGMP_PON_DROP	cs	IGMP_PON_DROP	multicast	int	unknown	yes	no
+MLD_SNOOPING	cs	MLD_SNOOPING	multicast	int	unknown	yes	no
 GPON_KEEP_DISABLE	cs	GPON_KEEP_DISABLE	gpon	int	unknown	yes	no
 GPON_DYING_GASP	cs	GPON_DYING_GASP	gpon	int	unknown	yes	no
 ODI_LASER_UNVERIFIED	cs	ODI_LASER_UNVERIFIED	other	int	unknown	yes	no

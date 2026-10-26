@@ -196,6 +196,7 @@ EPON_EXTONU_MODEL	unknown	bin/configd,bin/eponoamd,bin/led,bin/mib,bin/xmlconfig
 EPON_SILENT_MODE	unknown	bin/configd,bin/eponoamd,bin/led,bin/mib,bin/xmlconfig
 IGMP_SNOOPING	unknown	
 IGMP_PON_DROP	unknown	
+MLD_SNOOPING	unknown	
 GPON_KEEP_DISABLE	unknown	
 GPON_DYING_GASP	unknown	
 ODI_LASER_UNVERIFIED	unknown	
