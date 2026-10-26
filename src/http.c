@@ -561,6 +561,32 @@ int set_credential(const char *user, const char *pass, const char **why)
 }
 
 /*
+ * Whether `pass` is the password half of the credential in force. For the
+ * routes that make the caller repeat it before showing a secret: the Basic
+ * header the browser replays is not proof that the person at the keyboard
+ * knows it. Constant-time over the credential, length folded in, like
+ * authorised(). The username half is not asked again.
+ */
+int password_matches(const char *pass)
+{
+	long want = load_credential(0);
+	unsigned long colon = 0, i, plen = slen(pass);
+	int diff = 0;
+
+	if (want <= 0)
+		return 0;
+	while ((long)colon < want && credbuf[colon] != ':')
+		colon++;
+	if ((long)colon >= want)
+		return 0;
+	if (plen != (unsigned long)want - colon - 1)
+		diff = 1;
+	for (i = 0; i < (unsigned long)want - colon - 1; i++)
+		diff |= credbuf[colon + 1 + i] ^ (i < plen ? pass[i] : 0);
+	return diff == 0;
+}
+
+/*
  * HTTP Basic, against user:password in /etc/config/confd.auth -- or against
  * DEFAULT_AUTH when that file has never been written. See confd.h for why the
  * fallback exists rather than a refusal, and note that it is a fallback to a
@@ -744,6 +770,7 @@ const struct web_asset web_assets[] = {
 	{ "/omci.js",       "omci.js",     "application/javascript" },
 	{ "/services.js",   "services.js", "application/javascript" },
 	{ "/mebrowser.js",  "mebrowser.js", "application/javascript" },
+	{ "/phone.js",      "phone.js",     "application/javascript" },
 	{ "/restore.js",    "restore.js",  "application/javascript" },
 	{ "/l2.js",         "l2.js",       "application/javascript" },
 	{ "/tools.js",      "tools.js",    "application/javascript" },

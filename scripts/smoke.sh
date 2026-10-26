@@ -197,6 +197,22 @@ echo "ARGV: $*"
 # An older omcid prints provisioned secrets unmasked; a daemon that masks them
 # would show ** here. The route must not depend on which one is installed.
 case "$3" in 148|157|307|0148|65530|LoIdAuth|loidauth|AuthSecMethod|authsecmethod|LargeString|all) echo "Secret: 0x53454352455431 SECRET1" ;; esac
+# `omcicli voip`: the masked view by default, the password only with --secrets.
+if [ "$1" = voip ]; then
+	if [ "$2" = "--secrets" ]; then
+		echo "port 0x201 (voice CTP 0x1)"
+		echo "  sip user 0x1: aor 15551235678, display name Example"
+		echo "  sip user login 0x3: username voipuser, password SIPPASS9, realm example.net"
+	else
+		echo "port 0x201 (voice CTP 0x1)"
+		echo "  sip user 0x1: aor MASKED-5678, display name MASKED-mple"
+		echo "  sip user login 0x3: username MASKED-user, password set (8 bytes), realm example.net"
+	fi
+	echo "  sip agent 0x1"
+	echo "    proxy sip:proxy.example.net"
+	echo "  voice vlan 100 priority 5 (IP host 0x1)"
+	echo "  line status config done (14)"
+fi
 exit 0
 OMCICLI
 chmod +x /bin/omcicli
@@ -1091,6 +1107,49 @@ check "a stray secrets field does not reach omcicli" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&secrets=1&--secrets=1&args=--secrets" | grep -c -e '--secrets' | sed 's/^0$/clean/')" clean)"
 check "a non-hex entity is refused" 400 \
 	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/omci?cmd=me&me=84&entity=zz")"
+
+# The phone view. GET is the masked view and its argv is fixed: no field can
+# add --secrets, and the stub's password never appears in it.
+echo "== voip"
+V="http://127.0.0.1:$PORT/api/voip"
+check "GET /api/voip needs a credential" 401 "$(code "$V")"
+check "GET /api/voip answers" 200 "$(code -u "$AUTH" "$V")"
+check "GET /api/voip runs omcicli voip, no flag" yes \
+	"$(err "$(curl -s -u "$AUTH" "$V")" 'ARGV: voip\u000a')"
+check "GET /api/voip shows the masked view" yes \
+	"$(err "$(curl -s -u "$AUTH" "$V")" 'MASKED-5678')"
+check "GET /api/voip never prints the password" none \
+	"$(curl -s -u "$AUTH" "$V" | grep -c SIPPASS9 | sed 's/^0$/none/')"
+check "GET /api/voip ignores a stray secrets field" none \
+	"$(curl -s -u "$AUTH" "$V?secrets=1&--secrets=1" | grep -c -e SIPPASS9 -e '--secrets' | sed 's/^0$/none/')"
+check "GET /api/voip says ok" yes "$(err "$(curl -s -u "$AUTH" "$V")" '"ok":true')"
+S="$V/secrets"
+check "secrets: GET is not a route" 404 "$(code -u "$AUTH" "$S")"
+check "secrets: needs a credential" 401 "$(code -X POST --data 'password=s3cret' "$S")"
+check "secrets: no password in the body is refused" 400 "$(code -u "$AUTH" -X POST --data 'x=1' "$S")"
+check "secrets: a wrong password is refused" 403 "$(code -u "$AUTH" -X POST --data 'password=nope' "$S")"
+check "secrets: a wrong password shows nothing" none \
+	"$(curl -s -u "$AUTH" -X POST --data 'password=nope' "$S" | grep -c SIPPASS9 | sed 's/^0$/none/')"
+check "secrets: a prefix of the password is refused" 403 "$(code -u "$AUTH" -X POST --data 'password=s3cre' "$S")"
+check "secrets: a longer password is refused" 403 "$(code -u "$AUTH" -X POST --data 'password=s3cretx' "$S")"
+check "secrets: a cross-site POST is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'password=s3cret' "$S")"
+check "secrets: the right password shows them" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'password=s3cret' "$S")" 'password SIPPASS9')"
+check "secrets: the answer is not cached" yes \
+	"$(err "$(curl -s -i -u "$AUTH" -X POST --data 'password=s3cret' "$S")" 'Cache-Control: no-store')"
+# The factory credential is public: it does not unlock secrets.
+mv /etc/config/confd.auth /etc/config/confd.auth.kept
+check "secrets: refused while the factory password is in force" 403 \
+	"$(code -u admin:admin -X POST --data 'password=admin' "$S")"
+mv /etc/config/confd.auth.kept /etc/config/confd.auth
+# No omcicli: 503, and no body to leak.
+mv /bin/omcicli /bin/omcicli.kept
+check "secrets: 503 when omcicli is missing" 503 \
+	"$(code -u "$AUTH" -X POST --data 'password=s3cret' "$S")"
+check "GET /api/voip says so when omcicli is missing" yes \
+	"$(err "$(curl -s -u "$AUTH" "$V")" 'no omcicli in this image')"
+mv /bin/omcicli.kept /bin/omcicli
 
 # The query string is split off the path for every route, not just this one.
 # Before that, a single `?` made /api/status a 404.

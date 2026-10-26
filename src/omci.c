@@ -100,6 +100,15 @@ static int entity_ok(const char *s)
 	return 1;
 }
 
+/* Zero a buffer in a way the compiler may not drop as a dead store. */
+static void wipe(char *p, unsigned long n)
+{
+	volatile char *v = p;
+
+	while (n--)
+		*v++ = 0;
+}
+
 /*
  * Run omcicli and answer with what it printed.
  *
@@ -108,7 +117,14 @@ static int entity_ok(const char *s)
  * would read as "the OLT provisioned nothing", which is the single most
  * misleading thing this page could say.
  */
+static void emit_omcicli_h(int fd, char *const argv[], const char *hdr, int secret);
+
 static void emit_omcicli(int fd, char *const argv[])
+{
+	emit_omcicli_h(fd, argv, 0, 0);
+}
+
+static void emit_omcicli_h(int fd, char *const argv[], const char *hdr, int secret)
 {
 	long got, code = -1;
 
@@ -122,14 +138,22 @@ static void emit_omcicli(int fd, char *const argv[])
 	 * below, and the code check further down reports the timeout.
 	 */
 	if (got == -1) {
-		respond(fd, "500 Internal Server Error", "application/json", 0);
+		respond(fd, "500 Internal Server Error", "application/json", hdr);
 		put_fd(fd, "{\"error\":\"could not run omcicli\"}");
 		return;
 	}
 	if (got < 0)
 		got = 0;
 
-	respond(fd, "200 OK", "application/json", 0);
+	/* A missing omcicli on the secrets route is a 503 and no body at all:
+	 * there is nothing to show and nothing that could leak. */
+	if (secret && code == 127) {
+		respond(fd, "503 Service Unavailable", "application/json", hdr);
+		put_fd(fd, "{\"ok\":false,\"error\":\"no omcicli in this image\"}");
+		wipe(omci, sizeof(omci));
+		return;
+	}
+	respond(fd, "200 OK", "application/json", hdr);
 	put_fd(fd, "{\"raw\":\"");
 	put_json_cstr(fd, omci);
 	put_fd(fd, "\",\"truncated\":");
@@ -156,6 +180,8 @@ static void emit_omcicli(int fd, char *const argv[])
 	} else {
 		put_fd(fd, ",\"ok\":false,\"error\":\"omcicli refused the request\"}");
 	}
+	if (secret)
+		wipe(omci, sizeof(omci));
 }
 
 static void bad(int fd, const char *why)
@@ -254,4 +280,62 @@ void emit_omci_json(int fd, const char *query)
 	}
 
 	emit_omcicli(fd, argv);
+}
+
+/*
+ * The phone lines the OLT provisioned, as `omcicli voip` prints them.
+ *
+ * The argv is a constant and carries no flag from the request, so the masked
+ * view is all this route can ever return: it must never gain --secrets (the
+ * secrets route below is the only caller that passes it, behind the password).
+ * The output is returned verbatim like /api/omci; the browser parses it.
+ */
+void emit_voip_json(int fd)
+{
+	char *argv[3];
+
+	argv[0] = "omcicli"; argv[1] = "voip"; argv[2] = 0;
+	emit_omcicli_h(fd, argv, 0, 0);
+}
+
+/*
+ * The same view with the SIP number, login and password in clear.
+ *
+ * Authentication has already happened (serve()), but the browser replays the
+ * Basic header on its own, so the person must type the password again here. The
+ * factory credential admin:admin is refused outright: a password everybody
+ * knows protects nothing. A wrong password costs a second, like a failed login.
+ * Nothing here is logged, the password and the output are wiped after use, and
+ * respond() already marks every answer no-store.
+ */
+void emit_voip_secrets_json(int fd, char *body)
+{
+	char pass[512];
+	char *argv[4];
+	int ok;
+
+	if (auth_is_default()) {
+		respond(fd, "403 Forbidden", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"refused: this stick still has the factory "
+			   "password. Set your own in Config first.\"}");
+		return;
+	}
+	if (!form_get(body, "password", pass, sizeof(pass))) {
+		wipe(body, slen(body));
+		wipe(pass, sizeof(pass));
+		respond(fd, "400 Bad Request", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"password is required\"}");
+		return;
+	}
+	ok = password_matches(pass);
+	wipe(pass, sizeof(pass));
+	wipe(body, slen(body));
+	if (!ok) {
+		sleep_s(1);
+		respond(fd, "403 Forbidden", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"wrong password\"}");
+		return;
+	}
+	argv[0] = "omcicli"; argv[1] = "voip"; argv[2] = "--secrets"; argv[3] = 0;
+	emit_omcicli_h(fd, argv, 0, 1);
 }

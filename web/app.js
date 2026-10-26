@@ -14,6 +14,7 @@ import { save, refreshSaveBar, renderIdentitySwitch } from './save.js';
 import { renderFirmware, wireFirmware, renderTrial } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
+import { renderPhone, wirePhone, hideSecrets } from './phone.js';
 import { wireRestore } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
@@ -42,6 +43,7 @@ const OLD = {
 const ON_SHOW = {
   'omci/services': () => renderServices(),
   'omci/mib': () => renderMeBrowser(),
+  'omci/phone': () => renderPhone(),
   'system/firmware': () => renderFirmware(),
   'system/access': () => renderSshKeys(),
   'system/logs': () => renderTools(),
@@ -82,6 +84,8 @@ function route() {
   showAuth();
   /* Full help opens the field help, and only the Config tab has fields. */
   $('#helptoggle').hidden = tab !== 'config';
+  /* The phone secrets live in memory only while that view is open. */
+  if (view !== 'omci/phone') hideSecrets();
   if (ON_SHOW[view]) ON_SHOW[view]();
 }
 
@@ -132,6 +136,7 @@ $('#pw-save').onclick = savePassword;
 $('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;
 wireRestore();
+wirePhone();
 wireTheme();
 wireHelp();
 wireFirmware();
