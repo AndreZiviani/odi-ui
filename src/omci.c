@@ -339,3 +339,193 @@ void emit_voip_secrets_json(int fd, char *body)
 	argv[0] = "omcicli"; argv[1] = "voip"; argv[2] = "--secrets"; argv[3] = 0;
 	emit_omcicli_h(fd, argv, 0, 1);
 }
+
+/*
+ * The router's report of its SIP registration, per phone port.
+ *
+ * The stick cannot see the router's SIP client, so the router tells it: a
+ * script on the router posts `port` and `state` here (same credentials as the
+ * rest of the UI) and omcid, with OMCI_VOIP_LINE_REPORT on, shows the OLT that
+ * state instead of "config done" for as long as the report is fresh. The body
+ * carries nothing else and the file keeps nothing else: no number, login,
+ * server or password ever reaches this route, a log or the report.
+ *
+ * The factory admin:admin is refused as for the secrets route: anyone on the
+ * LAN knows it, and a state the OLT will read is not theirs to set.
+ */
+static const char *const voip_states[] = {
+	"none", "registered", "in_session", "failed_icmp", "failed_tcp",
+	"failed_auth", "failed_timeout", "failed_server", 0
+};
+
+/* The stick's uptime in whole seconds, -1 when /proc/uptime is unreadable. */
+static long voip_uptime_s(void)
+{
+	char buf[64];
+	long n = read_file(UPTIME_FILE, buf, sizeof(buf)), v = 0;
+	unsigned long i;
+
+	if (n <= 0)
+		return -1;
+	for (i = 0; buf[i] >= '0' && buf[i] <= '9' && i < 10; i++)
+		v = v * 10 + (buf[i] - '0');
+	return i ? v : -1;
+}
+
+/* Whether line `i` of a report file is `LINE<p>=` and where its value starts
+ * and ends; the value is "<state> <seconds>". */
+static int voip_line_at(const char *buf, unsigned long i, unsigned long n,
+			int *port, unsigned long *vs, unsigned long *ve)
+{
+	unsigned long e = i;
+
+	while (e < n && buf[e] != '\n')
+		e++;
+	if (e - i < 8 || buf[i] != 'L' || buf[i + 1] != 'I' || buf[i + 2] != 'N' ||
+	    buf[i + 3] != 'E' || buf[i + 4] < '1' || buf[i + 4] > '0' + VOIP_PORTS_MAX ||
+	    buf[i + 5] != '=')
+		return 0;
+	*port = buf[i + 4] - '0';
+	*vs = i + 6;
+	*ve = e;
+	return 1;
+}
+
+void emit_voip_status_post(int fd, char *body)
+{
+	char port[8], state[24], old[512], out[512];
+	long up = voip_uptime_s(), got;
+	unsigned long n = 0, i, k;
+	int s, p;
+
+	if (auth_is_default()) {
+		respond(fd, "403 Forbidden", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"refused: this stick still has the factory "
+			   "password. Set your own in Config first.\"}");
+		return;
+	}
+	if (!form_get(body, "port", port, sizeof(port)) || port[1] ||
+	    port[0] < '1' || port[0] > '0' + VOIP_PORTS_MAX) {
+		respond(fd, "400 Bad Request", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"port must be 1 or 2\"}");
+		return;
+	}
+	p = port[0] - '0';
+	state[0] = 0;
+	form_get(body, "state", state, sizeof(state));
+	for (s = 0; voip_states[s] && !seq(state, voip_states[s]); s++)
+		;
+	if (!voip_states[s]) {
+		respond(fd, "400 Bad Request", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"state is none, registered, in_session, "
+			   "failed_icmp, failed_tcp, failed_auth, failed_timeout or failed_server\"}");
+		return;
+	}
+	if (up < 0) {
+		respond(fd, "500 Internal Server Error", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"no uptime\"}");
+		return;
+	}
+	/* The file is rewritten whole, every port: this port's new line, the
+	 * others' as they were. A line that is not ours to read is dropped. */
+	got = read_file(VOIP_REPORT_PATH, old, sizeof(old));
+	for (k = 1; k <= VOIP_PORTS_MAX; k++) {
+		const char *v;
+		unsigned long vl;
+
+		if ((int)k == p) {
+			v = 0;
+			vl = 0;
+		} else {
+			unsigned long j = 0, vs, ve;
+			int lp;
+
+			v = 0;
+			vl = 0;
+			while (got > 0 && j < (unsigned long)got) {
+				if (voip_line_at(old, j, (unsigned long)got, &lp, &vs, &ve) &&
+				    (unsigned long)lp == k) {
+					v = old + vs;
+					vl = ve - vs;
+					break;
+				}
+				while (j < (unsigned long)got && old[j] != '\n')
+					j++;
+				j++;
+			}
+			if (!v)
+				continue;
+		}
+		if (n + 40 + vl >= sizeof(out))
+			break;
+		out[n++] = 'L'; out[n++] = 'I'; out[n++] = 'N'; out[n++] = 'E';
+		out[n++] = (char)('0' + k); out[n++] = '=';
+		if (v) {
+			for (i = 0; i < vl; i++)
+				out[n++] = v[i];
+		} else {
+			char num[12];
+			int d = 0;
+			long t = up;
+
+			for (i = 0; voip_states[s][i]; i++)
+				out[n++] = voip_states[s][i];
+			out[n++] = ' ';
+			do {
+				num[d++] = (char)('0' + t % 10);
+				t /= 10;
+			} while (t && d < (int)sizeof(num));
+			while (d--)
+				out[n++] = num[d];
+		}
+		out[n++] = '\n';
+	}
+	wipe(body, slen(body));
+	if (write_file_atomic(VOIP_REPORT_PATH, out, n, 0644) < 0) {
+		respond(fd, "500 Internal Server Error", "application/json", 0);
+		put_fd(fd, "{\"ok\":false,\"error\":\"could not store the report\"}");
+		return;
+	}
+	respond(fd, "200 OK", "application/json", 0);
+	put_fd(fd, "{\"ok\":true}");
+}
+
+void emit_voip_status_get(int fd)
+{
+	char buf[512];
+	long got = read_file(VOIP_REPORT_PATH, buf, sizeof(buf)), up = voip_uptime_s();
+	unsigned long j = 0, first = 1;
+
+	respond(fd, "200 OK", "application/json", 0);
+	put_fd(fd, "{\"ok\":true,\"ttl\":");
+	put_u32_fd(fd, VOIP_REPORT_TTL_S);
+	put_fd(fd, ",\"ports\":[");
+	while (got > 0 && up >= 0 && j < (unsigned long)got) {
+		unsigned long vs, ve, sp, stamp = 0, w;
+		int p, ok = 0;
+
+		if (voip_line_at(buf, j, (unsigned long)got, &p, &vs, &ve)) {
+			for (sp = vs; sp < ve && buf[sp] != ' '; sp++)
+				;
+			for (w = sp + 1; w < ve && buf[w] >= '0' && buf[w] <= '9' && w < sp + 11; w++)
+				stamp = stamp * 10 + (unsigned long)(buf[w] - '0');
+			ok = sp < ve && w == ve && w > sp + 1 && (long)stamp <= up;
+			if (ok) {
+				if (!first)
+					put_fd(fd, ",");
+				first = 0;
+				put_fd(fd, "{\"port\":");
+				put_u32_fd(fd, (unsigned long)p);
+				put_fd(fd, ",\"state\":\"");
+				put_json_str(fd, buf + vs, sp - vs);
+				put_fd(fd, "\",\"age\":");
+				put_u32_fd(fd, (unsigned long)up - stamp);
+				put_fd(fd, "}");
+			}
+		}
+		while (j < (unsigned long)got && buf[j] != '\n')
+			j++;
+		j++;
+	}
+	put_fd(fd, "]}");
+}

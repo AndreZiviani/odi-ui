@@ -85,6 +85,34 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           output when the image has no omcicli.
                                           Nothing is logged and confd wipes the
                                           password and the output after answering
+    POST /api/voip/status  port=1&state=registered
+                                          the router tells the stick what its SIP
+                                          client is doing, for the VoIP line status the
+                                          OLT reads (odi-oss `OMCI_VOIP_LINE_REPORT=1`,
+                                          off by default; without it the report is kept
+                                          and shown but the OLT is told nothing).
+                                          `port` is 1 or 2; `state` is one of `none`,
+                                          `registered`, `in_session`, `failed_icmp`,
+                                          `failed_tcp`, `failed_auth`, `failed_timeout`,
+                                          `failed_server` (G.988 voice server status
+                                          0 to 7). Nothing else is read: no number,
+                                          login or password belongs in the body, and
+                                          none is stored or logged. 200 `{"ok":true}`,
+                                          400 for a bad port or state, 403 while the
+                                          built-in admin:admin is in force or from
+                                          another site, 401 without a credential. The
+                                          report is kept in RAM with the stick's uptime
+                                          and counts for 300 s: repeat it at least every
+                                          few minutes (every 60 s is plenty), or the
+                                          line status goes back to "config done". A
+                                          router script can use
+                                          `curl -s -u admin:PASSWORD --data
+                                          'port=1&state=registered'
+                                          http://STICK/api/voip/status`
+    GET  /api/voip/status                what is held: {"ok":true,"ttl":300,"ports":
+                                          [{"port":1,"state":"registered","age":12}]},
+                                          `age` in seconds; a port with no report is
+                                          absent
 
 ## Status and diagnostics
 
