@@ -59,6 +59,16 @@ cat > /etc/scripts/flash <<'FLASH'
 #!/bin/sh
 case "$1" in
 all)
+	# /etc/config/padcs holds a row count: the cs store then starts with that
+	# many table rows, the way a stick that ran a router firmware keeps its WAN
+	# table, and the hs store carries GPON_SN, so a cut shows as a missing key.
+	if [ -f /etc/config/padcs ]; then
+		case "$2" in
+		cs) awk -v n="$(cat /etc/config/padcs)" 'BEGIN { for (i = 0; i < n; i++)
+			printf "<Dir Name=\"ATM_VC_TBL\"> <!--index=%d-->\n  <Value Name=\"pppUser\" Value=\"\"/>\n</Dir>\n", i }' ;;
+		hs) echo '<Value Name="GPON_SN" Value="ODIX00000001"/>' ;;
+		esac
+	fi
 	cat <<'XML'
 <Dir Name="MIB_TABLE">
   <Value Name="VLAN_MANU_TAG_VID" Value="110"/>
@@ -754,6 +764,24 @@ check "the backup is served as a download" yes \
 	"$(err "$(curl -si -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")" 'Content-Disposition: attachment')"
 check "the backup needs the credential" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/backup")"
+# A cs store of ~37 KB, more than the old 24 KB buffer: the hs store after it
+# was dropped without an error, so the identity keys read as empty.
+echo 450 > /etc/config/padcs
+check "a large cs store still leaves the hs store in the values" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values" | grep -o '"GPON_SN":"[^"]*"')" '"GPON_SN":"ODIX00000001"')"
+check "and the odi-only keys at the end of the cs store" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values" | grep -o '"NTP_SERVER":"[^"]*"')" '"NTP_SERVER":"192.168.0.2"')"
+check "and the backup carries the hs store" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/backup" | grep -o 'ODIX00000001')" 'ODIX00000001')"
+# One that does not fit at all (~82 KB) is refused, never served cut.
+echo 1000 > /etc/config/padcs
+check "a store larger than the buffer is refused, not cut" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/values")"
+check "and says why" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" 'larger than confd can hold')"
+check "a backup that would be cut is refused" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
+rm -f /etc/config/padcs
 
 echo "== diagnostics bundle"
 # /api/diag runs the image /etc/scripts/diag-bundle.sh and streams the file it

@@ -3,7 +3,7 @@
  *
  * Static, not stack: this is a single-threaded serial server and these would
  * otherwise be tens of kilobytes of stack in one frame. Keeping them together
- * is what makes the RAM budget legible -- roughly 166 KB of BSS, on a device
+ * is what makes the RAM budget legible -- roughly 300 KB of BSS, on a device
  * with about 1.5 MB free -- rather than something you have to add up across
  * six files.
  *
@@ -28,7 +28,16 @@ extern char schema[40960];
 extern char meta[32768];
 extern char cons[16384];
 extern char sett[16384];
-extern char values[24576];
+/*
+ * values holds `flash all cs` and `flash all hs` together. 24576 was enough for
+ * this stick's own stores (about 6 KB and 3 KB), but a stick that ran a router
+ * firmware before keeps that firmware's WAN and port-binding tables in the same
+ * file: one at 30 KB filled the buffer with the cs store alone, and everything
+ * after the cut -- the odi-only keys and the whole hs store, GPON_SN and
+ * ELAN_MAC_ADDR among them -- was dropped without a word. load_values now
+ * refuses a dump that fills it rather than serving the part that fit.
+ */
+extern char values[65536];
 extern char status[16384];
 /*
  * The OMCI dumps are the largest thing this daemon holds. A provisioned line's

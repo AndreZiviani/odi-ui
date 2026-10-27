@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: a stick whose config store is larger than about 24 KB no longer shows the identity keys as empty. A stick that ran a router firmware before keeps that firmware's WAN and port-binding tables in the store (one report: 30 KB in `lastgood.xml` alone), and confd read both stores into a 24 KB buffer: the odi-only keys and the whole hs store, `GPON_SN`, `GPON_ONU_MODEL` and `ELAN_MAC_ADDR` among them, were cut off without an error, and the configuration backup was missing them too. The buffer is now 64 KB, and a store that still does not fit is refused with a message (`/api/values` and `/api/backup` answer 500) instead of being served cut. A timeout reading the hs store is now an error too, where it used to serve the cs store alone. Refs AndreZiviani/odi-oss#229.
+
 ## v1.9.0 (2026-10-26)
 
 - Config: `MLD_SNOOPING` (experimental) is on the Services page next to `IGMP_SNOOPING` and `IGMP_PON_DROP`: `1` makes the snooping daemon follow the host's MLD as it follows its IGMP, so IPv6 multicast groups get a row each; it does nothing while `IGMP_SNOOPING` is off. Saving restarts `igmpd` through the existing `igmp` action (`apply.sh igmp`, no reboot). Pairs with odi-oss #224.
