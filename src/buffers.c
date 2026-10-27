@@ -7,7 +7,7 @@ char schema[40960];
 char meta[32768];
 char cons[16384];
 char sett[16384];
-char values[24576];
+char values[65536];
 char status[16384];
 char omci[32768];
 char authbuf[256];

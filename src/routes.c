@@ -1891,7 +1891,14 @@ void serve(int conn)
 	}
 
 	if (seq(path, "/api/values")) {
-		if (load_values() < 0) {
+		long n = load_values();
+
+		if (n == -2) {
+			respond(conn, "500 Internal Server Error", "application/json", 0);
+			put_fd(conn, "{\"error\":\"the config store is larger than confd can hold (64 KB)\"}");
+			return;
+		}
+		if (n < 0) {
 			respond(conn, "500 Internal Server Error", "application/json", 0);
 			put_fd(conn, "{\"error\":\"flash failed\"}");
 			return;
@@ -1920,7 +1927,17 @@ void serve(int conn)
 	 * it is why it needs the same credential as everything else.
 	 */
 	if (seq(path, "/api/backup")) {
-		if (load_values() < 0) {
+		long n = load_values();
+
+		/* A cut backup would be missing the hs store, the one part that
+		 * cannot be regenerated, while looking complete. */
+		if (n == -2) {
+			respond(conn, "500 Internal Server Error", "text/plain", 0);
+			put_fd(conn, "the config store is larger than confd can hold (64 KB); "
+				     "copy /var/config off the stick instead\n");
+			return;
+		}
+		if (n < 0) {
 			respond(conn, "500 Internal Server Error", "text/plain", 0);
 			put_fd(conn, "flash failed\n");
 			return;

@@ -730,6 +730,12 @@ int apply_omci(void)
  * `flash all cs` and `flash all hs` — two forks for every value on the device.
  * Reading them key by key would be 184 forks at ~30 ms each, which is a five
  * second page load; the cost of a fork here is the process, not the work.
+ *
+ * -1 when a dump fails, -2 when the two do not fit in `values`. Never a part:
+ * run_to_buf keeps what fits and discards the rest, so a full buffer means the
+ * store was cut, and the hs store -- the identity keys, which /api/backup
+ * exists to save -- is the half that goes. A dump that fills the buffer to the
+ * last byte exactly is counted as cut too; it cannot be told apart.
  */
 long load_values(void)
 {
@@ -740,9 +746,15 @@ long load_values(void)
 	a = run_to_buf(FLASH_PATH, cs, values, sizeof(values), FLASH_TIMEOUT_MS);
 	if (a <= 0)
 		return -1;
+	if ((unsigned long)a + 1 >= sizeof(values))
+		return -2;
 	b = run_to_buf(FLASH_PATH, hs, values + a, sizeof(values) - (unsigned long)a,
 		       FLASH_TIMEOUT_MS);
-	return b < 0 ? a : a + b;
+	if (b < 0)
+		return -1;
+	if ((unsigned long)(a + b) + 1 >= sizeof(values))
+		return -2;
+	return a + b;
 }
 
 /*
