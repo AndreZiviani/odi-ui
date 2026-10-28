@@ -9,6 +9,9 @@
 #ifndef CONFD_STATUS_H
 #define CONFD_STATUS_H
 
+/* Where the hwmon devices are; main.c lets a second argument replace it, so make smoke can stub it. */
+extern const char *hwmon_root;
+
 void emit_status_json(int fd);
 void emit_l2_json(int fd);
 void emit_log_json(int fd);

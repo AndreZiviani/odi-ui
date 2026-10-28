@@ -282,6 +282,36 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(doc.querySelector('#tx').className === 'meter v-bad', 'and +0.2 dBm is out of the window');
 }
 
+/* --- the chip temperature: the Status row and the header bar ------------- */
+{
+  const raw = API['/api/status'].raw;
+  const row = () => textOf(doc.querySelector('#env'));
+  const chipDd = () => { const kids = doc.querySelector('#env').children; const i = kids.findIndex((d) => textOf(d) === 'Chip temperature'); return kids[i + 1]; };
+  const bar = doc.querySelector('#chipbanner');
+  renderStatus(raw);
+  ok(!/Chip temperature/.test(row()) && bar.hidden === true && doc.querySelector('#chip-help').hidden === true,
+     'chip temp: an image without the sensor shows no row, no bar and no help');
+  renderStatus(raw, { celsius: 71.3 });
+  ok(/Chip temperature71\.3 °C/.test(row()) && bar.hidden === true && doc.querySelector('#chip-help').hidden === false,
+     'chip temp: the temperature alone is a plain number, with the help');
+  renderStatus(raw, { celsius: 71.3, max: 95, crit: 110, max_alarm: false, crit_alarm: false });
+  ok(textOf(chipDd()) === '71.3 °C' && chipDd().className === 'num' && bar.hidden === true, 'chip temp: normal is the number and nothing else');
+  renderStatus(raw, { celsius: 96.4, max: 95, crit: 110, max_alarm: true, crit_alarm: false });
+  const dd = chipDd();
+  ok(textOf(dd) === '96.4 °C, above the warning limit (95 °C)' && dd.className === 'warn' && bar.hidden === true,
+     'chip temp: the warning alarm styles the row and says the limit, without a bar');
+  renderStatus(raw, { celsius: 112, max: 95, crit: 110, max_alarm: true, crit_alarm: true });
+  ok(bar.hidden === false
+     && /id="chipbanner" class="trial hot"/.test(readFileSync(join(root, 'web', 'index.html'), 'utf8'))
+     && textOf(doc.querySelector('#chip-text')) === 'The chip is very hot (112 °C, limit 110 °C). Check the airflow around the router\'s SFP cage.',
+     'chip temp: the critical alarm raises the header bar with the reading and the limit');
+  renderStatus(raw, { celsius: 112, crit_alarm: true });
+  ok(textOf(doc.querySelector('#chip-text')).startsWith('The chip is very hot (112 °C). '),
+     'chip temp: an alarm with no limit reported leaves the limit out');
+  renderStatus(raw, { celsius: 80, max: 95, crit: 110, max_alarm: false, crit_alarm: false });
+  ok(bar.hidden === true, 'chip temp: the bar goes when the alarm clears');
+}
+
 /* --- the stick clock under NTP_SERVER ------------------------------------ */
 {
   const { ntpLine } = await import(join(root, 'web', 'config.js'));

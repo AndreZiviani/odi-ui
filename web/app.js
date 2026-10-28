@@ -352,7 +352,7 @@ async function refresh() {
   try {
     const st = await get('/api/status');
     if (st.error) throw new Error(st.error);
-    renderStatus(st.raw);
+    renderStatus(st.raw, st.chip_temp);
     /* The setup wizard decides from the same read: open, mark, or leave alone. */
     await wizardSeen(lineFacts(st.raw));
   } catch (e) { fail(e); }

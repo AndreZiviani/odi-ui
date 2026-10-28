@@ -186,6 +186,27 @@ names what was cleared. The text is built by a pure
 function (`bannerText` in `web/hostlink.js`) that `make check` drives with
 fixtures.
 
+### The chip temperature
+
+The SoC has a temperature sensor, which the odi-oss kernel exposes as the hwmon
+device `rtl9602c_soc`, with a warning limit and a critical limit and an alarm
+flag for each (95 and 110 degrees by default). `/api/status` carries it as
+`chip_temp`, read by confd from plain files: no fork, no change to the diag scrape,
+and the page needs no second request. confd finds the device by its `name`
+among `hwmon0` to `hwmon7`, because the number depends on what registered first,
+and emits a member only for a file that exists and holds a plain integer, so an
+older image shows less and a stock image shows nothing.
+
+Status shows a *Chip temperature* row beside the transceiver temperature. At the
+warning alarm the row turns to a warning and says *above the warning limit
+(95 °C)*; the page keeps no limit of its own and quotes the ones the stick
+reports. At the critical alarm a red band in the header, on every view, says
+*The chip is very hot (112 °C, limit 110 °C). Check the airflow around the
+router's SFP cage.* It cannot be dismissed and goes when the kernel clears the
+alarm. The help under the rows says what the number is worth: the sensor scale is
+not verified against a reference, the limits are set high on purpose, and nothing
+is shut down automatically.
+
 ### The new-release notice
 
 When a newer odi-oss release exists the sticky header carries one more band, in

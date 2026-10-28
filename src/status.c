@@ -7,6 +7,104 @@
 #include "status.h"
 
 /*
+ * The SoC temperature sensor, when the kernel has one.
+ *
+ * The odi-oss kernel registers an hwmon device named rtl9602c_soc: temp1_input
+ * in millidegrees and, on newer images, the warning and critical limits and
+ * their two alarm flags. Plain file reads, no fork. The device is found by
+ * its name among hwmon0..7, because its number depends on what registered
+ * first. A member is emitted only if its file exists and holds a plain
+ * integer, so an older image shows less, never garbage; with no device, or no
+ * temp1_input, nothing is emitted at all (a stock image). Values are parsed
+ * and printed again, never echoed.
+ */
+const char *hwmon_root = HWMON_ROOT;
+
+/* dir + file into path; the caller sizes it for both. */
+static void join_path(char *path, unsigned long cap, const char *dir, const char *file)
+{
+	str_copy(path, dir, cap);
+	str_copy(path + slen(path), file, cap - slen(path));
+}
+
+/* "[-]digits[\n]" as millidegrees: 0 and *out set, or -1 for anything else. */
+static int read_milli(const char *dir, const char *file, long *out)
+{
+	char path[96], buf[16];
+	unsigned long i = 0;
+	long v = 0;
+	int neg = 0;
+
+	join_path(path, sizeof(path), dir, file);
+	if (read_file(path, buf, sizeof(buf)) <= 0)
+		return -1;
+	if (buf[0] == '-')
+		neg = i = 1;
+	if (buf[i] < '0' || buf[i] > '9')
+		return -1;
+	for (; buf[i] >= '0' && buf[i] <= '9'; i++)
+		v = v * 10 + (buf[i] - '0');
+	if (buf[i] && buf[i] != '\n')
+		return -1;
+	*out = neg ? -v : v;
+	return 0;
+}
+
+/* Millidegrees as degrees with one decimal, rounded half away from zero. */
+static void put_celsius(int fd, long milli)
+{
+	unsigned long t = (unsigned long)(milli < 0 ? -milli : milli);
+
+	t = (t + 50) / 100;
+	if (milli < 0 && t)
+		put_fd(fd, "-");
+	put_u32_fd(fd, t / 10);
+	put_fd(fd, ".");
+	put_u32_fd(fd, t % 10);
+}
+
+static void emit_chip_temp(int fd)
+{
+	static const char *const limits[] = { "max", "crit" };
+	char dir[64], path[96], name[32];
+	long v;
+	int i, k;
+
+	for (i = 0; i < 8; i++) {
+		join_path(dir, sizeof(dir) - 1, hwmon_root, "/hwmon0");
+		dir[slen(dir) - 1] = (char)('0' + i);
+		join_path(path, sizeof(path), dir, "/name");
+		if (read_file(path, name, sizeof(name)) > 0 &&
+		    spre(name, "rtl9602c_soc") && (name[12] == 0 || name[12] == '\n'))
+			break;
+	}
+	if (i == 8 || read_milli(dir, "/temp1_input", &v) < 0)
+		return;
+
+	put_fd(fd, ",\"chip_temp\":{\"celsius\":");
+	put_celsius(fd, v);
+	for (k = 0; k < 2; k++) {
+		join_path(path, sizeof(path), "/temp1_", limits[k]);
+		if (read_milli(dir, path, &v) == 0) {
+			put_fd(fd, ",\"");
+			put_fd(fd, limits[k]);
+			put_fd(fd, "\":");
+			put_celsius(fd, v);
+		}
+	}
+	for (k = 0; k < 2; k++) {
+		join_path(path, sizeof(path), "/temp1_", limits[k]);
+		str_copy(path + slen(path), "_alarm", sizeof(path) - slen(path));
+		if (read_milli(dir, path, &v) == 0 && (v == 0 || v == 1)) {
+			put_fd(fd, ",\"");
+			put_fd(fd, limits[k]);
+			put_fd(fd, v ? "_alarm\":true" : "_alarm\":false");
+		}
+	}
+	put_fd(fd, "}");
+}
+
+/*
  * Device status, in one diag invocation. diag costs ~32 ms to start and almost
  * nothing to run, so every question goes in on stdin at once; see
  * odi-sfp-exporter's notes on the same trick.
@@ -33,7 +131,9 @@ void emit_status_json(int fd)
 	 * parsing on that side means adding a status field costs no C. */
 	put_fd(fd, "{\"raw\":\"");
 	put_json_cstr(fd, status);
-	put_fd(fd, "\"}");
+	put_fd(fd, "\"");
+	emit_chip_temp(fd);
+	put_fd(fd, "}");
 }
 
 /*

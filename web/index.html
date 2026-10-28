@@ -67,6 +67,12 @@
     <p id="fallback-text"></p>
     <a href="#config/network">Host port settings</a>
   </div>
+  <!-- The chip passed its critical temperature (status.js): not dismissible,
+       it goes when the kernel clears the alarm. -->
+  <div id="chipbanner" class="trial hot" role="status" hidden>
+    <p id="chip-text"></p>
+    <a href="#status">Status</a>
+  </div>
   <!-- A newer odi-oss release (updates.js), found by this browser, not by the
        stick. Unlike the bars above it can be dismissed, once per version. -->
   <div id="updatebanner" class="trial update" role="status" hidden>
@@ -106,6 +112,7 @@
         <section class="block">
           <h2>Transceiver</h2>
           <dl class="env" id="env"></dl>
+          <p class="help" id="chip-help" hidden>The chip temperature is read from the SoC sensor. Its scale is not verified against a reference, so read it as a trend rather than an exact figure. The limits are set high on purpose, and nothing is shut down automatically: the page only warns.</p>
         </section>
       </div>
     </div>
