@@ -784,9 +784,9 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   /* The SerDes mode (odi-oss HOST_SERDES, host-serdes.sh). */
   const sd = (o) => ({ supported: true, state: { setting: 'fiber1g', running: 'fiber1g', phase: 'steady', fallback: '0', ...o } });
   b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_SERDES' }, safemode: null });
-  ok(/cleared the host port SerDes mode/.test(b.safe) && !/auto-negotiation/.test(b.safe), 'safe mode: cleared=HOST_SERDES says the mode');
+  ok(/cleared the host port link mode/.test(b.safe) && !/auto-negotiation/.test(b.safe), 'safe mode: cleared=HOST_SERDES says the mode');
   b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG,HOST_SERDES' }, safemode: null });
-  ok(/cleared the host port settings \(auto-negotiation and SerDes mode\)/.test(b.safe) && b.safe.length < 260,
+  ok(/cleared the host port settings \(auto-negotiation and link mode\)/.test(b.safe) && b.safe.length < 260,
      'safe mode: cleared=HOST_AUTONEG,HOST_SERDES says both');
   for (const c of ['none', 'failed', '']) {
     b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: c }, safemode: null });
@@ -818,7 +818,26 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(doc.querySelector('#hostlink-try').disabled === true && doc.querySelector('#hostlink-an-na').hidden === false
      && /not applicable in 2\.5G/.test(textOf(doc.querySelector('#hostlink-now'))),
      'host mode: in 2.5G the auto-negotiation control says it is not applicable');
-  ok(/SerDes mode now/.test(textOf(doc.querySelector('#hostlink-now'))), 'host mode: the status rows name the SerDes mode');
+  API['/api/hostlink'].status = { autoneg: 'off', link: '1', link_source: 'serdes_sync' };
+  API['/api/hostlink'].ok = true;
+  await renderHostlink();
+  await new Promise((r) => setImmediate(r));
+  ok(/Auto-negotiation now.*off \(set by the 2\.5G \(2500BASE-X\) link mode\)/.test(textOf(doc.querySelector('#hostlink-now')))
+     && /from the host link sync/.test(textOf(doc.querySelector('#hostlink-now'))),
+     'host mode: while the link mode owns the port, the row shows the bit the status reports');
+  ok(/Link mode now/.test(textOf(doc.querySelector('#hostlink-now'))), 'host mode: the status rows name the link mode');
+  ok(/2\.5G \(2500BASE-X\)/.test(textOf(doc.querySelector('#hostlink-now'))) && !/most compatible/.test(textOf(doc.querySelector('#hostlink-now'))),
+     'host mode: the rows say the short mode name, not the select label');
+  ok(!/SerDes mode/.test(textOf(doc.querySelector('#hostlink-now'))) && />Link mode</.test(readFileSync(join(root, 'web', 'index.html'), 'utf8')),
+     'host mode: the user-facing name is Link mode');
+  ok(doc.querySelector('#hostlink-an-fb').hidden === true, 'host mode: no fallback note while the mode runs as stored');
+  API['/api/hostlink'] = { supported: true, state: st({}), serdes: sd({ setting: '2500basex', running: 'fiber1g', fallback: '1' }),
+                           safemode_now: null, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink-try').disabled === false && doc.querySelector('#hostlink-an-fb').hidden === false
+     && /stored link mode is 2\.5G \(2500BASE-X\); this boot runs Fiber 1G after a fallback, so a change here lasts until the next boot/
+       .test(doc.querySelector('#hostlink-an-fb').textContent),
+     'host mode: after a fallback the auto-negotiation control stays usable and says its change lasts until the next boot');
   API['/api/hostlink'] = { supported: true, state: st({}), serdes: sd({}), safemode_now: null, safemode: null, link: '1', uptime: '40' };
   await renderHostlink();
   ok(doc.querySelector('#hostlink-try').disabled === false && doc.querySelector('#hostlink-an-na').hidden === true,
@@ -1081,7 +1100,7 @@ const stock = '#sections';
 const { OWN_CONTROL } = await import(join(root, 'web', 'config.js'));
 ok(rowsOf(stock).length === SCHEMA.length - SETT.length - OWN_CONTROL.length,
    'the stock keys are all on their own tab (the keys with a control of their own are on neither)');
-ok(![stock, common].some((v) => /HOST_AUTONEG|Host port auto-negotiation|HOST_SERDES|Host port SerDes mode/.test(textOf(doc.querySelector(v)))),
+ok(![stock, common].some((v) => /HOST_AUTONEG|Host port auto-negotiation|HOST_SERDES|Host port SerDes mode|Host port link mode/.test(textOf(doc.querySelector(v)))),
    'HOST_AUTONEG and HOST_SERDES are no schema rows: only the Host port control changes them');
 ok(inputsOf(stock) === 0, 'and none of them can be edited there');
 ok(doc.querySelector('#device-login').hidden === true,

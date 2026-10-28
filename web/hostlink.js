@@ -18,7 +18,7 @@
  * it down. While the mode is not Fiber 1G the image refuses an auto-negotiation
  * trial, and the control says so. The link comes from the script's `status`
  * (which says where it was read from: only the port link in Fiber 1G, the
- * SerDes sync in 2.5G, nothing in HiSGMII), asked for after the page is up so
+ * link sync in 2.5G, nothing in HiSGMII), asked for after the page is up so
  * the banner stays a no-fork read.
  *
  * The banner covers the states in which the image changed what runs by
@@ -54,13 +54,13 @@ const SERDES = {
   hisgmii: 'HiSGMII',
 };
 const serdesText = (m) => SERDES[m] || (m ? String(m) : 'unknown');
-const serdesShort = (m) => (m === 'fiber1g' ? 'Fiber 1G' : m === '2500basex' ? '2.5G' : m === 'hisgmii' ? 'HiSGMII' : m);
+const serdesShort = (m) => (m === 'fiber1g' ? 'Fiber 1G' : m === '2500basex' ? '2.5G (2500BASE-X)' : m === 'hisgmii' ? 'HiSGMII' : m);
 const sdState = (h) => (h && h.serdes && h.serdes.state) || {};
 const sdOn = (h) => !!(h && h.serdes && h.serdes.supported);
 /* Where the image read the host link from, in words. */
 const SOURCE = {
   host_link: 'the port link',
-  serdes_sync: 'the SerDes sync',
+  serdes_sync: 'the host link sync',
   none: 'no signal in this mode',
 };
 
@@ -90,8 +90,8 @@ function bannerText(h) {
   const cleared = (s) => {
     const l = String((s && s.cleared) || '').split(',');
     const an = l.includes('HOST_AUTONEG'), sd = l.includes('HOST_SERDES');
-    if (an && sd) return ' It also cleared the host port settings (auto-negotiation and SerDes mode).';
-    if (sd) return ' It also cleared the host port SerDes mode.';
+    if (an && sd) return ' It also cleared the host port settings (auto-negotiation and link mode).';
+    if (sd) return ' It also cleared the host port link mode.';
     return an ? ' It also cleared the host port setting.' : '';
   };
   if (now) {
@@ -165,18 +165,21 @@ function renderBlock() {
   const link = l === '1' ? 'up' : l === '0' ? 'down' : 'unknown';
   const src = SS && SS.link_source && SOURCE[SS.link_source] ? ` (from ${SOURCE[SS.link_source]})` : '';
   if (H.supported) {
-    row('Auto-negotiation now', forced ? 'not applicable in ' + serdesShort(ss.running) : modeText(st.running || 'on'));
+    /* While the link mode owns the port, the bit is the one it set: say so, as the image reports it. */
+    const bit = SS && (SS.autoneg === 'on' || SS.autoneg === 'off') ? SS.autoneg : '';
+    row('Auto-negotiation now', !forced ? modeText(st.running || 'on')
+      : bit ? `${bit} (set by the ${serdesShort(ss.running)} link mode)` : 'not applicable in ' + serdesShort(ss.running));
     row('Stored setting', modeText(st.setting || 'on'));
   }
   if (sd) {
-    row('SerDes mode now', serdesText(ss.running || 'fiber1g'));
-    row('Stored SerDes mode', serdesText(ss.setting || 'fiber1g'));
+    row('Link mode now', serdesShort(ss.running || 'fiber1g'));
+    row('Stored link mode', serdesShort(ss.setting || 'fiber1g'));
   }
   row('Host link', link + src, link === 'up' ? 'good' : link === 'down' ? 'bad' : '');
   if (st.phase === 'watch') row('Boot check', 'Still deciding the mode; try again in a minute.', 'warn');
-  if (ss.phase === 'watch') row('SerDes boot check', 'Still deciding the mode; try again in a minute.', 'warn');
+  if (ss.phase === 'watch') row('Link mode boot check', 'Still deciding the mode; try again in a minute.', 'warn');
   if (st.message) row('Last event', st.message);
-  if (ss.message) row('Last SerDes event', ss.message);
+  if (ss.message) row('Last link mode event', ss.message);
   const busy = st.phase === 'trial' || st.phase === 'watch' || ss.phase === 'trial' || ss.phase === 'watch'
     || ss.phase === 'reapply';
   const other = (st.running || 'on') === 'off' ? 'on' : 'off';
@@ -186,6 +189,13 @@ function renderBlock() {
   btn.disabled = busy || forced;
   $('#hostlink-an').hidden = !H.supported;
   $('#hostlink-an-na').hidden = !forced;
+  /* After a fallback the stored mode comes back at the next boot, and so does the auto-negotiation it implies. */
+  const fb = sd && ss.fallback === '1' && ss.setting && ss.setting !== 'fiber1g' && ss.running === 'fiber1g';
+  $('#hostlink-an-fb').hidden = !fb;
+  if (fb) {
+    $('#hostlink-an-fb').textContent = `The stored link mode is ${serdesShort(ss.setting)}; this boot runs Fiber 1G after a `
+      + 'fallback, so a change here lasts until the next boot.';
+  }
   /* The fallback runs on while the setting says off: offer to keep on. */
   const keepOn = $('#hostlink-keep-on');
   keepOn.hidden = !(st.setting === 'off' && st.running === 'on' && !busy && !forced);

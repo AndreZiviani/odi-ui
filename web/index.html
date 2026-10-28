@@ -182,8 +182,9 @@
               <p class="s-help">With the router on the SFP edge. Leave it on unless the router port has
                 auto-negotiation off. A change is a trial: it reverts by itself after two minutes unless you
                 keep it, and keeping it only works if this page still answers in the new mode.</p>
-              <p class="s-help" id="hostlink-an-na" hidden>Not applicable while the host port runs 2.5G or HiSGMII:
-                the port is forced in those modes. Go back to Fiber 1G below to change it.</p>
+              <p class="s-help" id="hostlink-an-fb" hidden></p>
+              <p class="s-help" id="hostlink-an-na" hidden>Not changeable while the host port runs 2.5G or HiSGMII:
+                the link mode sets it and the port is forced. Go back to Fiber 1G below to change it.</p>
               <details class="s-more">
                 <summary>If the stick becomes unreachable</summary>
                 <p>A boot whose host link does not come up with auto-negotiation off falls back to on for
@@ -203,7 +204,7 @@
           </div>
           <div class="setting" id="hostlink-sd" hidden>
             <div class="s-label">
-              <div class="s-title"><label class="s-name" for="hostlink-sd-mode">SerDes mode</label></div>
+              <div class="s-title"><label class="s-name" for="hostlink-sd-mode">Link mode</label></div>
               <p class="s-help">How the host port talks to the router. Leave it on Fiber 1G (the default and
                 the most compatible) unless the router port runs 2.5G: 2.5G runs with auto-negotiation off.
                 A wrong mode makes the stick unreachable until the trial reverts by itself, after 120

@@ -163,7 +163,7 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
     GET  /api/hostlink                    the state the image keeps, read with no fork:
                                           the host-port mode and trial
-                                          (`/var/run/host-autoneg`), the SerDes mode and
+                                          (`/var/run/host-autoneg`), the link mode and
                                           trial (`serdes`: `supported` and `state`, from
                                           `/var/run/host-serdes`), the safe-mode
                                           flag for this boot and the record of an

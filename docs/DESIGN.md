@@ -91,7 +91,7 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
     that brings the forced link up), an odi-oss safe-mode boot (the fibre off, the default
     password for that boot only: confd accepts `admin:admin` while `/var/run/safe-mode`
     exists, without reading or touching `confd.auth`) and a past safe-mode boot not yet
-    acknowledged (Acknowledge runs `safe-mode.sh ack`). Under it, the **SerDes mode**
+    acknowledged (Acknowledge runs `safe-mode.sh ack`). Under it, the **link mode**
     of the same port (odi-only `HOST_SERDES`, `writable=never` too): Fiber 1G (1000BASE-X,
     the default and the most compatible), 2.5G (2500BASE-X, which runs with
     auto-negotiation off) or HiSGMII, a trial of the same kind through `host-serdes.sh`
@@ -100,7 +100,7 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
     reverts by itself, after 120 s. While the mode is not Fiber 1G the image refuses an
     auto-negotiation trial, so that control is disabled and says it is not applicable.
     The status rows show the host link as the image reports it and where it read it
-    (the port link in Fiber 1G, the SerDes sync in 2.5G, no signal in HiSGMII), from the
+    (the port link in Fiber 1G, the link sync in 2.5G, no signal in HiSGMII), from the
     script's `status`, which the page asks for after it is up because it forks;
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the stock keys this
