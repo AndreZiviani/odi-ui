@@ -1300,7 +1300,7 @@ hlpost() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/ho
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg /var/run/safe-mode /etc/config/safe-mode
 mkdir -p /var/run
 check "without the scripts: not supported, no state, no safe mode" yes \
-	"$(err "$(hl)" '"supported":false,"state":{},"safemode_now":null,"safemode":null')"
+	"$(err "$(hl)" '"supported":false,"state":{},"serdes":{"supported":false,"state":{}},"safemode_now":null,"safemode":null')"
 check "without the script: a verb is refused" yes \
 	"$(err "$(hlpost 'action=confirm')" 'this image has no /etc/scripts/host-autoneg.sh')"
 check "without safe-mode.sh: ack is refused" yes \
@@ -1373,6 +1373,71 @@ check "the next boot: the saved credential again" 200 "$(code -u "$AUTH" "http:/
 check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
+
+# The SerDes mode of the same port (HOST_SERDES, host-serdes.sh): its state in
+# /var/run/host-serdes rides on GET /api/hostlink, and four fixed verbs run
+# the script (serdes-try with a validated mode, serdes-confirm, serdes-revert,
+# serdes-status, which answers the key=value lines as `status`). The stub
+# echoes what it was given. safe-mode.sh now clears a list: `cleared=` can be
+# HOST_AUTONEG, HOST_SERDES, both with a comma, none or failed.
+rm -f /etc/scripts/host-serdes.sh /var/run/host-serdes /etc/config/safe-mode
+check "without host-serdes.sh: the SerDes block is not supported" yes \
+	"$(err "$(hl)" '"serdes":{"supported":false,"state":{}}')"
+for v in serdes-confirm serdes-revert serdes-status; do
+	check "without the script: $v is refused" yes \
+		"$(err "$(hlpost "action=$v")" 'this image has no /etc/scripts/host-serdes.sh')"
+done
+check "without the script: serdes-try is refused" yes \
+	"$(err "$(hlpost 'action=serdes-try&mode=2500basex')" 'this image has no /etc/scripts/host-serdes.sh')"
+cat > /etc/scripts/host-serdes.sh <<'SERDES'
+#!/bin/sh
+echo "host-serdes.sh: $*"
+[ "$1" = confirm ] && [ -f /tmp/hostlink-refuse ] && { echo "host-serdes: no trial is running" >&2; exit 1; }
+[ "$1" = status ] && printf '%s\n' setting=2500basex running=fiber1g phase=steady fallback=1 link=1 link_source=host_link 'message=no sync; "q" \ back'
+exit 0
+SERDES
+chmod +x /etc/scripts/host-serdes.sh
+printf '%s\n' setting=2500basex running=fiber1g phase=trial fallback=1 trial_mode=2500basex trial_deadline=420 \
+	'event=fallback' 'message=no sync in 2500BASE-X; "quoted" \ back' > /var/run/host-serdes
+r=$(hl)
+check "the SerDes block is supported" yes "$(err "$r" '"serdes":{"supported":true,"state":{"setting":"2500basex","running":"fiber1g","phase":"trial","fallback":"1","trial_mode":"2500basex","trial_deadline":"420"')"
+check "a quote and a backslash in the SerDes state are escaped" yes "$(err "$r" '; \"quoted\" \\ back"}}')"
+check "the autoneg state is not mixed into it" yes "$(err "$r" '"serdes":{"supported":true,"state":{"setting":"2500basex"')"
+for m in fiber1g 2500basex hisgmii; do
+	check "serdes-try $m runs host-serdes.sh try $m" yes \
+		"$(err "$(hlpost "action=serdes-try&mode=$m")" "\"ok\":true,\"output\":\"host-serdes.sh: try $m")"
+done
+check "serdes-try with another mode is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-try&mode=sideways' "http://127.0.0.1:$PORT/api/hostlink")"
+check "serdes-try with an autoneg mode is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-try&mode=off' "http://127.0.0.1:$PORT/api/hostlink")"
+check "serdes-try with no mode is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-try' "http://127.0.0.1:$PORT/api/hostlink")"
+check "a mode with a shell word is refused, not passed on" 400 \
+	"$(code -u "$AUTH" -X POST --data-urlencode 'action=serdes-try' --data-urlencode 'mode=hisgmii;id' "http://127.0.0.1:$PORT/api/hostlink")"
+check "a verb the script has but the page does not is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-reapply' "http://127.0.0.1:$PORT/api/hostlink")"
+check "serdes-confirm runs host-serdes.sh confirm" yes \
+	"$(err "$(hlpost 'action=serdes-confirm')" 'host-serdes.sh: confirm')"
+: > /tmp/hostlink-refuse
+r=$(hlpost 'action=serdes-confirm')
+check "a refused SerDes confirm is reported as not ok" yes "$(err "$r" '"ok":false')"
+check "  ... with the reason the script gave" yes "$(err "$r" 'no trial is running')"
+rm -f /tmp/hostlink-refuse
+check "serdes-revert runs host-serdes.sh revert" yes \
+	"$(err "$(hlpost 'action=serdes-revert')" 'host-serdes.sh: revert')"
+r=$(hlpost 'action=serdes-status')
+check "serdes-status answers the script lines as members" yes \
+	"$(err "$r" '"status":{"setting":"2500basex","running":"fiber1g","phase":"steady","fallback":"1","link":"1","link_source":"host_link","message":"no sync; \"q\" \\ back"}')"
+check "a cross-site SerDes verb is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'action=serdes-revert' "http://127.0.0.1:$PORT/api/hostlink")"
+check "the autoneg verbs still go to host-autoneg.sh" yes \
+	"$(err "$(hlpost 'action=confirm')" 'this image has no /etc/scripts/host-autoneg.sh')"
+for c in HOST_SERDES HOST_AUTONEG,HOST_SERDES failed none; do
+	printf '%s\n' short_boots=3 uptime=21 "cleared=$c" build=v1.13.0 > /etc/config/safe-mode
+	check "safe mode: cleared=$c reaches the page whole" yes "$(err "$(hl)" "\"cleared\":\"$c\"")"
+done
+rm -f /etc/scripts/host-serdes.sh /var/run/host-serdes /etc/config/safe-mode
 
 echo "== the management address trial: state, verbs, the store refused the keys"
 # odi-oss mgmt-addr.sh applies a change of the five address keys as a trial and

@@ -163,17 +163,30 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
     GET  /api/hostlink                    the state the image keeps, read with no fork:
                                           the host-port mode and trial
-                                          (`/var/run/host-autoneg`), the safe-mode
+                                          (`/var/run/host-autoneg`), the SerDes mode and
+                                          trial (`serdes`: `supported` and `state`, from
+                                          `/var/run/host-serdes`), the safe-mode
                                           flag for this boot and the record of an
                                           unacknowledged one, the host link;
                                           `supported` is false on an image without it
     POST /api/hostlink  action=try&mode=on|off
                         action=confirm | revert | ack
-                                          one of four fixed verbs: try, confirm and
-                                          revert run `host-autoneg.sh`, ack runs
-                                          `safe-mode.sh ack`; bounded at 20 s.
-                                          `HOST_AUTONEG` is never written by
-                                          `/api/config`: only `confirm` stores it
+                        action=serdes-try&mode=fiber1g|2500basex|hisgmii
+                        action=serdes-confirm | serdes-revert | serdes-status
+                                          fixed verbs: try, confirm and revert run
+                                          `host-autoneg.sh`, ack runs `safe-mode.sh ack`,
+                                          the serdes-* ones run `host-serdes.sh try MODE`,
+                                          `confirm`, `revert` and `status` (the mode is
+                                          checked against the three names, nothing else
+                                          reaches the script); bounded at 20 s. An image
+                                          without the script answers
+                                          `this image has no /etc/scripts/host-serdes.sh`.
+                                          serdes-status also answers the script lines as
+                                          `status` (`link`, `link_source`, ...): it forks
+                                          (diag), so it is not part of the GET.
+                                          `HOST_AUTONEG` and `HOST_SERDES` are never
+                                          written by `/api/config`: only `confirm` stores
+                                          them
 
 ## Management address trial (odi-oss)
 

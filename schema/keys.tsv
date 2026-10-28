@@ -95,6 +95,7 @@ OMCI_FIXED_ME	cs	OMCI_FIXED_ME	omci	fixedme	unknown	yes	no
 OMCI_VEIP	cs	OMCI_VEIP	omci	int	unknown	yes	no
 OMCI_PRIVATE_ME	cs	OMCI_PRIVATE_ME	omci	int	unknown	yes	no
 HOST_AUTONEG	cs	HOST_AUTONEG	lan	string	unknown	never	no
+HOST_SERDES	cs	HOST_SERDES	lan	string	unknown	never	no
 FIBER_MODE	cs	FIBER_MODE	other	int	unknown	never	no
 RTK_DEVID_MANUFACTURER	cs	RTK_DEVID_MANUFACTURER	hardware	string	unknown	yes	no
 RTK_DEVID_OUI	cs	RTK_DEVID_OUI	hardware	string	unknown	yes	no

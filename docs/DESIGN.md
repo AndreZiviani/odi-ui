@@ -91,7 +91,17 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
     that brings the forced link up), an odi-oss safe-mode boot (the fibre off, the default
     password for that boot only: confd accepts `admin:admin` while `/var/run/safe-mode`
     exists, without reading or touching `confd.auth`) and a past safe-mode boot not yet
-    acknowledged (Acknowledge runs `safe-mode.sh ack`);
+    acknowledged (Acknowledge runs `safe-mode.sh ack`). Under it, the **SerDes mode**
+    of the same port (odi-only `HOST_SERDES`, `writable=never` too): Fiber 1G (1000BASE-X,
+    the default and the most compatible), 2.5G (2500BASE-X, which runs with
+    auto-negotiation off) or HiSGMII, a trial of the same kind through `host-serdes.sh`
+    (the dialog is shared; its Keep and Revert run that script's `confirm` and `revert`).
+    The help says what a wrong mode costs: the stick is unreachable until the trial
+    reverts by itself, after 120 s. While the mode is not Fiber 1G the image refuses an
+    auto-negotiation trial, so that control is disabled and says it is not applicable.
+    The status rows show the host link as the image reports it and where it read it
+    (the port link in Fiber 1G, the SerDes sync in 2.5G, no signal in HiSGMII), from the
+    script's `status`, which the page asks for after it is up because it forks;
   - *Services* &mdash; `SYSLOG_SERVER`, `NTP_SERVER`;
   - *Stock keys* (was *All settings*) &mdash; on odi-oss, the stock keys this
     image does not act on, read-only, for inspecting what a backup carries. On a
@@ -164,12 +174,15 @@ changed what runs without being asked, and none may go unseen: an odi-oss
 **safe-mode record** (a safe-mode boot happened and nobody has acknowledged it;
 it stays until someone does), and the **boot fallback** (`HOST_AUTONEG` is off
 but this boot found the forced link down and runs auto-negotiation to stay
-reachable; the setting is kept). They come from `/api/hostlink` and stack under the trial bar at the same width. Each is one
-short line that starts with a bold head (*Safe mode.*, *Host link fallback.*);
+reachable; the setting is kept) and its SerDes twin (*Host mode fallback.*: `HOST_SERDES` is
+2.5G, this boot saw no link in it and runs Fiber 1G; the setting is kept). They come from `/api/hostlink` and stack under the trial bar at the same width. Each is one
+short line that starts with a bold head (*Safe mode.*, *Host link fallback.*, *Host mode fallback.*);
 the long explanation is on System > Access, under *Locked out? The safe mode*.
 The safe bars link to *Details* (System > Access) and offer *Acknowledge*
 (`safe-mode.sh ack`); the fallback bar links to the Host port settings and has
-no button: it goes by itself at the next boot that brings the forced link up. The text is built by a pure
+no button: it goes by itself at the next boot that brings the forced link up. The safe-mode record's `cleared=` is a
+comma-separated list (`HOST_AUTONEG`, `HOST_SERDES`, both, `none` or `failed`) and the bar
+names what was cleared. The text is built by a pure
 function (`bannerText` in `web/hostlink.js`) that `make check` drives with
 fixtures.
 

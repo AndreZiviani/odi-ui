@@ -780,6 +780,57 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   await renderHostlink();
   ok(doc.querySelector('#hostlink').hidden === true, 'host link: no block on an image without host-autoneg.sh');
   API['/api/hostlink'] = keep;
+
+  /* The SerDes mode (odi-oss HOST_SERDES, host-serdes.sh). */
+  const sd = (o) => ({ supported: true, state: { setting: 'fiber1g', running: 'fiber1g', phase: 'steady', fallback: '0', ...o } });
+  b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_SERDES' }, safemode: null });
+  ok(/cleared the host port SerDes mode/.test(b.safe) && !/auto-negotiation/.test(b.safe), 'safe mode: cleared=HOST_SERDES says the mode');
+  b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG,HOST_SERDES' }, safemode: null });
+  ok(/cleared the host port settings \(auto-negotiation and SerDes mode\)/.test(b.safe) && b.safe.length < 260,
+     'safe mode: cleared=HOST_AUTONEG,HOST_SERDES says both');
+  for (const c of ['none', 'failed', '']) {
+    b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: c }, safemode: null });
+    ok(!/cleared the host port/.test(b.safe), `safe mode: cleared=${c || '(empty)'} claims nothing was cleared`);
+  }
+  b = bannerText({ supported: false, state: {}, serdes: sd({ setting: '2500basex', running: 'fiber1g', fallback: '1' }), safemode: null });
+  ok(b.show && !b.safe && /^Host mode fallback\./.test(b.fallback) && /set to 2\.5G/.test(b.fallback) && /Fiber 1G/.test(b.fallback),
+     'host mode: the boot fallback of 2.5G raises its bar, even on an image without host-autoneg.sh');
+  ok(!bannerText({ supported: true, state: st({}), serdes: sd({ setting: 'fiber1g', running: 'fiber1g', fallback: '1' }), safemode: null }).show,
+     'host mode: no fallback bar when the setting is Fiber 1G');
+  ok(!bannerText({ supported: true, state: st({}), serdes: { supported: false, state: { setting: '2500basex', running: 'fiber1g', fallback: '1' } },
+                   safemode: null }).show, 'host mode: an image without host-serdes.sh shows no fallback');
+  ok(trialLeft({ state: st({}), serdes: sd({ phase: 'trial', trial_mode: '2500basex', trial_deadline: '420' }), uptime: '330' }) === 90,
+     'host mode: the countdown of a SerDes trial comes from the stick clock');
+
+  API['/api/hostlink'] = { supported: true, state: st({}), serdes: sd({ setting: 'fiber1g', running: '2500basex' }),
+                           safemode_now: null, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink-sd').hidden === false, 'host mode: the SerDes control shows on an image that has host-serdes.sh');
+  const modes = doc.querySelector('#hostlink-sd-mode').children;
+  ok(modes.map((o) => o.value).join() === 'fiber1g,2500basex,hisgmii'
+     && modes[0].textContent === 'Fiber 1G (1000BASE-X, default, most compatible)'
+     && modes[1].textContent === '2.5G (2500BASE-X)' && modes[2].textContent === 'HiSGMII',
+     'host mode: the three modes, in plain words');
+  const sdHtml = readFileSync(join(root, 'web', 'index.html'), 'utf8').replace(/\s+/g, ' ');
+  ok(/unreachable until the trial reverts by itself, after 120 seconds/.test(sdHtml)
+     && /2\.5G runs with auto-negotiation off/.test(sdHtml),
+     'host mode: it says what a wrong mode costs and that 2.5G runs with auto-negotiation off');
+  ok(doc.querySelector('#hostlink-try').disabled === true && doc.querySelector('#hostlink-an-na').hidden === false
+     && /not applicable in 2\.5G/.test(textOf(doc.querySelector('#hostlink-now'))),
+     'host mode: in 2.5G the auto-negotiation control says it is not applicable');
+  ok(/SerDes mode now/.test(textOf(doc.querySelector('#hostlink-now'))), 'host mode: the status rows name the SerDes mode');
+  API['/api/hostlink'] = { supported: true, state: st({}), serdes: sd({}), safemode_now: null, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink-try').disabled === false && doc.querySelector('#hostlink-an-na').hidden === true,
+     'host mode: back in Fiber 1G the auto-negotiation control works again');
+  API['/api/hostlink'] = { supported: false, state: {}, serdes: sd({}), safemode: null, link: '', uptime: '1' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink').hidden === false && doc.querySelector('#hostlink-an').hidden === true,
+     'host mode: an image with only host-serdes.sh shows the SerDes control alone');
+  API['/api/hostlink'] = { supported: false, state: {}, safemode: null, link: '', uptime: '1' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink').hidden === true, 'host mode: and neither script, no block');
+  API['/api/hostlink'] = keep;
 }
 
 /* --- the management address trial ---------------------------------------- */
@@ -1030,8 +1081,8 @@ const stock = '#sections';
 const { OWN_CONTROL } = await import(join(root, 'web', 'config.js'));
 ok(rowsOf(stock).length === SCHEMA.length - SETT.length - OWN_CONTROL.length,
    'the stock keys are all on their own tab (the keys with a control of their own are on neither)');
-ok(![stock, common].some((v) => /HOST_AUTONEG|Host port auto-negotiation/.test(textOf(doc.querySelector(v)))),
-   'HOST_AUTONEG is no schema row: only the Host port control changes it');
+ok(![stock, common].some((v) => /HOST_AUTONEG|Host port auto-negotiation|HOST_SERDES|Host port SerDes mode/.test(textOf(doc.querySelector(v)))),
+   'HOST_AUTONEG and HOST_SERDES are no schema rows: only the Host port control changes them');
 ok(inputsOf(stock) === 0, 'and none of them can be edited there');
 ok(doc.querySelector('#device-login').hidden === true,
    'the stock device-login section is not offered');

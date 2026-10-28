@@ -265,7 +265,7 @@ if flash and os.path.exists(flash):
         for k in odi_checked:
             if k not in names:
                 note(k, f"is in ODI_KEYS ({flash}) but not in the schema")
-            elif k not in sett_names and k != "HOST_AUTONEG":
+            elif k not in sett_names and k not in ("HOST_AUTONEG", "HOST_SERDES"):
                 note(k, "is in ODI_KEYS but not in settings.tsv, so the page cannot say what it costs")
 
 # --- report ----------------------------------------------------------------

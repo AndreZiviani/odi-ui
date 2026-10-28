@@ -37,10 +37,10 @@ const GROUPS = {
   services: ['SYSLOG_SERVER', 'NTP_SERVER', 'IGMP_SNOOPING', 'IGMP_PON_DROP', 'MLD_SNOOPING'],
 };
 /* Keys with a control of their own on their subtab, not a schema row there:
-   HOST_AUTONEG is never written by Save or Restore (hostlink.js runs a trial
-   instead), and its schema row is writable=never, so the daemon refuses it
-   too. Kept off the Stock keys subtab as well: this image reads it. */
-const OWN_CONTROL = ['HOST_AUTONEG'];
+   HOST_AUTONEG and HOST_SERDES are never written by Save or Restore (hostlink.js
+   runs a trial instead), and their schema rows are writable=never, so the daemon
+   refuses them too. Kept off the Stock keys subtab as well: this image reads them. */
+const OWN_CONTROL = ['HOST_AUTONEG', 'HOST_SERDES'];
 /* A key GROUPS does not name, by its schema section. */
 /* Where a group is drawn: expert settings sit on the ONU identity subtab. */
 const TAB_OF = { expert: 'identity' };
