@@ -203,6 +203,10 @@
  *   omci-identity.on   report the ONU identity keys (OMCI_SW_VER1/2,
  *                      GPON_ONU_MODEL, OMCC_VER, OMCI_VENDOR_PRODUCT_CODE) to
  *                      the OLT. Off, omcid answers what it always has.
+ *   confd.setup        the setup wizard was completed or skipped (web/wizard.js).
+ *                      confd's own marker, read by nothing in the image: it is
+ *                      here so every browser agrees, and a factory reset removes
+ *                      it with the rest of /etc/config.
  *   update-check.off   stop the page looking for new odi-oss releases. The
  *                      check runs in the browser, never on the stick; the
  *                      file is only where "off" is kept, so it applies to
@@ -210,6 +214,7 @@
  */
 #define SWITCH_DIR   "/etc/config/"
 #define SWITCH_OMCI_IDENTITY "omci-identity.on"
+#define SWITCH_CONFD_SETUP   "confd.setup"
 #define SWITCH_UPDATE_OFF    "update-check.off"
 
 /*

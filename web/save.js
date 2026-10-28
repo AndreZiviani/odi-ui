@@ -35,8 +35,9 @@ document.addEventListener('edits-changed', () => refreshSaveBar());
    alone would change nothing the OLT sees. */
 function withPairs(pairs) {
   const out = [...pairs];
+  const have = new Map(pairs);
   for (const [name, row] of Object.entries(S.SETTINGS)) {
-    if (row.pair && EDITS.has(row.pair) && !EDITS.has(name)) out.push([name, EDITS.get(row.pair)]);
+    if (row.pair && have.has(row.pair) && !have.has(name)) out.push([name, have.get(row.pair)]);
   }
   return out;
 }
@@ -425,4 +426,4 @@ function renderIdentitySwitch() {
   host.append(text, acts);
 }
 
-export { refreshSaveBar, save, doApply, withPairs, renderIdentitySwitch, applyButton, rebootWarning, followUp, reportedNow };
+export { refreshSaveBar, save, doApply, withPairs, encode, applyOmci, renderIdentitySwitch, applyButton, rebootWarning, followUp, reportedNow };
