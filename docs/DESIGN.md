@@ -173,6 +173,56 @@ no button: it goes by itself at the next boot that brings the forced link up. Th
 function (`bannerText` in `web/hostlink.js`) that `make check` drives with
 fixtures.
 
+### The new-release notice
+
+When a newer odi-oss release exists the sticky header carries one more band, in
+the accent colour rather than the warning stripes: *odi-oss v1.13.0 is
+available. This stick runs v1.12.0.*, with *What changed* and *Dismiss*. It is
+the only band that can be dismissed, and the dismissal is remembered per
+version (the newest tag dismissed, in `localStorage`): a later release brings
+it back. *What changed* opens a dialog with the notes of **every** release newer
+than the running one, newest first, each with its tag, date and a link to its
+GitHub page, and a pointer to System > Firmware. Nothing is downloaded or
+flashed from it.
+
+**The check is the browser's, never the stick's.** Nothing on the stick reaches
+out and nothing outside reaches in; the page asks
+`https://api.github.com/repos/AndreZiviani/odi-oss/releases` itself
+(`web/updates.js`), without credentials and without a Referer, so GitHub sees
+the address of the browser and nothing else. confd's CSP has no `connect-src`,
+which is what allows it. At most once a day per browser: the list (tag, date,
+page link, capped notes) and the time of the attempt are kept in `localStorage`,
+and a failed attempt (offline, rate limited, an answer that is not a list)
+counts as the day's attempt, silently. Storage that is absent or throws means
+once per page load and nothing remembered. Cached releases are judged against
+whatever the stick runs now, so a flash does not cost another request.
+
+**What is offered.** The running version (`running` in `/api/firmware`) must be
+a release tag, `vMAJOR.MINOR.PATCH` with an optional `-prerelease`; a local build
+named anything else skips the check before any request. Releases compare by
+semver precedence (`1.13.0-beta.1` is older than `1.13.0`). Drafts are ignored.
+A pre-release is offered only to a stick already running one; a stable stick
+sees stable releases only.
+
+**On by default, one switch for every browser.** System > Firmware, *New
+releases*, says plainly that when on the browser contacts api.github.com and
+GitHub sees the visitor's address. The state is a file on the config partition,
+`/etc/config/update-check.off` (present means off), created and removed by
+`POST /api/switch name=update-check.off&on=1|0`, the same allowlisted switch
+route as the identity switch, and reported under `switches` in `/api/firmware`,
+which the page already reads. No odi-oss key: the image reads nothing of it. The
+file survives reflashing; a factory reset erases it, like `confd.auth`, and the
+notice is on again.
+
+**The notes are untrusted markdown.** They are parsed into a small model
+(headings, bullet lists, paragraphs, `code`, bold, links) and built with
+`createElement` and `textContent`; nothing from them goes near `innerHTML`.
+Links are made only for `https:` URLs without a login in them, and open with
+`rel="noopener noreferrer"` in a new tab; HTML, images and other schemes stay
+text. The size is capped (the kept notes per release, the blocks shown, the
+releases listed). `make check` drives the version rules, the daily limit,
+storage that throws and a hostile body.
+
 ## Two images, two relationships to `boa`
 
 The vendor firmware ships its own web server, `boa`. What `confd` does next to
@@ -251,8 +301,8 @@ What the page does differently there:
   `/etc/config/omci-identity.on` exists; off, it answers what it always has.
   A stick commonly ships with the stock values already stored in all five, so
   reporting them by default would change what the OLT sees. `POST /api/switch
-  name=omci-identity.on&on=1|0` toggles it (an allowlist of one name), and
-  `/api/firmware` reports it under `switches`.
+  name=omci-identity.on&on=1|0` toggles it (an allowlist of two names, see
+  "New release notice"), and `/api/firmware` reports it under `switches`.
 - **Firmware write runs in the background.** odi-oss `fwu_starter.sh` checks
   the slot is the inactive one and `fwu.sh` against its md5, starts the flasher
   detached, and returns; `/api/firmware` carries `write` (`state`, `slot`,
@@ -1080,7 +1130,7 @@ src/firmware.c      partitions, the trial slot, the build manifest
 src/buffers.c       every static buffer, in one place
 src/util.h          base64, JSON escaping, small string helpers
 src/syscall.h       copied from odi-sfp-exporter; fix it in both places
-web/                the UI: fifteen ES modules, one page, one stylesheet
+web/                the UI: twenty ES modules, one page, one stylesheet
 schema/keys.tsv     the keyspace, generated from a device
 schema/meta.tsv     curated help: labels, options, ranges, dependencies
 scripts/fixtures/   captured device output the checks run against
