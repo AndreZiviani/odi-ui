@@ -31,6 +31,7 @@ import { $, el, createHelpToggle } from './dom.js';
 import { S } from './state.js';
 
 const API_URL = 'https://api.github.com/repos/AndreZiviani/odi-oss/releases';
+const ALL_URL = 'https://github.com/AndreZiviani/odi-oss/releases';
 const PAGE_URL = 'https://github.com/AndreZiviani/odi-oss/releases/tag/';
 const CACHE_KEY = 'odi-update-check';
 const DISMISS_KEY = 'odi-update-dismissed';
@@ -233,7 +234,7 @@ const store = {
 function readCache() {
   try {
     const c = JSON.parse(store.get(CACHE_KEY));
-    if (c && typeof c.t === 'number') return { t: c.t, rel: cleanList(c.rel) };
+    if (c && typeof c.t === 'number') return { t: c.t, rel: cleanList(c.rel), full: c.full === true };
   } catch (e) { /* none, or not ours */ }
   return null;
 }
@@ -249,37 +250,60 @@ async function fetchList(fetchFn) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     if (!Array.isArray(j)) throw new Error('not a list');
-    return cleanList(j);
+    return { rel: cleanList(j), full: j.length >= KEEP_RELEASES };
   } finally { clearTimeout(timer); }
 }
 
 /*
- * The release list: the cache while it is under a day old, else a fetch. A
- * failed fetch keeps the old list and stamps the attempt, so nothing is
- * retried before tomorrow. Never throws.
+ * The release list and whether the page that held it was full (so older
+ * releases may exist beyond it): the cache while it is under a day old, else a
+ * fetch. A failed fetch keeps the old list and stamps the attempt, so nothing
+ * is retried before tomorrow. Never throws.
  */
 async function loadReleases(now, fetchFn) {
   const c = readCache();
-  if (c && now - c.t >= 0 && now - c.t < DAY_MS) return c.rel;
-  let rel = c ? c.rel : [];
-  try { rel = await fetchList(fetchFn); } catch (e) { /* silent until tomorrow */ }
-  store.set(CACHE_KEY, JSON.stringify({ t: now, rel }));
-  return rel;
+  if (c && now - c.t >= 0 && now - c.t < DAY_MS) return { rel: c.rel, full: c.full };
+  let got = c ? { rel: c.rel, full: c.full } : { rel: [], full: false };
+  try { got = await fetchList(fetchFn); } catch (e) { /* silent until tomorrow */ }
+  store.set(CACHE_KEY, JSON.stringify({ t: now, rel: got.rel, full: got.full }));
+  return got;
+}
+
+/* Whether releases older than the list may exist that are still newer than
+   what runs: the list is a full page and the running version is below even its
+   oldest release. */
+function olderCut(list, full, running) {
+  const cur = parseVersion(running);
+  if (!full || !cur || !list.length) return false;
+  const oldest = list.map((r) => parseVersion(r.tag)).sort(compareVersions)[0];
+  return compareVersions(cur, oldest) < 0;
+}
+
+/* The last line of the dialog, or '' when nothing is left out: how many newer
+   releases the dialog does not list, or that the fetched page may have cut
+   older ones off. */
+function olderLine(offerLen, cut) {
+  const n = offerLen - SHOW_RELEASES;
+  if (cut) return 'Older releases not shown';
+  return n > 0 ? `${n} older release${n === 1 ? '' : 's'} not shown` : '';
 }
 
 const checkOn = (fw) => !((fw && fw.switches) || {})[SWITCH];
 
-/* What the page should offer now: [] when the check is off, the running
-   version is not a release tag, or nothing newer exists. */
-async function offered(fw, now, fetchFn) {
-  if (!checkOn(fw)) return [];
-  if (!parseVersion(fw && fw.running)) return [];
-  return newerReleases(await loadReleases(now, fetchFn), fw.running);
+/* What the page should offer now, { offer, cut }: offer is [] when the check
+   is off, the running version is not a release tag, or nothing newer exists. */
+async function lookup(fw, now, fetchFn) {
+  if (!checkOn(fw) || !parseVersion(fw && fw.running)) return { offer: [], cut: false };
+  const { rel, full } = await loadReleases(now, fetchFn);
+  return { offer: newerReleases(rel, fw.running), cut: olderCut(rel, full, fw.running) };
 }
+
+const offered = async (fw, now, fetchFn) => (await lookup(fw, now, fetchFn)).offer;
 
 /* --- the bar, the dialog and the switch ----------------------------------- */
 
 let OFFER = [];
+let CUT = false;   /* the fetched page may have cut older releases off */
 let started = false;
 let dismissedNow = null;   /* the tag dismissed, when storage will not keep it */
 
@@ -299,6 +323,19 @@ function renderBar() {
     document.createTextNode(` This stick runs ${S.FW.running}.`));
 }
 
+/* The last line of the dialog as a link to the full list, or null. */
+function olderNode(offerLen, cut) {
+  const text = olderLine(offerLen, cut);
+  if (!text) return null;
+  const p = el('p', 'hint');
+  const a = el('a', null, text);
+  a.setAttribute('href', ALL_URL);
+  a.setAttribute('rel', 'noopener noreferrer');
+  a.setAttribute('target', '_blank');
+  p.append(a);
+  return p;
+}
+
 function renderDialog() {
   const box = $('#update-list');
   box.textContent = '';
@@ -316,9 +353,8 @@ function renderDialog() {
     sec.append(head, notesNode(r.body));
     box.append(sec);
   }
-  if (OFFER.length > SHOW_RELEASES) {
-    box.append(el('p', 'hint', `${OFFER.length - SHOW_RELEASES} older releases are on the release page list.`));
-  }
+  const more = olderNode(OFFER.length, CUT);
+  if (more) box.append(more);
 }
 
 function openNotes() {
@@ -344,8 +380,8 @@ async function checkForUpdate(fetchFn) {
   if (started) return;
   started = true;
   try {
-    OFFER = await offered(S.FW, Date.now(), fetchFn || ((u, o) => fetch(u, o)));
-  } catch (e) { OFFER = []; }
+    ({ offer: OFFER, cut: CUT } = await lookup(S.FW, Date.now(), fetchFn || ((u, o) => fetch(u, o))));
+  } catch (e) { OFFER = []; CUT = false; }
   renderBar();
 }
 
@@ -390,7 +426,7 @@ function renderUpdateSwitch() {
       const res = await r.json();
       if (!res.ok) { out.append(el('div', 'bad', res.error || 'refused')); return; }
       S.FW.switches = { ...(S.FW.switches || {}), [SWITCH]: res.on };
-      if (res.on) { OFFER = []; renderBar(); } else { started = false; checkForUpdate(); }
+      if (res.on) { OFFER = []; CUT = false; renderBar(); } else { started = false; checkForUpdate(); }
       renderUpdateSwitch();
     } catch (e) {
       out.append(el('div', 'bad', String(e.message || e)));
@@ -403,6 +439,6 @@ function renderUpdateSwitch() {
 
 export {
   parseVersion, compareVersions, cleanRelease, newerReleases, parseInline, parseNotes, notesNode,
-  loadReleases, offered, barShown, checkForUpdate, wireUpdates, renderUpdateSwitch,
-  API_URL, CACHE_KEY, DISMISS_KEY, DAY_MS,
+  loadReleases, lookup, offered, olderCut, olderLine, olderNode, barShown, checkForUpdate, wireUpdates, renderUpdateSwitch,
+  API_URL, ALL_URL, CACHE_KEY, DISMISS_KEY, DAY_MS,
 };

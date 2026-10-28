@@ -1530,6 +1530,32 @@ ok(inputsOf('#sections') > 100,
   got = await U.offered(fw('v1.12.0'), T0, fake);
   ok(got.length === 1, 'updates: no storage at all still gives the notice');
 
+  /* What the dialog leaves out. */
+  const page = Array.from({ length: 30 }, (_, i) => rel('v1.' + (30 - i) + '.0'));
+  mem.clear(); globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, x) => { mem.set(k, String(x)); } };
+  const fakePage = async () => ({ ok: true, status: 200, json: async () => page });
+  let lk = await U.lookup(fw('v1.5.0'), T0, fakePage);
+  ok(lk.offer.length === 25 && !lk.cut && U.olderLine(lk.offer.length, lk.cut) === '15 older releases not shown',
+     'updates: more newer releases than the dialog lists says how many are left out');
+  lk = await U.lookup(fw('v1.5.0'), T0 + 1000, fakePage);
+  ok(lk.offer.length === 25, 'updates: the cached list gives the same count');
+  mem.clear();
+  lk = await U.lookup(fw('v1.0.0'), T0, fakePage);
+  ok(lk.cut && U.olderLine(lk.offer.length, lk.cut) === 'Older releases not shown',
+     'updates: a full page whose oldest is newer than the running version may have cut older ones off');
+  mem.clear();
+  lk = await U.lookup(fw('v1.12.0'), T0, async () => ({ ok: true, json: async () => page.slice(0, 10) }));
+  ok(!lk.cut && U.olderLine(5, false) === '' && U.olderLine(11, false) === '1 older release not shown',
+     'updates: a short page, or a running version inside it, leaves nothing out');
+  lk = await U.lookup(fw('v1.12.0'), T0 + 1000, fakePage);
+  ok(!lk.cut, 'updates: a running version inside a full page leaves nothing out');
+  {
+    const n = U.olderNode(25, false), a = n.children[0];
+    ok(U.olderNode(10, false) === null && a.textContent === '15 older releases not shown' && a.attrs.href === 'https://github.com/AndreZiviani/odi-oss/releases'
+       && a.attrs.rel === 'noopener noreferrer' && a.attrs.target === '_blank' && U.olderNode(3, true).children[0].textContent === 'Older releases not shown',
+       'updates: the last line is a noopener link to the releases list, and absent when nothing is left out');
+  }
+
   /* Dismissal is per version. */
   const offer = U.newerReleases(LIST, 'v1.12.0');
   ok(U.barShown(offer, null) && !U.barShown(offer, 'v1.12.1') && U.barShown(offer, 'v1.11.0') && !U.barShown([], null),

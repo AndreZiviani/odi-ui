@@ -183,7 +183,10 @@ version (the newest tag dismissed, in `localStorage`): a later release brings
 it back. *What changed* opens a dialog with the notes of **every** release newer
 than the running one, newest first, each with its tag, date and a link to its
 GitHub page, and a pointer to System > Firmware. Nothing is downloaded or
-flashed from it.
+flashed from it. When newer releases are left out (more than ten, or the
+fetched page of thirty was full and the running version is older than its
+oldest) the last line, a link to the full releases list, says "N older releases
+not shown" or, when the count is unknown, "Older releases not shown".
 
 **The check is the browser's, never the stick's.** Nothing on the stick reaches
 out and nothing outside reaches in; the page asks
