@@ -186,6 +186,27 @@ main { padding: 24px 24px 120px; }
 .banner p { margin: 0; flex: 1 1 320px; }
 #err { margin: 16px 24px 0; }
 
+/* The update notice: the same band, in the accent colour, not the warning one. */
+.trial.update {
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+  border-top-color: var(--blue);
+}
+.trial.update strong { color: var(--blue-ink); }
+/* The release notes dialog: the same shape as the two trial dialogs. */
+#update-dialog {
+  width: min(72ch, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 18px 20px;
+  border-radius: var(--r); background: var(--surface); color: var(--ink); border: 1px solid var(--line-2);
+}
+#update-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+#update-dialog h2 { margin: 0 0 8px; font-size: 18px; }
+.update-rel { padding: 14px 0; border-top: 1px solid var(--line); }
+.update-rel h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0 0 6px; font-size: 16px; }
+.update-date { color: var(--ink-2); font-size: 13px; font-weight: 400; }
+.update-notes { font-size: 14px; overflow-wrap: anywhere; }
+.update-notes p { margin: 6px 0; }
+.update-notes ul { margin: 6px 0; padding-left: 20px; }
+.update-notes .update-h { font-weight: 600; margin-top: 12px; }
+
 /* The host-port keep-or-revert dialog: modal, so nothing else is clicked
    while the stick may be about to revert. */
 #hostlink-dialog {
@@ -194,7 +215,7 @@ main { padding: 24px 24px 120px; }
 }
 #hostlink-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 #hostlink-count { color: var(--yellow-ink); font-variant-numeric: tabular-nums; }
-#hostlink-now > div, #hostlink-out > div, #hostlink-dialog-out > div { margin: 6px 0; font-size: 14px; }
+#hostlink-now > div, #hostlink-out > div, #hostlink-sd-out > div, #hostlink-dialog-out > div { margin: 6px 0; font-size: 14px; }
 /* The management address trial dialog, the same shape. */
 #netaddr-dialog {
   max-width: 56ch; padding: 18px 20px; border-radius: var(--r);

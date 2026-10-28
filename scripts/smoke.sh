@@ -1010,12 +1010,12 @@ check "without apply.sh the syslog action is refused, not turned into an omci re
 
 echo "== switch files"
 check "the ONU identity switch starts off" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false,"confd.setup":false}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false,"confd.setup":false,"update-check.off":false}')"
 check "it can be turned on" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=1' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":true')"
 check "which creates the file" yes "$([ -f /etc/config/omci-identity.on ] && echo yes)"
 check "and is reported" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":true,"confd.setup":false}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":true,"confd.setup":false,"update-check.off":false}')"
 check "and off again" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=0' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":false')"
 check "which removes it" no "$([ -f /etc/config/omci-identity.on ] && echo yes || echo no)"
@@ -1031,10 +1031,10 @@ check "the credential file survived every refusal" yes "$([ -f /etc/config/confd
 echo "== setup marker"
 fw() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware"; }
 sw() { curl -s -u "$AUTH" -X POST -d "$1" "http://127.0.0.1:$PORT/api/switch"; }
-check "the setup marker is absent by default" yes "$(err "$(fw)" '"confd.setup":false}')"
+check "the setup marker is absent by default" yes "$(err "$(fw)" '"confd.setup":false,')"
 check "it can be set" yes "$(err "$(sw 'name=confd.setup&on=1')" '"ok":true,"on":true')"
 check "which creates the file next to confd.auth" yes "$([ -f /etc/config/confd.setup ] && echo yes)"
-check "and is reported" yes "$(err "$(fw)" '"confd.setup":true}')"
+check "and is reported" yes "$(err "$(fw)" '"confd.setup":true,')"
 kill $DAEMON; wait $DAEMON 2>/dev/null || true
 qemu-mips-static "$BIN" "$PORT" &
 DAEMON=$!
@@ -1042,7 +1042,7 @@ for _ in $(seq 40); do
 	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PORT/api/schema" && break
 	sleep 0.25
 done
-check "it is still set after the daemon restarts" yes "$(err "$(fw)" '"confd.setup":true}')"
+check "it is still set after the daemon restarts" yes "$(err "$(fw)" '"confd.setup":true,')"
 check "the identity switch is independent of it" yes "$(err "$(fw)" '"omci-identity.on":false,')"
 check "it can be removed" yes "$(err "$(sw 'name=confd.setup&on=0')" '"ok":true,"on":false')"
 check "which removes the file" no "$([ -f /etc/config/confd.setup ] && echo yes || echo no)"
@@ -1085,6 +1085,33 @@ check "wizard ssh key: a bad key is refused" 400 \
 	"$(code -u "$AUTH" -X POST --data-urlencode 'key=ssh-ed25519 notbase64!' "http://127.0.0.1:$PORT/api/sshkeys")"
 check "wizard ssh key: and nothing was appended by either" 1 "$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ')"
 rm -f /etc/config/dropbear.d/authorized_keys
+
+echo "== update check switch"
+# The update check runs in the browser; the stick only keeps whether it is off,
+# for every browser. On by default, so the file means off.
+check "the update check starts on" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":false}')"
+check "it can be turned off" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=update-check.off&on=1' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":true')"
+check "which creates the file" yes "$([ -f /etc/config/update-check.off ] && echo yes)"
+check "and is reported" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":true}')"
+check "the identity switch is untouched by it" no "$([ -f /etc/config/omci-identity.on ] && echo yes || echo no)"
+# The state is a file on the config partition, so a new daemon reads it back.
+kill "$DAEMON"; wait "$DAEMON" 2>/dev/null || true
+qemu-mips-static "$BIN" "$PORT" &
+DAEMON=$!
+for _ in $(seq 40); do
+	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PORT/api/schema" && break
+	sleep 0.25
+done
+check "it survives a restart of confd" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":true}')"
+check "and turned on again" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=update-check.off&on=0' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":false')"
+check "which removes the file" no "$([ -f /etc/config/update-check.off ] && echo yes || echo no)"
+check "update-check.off refuses a bad value" 400 \
+	"$(code -u "$AUTH" -X POST -d 'name=update-check.off&on=2' "http://127.0.0.1:$PORT/api/switch")"
 
 echo "== tools"
 # Ping takes IPv4 literals and nothing else. Not fussiness: this server is
@@ -1361,7 +1388,7 @@ hlpost() { curl -s -u "$AUTH" -X POST --data "$1" "http://127.0.0.1:$PORT/api/ho
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg /var/run/safe-mode /etc/config/safe-mode
 mkdir -p /var/run
 check "without the scripts: not supported, no state, no safe mode" yes \
-	"$(err "$(hl)" '"supported":false,"state":{},"safemode_now":null,"safemode":null')"
+	"$(err "$(hl)" '"supported":false,"state":{},"serdes":{"supported":false,"state":{}},"safemode_now":null,"safemode":null')"
 check "without the script: a verb is refused" yes \
 	"$(err "$(hlpost 'action=confirm')" 'this image has no /etc/scripts/host-autoneg.sh')"
 check "without safe-mode.sh: ack is refused" yes \
@@ -1434,6 +1461,71 @@ check "the next boot: the saved credential again" 200 "$(code -u "$AUTH" "http:/
 check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
+
+# The SerDes mode of the same port (HOST_SERDES, host-serdes.sh): its state in
+# /var/run/host-serdes rides on GET /api/hostlink, and four fixed verbs run
+# the script (serdes-try with a validated mode, serdes-confirm, serdes-revert,
+# serdes-status, which answers the key=value lines as `status`). The stub
+# echoes what it was given. safe-mode.sh now clears a list: `cleared=` can be
+# HOST_AUTONEG, HOST_SERDES, both with a comma, none or failed.
+rm -f /etc/scripts/host-serdes.sh /var/run/host-serdes /etc/config/safe-mode
+check "without host-serdes.sh: the SerDes block is not supported" yes \
+	"$(err "$(hl)" '"serdes":{"supported":false,"state":{}}')"
+for v in serdes-confirm serdes-revert serdes-status; do
+	check "without the script: $v is refused" yes \
+		"$(err "$(hlpost "action=$v")" 'this image has no /etc/scripts/host-serdes.sh')"
+done
+check "without the script: serdes-try is refused" yes \
+	"$(err "$(hlpost 'action=serdes-try&mode=2500basex')" 'this image has no /etc/scripts/host-serdes.sh')"
+cat > /etc/scripts/host-serdes.sh <<'SERDES'
+#!/bin/sh
+echo "host-serdes.sh: $*"
+[ "$1" = confirm ] && [ -f /tmp/hostlink-refuse ] && { echo "host-serdes: no trial is running" >&2; exit 1; }
+[ "$1" = status ] && printf '%s\n' setting=2500basex running=fiber1g phase=steady fallback=1 link=1 link_source=host_link 'message=no sync; "q" \ back'
+exit 0
+SERDES
+chmod +x /etc/scripts/host-serdes.sh
+printf '%s\n' setting=2500basex running=fiber1g phase=trial fallback=1 trial_mode=2500basex trial_deadline=420 \
+	'event=fallback' 'message=no sync in 2500BASE-X; "quoted" \ back' > /var/run/host-serdes
+r=$(hl)
+check "the SerDes block is supported" yes "$(err "$r" '"serdes":{"supported":true,"state":{"setting":"2500basex","running":"fiber1g","phase":"trial","fallback":"1","trial_mode":"2500basex","trial_deadline":"420"')"
+check "a quote and a backslash in the SerDes state are escaped" yes "$(err "$r" '; \"quoted\" \\ back"}}')"
+check "the autoneg state is not mixed into it" yes "$(err "$r" '"serdes":{"supported":true,"state":{"setting":"2500basex"')"
+for m in fiber1g 2500basex hisgmii; do
+	check "serdes-try $m runs host-serdes.sh try $m" yes \
+		"$(err "$(hlpost "action=serdes-try&mode=$m")" "\"ok\":true,\"output\":\"host-serdes.sh: try $m")"
+done
+check "serdes-try with another mode is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-try&mode=sideways' "http://127.0.0.1:$PORT/api/hostlink")"
+check "serdes-try with an autoneg mode is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-try&mode=off' "http://127.0.0.1:$PORT/api/hostlink")"
+check "serdes-try with no mode is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-try' "http://127.0.0.1:$PORT/api/hostlink")"
+check "a mode with a shell word is refused, not passed on" 400 \
+	"$(code -u "$AUTH" -X POST --data-urlencode 'action=serdes-try' --data-urlencode 'mode=hisgmii;id' "http://127.0.0.1:$PORT/api/hostlink")"
+check "a verb the script has but the page does not is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data 'action=serdes-reapply' "http://127.0.0.1:$PORT/api/hostlink")"
+check "serdes-confirm runs host-serdes.sh confirm" yes \
+	"$(err "$(hlpost 'action=serdes-confirm')" 'host-serdes.sh: confirm')"
+: > /tmp/hostlink-refuse
+r=$(hlpost 'action=serdes-confirm')
+check "a refused SerDes confirm is reported as not ok" yes "$(err "$r" '"ok":false')"
+check "  ... with the reason the script gave" yes "$(err "$r" 'no trial is running')"
+rm -f /tmp/hostlink-refuse
+check "serdes-revert runs host-serdes.sh revert" yes \
+	"$(err "$(hlpost 'action=serdes-revert')" 'host-serdes.sh: revert')"
+r=$(hlpost 'action=serdes-status')
+check "serdes-status answers the script lines as members" yes \
+	"$(err "$r" '"status":{"setting":"2500basex","running":"fiber1g","phase":"steady","fallback":"1","link":"1","link_source":"host_link","message":"no sync; \"q\" \\ back"}')"
+check "a cross-site SerDes verb is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'action=serdes-revert' "http://127.0.0.1:$PORT/api/hostlink")"
+check "the autoneg verbs still go to host-autoneg.sh" yes \
+	"$(err "$(hlpost 'action=confirm')" 'this image has no /etc/scripts/host-autoneg.sh')"
+for c in HOST_SERDES HOST_AUTONEG,HOST_SERDES failed none; do
+	printf '%s\n' short_boots=3 uptime=21 "cleared=$c" build=v1.13.0 > /etc/config/safe-mode
+	check "safe mode: cleared=$c reaches the page whole" yes "$(err "$(hl)" "\"cleared\":\"$c\"")"
+done
+rm -f /etc/scripts/host-serdes.sh /var/run/host-serdes /etc/config/safe-mode
 
 echo "== the management address trial: state, verbs, the store refused the keys"
 # odi-oss mgmt-addr.sh applies a change of the five address keys as a trial and

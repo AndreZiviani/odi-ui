@@ -33,10 +33,14 @@ reporting success.
                                           rebuilt in place, an identity change
                                           re-registers the ONU); without it, `omci`
                                           restarts omci_app
-    POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file
-                                          (`omci-identity.on` and `confd.setup`, the
-                                          setup wizard marker below); `/api/firmware`
-                                          reports both under `switches`
+    POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file:
+                                          `omci-identity.on`; `confd.setup`, the setup
+                                          wizard marker below; and `update-check.off`
+                                          (present means the page does not look for
+                                          new odi-oss releases, for every browser; the
+                                          look itself is made by the browser, the stick
+                                          contacts nothing). `/api/firmware` reports
+                                          all three under `switches`
 
 The page's data files, each a TSV from `/etc/confd/` (or its override in
 `/etc/config/confd/`) served as a JSON array of objects, one per row:
@@ -165,17 +169,30 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
     GET  /api/hostlink                    the state the image keeps, read with no fork:
                                           the host-port mode and trial
-                                          (`/var/run/host-autoneg`), the safe-mode
+                                          (`/var/run/host-autoneg`), the link mode and
+                                          trial (`serdes`: `supported` and `state`, from
+                                          `/var/run/host-serdes`), the safe-mode
                                           flag for this boot and the record of an
                                           unacknowledged one, the host link;
                                           `supported` is false on an image without it
     POST /api/hostlink  action=try&mode=on|off
                         action=confirm | revert | ack
-                                          one of four fixed verbs: try, confirm and
-                                          revert run `host-autoneg.sh`, ack runs
-                                          `safe-mode.sh ack`; bounded at 20 s.
-                                          `HOST_AUTONEG` is never written by
-                                          `/api/config`: only `confirm` stores it
+                        action=serdes-try&mode=fiber1g|2500basex|hisgmii
+                        action=serdes-confirm | serdes-revert | serdes-status
+                                          fixed verbs: try, confirm and revert run
+                                          `host-autoneg.sh`, ack runs `safe-mode.sh ack`,
+                                          the serdes-* ones run `host-serdes.sh try MODE`,
+                                          `confirm`, `revert` and `status` (the mode is
+                                          checked against the three names, nothing else
+                                          reaches the script); bounded at 20 s. An image
+                                          without the script answers
+                                          `this image has no /etc/scripts/host-serdes.sh`.
+                                          serdes-status also answers the script lines as
+                                          `status` (`link`, `link_source`, ...): it forks
+                                          (diag), so it is not part of the GET.
+                                          `HOST_AUTONEG` and `HOST_SERDES` are never
+                                          written by `/api/config`: only `confirm` stores
+                                          them
 
 ## Management address trial (odi-oss)
 
@@ -226,11 +243,11 @@ completed or skipped. It is the switch file `/etc/config/confd.setup`, next to
 `confd.auth`, owned by confd and read by nothing in the image, so every browser
 agrees and no odi-oss key is involved.
 
-    GET  /api/firmware                   `"switches":{"omci-identity.on":false,"confd.setup":false}`
+    GET  /api/firmware                   `"switches":{"omci-identity.on":false,"confd.setup":false,"update-check.off":false}`
     POST /api/switch  name=confd.setup&on=1|0
                                           create or remove it; `{"ok":true,"on":true}`.
-                                          400 for `on` other than 0 or 1 or another
-                                          name, 401 without the credential, 403 from
+                                          400 for `on` other than 0 or 1 or a name not
+                                          on the allowlist, 401 without the credential, 403 from
                                           another site, as for every write
 
 Absent by default, so a stick nobody has set up shows the wizard when the fibre

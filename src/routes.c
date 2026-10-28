@@ -1478,6 +1478,12 @@ void serve(int conn)
 	 * only relays what they said. try answers before the link changes
 	 * (the script applies the mode a second later), so this answer always
 	 * leaves.
+	 *
+	 * The SerDes mode rides on the same route: GET adds the state file of
+	 * host-serdes.sh, and POST has the verbs serdes-try (mode fiber1g,
+	 * 2500basex or hisgmii), serdes-confirm, serdes-revert and
+	 * serdes-status, which also answers the script's key=value lines as
+	 * `status`.
 	 */
 	if (seq(path, "/api/hostlink")) {
 		if (seq(method, "GET")) {
@@ -1491,7 +1497,13 @@ void serve(int conn)
 			got = read_file(HOSTLINK_STATE, buf, sizeof(buf));
 			if (got > 0)
 				put_kv_members(conn, buf);
-			put_fd(conn, "},\"safemode_now\":");
+			put_fd(conn, "},\"serdes\":{\"supported\":");
+			put_fd(conn, file_exists(SERDES_SCRIPT) ? "true" : "false");
+			put_fd(conn, ",\"state\":{");
+			got = read_file(SERDES_STATE, buf, sizeof(buf));
+			if (got > 0)
+				put_kv_members(conn, buf);
+			put_fd(conn, "}},\"safemode_now\":");
 			got = read_file(SAFEMODE_FLAG, buf, sizeof(buf));
 			if (got >= 0) {
 				put_fd(conn, "{");
@@ -1528,9 +1540,10 @@ void serve(int conn)
 			return;
 		}
 		if (seq(method, "POST")) {
-			char action[16], mode[8];
+			char action[16], mode[12];
 			char *argv[4];
 			const char *script = HOSTLINK_SCRIPT;
+			int is_status = 0;
 			long code = -1, got;
 
 			if (!form_get(body, "action", action, sizeof(action)))
@@ -1543,6 +1556,21 @@ void serve(int conn)
 			if (seq(action, "try") && (seq(mode, "on") || seq(mode, "off"))) {
 				argv[1] = "try";
 				argv[2] = mode;
+			} else if (seq(action, "serdes-try") &&
+				   (seq(mode, "fiber1g") || seq(mode, "2500basex") ||
+				    seq(mode, "hisgmii"))) {
+				script = SERDES_SCRIPT;
+				argv[0] = "host-serdes.sh";
+				argv[1] = "try";
+				argv[2] = mode;
+			} else if (seq(action, "serdes-confirm") || seq(action, "serdes-revert") ||
+				   seq(action, "serdes-status")) {
+				/* Fixed verbs: the text after the dash is a literal. */
+				script = SERDES_SCRIPT;
+				argv[0] = "host-serdes.sh";
+				argv[1] = seq(action, "serdes-confirm") ? "confirm" :
+					  seq(action, "serdes-revert") ? "revert" : "status";
+				is_status = seq(action, "serdes-status");
 			} else if (seq(action, "confirm") || seq(action, "revert")) {
 				argv[1] = action;
 			} else if (seq(action, "ack")) {
@@ -1552,7 +1580,7 @@ void serve(int conn)
 				argv[1] = action;
 			} else {
 				respond(conn, "400 Bad Request", "application/json", 0);
-				put_fd(conn, "{\"ok\":false,\"error\":\"action must be try (mode on or off), confirm, revert or ack\"}");
+				put_fd(conn, "{\"ok\":false,\"error\":\"action must be try (mode on or off), confirm, revert, ack, serdes-try (mode fiber1g, 2500basex or hisgmii), serdes-confirm, serdes-revert or serdes-status\"}");
 				return;
 			}
 			if (!file_exists(script)) {
@@ -1570,7 +1598,15 @@ void serve(int conn)
 			put_fd(conn, ",\"output\":\"");
 			if (got > 0)
 				put_json_cstr(conn, status);
-			put_fd(conn, got == -2 ? "\",\"error\":\"the script did not answer in time\"}" : "\"}");
+			put_fd(conn, "\"");
+			if (is_status) {
+				/* The lines of `status`, as the page reads the state. */
+				put_fd(conn, ",\"status\":{");
+				if (got > 0)
+					put_kv_members(conn, status);
+				put_fd(conn, "}");
+			}
+			put_fd(conn, got == -2 ? ",\"error\":\"the script did not answer in time\"}" : "}");
 			return;
 		}
 	}
@@ -1716,6 +1752,7 @@ void serve(int conn)
 		char name[48], on[4];
 		static const char p_identity[] = SWITCH_DIR SWITCH_OMCI_IDENTITY;
 		static const char p_setup[] = SWITCH_DIR SWITCH_CONFD_SETUP;
+		static const char p_update[] = SWITCH_DIR SWITCH_UPDATE_OFF;
 		const char *target = 0;
 
 		form_get(body, "name", name, sizeof(name));
@@ -1729,6 +1766,8 @@ void serve(int conn)
 			target = p_identity;
 		else if (seq(name, SWITCH_CONFD_SETUP))
 			target = p_setup;
+		else if (seq(name, SWITCH_UPDATE_OFF))
+			target = p_update;
 		if (!target) {
 			respond(conn, "400 Bad Request", "application/json", 0);
 			put_fd(conn, "{\"ok\":false,\"error\":\"not a switch this UI sets\"}");

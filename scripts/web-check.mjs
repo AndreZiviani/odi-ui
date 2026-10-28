@@ -14,7 +14,7 @@
  *   node scripts/web-check.mjs        (via make check)
  */
 import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, URL as NodeURL } from 'url';
 import { dirname, join } from 'path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,7 +82,8 @@ globalThis.location = { hostname: 'stick.example', href: '/', hash: '' };
 globalThis.window = { addEventListener: () => {} };
 globalThis.setInterval = () => 0;
 globalThis.confirm = () => false;   /* the reset flow asks; nothing here clicks it */
-globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} };
+/* The real URL class (updates.js parses links with it), plus the two blob stubs. */
+globalThis.URL = Object.assign(NodeURL, { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} });
 
 /* --- fixtures: the repo's own data, shaped as the API returns it --------- */
 function tsv(name, cols) {
@@ -174,7 +175,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'phone', 'restore', 'l2', 'tools', 'hostlink', 'netaddr', 'wizard'];
+              'omci', 'services', 'mebrowser', 'phone', 'restore', 'l2', 'tools', 'hostlink', 'netaddr', 'updates', 'wizard'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -780,6 +781,76 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   await renderHostlink();
   ok(doc.querySelector('#hostlink').hidden === true, 'host link: no block on an image without host-autoneg.sh');
   API['/api/hostlink'] = keep;
+
+  /* The SerDes mode (odi-oss HOST_SERDES, host-serdes.sh). */
+  const sd = (o) => ({ supported: true, state: { setting: 'fiber1g', running: 'fiber1g', phase: 'steady', fallback: '0', ...o } });
+  b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_SERDES' }, safemode: null });
+  ok(/cleared the host port link mode/.test(b.safe) && !/auto-negotiation/.test(b.safe), 'safe mode: cleared=HOST_SERDES says the mode');
+  b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG,HOST_SERDES' }, safemode: null });
+  ok(/cleared the host port settings \(auto-negotiation and link mode\)/.test(b.safe) && b.safe.length < 260,
+     'safe mode: cleared=HOST_AUTONEG,HOST_SERDES says both');
+  for (const c of ['none', 'failed', '']) {
+    b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: c }, safemode: null });
+    ok(!/cleared the host port/.test(b.safe), `safe mode: cleared=${c || '(empty)'} claims nothing was cleared`);
+  }
+  b = bannerText({ supported: false, state: {}, serdes: sd({ setting: '2500basex', running: 'fiber1g', fallback: '1' }), safemode: null });
+  ok(b.show && !b.safe && /^Host mode fallback\./.test(b.fallback) && /set to 2\.5G/.test(b.fallback) && /Fiber 1G/.test(b.fallback),
+     'host mode: the boot fallback of 2.5G raises its bar, even on an image without host-autoneg.sh');
+  ok(!bannerText({ supported: true, state: st({}), serdes: sd({ setting: 'fiber1g', running: 'fiber1g', fallback: '1' }), safemode: null }).show,
+     'host mode: no fallback bar when the setting is Fiber 1G');
+  ok(!bannerText({ supported: true, state: st({}), serdes: { supported: false, state: { setting: '2500basex', running: 'fiber1g', fallback: '1' } },
+                   safemode: null }).show, 'host mode: an image without host-serdes.sh shows no fallback');
+  ok(trialLeft({ state: st({}), serdes: sd({ phase: 'trial', trial_mode: '2500basex', trial_deadline: '420' }), uptime: '330' }) === 90,
+     'host mode: the countdown of a SerDes trial comes from the stick clock');
+
+  API['/api/hostlink'] = { supported: true, state: st({}), serdes: sd({ setting: 'fiber1g', running: '2500basex' }),
+                           safemode_now: null, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink-sd').hidden === false, 'host mode: the SerDes control shows on an image that has host-serdes.sh');
+  const modes = doc.querySelector('#hostlink-sd-mode').children;
+  ok(modes.map((o) => o.value).join() === 'fiber1g,2500basex,hisgmii'
+     && modes[0].textContent === 'Fiber 1G (1000BASE-X, default, most compatible)'
+     && modes[1].textContent === '2.5G (2500BASE-X)' && modes[2].textContent === 'HiSGMII',
+     'host mode: the three modes, in plain words');
+  const sdHtml = readFileSync(join(root, 'web', 'index.html'), 'utf8').replace(/\s+/g, ' ');
+  ok(/unreachable until the trial reverts by itself, after 120 seconds/.test(sdHtml)
+     && /2\.5G runs with auto-negotiation off/.test(sdHtml),
+     'host mode: it says what a wrong mode costs and that 2.5G runs with auto-negotiation off');
+  ok(doc.querySelector('#hostlink-try').disabled === true && doc.querySelector('#hostlink-an-na').hidden === false
+     && /not applicable in 2\.5G/.test(textOf(doc.querySelector('#hostlink-now'))),
+     'host mode: in 2.5G the auto-negotiation control says it is not applicable');
+  API['/api/hostlink'].status = { autoneg: 'off', link: '1', link_source: 'serdes_sync' };
+  API['/api/hostlink'].ok = true;
+  await renderHostlink();
+  await new Promise((r) => setImmediate(r));
+  ok(/Auto-negotiation now.*off \(set by the 2\.5G \(2500BASE-X\) link mode\)/.test(textOf(doc.querySelector('#hostlink-now')))
+     && /from the host link sync/.test(textOf(doc.querySelector('#hostlink-now'))),
+     'host mode: while the link mode owns the port, the row shows the bit the status reports');
+  ok(/Link mode now/.test(textOf(doc.querySelector('#hostlink-now'))), 'host mode: the status rows name the link mode');
+  ok(/2\.5G \(2500BASE-X\)/.test(textOf(doc.querySelector('#hostlink-now'))) && !/most compatible/.test(textOf(doc.querySelector('#hostlink-now'))),
+     'host mode: the rows say the short mode name, not the select label');
+  ok(!/SerDes mode/.test(textOf(doc.querySelector('#hostlink-now'))) && />Link mode</.test(readFileSync(join(root, 'web', 'index.html'), 'utf8')),
+     'host mode: the user-facing name is Link mode');
+  ok(doc.querySelector('#hostlink-an-fb').hidden === true, 'host mode: no fallback note while the mode runs as stored');
+  API['/api/hostlink'] = { supported: true, state: st({}), serdes: sd({ setting: '2500basex', running: 'fiber1g', fallback: '1' }),
+                           safemode_now: null, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink-try').disabled === false && doc.querySelector('#hostlink-an-fb').hidden === false
+     && /stored link mode is 2\.5G \(2500BASE-X\); this boot runs Fiber 1G after a fallback, so a change here lasts until the next boot/
+       .test(doc.querySelector('#hostlink-an-fb').textContent),
+     'host mode: after a fallback the auto-negotiation control stays usable and says its change lasts until the next boot');
+  API['/api/hostlink'] = { supported: true, state: st({}), serdes: sd({}), safemode_now: null, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink-try').disabled === false && doc.querySelector('#hostlink-an-na').hidden === true,
+     'host mode: back in Fiber 1G the auto-negotiation control works again');
+  API['/api/hostlink'] = { supported: false, state: {}, serdes: sd({}), safemode: null, link: '', uptime: '1' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink').hidden === false && doc.querySelector('#hostlink-an').hidden === true,
+     'host mode: an image with only host-serdes.sh shows the SerDes control alone');
+  API['/api/hostlink'] = { supported: false, state: {}, safemode: null, link: '', uptime: '1' };
+  await renderHostlink();
+  ok(doc.querySelector('#hostlink').hidden === true, 'host mode: and neither script, no block');
+  API['/api/hostlink'] = keep;
 }
 
 /* --- the management address trial ---------------------------------------- */
@@ -1030,8 +1101,8 @@ const stock = '#sections';
 const { OWN_CONTROL } = await import(join(root, 'web', 'config.js'));
 ok(rowsOf(stock).length === SCHEMA.length - SETT.length - OWN_CONTROL.length,
    'the stock keys are all on their own tab (the keys with a control of their own are on neither)');
-ok(![stock, common].some((v) => /HOST_AUTONEG|Host port auto-negotiation/.test(textOf(doc.querySelector(v)))),
-   'HOST_AUTONEG is no schema row: only the Host port control changes it');
+ok(![stock, common].some((v) => /HOST_AUTONEG|Host port auto-negotiation|HOST_SERDES|Host port SerDes mode|Host port link mode/.test(textOf(doc.querySelector(v)))),
+   'HOST_AUTONEG and HOST_SERDES are no schema rows: only the Host port control changes them');
 ok(inputsOf(stock) === 0, 'and none of them can be edited there');
 ok(doc.querySelector('#device-login').hidden === true,
    'the stock device-login section is not offered');
@@ -1802,9 +1873,171 @@ ok(inputsOf('#sections') > 100,
   S.VALUES = keepS.V; S.SETTINGS = keepS.SET; S.FW = keepS.FW;
 }
 
+/*
+ * The update notice. The release list comes from the internet, so what is
+ * tested is mostly what it may NOT do: the version rules, the daily limit, the
+ * notes rendering inert, and storage failing.
+ */
+{
+  const U = await import(join(root, 'web', 'updates.js'));
+  const v = U.parseVersion;
+  const lt = (a, b) => U.compareVersions(v(a), v(b)) < 0;
+  ok(v('v1.12.0') && v('v1.12.0').minor === 12 && v('v1.13.0-beta.1').pre.join('.') === 'beta.1',
+     'updates: release tags parse, with and without a prerelease');
+  ok(['hostserdes4', '1.12.0', 'v1.12', 'v1.12.0+x', 'v1.2.3-', 'ODI-260910-6861b53', '', undefined, 'v1.12.0 '].every((t) => v(t) === null),
+     'updates: anything else is not a release tag');
+  ok(lt('v1.13.0-beta.1', 'v1.13.0') && !lt('v1.13.0', 'v1.13.0-beta.1'),
+     'updates: 1.13.0-beta.1 is older than 1.13.0');
+  ok(lt('v1.12.9', 'v1.13.0-beta.1') && lt('v1.9.0', 'v1.10.0'), 'updates: numbers compare as numbers');
+  ok(lt('v1.13.0-alpha', 'v1.13.0-beta') && lt('v1.13.0-beta.2', 'v1.13.0-beta.11') && lt('v1.13.0-beta', 'v1.13.0-beta.1')
+     && lt('v1.13.0-1', 'v1.13.0-a') && lt('v1.13.0-rc.1', 'v1.13.0'), 'updates: prerelease identifiers follow semver precedence');
+  ok(U.compareVersions(v('v1.2.3'), v('v1.2.3')) === 0, 'updates: equal versions compare equal');
+
+  const rel = (tag, extra) => ({ tag_name: tag, published_at: '2026-10-20T10:00:00Z',
+    html_url: 'https://github.com/AndreZiviani/odi-oss/releases/tag/' + tag, body: 'notes ' + tag, ...extra });
+  const LIST = [rel('v1.13.0-beta.1', { prerelease: true }), rel('v1.12.1'), rel('v1.12.0'), rel('v1.11.0'),
+    rel('v1.14.0', { draft: true }), rel('not-a-version'), rel('v1.13.0-beta.2', { prerelease: true })];
+  const tags = (run) => U.newerReleases(LIST, run).map((r) => r.tag);
+  ok(tags('v1.12.0').join() === 'v1.12.1', 'updates: a stable stick is offered stable releases only, drafts and odd tags skipped');
+  ok(tags('v1.13.0-beta.1').join() === 'v1.13.0-beta.2', 'updates: a pre-release stick is not offered an older stable one');
+  ok(tags('v1.12.1-rc.1').join() === 'v1.13.0-beta.2,v1.13.0-beta.1,v1.12.1',
+     'updates: a pre-release stick is offered pre-releases too, newest first');
+  ok(tags('v1.12.1').join() === '', 'updates: nothing newer, nothing offered');
+  ok(tags('hostserdes4').length === 0 && tags(undefined).length === 0, 'updates: a non-release running version offers nothing');
+  ok(U.newerReleases(LIST, 'v1.12.0')[0].url === 'https://github.com/AndreZiviani/odi-oss/releases/tag/v1.12.1',
+     'updates: each release carries its tag, date and page link');
+  const odd = U.cleanRelease(rel('v1.12.5', { html_url: 'javascript:alert(1)' }));
+  ok(odd.url === 'https://github.com/AndreZiviani/odi-oss/releases/tag/v1.12.5', 'updates: a page link that is not on github.com is replaced');
+  ok(U.cleanRelease(rel('v1.12.5', { html_url: 'https://evil.example/x' })).url.startsWith('https://github.com/'),
+     'updates: a page link on another host is replaced');
+
+  /* The daily check, with storage. */
+  const mem = new Map();
+  globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, x) => { mem.set(k, String(x)); } };
+  let calls = 0, mode = 'ok';
+  const fake = async (url, opt) => {
+    calls++;
+    if (url !== U.API_URL || opt.credentials !== 'omit' || opt.referrerPolicy !== 'no-referrer') throw new Error('bad request');
+    if (mode === 'throw') throw new Error('offline');
+    if (mode === '403') return { ok: false, status: 403, json: async () => ({}) };
+    if (mode === 'junk') return { ok: true, status: 200, json: async () => ({ message: 'x' }) };
+    return { ok: true, status: 200, json: async () => LIST };
+  };
+  const fw = (running, off) => ({ running, switches: { 'update-check.off': !!off } });
+  const T0 = 1760000000000;
+  let got = await U.offered(fw('v1.12.0'), T0, fake);
+  ok(calls === 1 && got.length === 1 && got[0].tag === 'v1.12.1', 'updates: the first look fetches once and offers the newer release');
+  got = await U.offered(fw('v1.12.0'), T0 + 3600 * 1000, fake);
+  ok(calls === 1 && got.length === 1, 'updates: within a day the cache answers, no second fetch');
+  got = await U.offered(fw('v1.12.1'), T0 + 7200 * 1000, fake);
+  ok(calls === 1 && got.length === 0, 'updates: a new running version is judged from the cache, not refetched');
+  mode = '403';
+  got = await U.offered(fw('v1.12.0'), T0 + U.DAY_MS + 1000, fake);
+  ok(calls === 2 && got.length === 1, 'updates: after a day it asks again; a refusal keeps the old list');
+  await U.offered(fw('v1.12.0'), T0 + U.DAY_MS + 2000, fake);
+  ok(calls === 2, 'updates: a failed attempt is not retried before the next day');
+  mem.clear(); mode = 'throw';
+  got = await U.offered(fw('v1.12.0'), T0, fake);
+  ok(got.length === 0, 'updates: offline is silent and offers nothing');
+  mem.clear(); mode = 'junk';
+  got = await U.offered(fw('v1.12.0'), T0, fake);
+  ok(got.length === 0, 'updates: an answer that is not a list is silent');
+  mem.set(U.CACHE_KEY, '{not json');
+  mode = 'ok';
+  got = await U.offered(fw('v1.12.0'), T0, fake);
+  ok(got.length === 1, 'updates: a damaged cache is ignored');
+  const before = calls;
+  ok((await U.offered(fw('v1.12.0', true), T0 + 9 * U.DAY_MS, fake)).length === 0 && calls === before,
+     'updates: switched off on the stick, nothing is fetched or offered');
+  ok((await U.offered(fw('hostserdes4'), T0 + 9 * U.DAY_MS, fake)).length === 0 && calls === before,
+     'updates: a local build name is skipped without a fetch');
+
+  /* Storage that throws: no crash, and the answer still comes. */
+  globalThis.localStorage = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
+  calls = 0;
+  got = await U.offered(fw('v1.12.0'), T0, fake);
+  ok(got.length === 1 && calls === 1, 'updates: storage that throws still gives the notice');
+  delete globalThis.localStorage;
+  got = await U.offered(fw('v1.12.0'), T0, fake);
+  ok(got.length === 1, 'updates: no storage at all still gives the notice');
+
+  /* What the dialog leaves out. */
+  const page = Array.from({ length: 30 }, (_, i) => rel('v1.' + (30 - i) + '.0'));
+  mem.clear(); globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, x) => { mem.set(k, String(x)); } };
+  const fakePage = async () => ({ ok: true, status: 200, json: async () => page });
+  let lk = await U.lookup(fw('v1.5.0'), T0, fakePage);
+  ok(lk.offer.length === 25 && !lk.cut && U.olderLine(lk.offer.length, lk.cut) === '15 older releases not shown',
+     'updates: more newer releases than the dialog lists says how many are left out');
+  lk = await U.lookup(fw('v1.5.0'), T0 + 1000, fakePage);
+  ok(lk.offer.length === 25, 'updates: the cached list gives the same count');
+  mem.clear();
+  lk = await U.lookup(fw('v1.0.0'), T0, fakePage);
+  ok(lk.cut && U.olderLine(lk.offer.length, lk.cut) === 'Older releases not shown',
+     'updates: a full page whose oldest is newer than the running version may have cut older ones off');
+  mem.clear();
+  lk = await U.lookup(fw('v1.12.0'), T0, async () => ({ ok: true, json: async () => page.slice(0, 10) }));
+  ok(!lk.cut && U.olderLine(5, false) === '' && U.olderLine(11, false) === '1 older release not shown',
+     'updates: a short page, or a running version inside it, leaves nothing out');
+  lk = await U.lookup(fw('v1.12.0'), T0 + 1000, fakePage);
+  ok(!lk.cut, 'updates: a running version inside a full page leaves nothing out');
+  {
+    const n = U.olderNode(25, false), a = n.children[0];
+    ok(U.olderNode(10, false) === null && a.textContent === '15 older releases not shown' && a.attrs.href === 'https://github.com/AndreZiviani/odi-oss/releases'
+       && a.attrs.rel === 'noopener noreferrer' && a.attrs.target === '_blank' && U.olderNode(3, true).children[0].textContent === 'Older releases not shown',
+       'updates: the last line is a noopener link to the releases list, and absent when nothing is left out');
+  }
+
+  /* Dismissal is per version. */
+  const offer = U.newerReleases(LIST, 'v1.12.0');
+  ok(U.barShown(offer, null) && !U.barShown(offer, 'v1.12.1') && U.barShown(offer, 'v1.11.0') && !U.barShown([], null),
+     'updates: the bar hides for the dismissed version and returns for a newer one');
+
+  /* The notes: markdown from the internet, shown as text. */
+  const walk = (n, f) => { f(n); for (const c of n.children || []) walk(c, f); };
+  const nodesOf = (body) => { const all = []; walk(U.notesNode(body), (n) => all.push(n)); return all; };
+  const hostile = [
+    '## Changes', '- fixed **bold** and `code`', '- <script>alert(1)</script>', '',
+    '<img src=x onerror="alert(2)">', '[click](javascript:alert(3)) [ok](https://example.com/a?b=1) [d](data:text/html,x)',
+    '[cred](https://user:pw@example.com/) [h](http://example.com) <a href=//x.example>y</a>', 'see https://github.com/AndreZiviani/odi-oss/pull/12.',
+  ].join('\n');
+  const all = nodesOf(hostile);
+  const tagsUsed = new Set(all.filter((n) => n.tagName).map((n) => n.tagName));
+  ok([...tagsUsed].every((t) => ['div', 'p', 'ul', 'li', 'strong', 'code', 'a'].includes(t)),
+     'updates: notes build only div, p, ul, li, strong, code and a elements: ' + [...tagsUsed].join(' '));
+  const links = all.filter((n) => n.tagName === 'a');
+  ok(links.length === 2 && links[0].attrs.href === 'https://example.com/a?b=1' && links.every((a) => /^https:\/\//.test(a.attrs.href) && a.attrs.rel === 'noopener noreferrer' && a.attrs.target === '_blank'),
+     'updates: only https links are made, opened with noopener noreferrer in a new tab');
+  ok(links[1].attrs.href === 'https://github.com/AndreZiviani/odi-oss/pull/12' && links[1].textContent === 'https://github.com/AndreZiviani/odi-oss/pull/12',
+     'updates: a bare URL becomes a link without its closing full stop');
+  const shown = textOf(U.notesNode(hostile));
+  ok(shown.includes('<script>alert(1)</script>') && shown.includes('<img src=x onerror="alert(2)">')
+     && shown.includes('<a href=//x.example>') && shown.includes('click') && shown.includes('data:') === false,
+     'updates: markup in the notes is shown as text, not built');
+  ok(all.every((n) => !n.attrs || !Object.keys(n.attrs).some((k) => /^on/i.test(k))), 'updates: no element gets an event handler attribute');
+  ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(readFileSync(join(root, 'web', 'updates.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')),
+     'updates: updates.js never sets HTML from a string');
+  const long = U.parseNotes(Array.from({ length: 500 }, (_, i) => '- item ' + i + '\n\npara ' + i).join('\n'));
+  const bullets = U.parseNotes(Array.from({ length: 500 }, (_, i) => '- item ' + i).join('\n'));
+  ok(long.blocks.length <= 62 && long.more && bullets.blocks[0].items.length <= 60 && bullets.more,
+     'updates: a long body, or a very long list, is cut, and says so');
+  ok(U.cleanRelease(rel('v1.12.5', { body: 'x'.repeat(100000) })).body.length === 6000, 'updates: the stored notes are capped');
+  const h = U.parseNotes('# T\ntext one\ntext two\n* a\n* b\n1. c\n\nlast');
+  ok(h.blocks.map((b) => b.t).join() === 'h,p,ul,p' && h.blocks[2].items.length === 3,
+     'updates: headings, paragraphs and bullet lists');
+}
+
+const githubCalls = [];
+{
+  const base = globalThis.fetch;
+  globalThis.fetch = async (path, ...rest) => {
+    if (String(path).includes('api.github.com')) { githubCalls.push(path); throw new Error('no network'); }
+    return base(path, ...rest);
+  };
+}
 await import(join(root, 'web', 'app.js'));
 await new Promise((r) => setTimeout(r, 50));
 ok(true, 'app.js bootstraps without throwing');
+ok(githubCalls.length === 0, 'updates: a stick running a non-release image never contacts GitHub');
 
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
 process.exit(failed ? 1 : 0);

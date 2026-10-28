@@ -90,6 +90,15 @@
 #define HOSTLINK_STATE    "/var/run/host-autoneg"
 #define HOSTLINK_SAFEMODE "/etc/config/safe-mode"
 #define HOSTLINK_LINK     "/sys/module/odi_switch/parameters/host_link"
+/*
+ * The host-port SerDes mode (odi-oss HOST_SERDES, host-serdes.sh): the same
+ * kind of trial, so the same verbs and the same reading, from its own state
+ * file. `status` is the one verb that reads what the files do not hold (the
+ * link and where it was read from, which in 2500basex needs diag), so it is a
+ * fork the page asks for, never part of the GET.
+ */
+#define SERDES_SCRIPT     "/etc/scripts/host-serdes.sh"
+#define SERDES_STATE      "/var/run/host-serdes"
 #define UPTIME_FILE       "/proc/uptime"
 #define NTP_STATUS_FILE   "/tmp/ntp-status"
 /*
@@ -166,7 +175,7 @@
 				   * up to a 15 s poll loop plus a 3 s settle
 				   * (mib.c apply_omci, routes.c /api/apply) */
 #define PING_TIMEOUT_MS    6000   /* `ping -c 3`, ~1 s per probe plus slack */
-#define HOSTLINK_TIMEOUT_MS 20000 /* host-autoneg.sh: up to 10 s for its lock,
+#define HOSTLINK_TIMEOUT_MS 20000 /* host-autoneg.sh, host-serdes.sh: up to 10 s for its lock,
 				   * then a flash set and its read-back, 5 s
 				   * each at worst; try returns at once */
 #define FWU_TIMEOUT_MS     5000   /* fwu_starter.sh backgrounds the flasher
@@ -198,10 +207,15 @@
  *                      confd's own marker, read by nothing in the image: it is
  *                      here so every browser agrees, and a factory reset removes
  *                      it with the rest of /etc/config.
+ *   update-check.off   stop the page looking for new odi-oss releases. The
+ *                      check runs in the browser, never on the stick; the
+ *                      file is only where "off" is kept, so it applies to
+ *                      every browser. Absent (the default) means on.
  */
 #define SWITCH_DIR   "/etc/config/"
 #define SWITCH_OMCI_IDENTITY "omci-identity.on"
 #define SWITCH_CONFD_SETUP   "confd.setup"
+#define SWITCH_UPDATE_OFF    "update-check.off"
 
 /*
  * Where an uploaded image lands. /tmp is ramfs sharing ~27 MB with everything
