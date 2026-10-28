@@ -20,6 +20,7 @@ import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
 import { renderHostlink, wireHostlink } from './hostlink.js';
 import { renderNetaddr, wireNetaddr } from './netaddr.js';
+import { checkForUpdate, wireUpdates, renderUpdateSwitch } from './updates.js';
 import { passwordProblem, sshKeyProblem } from './validate.js';
 
 /*
@@ -44,7 +45,7 @@ const ON_SHOW = {
   'omci/services': () => renderServices(),
   'omci/mib': () => renderMeBrowser(),
   'omci/phone': () => renderPhone(),
-  'system/firmware': () => renderFirmware(),
+  'system/firmware': () => { renderFirmware(); renderUpdateSwitch(); },
   'system/access': () => renderSshKeys(),
   'system/logs': () => renderTools(),
 };
@@ -142,6 +143,7 @@ wireHelp();
 wireFirmware();
 wireHostlink();
 wireNetaddr();
+wireUpdates();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. Both firmwares answer it: the stock diag, and
    odi-oss diag from its own L2 table readback, under the same command. */
@@ -376,6 +378,8 @@ async function refresh() {
   /* The address trial: whether the image has it (Save and Restore then go through it) and a trial that
      is already running, which raises its dialog. Before the form is used. */
   await renderNetaddr();
+  /* Not awaited: a browser that cannot reach GitHub must not delay the page. */
+  checkForUpdate();
   await refresh();
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is
      deliberately unhurried. */

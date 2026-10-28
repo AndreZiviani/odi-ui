@@ -1715,6 +1715,7 @@ void serve(int conn)
 	if (seq(path, "/api/switch") && seq(method, "POST")) {
 		char name[48], on[4];
 		static const char p_identity[] = SWITCH_DIR SWITCH_OMCI_IDENTITY;
+		static const char p_update[] = SWITCH_DIR SWITCH_UPDATE_OFF;
 		const char *target = 0;
 
 		form_get(body, "name", name, sizeof(name));
@@ -1726,6 +1727,8 @@ void serve(int conn)
 		}
 		if (seq(name, SWITCH_OMCI_IDENTITY))
 			target = p_identity;
+		else if (seq(name, SWITCH_UPDATE_OFF))
+			target = p_update;
 		if (!target) {
 			respond(conn, "400 Bad Request", "application/json", 0);
 			put_fd(conn, "{\"ok\":false,\"error\":\"not a switch this UI sets\"}");
