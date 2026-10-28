@@ -174,7 +174,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'phone', 'restore', 'l2', 'tools', 'hostlink', 'netaddr'];
+              'omci', 'services', 'mebrowser', 'phone', 'restore', 'l2', 'tools', 'hostlink', 'netaddr', 'wizard'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -1438,6 +1438,314 @@ ok(inputsOf('#sections') > 100,
   ok(parseVoip('no voice provisioned\n').none === true, 'phone: no voice provisioned');
   const sec = parseVoip('port 0x201 (voice CTP 0x1)\n  sip user login 0x3: username u, ok, password p, w, realm r.net\n');
   ok(Object.fromEntries(sec.ports[0].rows).Password === 'p, w', 'phone: a password with a comma is kept whole');
+}
+
+
+/* --- the setup wizard ---------------------------------------------------- */
+{
+  const wz = await import(join(root, 'web', 'wizard.js'));
+  const { lineFacts } = await import(join(root, 'web', 'status.js'));
+  const { W } = wz;
+  wz.wireWizard();
+  const keepFetch = globalThis.fetch;
+  const keepS = { V: S.VALUES, SET: S.SETTINGS, FW: S.FW };
+  const diag = (state, rx, los) => 'RTK.0> pon get transceiver rx-power\n  Rx Power          : ' + rx + ' dBm\n'
+    + 'RTK.0> gpon get onu-state\n  Operation State(' + state + ')\n'
+    + 'RTK.0> gpon get alarm-status\n  LOS Alarm         : ' + (los ? 'asserted' : 'clear') + '\n  LOF Alarm         : clear\n';
+
+  /* What a stick configured by hand holds: every key the wizard reads. */
+  const HELD = {
+    GPON_SN: 'ODIX00000001', GPON_PLOAM_PASSWD: '31323334353637383930', LOID: 'oldloid', LOID_OLD: 'oldloid',
+    LOID_PASSWD: 'oldpw', LOID_PASSWD_OLD: 'oldpw', VLAN_CFG_TYPE: '1', VLAN_MANU_MODE: '1',
+    VLAN_MANU_TAG_VID: '110', VLAN_MANU_TAG_PRI: '3',
+  };
+  let calls = [];
+  let sw = {};
+  globalThis.fetch = async (path, init = {}) => {
+    const [key] = String(path).split('?');
+    const method = init.method || 'GET';
+    const body = init.body || '';
+    calls.push({ key, method, body, auth: (init.headers || {}).Authorization });
+    const ans = (j) => ({ ok: true, status: 200, json: async () => j });
+    if (key === '/api/switch' && method === 'POST') {
+      const f = new URLSearchParams(body);
+      sw[f.get('name')] = f.get('on') === '1';
+      S.FW.switches = { ...S.FW.switches, [f.get('name')]: f.get('on') === '1' };
+      return ans({ ok: true, on: f.get('on') === '1' });
+    }
+    if (key === '/api/config') {
+      const f = [...new URLSearchParams(body).keys()].filter((k) => k !== '_confirm');
+      return ans({ results: f.map((name) => ({ name, ok: true, value: 'x' })), needs: ['omci'],
+                   interrupts: f.some((k) => !k.startsWith('VLAN_')) });
+    }
+    if (key === '/api/values') {
+      const last = calls.filter((c) => c.key === '/api/config').pop();
+      return ans({ ...HELD, ...(last ? Object.fromEntries(new URLSearchParams(last.body)) : {}) });
+    }
+    if (key === '/api/apply') return ans({ ok: true, output: 'secret-looking output' });
+    if (key === '/api/password') return ans({ ok: true });
+    if (key === '/api/status') return ans({ raw: diag('O5', '-18.42', false) });
+    if (key === '/api/omci') return ans({ ok: true, raw: '' });
+    return keepFetch(path, init);
+  };
+  const posts = (k) => calls.filter((c) => c.key === k && c.method === 'POST');
+  const reset = (fw = {}) => {
+    calls = [];
+    sw = {};
+    S.FW = { switches: { 'omci-identity.on': false, 'confd.setup': false }, defaultauth: false, ...fw };
+    S.VALUES = { ...HELD };
+    S.SETTINGS = Object.fromEntries(SETT.map((r) => [r.name, r]));
+    Object.assign(W, { open: false, autoTried: false, marking: false, auth: null, pwChanged: false, phase: 'edit' });
+  };
+  const all = (n, pred, out = []) => {
+    if (pred(n)) out.push(n);
+    for (const c of n.children || []) all(c, pred, out);
+    return out;
+  };
+  const byId = (id) => all(doc.querySelector('#wizard-body'), (n) => n.id === id)[0];
+  const type = (id, v) => { const i = byId(id); i.value = v; i.oninput(); };
+  const body = () => textOf(doc.querySelector('#wizard-body'));
+  const title = () => doc.querySelector('#wizard-title').textContent;
+  const click = (id) => doc.querySelector(id).onclick();
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+
+  /* the rule, as a pure decision */
+  const st = (marker) => ({ FW: { switches: { 'confd.setup': marker } } });
+  const L = (state, rx, los) => lineFacts(diag(state, rx, los));
+  ok(wz.decide(L('O1', '-18.4', false), st(false)) === 'open', 'wizard rule: no marker, light, not O5 opens');
+  ok(wz.decide(L('O3', '-18.4', false), st(false)) === 'open', 'wizard rule: any state short of O5 opens');
+  ok(wz.decide(L('O1', '-18.4', true), st(false)) === 'none', 'wizard rule: LOS does not open it');
+  ok(wz.decide(L('O1', '-45.00', false), st(false)) === 'none', 'wizard rule: no light (below the receive scale) does not open it');
+  ok(wz.decide(lineFacts('RTK.0> gpon get onu-state\n  Operation State(O1)\n'), st(false)) === 'none',
+     'wizard rule: no receive reading is not light');
+  ok(wz.decide(L('O5', '-18.4', false), st(false)) === 'mark', 'wizard rule: O5 writes the marker and does not open');
+  ok(wz.decide(L('O5', '-18.4', false), st(true)) === 'none', 'wizard rule: a marker already there, O5, does nothing');
+  ok(wz.decide(L('O1', '-18.4', false), st(true)) === 'none', 'wizard rule: a marker present does not open it');
+  ok(wz.decide(null, st(false)) === 'none', 'wizard rule: a failed status read does nothing');
+  ok(wz.decide(L('O1', '-18.4', false), { FW: {} }) === 'none', 'wizard rule: no firmware read, no marker support: nothing');
+
+  /* the page level: what wizardSeen does with each */
+  reset();
+  await wz.wizardSeen(L('O1', '-18.4', true));
+  ok(!wz.isOpen() && !posts('/api/switch').length, 'fibre down: the wizard stays shut and nothing is written');
+  await wz.wizardSeen(L('O5', '-18.4', false));
+  ok(!wz.isOpen() && posts('/api/switch').length === 1 && sw['confd.setup'] === true,
+     'O5: the marker is written silently and the wizard stays shut');
+  await wz.wizardSeen(L('O1', '-18.4', false));
+  ok(!wz.isOpen(), 'a marker present: the wizard does not open');
+  reset();
+  await wz.wizardSeen(L('O1', '-18.4', false));
+  ok(wz.isOpen() && W.auto && !posts('/api/switch').length, 'no marker, light, not O5: the wizard opens and writes nothing yet');
+  ok(title() === 'Your ISP login', 'the wizard starts at the ISP step when the password is not the default');
+  await wz.exitWizard();
+  reset({ defaultauth: true });
+  await wz.wizardSeen(L('O1', '-18.4', false));
+  ok(title() === 'Admin password', 'with the default password the wizard starts at the password step');
+  await wz.exitWizard();
+  reset();
+  S.SETTINGS = {};
+  await wz.wizardSeen(L('O1', '-18.4', false));
+  ok(!wz.isOpen(), 'an image that does not say what its keys cost never gets the wizard');
+
+  /* every way out writes the marker, from every step */
+  let esc = false;
+  for (const [name, exit] of [
+    ['Skip', () => click('#wizard-skip')],
+    ['the close button', () => click('#wizard-x')],
+    ['Escape', () => wz.onCancel({ preventDefault() { esc = true; } })],
+  ]) {
+    for (const step of ['isp', 'vlan', 'review']) {
+      reset();
+      esc = false;
+      await wz.wizardSeen(L('O1', '-18.4', false));
+      while (title() !== { isp: 'Your ISP login', vlan: 'VLAN', review: 'Review and apply' }[step]) await wz.next();
+      await exit();
+      await tick();
+      ok(!wz.isOpen() && sw['confd.setup'] === true && posts('/api/switch').length === 1 && (name !== 'Escape' || esc),
+         `${name} on the ${step} step writes the marker and closes`);
+    }
+  }
+  /* the Skip button exists on every step and has the documented label */
+  reset({ defaultauth: true });
+  wz.openWizard(true);
+  const seen = [];
+  for (let i = 0; i < 4; i++) {
+    seen.push(String(doc.querySelector('#wizard-skip').hidden));
+    if (i < 3) await wz.next();
+  }
+  ok(seen.length === 4 && seen.every((x) => x === 'false')
+     && /<button id="wizard-skip"(?![^>]*hidden)[^>]*>Skip, I'll use Config<\/button>/.test(html),
+     "Skip, I'll use Config is there, and visible, on every step");
+  await wz.exitWizard();
+  /* a page unload mid-wizard is the one exit that leaves the marker unset: nothing is written on open or on a step */
+  reset();
+  wz.openWizard(true);
+  ok(posts('/api/switch').length === 0 && !wz.markerOn(), 'opening and walking the wizard writes no marker by itself');
+  await wz.exitWizard();
+
+  /* validation, as docs/SETTINGS.md and the daemon have it */
+  const pl = wz.ploamParse;
+  ok(pl('').empty === true, 'PLOAM: empty means unchanged');
+  ok(pl('abc').hex === '61626300000000000000', 'PLOAM: 1 to 10 characters are the text, zero-padded');
+  ok(pl('1234567890').hex === '31323334353637383930', 'PLOAM: ten characters are text');
+  ok(pl('deadbeef').hex === '64656164626565660000', 'PLOAM: text that is all hex digits is still text');
+  ok(pl('31323334353637383930').hex === '31323334353637383930', 'PLOAM: exactly 20 hex digits are the ten bytes');
+  ok(pl('ABCDEF0123456789ABCD').hex === 'abcdef0123456789abcd', 'PLOAM: 20 hex digits in capitals');
+  ok(pl('0x1234').hex === '12340000000000000000', 'PLOAM: 0x and hex digits are bytes, zero-padded');
+  ok(pl('0x' + '12'.repeat(10)).hex === '12'.repeat(10), 'PLOAM: 0x and 20 digits');
+  ok(pl('0x123').hex === '3078313233' + '0'.repeat(10), 'PLOAM: 0x with an odd count is five characters of text');
+  ok(pl('0x12345678').hex === '12345678' + '0'.repeat(12), 'PLOAM: 0x and 8 digits is hex even though it is 10 characters');
+  ok(pl('12345678901').error && pl('1'.repeat(19) + 'x').error, 'PLOAM: 11 to 19 characters are refused');
+  ok(pl('z'.repeat(20)).error, 'PLOAM: 20 characters that are not hex are refused');
+  ok(pl('0x' + '1'.repeat(22)).error, 'PLOAM: more than 20 hex digits are refused');
+  ok(pl('café').error, 'PLOAM: not printable ASCII is refused');
+  ok(!/secretsecretsecret/.test(pl('secretsecretsecret').error), 'PLOAM: the message never repeats the input');
+  const bad = (f) => wz.problems({ sn: 'ODI012345678', ploam: '', loid: '', loidpw: '', vlan: 'olt', vid: '', pri: '0', ...f });
+  ok(!bad({}).sn, 'serial: four characters and eight hex digits pass');
+  ok(bad({ sn: 'ODI01234567' }).sn && bad({ sn: 'ODI0123456789' }).sn && bad({ sn: 'ODI0123456zz' }).sn,
+     'serial: eleven, thirteen characters and non-hex digits are refused');
+  ok(bad({ sn: '' }).sn, 'serial: empty is refused');
+  ok(!('vid' in bad({ vlan: 'router' })) && !('vid' in bad({ vlan: 'olt' })), 'VLAN ID is only judged when the stick tags');
+  ok(!bad({ vlan: 'stick', vid: '1' }).vid && !bad({ vlan: 'stick', vid: '4094' }).vid, 'VID: 1 and 4094 pass');
+  ok(bad({ vlan: 'stick', vid: '0' }).vid && bad({ vlan: 'stick', vid: '4095' }).vid && bad({ vlan: 'stick', vid: '' }).vid
+     && bad({ vlan: 'stick', vid: '01' }).vid && bad({ vlan: 'stick', vid: '1x' }).vid,
+     'VID: 0, 4095, empty, a leading zero and letters are refused');
+  ok(!bad({ vlan: 'stick', vid: '5', pri: '0' }).pri && !bad({ vlan: 'stick', vid: '5', pri: '7' }).pri, 'PRI: 0 and 7 pass');
+  ok(bad({ vlan: 'stick', vid: '5', pri: '8' }).pri && bad({ vlan: 'stick', vid: '5', pri: '' }).pri
+     && bad({ vlan: 'stick', vid: '5', pri: '-1' }).pri, 'PRI: 8, empty and negative are refused');
+  ok(bad({ loid: 'x'.repeat(25) }).loid && bad({ loidpw: 'x'.repeat(13) }).loidpw && bad({ loid: 'a"b' }).loid,
+     'LOID: longer than the field, or a quote, is refused');
+
+  /* the choice -> key mapping, only the keys that differ */
+  const keys = (f, V) => JSON.stringify(Object.fromEntries(wz.vlanKeys({ vid: '110', pri: '3', ...f }, V)));
+  ok(keys({ vlan: 'router' }, { VLAN_CFG_TYPE: '0' }) === '{"VLAN_CFG_TYPE":"1","VLAN_MANU_MODE":"0"}',
+     'VLAN: "my router tags" is VLAN_CFG_TYPE 1 with VLAN_MANU_MODE 0 (transparent)');
+  ok(keys({ vlan: 'stick', vid: '35', pri: '5' }, { VLAN_CFG_TYPE: '0' })
+     === '{"VLAN_CFG_TYPE":"1","VLAN_MANU_MODE":"1","VLAN_MANU_TAG_VID":"35","VLAN_MANU_TAG_PRI":"5"}',
+     'VLAN: "the stick tags" is type 1, mode 1, the VID and the priority');
+  ok(keys({ vlan: 'olt' }, { VLAN_CFG_TYPE: '1', VLAN_MANU_MODE: '1' }) === '{"VLAN_CFG_TYPE":"0"}',
+     'VLAN: "let the OLT decide" is VLAN_CFG_TYPE 0 and touches nothing else');
+  ok(keys({ vlan: 'olt' }, { VLAN_CFG_TYPE: '2' }) === '{}' && keys({ vlan: 'olt' }, {}) === '{}',
+     'VLAN: the OLT rule already in force (any type but 1) writes nothing');
+  ok(keys({ vlan: 'stick', vid: '110', pri: '3' }, HELD) === '{}', 'VLAN: the same tag as stored writes nothing');
+  ok(keys({ vlan: 'stick', vid: '110', pri: '0' }, { ...HELD, VLAN_MANU_TAG_PRI: '255' }) === '{}',
+     'VLAN: the factory priority 255 is read as 0, as the image does');
+  ok(keys({ vlan: 'router' }, { ...HELD, VLAN_MANU_MODE: '0' }) === '{}', 'VLAN: already transparent writes nothing');
+  ok(wz.choiceOf({ VLAN_CFG_TYPE: '1', VLAN_MANU_MODE: '0' }) === 'router' && wz.choiceOf({ VLAN_CFG_TYPE: '1', VLAN_MANU_MODE: '1' }) === 'stick'
+     && wz.choiceOf({ VLAN_CFG_TYPE: '0' }) === 'olt' && wz.choiceOf({}) === 'olt' && wz.choiceOf({ VLAN_CFG_TYPE: '7', VLAN_MANU_MODE: '1' }) === 'olt',
+     'VLAN: the stored keys read back as the question the wizard asks');
+
+  /* pre-filled from the stick, untouched secrets are not rewritten */
+  reset();
+  const f0 = wz.initForm();
+  ok(f0.sn === 'ODIX00000001' && f0.loid === 'oldloid' && f0.vlan === 'stick' && f0.vid === '110' && f0.pri === '3',
+     'the form is pre-filled with the stick values');
+  ok(f0.ploam === '' && f0.loidpw === '', 'secrets are never pre-filled');
+  ok(wz.planChanges(f0).pairs.length === 0, 'an untouched form writes nothing, secrets included');
+  const one = wz.planChanges({ ...f0, sn: 'ODIX00000002' }).pairs;
+  ok(one.length === 1 && one[0][0] === 'GPON_SN', 'only the changed key is written');
+  const pw = wz.planChanges({ ...f0, ploam: 'abc', loidpw: 'newpw' });
+  ok(pw.pairs.map(([k]) => k).join() === 'GPON_PLOAM_PASSWD,LOID_PASSWD,LOID_PASSWD_OLD',
+     'a changed PLOAM and LOID password write theirs, with the OLD pair');
+  ok(wz.planChanges({ ...f0, ploam: '1234567890' }).pairs.length === 0, 'the PLOAM password already stored, typed again, is no change');
+  ok(wz.writeBody(pw.pairs).includes('_confirm=identity'), 'an identity key carries the confirmation');
+  ok(!wz.writeBody([['VLAN_MANU_TAG_VID', '5']]).includes('_confirm'), 'a VLAN-only write does not');
+
+  /* review masking: typed secrets never reach the page text */
+  reset();
+  wz.openWizard(true);
+  type('wiz-sn', 'ODIX00000009');
+  type('wiz-ploam', 'hunter2pw');
+  type('wiz-loid', 'newloid');
+  type('wiz-loidpw', 'loidsecret');
+  await wz.next(); await wz.next();
+  ok(title() === 'Review and apply', 'the wizard reaches the review');
+  const rv = body();
+  ok(rv.includes('ODIX00000001') && rv.includes('ODIX00000009') && rv.includes('newloid'), 'review: old and new serial and LOID in the clear');
+  ok(!/hunter2pw|loidsecret|oldpw|31323334/.test(rv) && rv.includes('•••'), 'review: secrets are dots, old and new, and not in the text');
+  ok(/internet drops/.test(rv), 'review: the internet-drop warning is there for identity keys');
+  ok(rv.includes('LOID_OLD') && rv.includes('LOID_PASSWD_OLD'), 'review: the paired OLD keys are listed');
+  await wz.exitWizard();
+
+  /* apply from the wizard writes exactly the expected keys */
+  reset();
+  wz.openWizard(true);
+  type('wiz-sn', 'ODIX00000009');
+  type('wiz-ploam', 'abc');
+  await wz.next(); await wz.next();
+  ok(title() === 'Review and apply', 'apply: at the review');
+  await click('#wizard-next');
+  const cfg = posts('/api/config');
+  ok(cfg.length === 1 && cfg[0].body === 'GPON_SN=ODIX00000009&GPON_PLOAM_PASSWD=61626300000000000000&_confirm=identity',
+     'apply: exactly the changed keys, the PLOAM password as the converted hex, and the identity confirmation: ' + (cfg[0] || {}).body);
+  ok(posts('/api/apply').length === 1 && /what=omci/.test(posts('/api/apply')[0].body), 'apply: omci is applied after the write');
+  ok(sw['confd.setup'] === true, 'apply: completing writes the marker');
+  ok(W.phase === 'live' && title() === 'Registering with the OLT', 'apply: the live view follows');
+  ok(!/secret-looking/.test(body()), 'apply: the script output is not shown');
+  await tick();
+  ok(/Operational/.test(body()), 'live: O5 is reported');
+  await click('#wizard-next');
+  ok(!wz.isOpen(), 'live: Finish closes the wizard');
+
+  /* a VLAN-only change is applied without the internet-drop warning */
+  reset();
+  wz.openWizard(true);
+  await wz.next();
+  type('wiz-vid', '120');
+  await wz.next();
+  ok(!/internet drops/.test(body()) && /VLAN 120 instead of 110/.test(body()), 'review: a VLAN change warns about the VLAN, not the internet');
+  await click('#wizard-next');
+  ok(posts('/api/config')[0].body === 'VLAN_MANU_TAG_VID=120', 'apply: a VLAN-only change writes only the VID');
+  await wz.exitWizard();
+
+  /* nothing to write: Finish just writes the marker */
+  reset();
+  wz.openWizard(false);
+  await wz.next(); await wz.next();
+  ok(/nothing to write/.test(body()) && doc.querySelector('#wizard-next').textContent === 'Finish', 'review: nothing changed says so');
+  await click('#wizard-next');
+  ok(!posts('/api/config').length && sw['confd.setup'] === true && !wz.isOpen(),
+     'a legacy stick can review and leave: nothing written but the marker');
+
+  /* the admin password: saved last, with the new credential, then a sign-out */
+  reset({ defaultauth: true });
+  wz.openWizard(true);
+  type('wiz-pw-pass', 'pa55word');
+  type('wiz-pw-again', 'pa55wor');
+  ok(doc.querySelector('#wizard-next').disabled === true && /not the same/.test(byId('wiz-pw-again-msg').textContent),
+     'password: a mismatch blocks Next');
+  type('wiz-pw-again', 'pa55word');
+  ok(doc.querySelector('#wizard-next').disabled === false, 'password: matching passwords allow Next');
+  await wz.next(); await wz.next(); await wz.next();
+  ok(!/pa55word/.test(body()) && /Admin password/.test(body()), 'password: the review shows it as dots');
+  await click('#wizard-next');
+  const pc = posts('/api/password');
+  ok(pc.length === 1 && posts('/api/config').length === 0, 'password: with nothing else to write, only the password is saved');
+  ok(W.pwChanged && calls.filter((c) => c.key === '/api/status').length > 0
+     && calls.filter((c) => c.key === '/api/status').every((c) => c.auth === 'Basic ' + btoa('admin:pa55word')),
+     'password: the live view sends the new credential itself');
+  const keepLoc = globalThis.location.href;
+  await wz.exitWizard();
+  ok(globalThis.location.href === '/api/logout', 'password: closing signs out so the browser asks for the new one');
+  globalThis.location.href = keepLoc;
+  reset({ defaultauth: true });
+  wz.openWizard(true);
+  const skipPw = all(doc.querySelector('#wizard-body'), (n) => n.tagName === 'button' && n.textContent === 'Skip this step')[0];
+  ok(skipPw && /built-in admin/.test(body()), 'password: skipping the step is offered, with a warning');
+  skipPw.onclick();
+  ok(title() === 'Your ISP login' && W.pw === null, 'password: skipping goes on to the ISP step and keeps nothing');
+  await wz.exitWizard();
+
+  /* the hints under the ladder */
+  ok(wz.liveHint(L('O5', '-18', false), 0).cls === 'good', 'live hint: O5 is good news');
+  ok(/loss of signal/.test(wz.liveHint(L('O1', '-18', true), 0).text), 'live hint: LOS says there is no light on the fibre');
+  ok(/wrong serial number or PLOAM/.test(wz.liveHint(L('O3', '-18', false), 20).text),
+     'live hint: stuck before O5 with light points at the serial and the PLOAM password');
+  ok(!/wrong serial/.test(wz.liveHint(L('O3', '-18', false), 2).text), 'live hint: not yet, early in the registration');
+
+  globalThis.fetch = keepFetch;
+  S.VALUES = keepS.V; S.SETTINGS = keepS.SET; S.FW = keepS.FW;
 }
 
 await import(join(root, 'web', 'app.js'));

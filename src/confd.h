@@ -194,9 +194,14 @@
  *   omci-identity.on   report the ONU identity keys (OMCI_SW_VER1/2,
  *                      GPON_ONU_MODEL, OMCC_VER, OMCI_VENDOR_PRODUCT_CODE) to
  *                      the OLT. Off, omcid answers what it always has.
+ *   confd.setup        the setup wizard was completed or skipped (web/wizard.js).
+ *                      confd's own marker, read by nothing in the image: it is
+ *                      here so every browser agrees, and a factory reset removes
+ *                      it with the rest of /etc/config.
  */
 #define SWITCH_DIR   "/etc/config/"
 #define SWITCH_OMCI_IDENTITY "omci-identity.on"
+#define SWITCH_CONFD_SETUP   "confd.setup"
 
 /*
  * Where an uploaded image lands. /tmp is ramfs sharing ~27 MB with everything

@@ -1010,12 +1010,12 @@ check "without apply.sh the syslog action is refused, not turned into an omci re
 
 echo "== switch files"
 check "the ONU identity switch starts off" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false,"confd.setup":false}')"
 check "it can be turned on" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=1' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":true')"
 check "which creates the file" yes "$([ -f /etc/config/omci-identity.on ] && echo yes)"
 check "and is reported" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":true}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":true,"confd.setup":false}')"
 check "and off again" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=0' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":false')"
 check "which removes it" no "$([ -f /etc/config/omci-identity.on ] && echo yes || echo no)"
@@ -1024,6 +1024,52 @@ for bad in 'name=confd.auth&on=0' 'name=../confd.auth&on=0' 'name=omci-identity.
 		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/switch")"
 done
 check "the credential file survived every refusal" yes "$([ -f /etc/config/confd.auth ] && echo yes)"
+
+# The setup wizard marker (web/wizard.js): the page opens the wizard on a
+# stick that has none, so it has to be absent by default, settable, kept on
+# the config partition, there again after the daemon restarts, and removable.
+echo "== setup marker"
+fw() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware"; }
+sw() { curl -s -u "$AUTH" -X POST -d "$1" "http://127.0.0.1:$PORT/api/switch"; }
+check "the setup marker is absent by default" yes "$(err "$(fw)" '"confd.setup":false}')"
+check "it can be set" yes "$(err "$(sw 'name=confd.setup&on=1')" '"ok":true,"on":true')"
+check "which creates the file next to confd.auth" yes "$([ -f /etc/config/confd.setup ] && echo yes)"
+check "and is reported" yes "$(err "$(fw)" '"confd.setup":true}')"
+kill $DAEMON; wait $DAEMON 2>/dev/null || true
+qemu-mips-static "$BIN" "$PORT" &
+DAEMON=$!
+for _ in $(seq 40); do
+	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PORT/api/schema" && break
+	sleep 0.25
+done
+check "it is still set after the daemon restarts" yes "$(err "$(fw)" '"confd.setup":true}')"
+check "the identity switch is independent of it" yes "$(err "$(fw)" '"omci-identity.on":false,')"
+check "it can be removed" yes "$(err "$(sw 'name=confd.setup&on=0')" '"ok":true,"on":false')"
+check "which removes the file" no "$([ -f /etc/config/confd.setup ] && echo yes || echo no)"
+for bad in 'name=confd.setup&on=2' 'name=confd.setup' 'name=confd.setup.x&on=1' 'name=confd.setup&on=' 'name=CONFD.SETUP&on=1'; do
+	check "the marker route refuses $bad" 400 \
+		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/switch")"
+done
+check "no marker was written by a refusal" no "$([ -f /etc/config/confd.setup ] && echo yes || echo no)"
+check "the marker needs the credential" 401 \
+	"$(code -X POST -d 'name=confd.setup&on=1' "http://127.0.0.1:$PORT/api/switch")"
+check "and refuses a cross-site origin" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST -d 'name=confd.setup&on=1' "http://127.0.0.1:$PORT/api/switch")"
+check "no marker after those either" no "$([ -f /etc/config/confd.setup ] && echo yes || echo no)"
+
+# What the wizard sends on its last step: the serial, the PLOAM password as
+# the 20 hex digits it converts to, the LOID pairs, the VLAN keys and the
+# identity confirmation, all in one write. Every key is accepted and read
+# back, and the answer names exactly those keys and no other.
+echo "== setup wizard write"
+wz=$(curl -s -u "$AUTH" -X POST --data 'GPON_SN=ODIX00000001&GPON_PLOAM_PASSWD=61626300000000000000&LOID=lo1&LOID_OLD=lo1&LOID_PASSWD=pw1&LOID_PASSWD_OLD=pw1&VLAN_CFG_TYPE=1&VLAN_MANU_MODE=1&VLAN_MANU_TAG_VID=110&VLAN_MANU_TAG_PRI=3&_confirm=identity' "http://127.0.0.1:$PORT/api/config")
+check "the wizard write is accepted key by key, exactly the ten it sent" 10 "$(printf '%s' "$wz" | grep -o '"ok":true' | wc -l | tr -d ' ')"
+check "and nothing in it failed" clean "$(case "$wz" in *'"ok":false'*) echo failed ;; *) echo clean ;; esac)"
+check "the PLOAM password is stored as the converted hex" yes "$(err "$wz" '"name":"GPON_PLOAM_PASSWD","ok":true,"value":"61626300000000000000"')"
+check "the same write without the identity confirmation is refused for the identity keys" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'GPON_SN=ODIX00000001&GPON_PLOAM_PASSWD=61626300000000000000' "http://127.0.0.1:$PORT/api/config")" 'confirm')"
+check "a PLOAM password in the text form is refused by the store: the page converts it" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data 'GPON_PLOAM_PASSWD=abc&_confirm=identity' "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
 
 echo "== tools"
 # Ping takes IPv4 literals and nothing else. Not fussiness: this server is

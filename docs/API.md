@@ -34,7 +34,9 @@ reporting success.
                                           re-registers the ONU); without it, `omci`
                                           restarts omci_app
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file
-                                          (currently just `omci-identity.on`)
+                                          (`omci-identity.on` and `confd.setup`, the
+                                          setup wizard marker below); `/api/firmware`
+                                          reports both under `switches`
 
 The page's data files, each a TSV from `/etc/confd/` (or its override in
 `/etc/config/confd/`) served as a JSON array of objects, one per row:
@@ -216,6 +218,26 @@ stick. Then it navigates to the new address, a top-level navigation, which is
 allowed and answers `401` with the Basic challenge: the browser asks for the
 password there, because it keeps a credential per address. There is no token or
 cookie to hand over (DESIGN.md, "Moving the management address").
+
+## Setup wizard marker
+
+The setup wizard (`web/wizard.js`) keeps one fact on the stick: whether it was
+completed or skipped. It is the switch file `/etc/config/confd.setup`, next to
+`confd.auth`, owned by confd and read by nothing in the image, so every browser
+agrees and no odi-oss key is involved.
+
+    GET  /api/firmware                   `"switches":{"omci-identity.on":false,"confd.setup":false}`
+    POST /api/switch  name=confd.setup&on=1|0
+                                          create or remove it; `{"ok":true,"on":true}`.
+                                          400 for `on` other than 0 or 1 or another
+                                          name, 401 without the credential, 403 from
+                                          another site, as for every write
+
+Absent by default, so a stick nobody has set up shows the wizard when the fibre
+has light and the ONU is not in O5; present, the page never opens it by itself
+(the Setup button in the header always does). The page writes it on every way
+out of the wizard and silently when it first sees O5. A factory reset removes
+it with the rest of `/etc/config`.
 
 ## Backup and reset
 

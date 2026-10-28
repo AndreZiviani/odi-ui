@@ -397,6 +397,8 @@ void emit_firmware_json(int fd)
 	 * LAN_IP_ADDR a dead letter while it exists. */
 	put_fd(fd, ",\"switches\":{\"" SWITCH_OMCI_IDENTITY "\":");
 	put_fd(fd, file_exists(SWITCH_DIR SWITCH_OMCI_IDENTITY) ? "true" : "false");
+	put_fd(fd, ",\"" SWITCH_CONFD_SETUP "\":");
+	put_fd(fd, file_exists(SWITCH_DIR SWITCH_CONFD_SETUP) ? "true" : "false");
 	put_fd(fd, "},\"lanip_override\":");
 	put_fd(fd, file_exists(LANIP_OVERRIDE) ? "true" : "false");
 

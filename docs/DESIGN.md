@@ -251,8 +251,9 @@ What the page does differently there:
   `/etc/config/omci-identity.on` exists; off, it answers what it always has.
   A stick commonly ships with the stock values already stored in all five, so
   reporting them by default would change what the OLT sees. `POST /api/switch
-  name=omci-identity.on&on=1|0` toggles it (an allowlist of one name), and
-  `/api/firmware` reports it under `switches`.
+  name=omci-identity.on&on=1|0` toggles it (an allowlist of two names, the other
+  being the setup marker, "The setup wizard"), and `/api/firmware` reports it
+  under `switches`.
 - **Firmware write runs in the background.** odi-oss `fwu_starter.sh` checks
   the slot is the inactive one and `fwu.sh` against its md5, starts the flasher
   detached, and returns; `/api/firmware` carries `write` (`state`, `slot`,
@@ -1040,6 +1041,69 @@ protection is not enough for that.
 Identity keys (`GPON_SN`, `MAC_KEY`, PLOAM, …) are marked `identity`: lose them
 and the OLT stops authenticating the ONU.
 
+## The setup wizard
+
+A stick fresh from a flash has the vendor serial and no one has told it what
+the ISP gave you. The wizard is a modal over the page, opened by the **Setup**
+button in the header or by the page itself, and it asks the four things a new
+stick needs, in order, in simple mode only (everything else stays in Config,
+and *Skip, I'll use Config* is on every step):
+
+1. **Admin password** (only while the built-in `admin` / `admin` is in force):
+   the same `/api/password` and the same `passwordProblem` as System, Access.
+   The password is saved last, after the line settings, because the browser
+   keeps sending the old credential: from then on the wizard sends the new one
+   itself, and closing it signs out so the browser asks for it. *Skip this
+   step* is offered with the warning. The route changes the web password; the
+   ssh root password is a Config key of its own and is not touched.
+2. **ISP login**: the serial (`valueProblem` of the `gponsn` type, live), the
+   PLOAM password (optional) and, behind *My ISP gave me a LOID*, the LOID and
+   its password. Fields are pre-filled with what the stick holds, except the
+   secrets: a secret left empty is kept and never rewritten. The PLOAM password
+   takes the forms the image takes (`docs/SETTINGS.md` of odi-oss: 20 hex digits,
+   1 to 10 characters of text, `0x` and 2 to 20 hex digits) and is turned into
+   the 20 hex digits the store accepts, text and short hex zero-padded the way
+   `odi_gpon_parse_pw` pads them.
+3. **VLAN**, as one question. *My router tags the VLAN* is `VLAN_CFG_TYPE` 1 with
+   `VLAN_MANU_MODE` 0 (transparent: with type 1 kept, as the image documents);
+   *The stick tags it* is type 1, mode 1, a VLAN ID 1 to 4094 and a priority 0 to
+   7; *Let the OLT decide* is `VLAN_CFG_TYPE` 0 (any type but 1 leaves the OLT
+   class 171 rule in charge), and writes nothing when the stick is not in manual
+   mode already. A stored priority above 7 counts as 0, as the image reads it.
+4. **Review**: every key that differs, old to new, secrets as dots, the cost
+   badge of each, the internet-drop warning for the identity keys and `vlanRisk`
+   for the VLAN ones. Apply writes through the Config path (`withPairs` for the
+   LOID pairs, `POST /api/config` with the identity confirmation, then
+   `applyOmci`), only the keys that changed. A live view follows: the O1 to O5
+   ladder from `/api/status`, the GEM ports the OLT provisioned (ME 268), and a
+   hint when it stalls: with light and not at O5 after about 36 s, *usually a
+   wrong serial number or PLOAM password*; LOS says there is no light.
+
+**The marker.** `/etc/config/confd.setup`, a switch file owned by confd and
+toggled through `/api/switch` like `omci-identity.on`, says the wizard was
+completed or skipped. It is on the stick so it holds for every browser, and a
+factory reset removes it, which is intended. No odi-oss key is involved.
+
+**Auto-open** is exactly: no marker, the fibre has light, the ONU is not in O5.
+The page decides from the `/api/status` it already polls (`lineFacts` in
+`status.js`): *light* is no LOS or LOF asserted and a receive power at or above
+the bottom of the Status scale; the state is `Operation State(On)`. O5 writes the
+marker silently and shows nothing. A fibre with no light does nothing and writes
+nothing. Every way out of the wizard (Finish, Skip, the close button, Escape)
+writes the marker; only closing the tab mid-wizard leaves it unset.
+
+**A stick configured before the wizard** has no marker. If it is working (O5)
+the first status read writes the marker and the wizard never shows. If it has
+light but is not in O5 the wizard opens already filled with what the stick holds
+(a stick set up by hand can review and leave, and nothing is written but the
+marker). With the fibre down nothing happens until there is light. The factory
+copy of the serial is not used as a signal: it can equal the working one.
+
+**Accessibility.** The dialog is modal, the steps are in reading order with the
+current one marked `aria-current`, focus moves to the step heading on every step,
+errors are `role=alert` under their field, and the VLAN question is a radio
+group. At phone width the footer buttons stack.
+
 ## Applying changes without a reboot
 
 **On odi-oss**, `/etc/scripts/apply.sh` does it, and `/api/apply` runs it:
@@ -1080,7 +1144,7 @@ src/firmware.c      partitions, the trial slot, the build manifest
 src/buffers.c       every static buffer, in one place
 src/util.h          base64, JSON escaping, small string helpers
 src/syscall.h       copied from odi-sfp-exporter; fix it in both places
-web/                the UI: fifteen ES modules, one page, one stylesheet
+web/                the UI: sixteen ES modules, one page, one stylesheet
 schema/keys.tsv     the keyspace, generated from a device
 schema/meta.tsv     curated help: labels, options, ranges, dependencies
 scripts/fixtures/   captured device output the checks run against

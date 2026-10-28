@@ -8,7 +8,7 @@
 
 import { $, el, fail, get, wireTheme, wireHelp } from './dom.js';
 import { S, EDITS } from './state.js';
-import { renderStatus } from './status.js';
+import { renderStatus, lineFacts } from './status.js';
 import { renderAll } from './config.js';
 import { save, refreshSaveBar, renderIdentitySwitch } from './save.js';
 import { renderFirmware, wireFirmware, renderTrial } from './firmware.js';
@@ -21,6 +21,7 @@ import { renderTools } from './tools.js';
 import { renderHostlink, wireHostlink } from './hostlink.js';
 import { renderNetaddr, wireNetaddr } from './netaddr.js';
 import { passwordProblem, sshKeyProblem } from './validate.js';
+import { wireWizard, wizardSeen, renderSetupEntry } from './wizard.js';
 
 /*
  * Four sections, each with subtabs, and the location hash naming the pair:
@@ -142,6 +143,7 @@ wireHelp();
 wireFirmware();
 wireHostlink();
 wireNetaddr();
+wireWizard();
 /* On demand, not on the poll: it is another diag fork and most visits to the
    status page do not need it. Both firmwares answer it: the stock diag, and
    odi-oss diag from its own L2 table readback, under the same command. */
@@ -349,6 +351,8 @@ async function refresh() {
     const st = await get('/api/status');
     if (st.error) throw new Error(st.error);
     renderStatus(st.raw);
+    /* The setup wizard decides from the same read: open, mark, or leave alone. */
+    await wizardSeen(lineFacts(st.raw));
   } catch (e) { fail(e); }
 }
 
@@ -371,6 +375,7 @@ async function refresh() {
     renderIdentitySwitch();
   } catch (e) { fail(e); }
   await checkAuth();
+  renderSetupEntry();
   /* The host-link banner: files read by confd, no fork. */
   await renderHostlink();
   /* The address trial: whether the image has it (Save and Restore then go through it) and a trial that
