@@ -305,6 +305,8 @@ ok(true, 'renderStatus runs against a diag capture');
      && /id="chipbanner" class="trial hot"/.test(readFileSync(join(root, 'web', 'index.html'), 'utf8'))
      && textOf(doc.querySelector('#chip-text')) === 'The chip is very hot (112 °C, limit 110 °C). Check the airflow around the router\'s SFP cage.',
      'chip temp: the critical alarm raises the header bar with the reading and the limit');
+  ok(/<a id="chip-open" class="button" href="#status">/.test(readFileSync(join(root, 'web', 'index.html'), 'utf8')),
+     'chip temp: the bar action carries the shared button class, as the other bars do');
   renderStatus(raw, { celsius: 112, crit_alarm: true });
   ok(textOf(doc.querySelector('#chip-text')).startsWith('The chip is very hot (112 °C). '),
      'chip temp: an alarm with no limit reported leaves the limit out');
