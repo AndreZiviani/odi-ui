@@ -215,7 +215,7 @@ main { padding: 24px 24px 120px; }
 }
 #hostlink-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 #hostlink-count { color: var(--yellow-ink); font-variant-numeric: tabular-nums; }
-#hostlink-now > div, #hostlink-out > div, #hostlink-dialog-out > div { margin: 6px 0; font-size: 14px; }
+#hostlink-now > div, #hostlink-out > div, #hostlink-sd-out > div, #hostlink-dialog-out > div { margin: 6px 0; font-size: 14px; }
 /* The management address trial dialog, the same shape. */
 #netaddr-dialog {
   max-width: 56ch; padding: 18px 20px; border-radius: var(--r);

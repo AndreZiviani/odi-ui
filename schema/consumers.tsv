@@ -94,6 +94,7 @@ OMCI_FIXED_ME	unknown
 OMCI_VEIP	unknown	
 OMCI_PRIVATE_ME	unknown	
 HOST_AUTONEG	unknown	
+HOST_SERDES	unknown	
 FIBER_MODE	reboot	bin/configd,bin/led,bin/mib,bin/xmlconfig,etc/runsdk.sh
 RTK_DEVID_MANUFACTURER	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 RTK_DEVID_OUI	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig

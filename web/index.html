@@ -178,17 +178,20 @@
     <div class="sub" id="c-network" role="tabpanel" aria-labelledby="st-config-network" data-sub="network" hidden>
       <p class="lede">How you reach this stick from the host side.</p>
       <div class="settings" id="set-network"></div>
-      <!-- Not a schema row: HOST_AUTONEG is never written by Save. hostlink.js
-           runs a trial the image reverts by itself unless kept. -->
+      <!-- Not schema rows: HOST_AUTONEG and HOST_SERDES are never written by Save.
+           hostlink.js runs a trial the image reverts by itself unless kept. -->
       <section class="block" id="hostlink" hidden>
         <div class="block-head"><h2>Host port</h2></div>
         <div class="settings">
-          <div class="setting">
+          <div class="setting" id="hostlink-an">
             <div class="s-label">
               <div class="s-title"><label class="s-name" for="hostlink-try">Auto-negotiation</label></div>
               <p class="s-help">With the router on the SFP edge. Leave it on unless the router port has
                 auto-negotiation off. A change is a trial: it reverts by itself after two minutes unless you
                 keep it, and keeping it only works if this page still answers in the new mode.</p>
+              <p class="s-help" id="hostlink-an-fb" hidden></p>
+              <p class="s-help" id="hostlink-an-na" hidden>Not changeable while the host port runs 2.5G or HiSGMII:
+                the link mode sets it and the port is forced. Go back to Fiber 1G below to change it.</p>
               <details class="s-more">
                 <summary>If the stick becomes unreachable</summary>
                 <p>A boot whose host link does not come up with auto-negotiation off falls back to on for
@@ -204,6 +207,30 @@
                 <button id="hostlink-keep-on" type="button" hidden>Keep auto-negotiation on</button>
               </div>
               <div id="hostlink-out"></div>
+            </div>
+          </div>
+          <div class="setting" id="hostlink-sd" hidden>
+            <div class="s-label">
+              <div class="s-title"><label class="s-name" for="hostlink-sd-mode">Link mode</label></div>
+              <p class="s-help">How the host port talks to the router. Leave it on Fiber 1G (the default and
+                the most compatible) unless the router port runs 2.5G: 2.5G runs with auto-negotiation off.
+                A wrong mode makes the stick unreachable until the trial reverts by itself, after 120
+                seconds; keeping it only works if this page still answers in the new mode.</p>
+              <details class="s-more">
+                <summary>If the stick becomes unreachable</summary>
+                <p>A boot in 2.5G that sees no link falls back to Fiber 1G for that boot, and the banner says
+                   so; the setting is kept. If it still cannot be reached: plug it in, wait about 80 seconds,
+                   pull it, wait a few seconds; three times in a row; then plug it in and leave it in. That
+                   boot is the safe mode: it clears this setting and runs Fiber 1G (System, Access has the
+                   details). HiSGMII has no link signal, so only a kept trial or the safe mode tells it apart.</p>
+              </details>
+            </div>
+            <div class="s-control">
+              <div class="s-inline">
+                <select id="hostlink-sd-mode"></select>
+                <button id="hostlink-sd-try" type="button">Try this mode</button>
+              </div>
+              <div id="hostlink-sd-out"></div>
             </div>
           </div>
         </div>
