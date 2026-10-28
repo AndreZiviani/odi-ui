@@ -66,6 +66,13 @@
     <p id="fallback-text"></p>
     <a href="#config/network">Host port settings</a>
   </div>
+  <!-- A newer odi-oss release (updates.js), found by this browser, not by the
+       stick. Unlike the bars above it can be dismissed, once per version. -->
+  <div id="updatebanner" class="trial update" role="status" hidden>
+    <p id="update-text"></p>
+    <button id="update-notes-open" type="button">What changed</button>
+    <button id="update-dismiss" type="button">Dismiss</button>
+  </div>
 </header>
 
 <p id="err" class="callout bad" role="alert" hidden></p>
@@ -414,6 +421,12 @@
           <pre id="upload"></pre>
         </details>
       </section>
+
+      <section class="block" id="update-check">
+        <h2>New releases</h2>
+        <div id="update-switch" class="switchrow"></div>
+        <div id="update-out"></div>
+      </section>
     </div>
 
     <!-- Access -->
@@ -635,6 +648,18 @@
     <button id="netaddr-revert" type="button">Revert</button>
   </div>
   <div id="netaddr-dialog-out"></div>
+</dialog>
+
+<!-- Notes of the odi-oss releases newer than this image (updates.js). -->
+<dialog id="update-dialog" aria-labelledby="update-dialog-title">
+  <h2 id="update-dialog-title">Newer odi-oss releases</h2>
+  <p class="help">Nothing is downloaded or flashed from here. To install one, get its
+     image from the release page and load it on the
+     <a id="update-fw-link" href="#system/firmware">Firmware tab</a>.</p>
+  <div id="update-list"></div>
+  <div class="switchrow">
+    <button id="update-close" class="primary" type="button">Close</button>
+  </div>
 </dialog>
 
 <script type="module" src="/app.js"></script>

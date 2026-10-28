@@ -203,9 +203,14 @@
  *   omci-identity.on   report the ONU identity keys (OMCI_SW_VER1/2,
  *                      GPON_ONU_MODEL, OMCC_VER, OMCI_VENDOR_PRODUCT_CODE) to
  *                      the OLT. Off, omcid answers what it always has.
+ *   update-check.off   stop the page looking for new odi-oss releases. The
+ *                      check runs in the browser, never on the stick; the
+ *                      file is only where "off" is kept, so it applies to
+ *                      every browser. Absent (the default) means on.
  */
 #define SWITCH_DIR   "/etc/config/"
 #define SWITCH_OMCI_IDENTITY "omci-identity.on"
+#define SWITCH_UPDATE_OFF    "update-check.off"
 
 /*
  * Where an uploaded image lands. /tmp is ramfs sharing ~27 MB with everything

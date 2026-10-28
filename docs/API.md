@@ -33,8 +33,13 @@ reporting success.
                                           rebuilt in place, an identity change
                                           re-registers the ONU); without it, `omci`
                                           restarts omci_app
-    POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file
-                                          (currently just `omci-identity.on`)
+    POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file:
+                                          `omci-identity.on`, and `update-check.off`
+                                          (present means the page does not look for
+                                          new odi-oss releases, for every browser; the
+                                          look itself is made by the browser, the stick
+                                          contacts nothing). `/api/firmware` reports
+                                          both under `switches`
 
 The page's data files, each a TSV from `/etc/confd/` (or its override in
 `/etc/config/confd/`) served as a JSON array of objects, one per row:
