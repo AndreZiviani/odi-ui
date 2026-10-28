@@ -1071,6 +1071,21 @@ check "the same write without the identity confirmation is refused for the ident
 check "a PLOAM password in the text form is refused by the store: the page converts it" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST --data 'GPON_PLOAM_PASSWD=abc&_confirm=identity' "http://127.0.0.1:$PORT/api/config")" 'not valid for its type')"
 
+# The wizard's SSH key step posts one key to /api/sshkeys, as System, Access
+# does: a good key is appended, a bad one is refused, and a key already in the
+# file is refused, not appended twice.
+rm -f /etc/config/dropbear.d/authorized_keys
+check "wizard ssh key: a valid key is appended" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "wizard ssh key: the file holds that one line" "1 600" \
+	"$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ') $(stat -c '%a' /etc/config/dropbear.d/authorized_keys)"
+check "wizard ssh key: the same key again is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")"
+check "wizard ssh key: a bad key is refused" 400 \
+	"$(code -u "$AUTH" -X POST --data-urlencode 'key=ssh-ed25519 notbase64!' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "wizard ssh key: and nothing was appended by either" 1 "$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ')"
+rm -f /etc/config/dropbear.d/authorized_keys
+
 echo "== tools"
 # Ping takes IPv4 literals and nothing else. Not fussiness: this server is
 # serial, so a hostname means a DNS lookup on a device with no route to a

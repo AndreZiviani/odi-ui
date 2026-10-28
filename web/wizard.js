@@ -23,6 +23,10 @@
  * shown) or has light and is not (wizard pre-filled with what it holds, and any
  * way out sets the marker).
  *
+ * ssh logs in as root with keys only, so the first step can also add one public
+ * key through /api/sshkeys, checked by the same sshKeyProblem as System, Access
+ * against the keys already installed.
+ *
  * Secrets (the PLOAM password, the LOID password, the admin password) are typed
  * into password fields and shown as dots in the review; a field left empty
  * keeps what the stick holds, so an untouched secret is never rewritten.
@@ -30,7 +34,7 @@
 
 import { $, el } from './dom.js';
 import { S, imageAware, settingOf, vlanRisk, costBadge } from './state.js';
-import { valueProblem, passwordProblem } from './validate.js';
+import { valueProblem, passwordProblem, sshKeyProblem } from './validate.js';
 import { withPairs, encode, applyOmci } from './save.js';
 import { renderAll } from './config.js';
 import { OPTICS, STATES, lineFacts } from './status.js';
@@ -46,10 +50,11 @@ const MAX_POLLS = 100;
 
 const W = {
   open: false, auto: false, steps: [], step: '', phase: 'edit', f: {},
+  key: '', keys: [],   /* the public key to add, and the lines already installed */
   pw: null,            /* { user, pass, again }: the admin password typed in, until it is saved */
   auth: null,          /* the Authorization header, once the password is saved */
   pwChanged: false, timer: 0, polls: 0, autoTried: false, marking: false,
-  live: null, out: null, msgs: {},
+  live: null, out: null, msgs: {}, keysEl: null,
 };
 
 /* ------------------------------------------------------------ validation */
@@ -241,10 +246,11 @@ function openWizard(auto) {
   clearInterval(W.timer);
   Object.assign(W, {
     open: true, auto: !!auto, phase: 'edit', f: initForm(), pw: null, auth: null,
-    pwChanged: false, polls: 0, live: null, out: null,
-    steps: (S.FW.defaultauth ? ['password'] : []).concat(['isp', 'vlan', 'review']),
+    pwChanged: false, polls: 0, live: null, out: null, key: '', keys: [], keysEl: null,
+    steps: ['access', 'isp', 'vlan', 'review'],
   });
   showDialog(true);
+  loadKeys();
   go(W.steps[0]);
 }
 
@@ -273,7 +279,7 @@ function onCancel(ev) {
 /* ---------------------------------------------------------------- steps */
 
 const TITLES = {
-  password: 'Admin password', isp: 'Your ISP login', vlan: 'VLAN', review: 'Review and apply',
+  access: 'Admin access', isp: 'Your ISP login', vlan: 'VLAN', review: 'Review and apply',
 };
 
 function go(id) {
@@ -297,7 +303,7 @@ function render() {
   });
   W.msgs = {};
   if (live) stepLive(body);
-  else ({ password: stepPassword, isp: stepIsp, vlan: stepVlan, review: stepReview }[W.step])(body);
+  else ({ access: stepAccess, isp: stepIsp, vlan: stepVlan, review: stepReview }[W.step])(body);
   paint();
   $('#wizard-title').focus();
 }
@@ -339,22 +345,57 @@ function showTick(input) {
   return l;
 }
 
-function stepPassword(body) {
-  W.pw = W.pw || { user: 'admin', pass: '', again: '' };
-  body.append(el('p', 'lede', 'This page still answers to the built-in admin / admin: anyone who can reach it '
-    + 'can change the line settings. Choose a password now. It is saved when you apply the setup, and you '
-    + 'sign in again afterwards.'));
-  const u = field('wiz-pw-user', 'Username', textInput(W.pw.user, (v) => { W.pw.user = v.trim(); }));
-  const p = field('wiz-pw-pass', 'New password', textInput(W.pw.pass, (v) => { W.pw.pass = v; }, { secret: true }),
-    '4 to 128 printable characters.');
-  const a = field('wiz-pw-again', 'Repeat the password', textInput(W.pw.again, (v) => { W.pw.again = v; }, { secret: true }));
-  W.msgs = { pw: a.msg };
-  body.append(u.wrap, p.wrap, a.wrap, showTick(p.input));
-  const skip = el('button', null, 'Skip this step');
-  skip.type = 'button';
-  skip.onclick = () => { W.pw = null; go(W.steps[W.steps.indexOf('password') + 1]); };
-  body.append(el('p', 'callout warn', 'Without a password the stick keeps the built-in admin / admin. '
-    + 'You can set one later under System, Access.'), skip);
+function stepAccess(body) {
+  if (S.FW.defaultauth) {
+    W.pw = W.pw || { user: 'admin', pass: '', again: '' };
+    body.append(el('p', 'lede', 'This page still answers to the built-in admin / admin: anyone who can reach it '
+      + 'can change the line settings. Choose a password now. It is saved when you apply the setup, and you '
+      + 'sign in again afterwards.'));
+    const u = field('wiz-pw-user', 'Username', textInput(W.pw.user, (v) => { W.pw.user = v.trim(); }));
+    const p = field('wiz-pw-pass', 'New password', textInput(W.pw.pass, (v) => { W.pw.pass = v; }, { secret: true }),
+      '4 to 128 printable characters.');
+    const a = field('wiz-pw-again', 'Repeat the password', textInput(W.pw.again, (v) => { W.pw.again = v; }, { secret: true }));
+    W.msgs.pw = a.msg;
+    body.append(u.wrap, p.wrap, a.wrap, showTick(p.input));
+    const skip = el('button', null, 'Skip the password');
+    skip.type = 'button';
+    skip.onclick = () => { W.pw = null; go('isp'); };
+    body.append(el('p', 'callout warn', 'Without a password the stick keeps the built-in admin / admin. '
+      + 'You can set one later under System, Access.'), skip);
+  } else {
+    body.append(el('p', 'lede', 'This page already has its own password. You can add an SSH key below, or go on.'));
+  }
+  body.append(el('h3', 'sec', 'SSH key'));
+  body.append(el('p', 'help', 'ssh logs in as root with keys only; there is no ssh password. Paste a public key '
+    + '(the contents of a .pub file) to add it, or leave this empty.'));
+  W.keysEl = el('p', 'hint');
+  body.append(W.keysEl);
+  paintKeys();
+  const k = field('wiz-sshkey', 'Add an SSH key (optional)', textInput(W.key, (v) => { W.key = v.trim(); }));
+  k.input.placeholder = 'ssh-ed25519 AAAA\u2026 comment';
+  W.msgs.key = k.msg;
+  body.append(k.wrap);
+}
+
+/* The keys already on the stick, so a legacy stick is not given a duplicate:
+   a count and the comments, never a key. */
+const keyLabel = (line) => {
+  const [type, blob = '', ...c] = String(line).split(/\s+/);
+  return type + ' ' + (c.join(' ') || '\u2026' + blob.slice(-8));
+};
+function paintKeys() {
+  if (!W.keysEl) return;
+  W.keysEl.textContent = W.keys.length
+    ? `${W.keys.length} key${W.keys.length === 1 ? '' : 's'} installed: ${W.keys.map(keyLabel).join(', ')}.`
+    : 'No keys installed yet.';
+}
+async function loadKeys() {
+  try {
+    const j = await (await wfetch('/api/sshkeys')).json();
+    W.keys = (j.keys || []).map((x) => x.line);
+  } catch (e) { W.keys = []; }
+  paintKeys();
+  if (W.step === 'access') paint();
 }
 
 function stepIsp(body) {
@@ -419,7 +460,7 @@ function stepVlan(body) {
 
 function stepReview(body) {
   const { pairs, rows } = planChanges(W.f);
-  body.append(el('p', 'lede', rows.length || W.pw
+  body.append(el('p', 'lede', rows.length || W.pw || W.key
     ? 'These are the changes. Nothing is written until you apply.'
     : 'Nothing differs from what the stick holds, so there is nothing to write.'));
   const list = el('dl', 'wiz-review');
@@ -427,6 +468,7 @@ function stepReview(body) {
     list.append(el('dt', null, 'Admin password'),
       el('dd', null, 'built-in → •••••• (hidden), user ' + W.pw.user));
   }
+  if (W.key) list.append(el('dt', null, 'SSH key'), el('dd', null, 'add ' + keyLabel(W.key)));
   for (const r of rows) {
     const dt = el('dt', null, r.label + ' ');
     dt.append(el('span', 's-key mono', r.key));
@@ -478,11 +520,17 @@ function paint() {
   $('#wizard-back').hidden = live || i <= 0;
   const set = (id, text) => { if (W.msgs[id]) W.msgs[id].textContent = text || ''; };
   let bad = null;
-  if (W.step === 'password') {
-    const pw = W.pw || {};
-    const typed = pw.pass || pw.again;
-    bad = typed ? passwordProblem(pw.user, pw.pass, pw.again) : 'Choose a password, or skip this step.';
-    set('pw', typed ? bad : '');
+  if (W.step === 'access') {
+    const keyBad = W.key ? sshKeyProblem(W.key, W.keys) : null;
+    set('key', keyBad);
+    let pwBad = null;
+    if (S.FW.defaultauth) {
+      const pw = W.pw || {};
+      const typed = pw.pass || pw.again;
+      pwBad = typed ? passwordProblem(pw.user, pw.pass, pw.again) : 'Choose a password, or skip it.';
+      set('pw', typed ? pwBad : '');
+    }
+    bad = pwBad || keyBad;
   } else if (W.step === 'isp' || W.step === 'vlan') {
     const p = problems(W.f);
     for (const k of Object.keys(p)) set(k, p[k]);
@@ -493,7 +541,7 @@ function paint() {
     next.textContent = 'Finish';
     next.disabled = false;
   } else if (W.step === 'review') {
-    next.textContent = planChanges(W.f).pairs.length || W.pw ? 'Apply' : 'Finish';
+    next.textContent = planChanges(W.f).pairs.length || W.pw || W.key ? 'Apply' : 'Finish';
     next.disabled = W.phase === 'applying';
   } else {
     next.textContent = 'Next';
@@ -510,7 +558,7 @@ async function next() {
   if (W.phase === 'live') { await exitWizard(); return; }
   if (W.step !== 'review') { go(W.steps[W.steps.indexOf(W.step) + 1]); return; }
   const { pairs } = planChanges(W.f);
-  if (!pairs.length && !W.pw) { await exitWizard(); return; }
+  if (!pairs.length && !W.pw && !W.key) { await exitWizard(); return; }
   await apply(pairs);
 }
 
@@ -553,6 +601,7 @@ async function apply(pairs) {
         for (const n of box.children) if (n.tagName !== 'pre') out.append(n);
       }
     }
+    if (W.key) await addKey(out);
     if (W.pw) await savePassword(out);
     await setMarker();
   } catch (e) {
@@ -567,6 +616,16 @@ async function apply(pairs) {
   clearInterval(W.timer);
   W.timer = setInterval(pollLive, POLL_MS);
   pollLive();
+}
+
+/* One public key, through the route System, Access uses (it refuses a duplicate). */
+async function addKey(out) {
+  const bad = sshKeyProblem(W.key, W.keys);
+  if (bad) { out.append(el('div', 'bad', 'SSH key: ' + bad)); return; }
+  const j = await (await post('/api/sshkeys', new URLSearchParams({ key: W.key }).toString())).json();
+  if (!j.ok) { out.append(el('div', 'bad', 'SSH key: ' + (j.error || 'refused'))); return; }
+  W.keys.push(W.key);
+  out.append(el('div', 'good', 'SSH key: added. dropbear reads the file on every login.'));
 }
 
 /* The admin password, last: the browser still holds the old credential, so

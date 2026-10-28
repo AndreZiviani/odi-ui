@@ -1459,6 +1459,9 @@ ok(inputsOf('#sections') > 100,
     LOID_PASSWD: 'oldpw', LOID_PASSWD_OLD: 'oldpw', VLAN_CFG_TYPE: '1', VLAN_MANU_MODE: '1',
     VLAN_MANU_TAG_VID: '110', VLAN_MANU_TAG_PRI: '3',
   };
+  const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxJq2sL3o5p8Qh1u7v9wXyZaBcDeFgHiJkLmNoPqRsT laptop';
+  const KEY2 = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKkKkKkKkKkKkKkKkKkKkKkKkKkKkKkKkKkKkKkKkKkK desk';
+  let INSTALLED = [];
   let calls = [];
   let sw = {};
   globalThis.fetch = async (path, init = {}) => {
@@ -1484,6 +1487,13 @@ ok(inputsOf('#sections') > 100,
     }
     if (key === '/api/apply') return ans({ ok: true, output: 'secret-looking output' });
     if (key === '/api/password') return ans({ ok: true });
+    if (key === '/api/sshkeys' && method === 'GET') return ans({ path: 'x', keys: INSTALLED.map((line, i) => ({ i, line })) });
+    if (key === '/api/sshkeys') {
+      const line = new URLSearchParams(body).get('key');
+      if (INSTALLED.includes(line)) return ans({ ok: false, error: 'that key is already in the file' });
+      INSTALLED.push(line);
+      return ans({ ok: true });
+    }
     if (key === '/api/status') return ans({ raw: diag('O5', '-18.42', false) });
     if (key === '/api/omci') return ans({ ok: true, raw: '' });
     return keepFetch(path, init);
@@ -1492,6 +1502,7 @@ ok(inputsOf('#sections') > 100,
   const reset = (fw = {}) => {
     calls = [];
     sw = {};
+    INSTALLED = [];
     S.FW = { switches: { 'omci-identity.on': false, 'confd.setup': false }, defaultauth: false, ...fw };
     S.VALUES = { ...HELD };
     S.SETTINGS = Object.fromEntries(SETT.map((r) => [r.name, r]));
@@ -1537,11 +1548,11 @@ ok(inputsOf('#sections') > 100,
   reset();
   await wz.wizardSeen(L('O1', '-18.4', false));
   ok(wz.isOpen() && W.auto && !posts('/api/switch').length, 'no marker, light, not O5: the wizard opens and writes nothing yet');
-  ok(title() === 'Your ISP login', 'the wizard starts at the ISP step when the password is not the default');
+  ok(title() === 'Admin access' && !byId('wiz-pw-pass'), 'the wizard starts at the access step, with no password field when the password is not the default');
   await wz.exitWizard();
   reset({ defaultauth: true });
   await wz.wizardSeen(L('O1', '-18.4', false));
-  ok(title() === 'Admin password', 'with the default password the wizard starts at the password step');
+  ok(title() === 'Admin access' && byId('wiz-pw-pass'), 'with the default password the access step asks for one');
   await wz.exitWizard();
   reset();
   S.SETTINGS = {};
@@ -1655,6 +1666,7 @@ ok(inputsOf('#sections') > 100,
   /* review masking: typed secrets never reach the page text */
   reset();
   wz.openWizard(true);
+  await wz.next();
   type('wiz-sn', 'ODIX00000009');
   type('wiz-ploam', 'hunter2pw');
   type('wiz-loid', 'newloid');
@@ -1671,6 +1683,7 @@ ok(inputsOf('#sections') > 100,
   /* apply from the wizard writes exactly the expected keys */
   reset();
   wz.openWizard(true);
+  await wz.next();
   type('wiz-sn', 'ODIX00000009');
   type('wiz-ploam', 'abc');
   await wz.next(); await wz.next();
@@ -1691,7 +1704,7 @@ ok(inputsOf('#sections') > 100,
   /* a VLAN-only change is applied without the internet-drop warning */
   reset();
   wz.openWizard(true);
-  await wz.next();
+  await wz.next(); await wz.next();
   type('wiz-vid', '120');
   await wz.next();
   ok(!/internet drops/.test(body()) && /VLAN 120 instead of 110/.test(body()), 'review: a VLAN change warns about the VLAN, not the internet');
@@ -1702,7 +1715,7 @@ ok(inputsOf('#sections') > 100,
   /* nothing to write: Finish just writes the marker */
   reset();
   wz.openWizard(false);
-  await wz.next(); await wz.next();
+  await wz.next(); await wz.next(); await wz.next();
   ok(/nothing to write/.test(body()) && doc.querySelector('#wizard-next').textContent === 'Finish', 'review: nothing changed says so');
   await click('#wizard-next');
   ok(!posts('/api/config').length && sw['confd.setup'] === true && !wz.isOpen(),
@@ -1731,11 +1744,52 @@ ok(inputsOf('#sections') > 100,
   globalThis.location.href = keepLoc;
   reset({ defaultauth: true });
   wz.openWizard(true);
-  const skipPw = all(doc.querySelector('#wizard-body'), (n) => n.tagName === 'button' && n.textContent === 'Skip this step')[0];
+  const skipPw = all(doc.querySelector('#wizard-body'), (n) => n.tagName === 'button' && n.textContent === 'Skip the password')[0];
   ok(skipPw && /built-in admin/.test(body()), 'password: skipping the step is offered, with a warning');
   skipPw.onclick();
   ok(title() === 'Your ISP login' && W.pw === null, 'password: skipping goes on to the ISP step and keeps nothing');
   await wz.exitWizard();
+
+  /* the SSH key: shown against what is installed, checked like System, Access, added through /api/sshkeys */
+  reset();
+  INSTALLED = [KEY];
+  wz.openWizard(true);
+  await tick();
+  ok(/1 key installed: ssh-ed25519 laptop/.test(textOf(doc.querySelector('#wizard-body'))) && !body().includes('AAAAC3'),
+     'ssh key: the installed keys are shown as a count and comments, never the key');
+  ok(/no ssh password/.test(body()), 'ssh key: the step says ssh uses keys only');
+  type('wiz-sshkey', 'hello world');
+  ok(doc.querySelector('#wizard-next').disabled === true && byId('wiz-sshkey-msg').textContent !== '', 'ssh key: a line that is not a key blocks Next');
+  type('wiz-sshkey', KEY);
+  ok(doc.querySelector('#wizard-next').disabled === true && /already in the list/.test(byId('wiz-sshkey-msg').textContent),
+     'ssh key: a key already installed is refused before it is sent');
+  type('wiz-sshkey', KEY2);
+  ok(doc.querySelector('#wizard-next').disabled === false && byId('wiz-sshkey-msg').textContent === '', 'ssh key: a good new key passes');
+  await wz.next(); await wz.next(); await wz.next();
+  ok(/SSH key/.test(body()) && /add ssh-ed25519 desk/.test(body()) && !body().includes('AAAAC3') && !/AAAAIKkK/.test(body()),
+     'ssh key: the review says "add <type> <comment>" and never shows the key');
+  await click('#wizard-next');
+  const sk = posts('/api/sshkeys');
+  ok(sk.length === 1 && new URLSearchParams(sk[0].body).get('key') === KEY2 && !posts('/api/config').length,
+     'ssh key: apply appends exactly that key through /api/sshkeys and writes no config key');
+  ok(INSTALLED.length === 2 && /SSH key: added/.test(body()), 'ssh key: and says so');
+  await wz.exitWizard();
+  /* a key with no password step on a default-password stick, and the daemon refusing a duplicate that raced in */
+  reset();
+  wz.openWizard(true);
+  await tick();
+  type('wiz-sshkey', KEY);
+  INSTALLED = [KEY];
+  await wz.next(); await wz.next(); await wz.next();
+  await click('#wizard-next');
+  ok(/SSH key: that key is already in the file/.test(body()), 'ssh key: a duplicate the daemon refuses is reported, not hidden');
+  await wz.exitWizard();
+  reset();
+  wz.openWizard(true);
+  await tick();
+  await wz.next(); await wz.next(); await wz.next();
+  await click('#wizard-next');
+  ok(!posts('/api/sshkeys').length, 'ssh key: skipping it sends nothing');
 
   /* the hints under the ladder */
   ok(wz.liveHint(L('O5', '-18', false), 0).cls === 'good', 'live hint: O5 is good news');

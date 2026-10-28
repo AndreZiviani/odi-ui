@@ -1049,13 +1049,18 @@ button in the header or by the page itself, and it asks the four things a new
 stick needs, in order, in simple mode only (everything else stays in Config,
 and *Skip, I'll use Config* is on every step):
 
-1. **Admin password** (only while the built-in `admin` / `admin` is in force):
-   the same `/api/password` and the same `passwordProblem` as System, Access.
-   The password is saved last, after the line settings, because the browser
-   keeps sending the old credential: from then on the wizard sends the new one
-   itself, and closing it signs out so the browser asks for it. *Skip this
-   step* is offered with the warning. The route changes the web password; the
-   ssh root password is a Config key of its own and is not touched.
+1. **Admin access**: the web password and, optionally, one SSH key. The
+   password block shows only while the built-in `admin` / `admin` is in force:
+   the same `/api/password` and `passwordProblem` as System, Access, saved last,
+   after the line settings, because the browser keeps sending the old credential
+   (from then on the wizard sends the new one itself, and closing it signs out so
+   the browser asks for it); *Skip the password* is offered with the warning.
+   The key goes through `POST /api/sshkeys` with the same `sshKeyProblem` as
+   System, Access, checked against the keys already installed (`GET
+   /api/sshkeys`), which the step shows as a count and comments so a stick that
+   already has keys is not given a duplicate; the review says `add <type>
+   <comment>` and never shows the key. ssh logs in as root with keys only; there
+   is no ssh password, so the wizard asks for none.
 2. **ISP login**: the serial (`valueProblem` of the `gponsn` type, live), the
    PLOAM password (optional) and, behind *My ISP gave me a LOID*, the LOID and
    its password. Fields are pre-filled with what the stick holds, except the
