@@ -285,15 +285,16 @@ ok(true, 'renderStatus runs against a diag capture');
 /* --- the chip temperature: the Status row and the header bar ------------- */
 {
   const raw = API['/api/status'].raw;
-  const row = () => textOf(doc.querySelector('#env'));
-  const chipDd = () => { const kids = doc.querySelector('#env').children; const i = kids.findIndex((d) => textOf(d) === 'Chip temperature'); return kids[i + 1]; };
+  const row = () => textOf(doc.querySelector('#stick'));
+  const chipDd = () => { const kids = doc.querySelector('#stick').children; const i = kids.findIndex((d) => textOf(d) === 'Chip temperature (SoC)'); return kids[i + 1]; };
   const bar = doc.querySelector('#chipbanner');
   renderStatus(raw);
-  ok(!/Chip temperature/.test(row()) && bar.hidden === true && doc.querySelector('#chip-help').hidden === true,
-     'chip temp: an image without the sensor shows no row, no bar and no help');
+  ok(row() === '' && doc.querySelector('#stickblock').hidden === true && bar.hidden === true,
+     'chip temp: an image without the sensor shows no Stick block, no bar and no help');
   renderStatus(raw, { celsius: 71.3 });
-  ok(/Chip temperature71\.3 °C/.test(row()) && bar.hidden === true && doc.querySelector('#chip-help').hidden === false,
-     'chip temp: the temperature alone is a plain number, with the help');
+  ok(row() === 'Chip temperature (SoC)71.3 °C' && bar.hidden === true && doc.querySelector('#stickblock').hidden === false
+     && !/Chip temperature/.test(textOf(doc.querySelector('#env'))),
+     'chip temp: the temperature alone is a plain number, in the Stick block with the help, not among the transceiver rows');
   renderStatus(raw, { celsius: 71.3, max: 95, crit: 110, max_alarm: false, crit_alarm: false });
   ok(textOf(chipDd()) === '71.3 °C' && chipDd().className === 'num' && bar.hidden === true, 'chip temp: normal is the number and nothing else');
   renderStatus(raw, { celsius: 96.4, max: 95, crit: 110, max_alarm: true, crit_alarm: false });
@@ -312,6 +313,19 @@ ok(true, 'renderStatus runs against a diag capture');
      'chip temp: an alarm with no limit reported leaves the limit out');
   renderStatus(raw, { celsius: 80, max: 95, crit: 110, max_alarm: false, crit_alarm: false });
   ok(bar.hidden === true, 'chip temp: the bar goes when the alarm clears');
+}
+
+/* --- the header bars are ordered by severity: red, yellow, blue ----------- */
+{
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  const head = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+  const bars = [...head.matchAll(/<div id="(\w+)" class="trial([^"]*)"/g)]
+    .map((m) => ({ id: m[1], rank: /\bhot\b/.test(m[2]) ? 0 : /\bupdate\b/.test(m[2]) ? 2 : 1 }));
+  ok(bars.map((b) => b.id).join() === 'chipbanner,trialbanner,safebanner,fallbackbanner,updatebanner',
+     'bars: critical chip bar, then trial boot, safe mode, fallback, then the release notice');
+  ok(bars.every((b, i) => i === 0 || bars[i - 1].rank <= b.rank),
+     'bars: red first, then the yellow stripes, then the blue notice, never the other way round');
+  ok((head.match(/class="trial/g) || []).length === bars.length, 'bars: every header bar is in that list');
 }
 
 /* --- the stick clock under NTP_SERVER ------------------------------------ */

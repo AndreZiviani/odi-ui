@@ -197,7 +197,7 @@ among `hwmon0` to `hwmon7`, because the number depends on what registered first,
 and emits a member only for a file that exists and holds a plain integer, so an
 older image shows less and a stock image shows nothing.
 
-Status shows a *Chip temperature* row beside the transceiver temperature. At the
+Status shows a *Chip temperature (SoC)* row in its own *Stick* block, under Transceiver: the chip is the stick, not the optics module, and a hot chip beside the transceiver's *Alarms: All clear* would read as a contradiction. At the
 warning alarm the row turns to a warning and says *above the warning limit
 (95 °C)*; the page keeps no limit of its own and quotes the ones the stick
 reports. At the critical alarm a red band in the header, on every view, says

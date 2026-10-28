@@ -245,13 +245,17 @@ function renderStatus(raw, chip) {
   env.textContent = '';
   env.append(
     ...stat('Temperature', temp === null ? '\u2014' : signed(Number(temp), 1) + ' \u00b0C', 'num'),
-    ...(chip ? stat('Chip temperature', ...chipRow(chip)) : []),
     ...stat('Supply', volt === null ? '\u2014' : Number(volt).toFixed(2) + ' V', 'num'),
     ...stat('Alarms',
       !alarms.length ? '\u2014' : asserted.length ? asserted.length + ' asserted' : 'All clear',
       asserted.length ? 'bad' : (alarms.length ? 'ok' : '')),
   );
-  $('#chip-help').hidden = !chip;
+  /* The SoC is the stick, not the optics module, so it is not in the
+     transceiver rows beside its alarms. */
+  $('#stickblock').hidden = !chip;
+  const stick = $('#stick');
+  stick.textContent = '';
+  if (chip) stick.append(...stat('Chip temperature (SoC)', ...chipRow(chip)));
   chipBar(chip);
   if (asserted.length) {
     env.append(el('dt', null, 'Asserted'),

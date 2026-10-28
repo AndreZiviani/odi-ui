@@ -48,6 +48,15 @@
     </button>
     <form method="post" action="/api/logout"><button id="logout" class="quiet" type="submit">Sign out</button></form>
   </div>
+  <!-- The header bars, most severe first: red (the chip is critical), then the
+       yellow stripes (trial boot, safe mode, fallbacks), then the blue notice.
+       The order is this file; a new bar goes in at its severity. -->
+  <!-- The chip passed its critical temperature (status.js): not dismissible,
+       it goes when the kernel clears the alarm. -->
+  <div id="chipbanner" class="trial hot" role="status" hidden>
+    <p id="chip-text"></p>
+    <a id="chip-open" class="button" href="#status">Show on Status</a>
+  </div>
   <!-- A trial boot: shown on every view, in the sticky header, for as long
        as U-Boot would boot another partition next. Not dismissible. -->
   <div id="trialbanner" class="trial" role="status" hidden>
@@ -66,12 +75,6 @@
   <div id="fallbackbanner" class="trial" role="status" hidden>
     <p id="fallback-text"></p>
     <a href="#config/network">Host port settings</a>
-  </div>
-  <!-- The chip passed its critical temperature (status.js): not dismissible,
-       it goes when the kernel clears the alarm. -->
-  <div id="chipbanner" class="trial hot" role="status" hidden>
-    <p id="chip-text"></p>
-    <a id="chip-open" class="button" href="#status">Show on Status</a>
   </div>
   <!-- A newer odi-oss release (updates.js), found by this browser, not by the
        stick. Unlike the bars above it can be dismissed, once per version. -->
@@ -112,6 +115,11 @@
         <section class="block">
           <h2>Transceiver</h2>
           <dl class="env" id="env"></dl>
+        </section>
+        <!-- The stick itself, not the optics module; shown when the kernel has the sensor. -->
+        <section class="block" id="stickblock" hidden>
+          <h2>Stick</h2>
+          <dl class="env" id="stick"></dl>
           <p class="help" id="chip-help" hidden>The chip temperature is read from the SoC sensor. Its scale is not verified against a reference, so read it as a trend rather than an exact figure. The limits are set high on purpose, and nothing is shut down automatically: the page only warns.</p>
         </section>
       </div>
