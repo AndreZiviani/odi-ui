@@ -192,6 +192,12 @@ main { padding: 24px 24px 120px; }
   border-top-color: var(--blue);
 }
 .trial.update strong { color: var(--blue-ink); }
+/* The chip temperature bar: the same band, in the alarm colour. */
+.trial.hot {
+  background: color-mix(in srgb, var(--red) 14%, var(--surface));
+  border-top-color: var(--red);
+}
+.trial.hot strong { color: var(--red-ink); }
 /* The release notes dialog: the same shape as the two trial dialogs. */
 #update-dialog {
   width: min(72ch, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 18px 20px;
@@ -570,6 +576,7 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .env dd { margin: 0; font-size: 14px; }
 .env dd.num { font: 700 15px var(--readout); }
 .env dd.ok { color: var(--green-ink); font-weight: 600; }
+.env dd.warn { color: var(--yellow-ink); font-weight: 600; }
 .env dd.bad { color: var(--red-ink); font-weight: 600; }
 
 .flow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; max-width: 760px; margin-bottom: 8px; }

@@ -11,6 +11,7 @@
 #include "confd.h"
 #include "routes.h"
 #include "firmware.h"
+#include "status.h"
 
 static unsigned long parse_u16(const char *s, unsigned long fallback)
 {
@@ -35,6 +36,10 @@ int main(int argc, char **argv)
 
 	if (argc > 0 && argv[0])
 		confd_exe = argv[0];
+	/* A second argument moves the hwmon directory, for make smoke only: /sys
+	 * cannot be stubbed in the container. The image starts confd with the port alone. */
+	if (argc > 2 && argv[2] && argv[2][0])
+		hwmon_root = argv[2];
 
 	/*
 	 * Ignore SIGPIPE, or the first client to hang up mid-response kills the

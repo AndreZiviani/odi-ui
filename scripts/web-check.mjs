@@ -282,6 +282,52 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(doc.querySelector('#tx').className === 'meter v-bad', 'and +0.2 dBm is out of the window');
 }
 
+/* --- the chip temperature: the Status row and the header bar ------------- */
+{
+  const raw = API['/api/status'].raw;
+  const row = () => textOf(doc.querySelector('#stick'));
+  const chipDd = () => { const kids = doc.querySelector('#stick').children; const i = kids.findIndex((d) => textOf(d) === 'Chip temperature (SoC)'); return kids[i + 1]; };
+  const bar = doc.querySelector('#chipbanner');
+  renderStatus(raw);
+  ok(row() === '' && doc.querySelector('#stickblock').hidden === true && bar.hidden === true,
+     'chip temp: an image without the sensor shows no Stick block, no bar and no help');
+  renderStatus(raw, { celsius: 71.3 });
+  ok(row() === 'Chip temperature (SoC)71.3 °C' && bar.hidden === true && doc.querySelector('#stickblock').hidden === false
+     && !/Chip temperature/.test(textOf(doc.querySelector('#env'))),
+     'chip temp: the temperature alone is a plain number, in the Stick block with the help, not among the transceiver rows');
+  renderStatus(raw, { celsius: 71.3, max: 95, crit: 110, max_alarm: false, crit_alarm: false });
+  ok(textOf(chipDd()) === '71.3 °C' && chipDd().className === 'num' && bar.hidden === true, 'chip temp: normal is the number and nothing else');
+  renderStatus(raw, { celsius: 96.4, max: 95, crit: 110, max_alarm: true, crit_alarm: false });
+  const dd = chipDd();
+  ok(textOf(dd) === '96.4 °C, above the warning limit (95 °C)' && dd.className === 'warn' && bar.hidden === true,
+     'chip temp: the warning alarm styles the row and says the limit, without a bar');
+  renderStatus(raw, { celsius: 112, max: 95, crit: 110, max_alarm: true, crit_alarm: true });
+  ok(bar.hidden === false
+     && /id="chipbanner" class="trial hot"/.test(readFileSync(join(root, 'web', 'index.html'), 'utf8'))
+     && textOf(doc.querySelector('#chip-text')) === 'The chip is very hot (112 °C, limit 110 °C). Check the airflow around the router\'s SFP cage.',
+     'chip temp: the critical alarm raises the header bar with the reading and the limit');
+  ok(/<a id="chip-open" class="button" href="#status">/.test(readFileSync(join(root, 'web', 'index.html'), 'utf8')),
+     'chip temp: the bar action carries the shared button class, as the other bars do');
+  renderStatus(raw, { celsius: 112, crit_alarm: true });
+  ok(textOf(doc.querySelector('#chip-text')).startsWith('The chip is very hot (112 °C). '),
+     'chip temp: an alarm with no limit reported leaves the limit out');
+  renderStatus(raw, { celsius: 80, max: 95, crit: 110, max_alarm: false, crit_alarm: false });
+  ok(bar.hidden === true, 'chip temp: the bar goes when the alarm clears');
+}
+
+/* --- the header bars are ordered by severity: red, yellow, blue ----------- */
+{
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  const head = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+  const bars = [...head.matchAll(/<div id="(\w+)" class="trial([^"]*)"/g)]
+    .map((m) => ({ id: m[1], rank: /\bhot\b/.test(m[2]) ? 0 : /\bupdate\b/.test(m[2]) ? 2 : 1 }));
+  ok(bars.map((b) => b.id).join() === 'chipbanner,trialbanner,safebanner,fallbackbanner,updatebanner',
+     'bars: critical chip bar, then trial boot, safe mode, fallback, then the release notice');
+  ok(bars.every((b, i) => i === 0 || bars[i - 1].rank <= b.rank),
+     'bars: red first, then the yellow stripes, then the blue notice, never the other way round');
+  ok((head.match(/class="trial/g) || []).length === bars.length, 'bars: every header bar is in that list');
+}
+
 /* --- the stick clock under NTP_SERVER ------------------------------------ */
 {
   const { ntpLine } = await import(join(root, 'web', 'config.js'));

@@ -128,7 +128,17 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
     GET  /api/status                     {"raw": one diag run (rx/tx power,
                                           temperature, voltage, ONU state, alarms,
                                           port counters)}; the page splits it on the
-                                          prompt. {"error":"diag failed"} on failure
+                                          prompt. {"error":"diag failed"} on failure.
+                                          `chip_temp` rides along when the kernel has the
+                                          hwmon device `rtl9602c_soc` (found by name in
+                                          /sys/class/hwmon/hwmon0..7, file reads only):
+                                          {"celsius":71.3,"max":95.0,"crit":110.0,
+                                          "max_alarm":false,"crit_alarm":false}, degrees C
+                                          with one decimal; a member is there only if its
+                                          file is (temp1_input, temp1_max, temp1_crit,
+                                          temp1_max_alarm, temp1_crit_alarm; older images
+                                          have no limits or alarms); absent entirely
+                                          without the device or temp1_input (stock image)
     GET  /api/ntp                        {"now": the stick's clock, epoch seconds,
                                           "ntp": null, or {"event","time","offset",
                                           "stratum","last_sync"} from /tmp/ntp-status

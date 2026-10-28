@@ -106,7 +106,12 @@ esac
 FLASH
 chmod +x /etc/scripts/flash
 
-qemu-mips-static "$BIN" "$PORT" &
+# The daemon reads /sys/class/hwmon, which cannot be stubbed here, so its second
+# argument moves that directory (src/main.c); a directory that does not exist is
+# a stick without the sensor.
+HWMON=/tmp/hwmon-stub
+rm -rf "$HWMON"
+qemu-mips-static "$BIN" "$PORT" "$HWMON" &
 DAEMON=$!
 trap 'kill $DAEMON 2>/dev/null || true' EXIT
 
@@ -1036,7 +1041,7 @@ check "it can be set" yes "$(err "$(sw 'name=confd.setup&on=1')" '"ok":true,"on"
 check "which creates the file next to confd.auth" yes "$([ -f /etc/config/confd.setup ] && echo yes)"
 check "and is reported" yes "$(err "$(fw)" '"confd.setup":true,')"
 kill $DAEMON; wait $DAEMON 2>/dev/null || true
-qemu-mips-static "$BIN" "$PORT" &
+qemu-mips-static "$BIN" "$PORT" "$HWMON" &
 DAEMON=$!
 for _ in $(seq 40); do
 	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PORT/api/schema" && break
@@ -1099,7 +1104,7 @@ check "and is reported" yes \
 check "the identity switch is untouched by it" no "$([ -f /etc/config/omci-identity.on ] && echo yes || echo no)"
 # The state is a file on the config partition, so a new daemon reads it back.
 kill "$DAEMON"; wait "$DAEMON" 2>/dev/null || true
-qemu-mips-static "$BIN" "$PORT" &
+qemu-mips-static "$BIN" "$PORT" "$HWMON" &
 DAEMON=$!
 for _ in $(seq 40); do
 	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PORT/api/schema" && break
@@ -1374,6 +1379,34 @@ printf 'event=<b>hi</b>\ntime=1\n' > /tmp/ntp-status
 check "an unknown event is not a status" yes \
 	"$(err "$(ntpj)" ',"ntp":null}')"
 rm -f /tmp/ntp-status
+
+echo "== the chip temperature sensor"
+# /api/status adds chip_temp from the hwmon device named rtl9602c_soc, by plain
+# file reads: members only for files that exist, nothing at all without the
+# device, and a value only if it is a plain integer, printed again.
+chip() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status" | grep -o '"chip_temp":{[^}]*}' || echo none; }
+chipdev() { rm -rf "$HWMON"; mkdir -p "$HWMON/hwmon0" "$HWMON/hwmon3"; echo coretemp > "$HWMON/hwmon0/name"; echo rtl9602c_soc > "$HWMON/hwmon3/name"; }
+check "no hwmon directory: no chip_temp" none "$(chip)"
+chipdev
+check "no temp1_input: no chip_temp" none "$(chip)"
+echo 71250 > "$HWMON/hwmon3/temp1_input"
+check "without limits, the temperature alone" '"chip_temp":{"celsius":71.3}' "$(chip)"
+echo 95000 > "$HWMON/hwmon3/temp1_max"; echo 110000 > "$HWMON/hwmon3/temp1_crit"
+echo 0 > "$HWMON/hwmon3/temp1_max_alarm"; echo 0 > "$HWMON/hwmon3/temp1_crit_alarm"
+check "normal, found by its name past another device" \
+	'"chip_temp":{"celsius":71.3,"max":95.0,"crit":110.0,"max_alarm":false,"crit_alarm":false}' "$(chip)"
+echo 96400 > "$HWMON/hwmon3/temp1_input"; echo 1 > "$HWMON/hwmon3/temp1_max_alarm"
+check "the warning alarm" \
+	'"chip_temp":{"celsius":96.4,"max":95.0,"crit":110.0,"max_alarm":true,"crit_alarm":false}' "$(chip)"
+echo 112000 > "$HWMON/hwmon3/temp1_input"; echo 1 > "$HWMON/hwmon3/temp1_crit_alarm"
+check "the critical alarm" \
+	'"chip_temp":{"celsius":112.0,"max":95.0,"crit":110.0,"max_alarm":true,"crit_alarm":true}' "$(chip)"
+echo -5050 > "$HWMON/hwmon3/temp1_input"; echo 'x<b>' > "$HWMON/hwmon3/temp1_max"; echo 2 > "$HWMON/hwmon3/temp1_crit_alarm"
+check "a negative reading; a limit that is not a number or a flag that is not 0 or 1 is left out" \
+	'"chip_temp":{"celsius":-5.1,"crit":110.0,"max_alarm":true}' "$(chip)"
+echo rtl9602c_soc_x > "$HWMON/hwmon3/name"
+check "a device whose name only starts the same is not it" none "$(chip)"
+rm -rf "$HWMON"
 
 echo "== the host link and the safe mode: state, banner data, verbs, credential"
 # odi-oss keeps the state of this boot in /var/run/host-autoneg (key=value,

@@ -170,7 +170,37 @@ function ladder(state) {
     : state === 'O5' ? 'Operational. The line is registered and carrying traffic.'
     : (STATES[state] || state) + ': not yet operational.';
 }
-function renderStatus(raw) {
+/*
+ * The SoC temperature, from /api/status chip_temp (the kernel hwmon sensor,
+ * read by confd; absent on an image without it). Only the alarms the kernel
+ * raised decide anything: this page holds no limit of its own, and the limits
+ * it quotes are the ones the stick reports.
+ */
+const deg = (v) => Math.round(v) + ' \u00b0C';
+
+function chipRow(chip) {
+  const t = signed(chip.celsius, 1) + ' \u00b0C';
+  const level = chip.crit_alarm ? 'critical' : chip.max_alarm ? 'warning' : null;
+  if (!level) return [t, 'num'];
+  const lim = level === 'critical' ? chip.crit : chip.max;
+  return [`${t}, above the ${level} limit` + (typeof lim === 'number' ? ` (${deg(lim)})` : ''),
+    level === 'critical' ? 'bad' : 'warn'];
+}
+
+/* The header bar on every view: only the critical alarm raises it. */
+function chipBar(chip) {
+  const bar = $('#chipbanner');
+  const hot = !!(chip && chip.crit_alarm);
+  bar.hidden = !hot;
+  const p = $('#chip-text');
+  p.textContent = '';
+  if (!hot) return;
+  p.append(el('strong', null, 'The chip is very hot'),
+    document.createTextNode(` (${deg(chip.celsius)}${typeof chip.crit === 'number' ? ', limit ' + deg(chip.crit) : ''}). `
+      + 'Check the airflow around the router\'s SFP cage.'));
+}
+
+function renderStatus(raw, chip) {
   const s = sections(raw);
   $('#raw').textContent = raw;
 
@@ -220,6 +250,13 @@ function renderStatus(raw) {
       !alarms.length ? '\u2014' : asserted.length ? asserted.length + ' asserted' : 'All clear',
       asserted.length ? 'bad' : (alarms.length ? 'ok' : '')),
   );
+  /* The SoC is the stick, not the optics module, so it is not in the
+     transceiver rows beside its alarms. */
+  $('#stickblock').hidden = !chip;
+  const stick = $('#stick');
+  stick.textContent = '';
+  if (chip) stick.append(...stat('Chip temperature (SoC)', ...chipRow(chip)));
+  chipBar(chip);
   if (asserted.length) {
     env.append(el('dt', null, 'Asserted'),
       el('dd', 'bad', asserted.map((l) => l.replace(/\s*Alarm\s*:.*$/i, '').trim()).join(', ')));
