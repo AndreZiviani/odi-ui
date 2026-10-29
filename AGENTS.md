@@ -80,7 +80,10 @@ container has no git history) and compiled in, reported by `confd` itself
 and shown in the Firmware tab -- this is how you tell an on-device override
 apart from what the flashed image actually ships. A shallow checkout breaks
 this silently by making every tag describe as `unknown`; CI always fetches
-full history. Never publish a release by hand: `scripts/check-stamp.sh`
+full history. A tag with a hyphen after the version (`v1.11.0-beta.1`) is a
+pre-release for an odi-oss pre-release: published as a pre-release, never as
+latest, with `## Unreleased` as its notes, and the changelog is not moved for
+it. Never publish a release by hand: `scripts/check-stamp.sh`
 refuses a binary whose stamp is not exactly the tag from a clean tree, and
 v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
 
