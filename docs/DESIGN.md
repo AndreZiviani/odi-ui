@@ -896,7 +896,9 @@ and exits 1 while looking like it worked.
 
 ## Authentication
 
-HTTP Basic, credentials in `/etc/config/confd.auth` as `user:password`:
+One credential, in `/etc/config/confd.auth` as `user:password`. A browser signs
+in with it once, on the sign-in page, and gets a session cookie; `curl` and
+scripts send it as HTTP Basic on every request (see "Sessions" below):
 
 ```sh
 ssh admin@<stick> 'printf "user:password" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'
@@ -941,9 +943,9 @@ where finding that out means a site visit. The file is written `0600`, with an
 explicit `chmod`: `open()`'s mode applies only when the file is created, so
 rewriting one that already exists world-readable would leave it that way.
 
-Afterwards the browser is still holding the **old** credential and will replay
-it into a `401`, so the page says to sign out and back in rather than letting a
-successful change look like a broken page.
+Afterwards the browser that made the change stays signed in, and every other
+session ends: a browser that signed in with the old password has to sign in
+with the new one. The page says so.
 
 ### Saying so is what makes it defensible
 
@@ -977,33 +979,84 @@ curl -X POST .../boaform/formSaveConfig  --data-raw 'reset=Reset&submit-url=%2Fs
 Whatever `boa` is actually keying on, the erase went through without the second
 request carrying anything. The same shape here answers `401`.
 
-Two related properties fall out of the same design. The login is **not a
-session**, so nothing is left authenticated behind you and a second tool
-polling the device does not evict your shell &mdash; unlike the stock UI, which
-allows one login at a time, and unlike ssh on this stick, which allows one
+Two related properties fall out of the same design. Signing in does **not
+take a lock**: several browsers can be signed in at once, and a second tool
+polling the device with Basic does not evict your session &mdash; unlike the
+stock UI, which allows one login at a time, and unlike ssh on this stick, which allows one
 connection and made the upstream Prometheus collectors fight the operator for
 it. And a failed attempt **sleeps one second before answering**: the server is
 single-threaded and serial, so that is a hard global rate limit rather than a
 per-connection one. Measured without it, this device answers 319 guesses a
 second.
 
-### There is no session
+### Sessions
 
-HTTP Basic is stateless, so this is worth being explicit about:
+Up to v1.10.0 this was HTTP Basic alone, deliberately stateless: no cookie, no
+token, no expiry. Two things made that the wrong trade for a browser.
 
-- **No session, no cookie, no token, and no expiry.** The browser caches the
-  credential and replays it on every request; each one is authenticated
-  independently.
-- **Sign out is best-effort.** There is no session to end, so the button answers
-  `401` and lets the browser drop what it cached for the realm. Most browsers
-  do; none promise to. Closing the tab is the only certain way, which is what
-  the signed-out page says.
-- Failed attempts are **delayed one second**. Without that, the only limit on
-  guessing was how fast the device could answer — measured at **319
-  attempts/sec**, enough to walk a human-chosen password. The daemon is
-  single-threaded and serial, so the delay is a hard global rate limit rather
-  than a per-connection one: an attacker cannot open more sockets to go faster.
-  Measured after: **1/sec**, with correct logins unaffected.
+- **Sign out could not be done.** The browser holds a Basic credential and
+  replays it; the server can only answer `401` and hope the browser forgets.
+  Chromium answers that `401` by opening its own password dialog over the page,
+  which reads as a broken sign-out, and the sign-out form itself was refused as
+  cross-site: under `Referrer-Policy: no-referrer` a Chromium form post carries
+  `Origin: null` (odi-oss#239).
+- **The password crossed the network with every request.** The UI is plain
+  HTTP and polls every 15 seconds. A session token crosses it too, but it is
+  not the password, it is useless to anyone once it ends, and it ends.
+
+So a browser now signs in on `/login` and gets a session:
+
+- **The token** is 16 bytes from `/dev/urandom`, as 32 hex digits, in a cookie
+  `odi_session` marked `HttpOnly` (the page's scripts cannot read it) and
+  `SameSite=Strict` (the browser does not send it on a request another site
+  starts, which backs up the `Origin` check below). No `Secure`: there is no
+  HTTPS to require. No `Max-Age`: the browser drops it when it closes.
+- **The table** is 8 rows in RAM. A ninth sign-in drops the least recently used
+  row. Nothing is written to flash, so a confd restart signs everyone out, and
+  a token cannot be read off the config partition.
+- **A session ends** after 30 minutes without a request, after 24 hours in all,
+  at sign-out, when confd restarts, or when the password changes (every session
+  but the one that changed it). An open page polls every 15 seconds, so in
+  practice only the 24 hours ends a session that is in use. When one ends, the
+  page's next request gets `401` and the page goes to `/login`, keeping the view
+  in the location hash.
+- **Sign out deletes the row**, so it ends the session for certain, and clears
+  the cookie. It needs no credential and takes any `Origin`: the worst a
+  foreign page can do with it is sign you out.
+- **Sign-in costs a second when it fails**, the same global rate limit as a
+  wrong Basic header. The comparison is constant-time, like Basic's. Token
+  lookups compare every live row in full.
+
+**Basic stays, for everything that is not a browser.** A request with a
+correct Basic header is served exactly as before, so `curl -u` and every
+script keep working. What changed is the challenge: `WWW-Authenticate` is sent
+only in answer to a Basic header that was wrong. A request with no credential
+gets `303` to `/login` when it is a browser opening a page (a `GET` that accepts
+`text/html`) and a bare `401` otherwise. Sending the challenge to the page's
+own requests is what makes a browser open its password dialog; the cost is
+that a client which waits to be challenged before it sends Basic (`wget`
+without `--auth-no-challenge`) has to send it up front.
+
+One case is not covered: a browser that typed the password into the old Basic
+dialog keeps that credential until it closes, and keeps sending it. Sign out
+still ends its session, but the cached Basic header signs it straight back in,
+until the browser is closed. That lasts only until the first restart of the
+browser after the update, since nothing asks for Basic any more.
+
+Failed attempts are **delayed one second**. Without that, the only limit on
+guessing was how fast the device could answer — measured at **319
+attempts/sec**, enough to walk a human-chosen password. The daemon is
+single-threaded and serial, so the delay is a hard global rate limit rather
+than a per-connection one: an attacker cannot open more sockets to go faster.
+Measured after: **1/sec**, with correct logins unaffected. A request that offers
+no credential at all guessed nothing and is answered at once.
+
+**`Sec-Fetch-Site` does little over plain HTTP.** `request_refusal()` refuses a
+request a browser marks `cross-site`, but browsers send the `Sec-Fetch-*`
+headers only to HTTPS and `localhost`: Chromium sends none of them to
+`http://192.168.1.1` (checked in Chrome, 2026-10). The writes do not depend on it (the
+`Origin` check and now `SameSite=Strict` cover them); a cross-site `GET` such as
+the diagnostics bundle is held back only by the credential.
 
 ### Cross-site writes are refused
 
@@ -1085,16 +1138,13 @@ and opens it the same way, for up to a minute.
 
 ### Why the password is asked again, and no token carries it over
 
-confd has no session to hand over. The credential is HTTP Basic, checked on every
-request (see Authentication above), and the browser keeps it per scheme, host
-and port: the new address is a different place and has none. The script cannot
-read it either; it is the browser's, not the page's.
+The session cookie belongs to the address the browser signed in on (a cookie
+is kept per host): the new address is a different place and has none, and the
+page cannot read the cookie to carry it over, since it is `HttpOnly`.
 
-A token that logs the new address in would have to be a session, and this daemon
-is deliberately stateless: no cookie, no token, no expiry (above). Adding one
-for this would be the first of them, in a daemon that speaks cleartext HTTP, to
-carry a value in a URL that browsers keep in history and send as a `Referer`,
-accepted by the one code path that is the sign-in. A token that is only allowed
+A token that logs the new address in would have to travel in a URL, in a daemon
+that speaks cleartext HTTP, where browsers keep it in history and send it as a
+`Referer`, accepted by the one code path that is the sign-in. A token that is only allowed
 to Keep or Revert is safe enough but buys nothing: the user then needs the
 password anyway to use the UI on the new address, so the number of prompts is
 the same (one). So the design is the second one the task allowed: the new

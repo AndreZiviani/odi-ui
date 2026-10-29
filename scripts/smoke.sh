@@ -399,6 +399,78 @@ big=$(python3 -c 'print("&".join("PON_VENDOR_ID=" + "x"*500 for _ in range(60)))
 check "an oversized body is refused, not trimmed" 413 \
 	"$(code -u "$AUTH" -X POST --data "$big" "http://127.0.0.1:$PORT/api/config")"
 
+echo "== sessions"
+L="http://127.0.0.1:$PORT"
+HTML='Accept: text/html,application/xhtml+xml'
+challenged() { case "$1" in *WWW-Authenticate*) echo yes ;; *) echo no ;; esac; }
+check "a browser opening the page without a session goes to /login" yes \
+	"$(err "$(curl -s -D - -o /dev/null -H "$HTML" "$L/")" 'Location: /login')"
+check "  and is not challenged, so no browser password dialog" no \
+	"$(challenged "$(curl -s -D - -o /dev/null -H "$HTML" "$L/")")"
+check "a fetch with no credential gets a bare 401" no \
+	"$(challenged "$(curl -s -D - -o /dev/null "$L/api/schema")")"
+check "a wrong Basic header is challenged" yes \
+	"$(challenged "$(curl -s -D - -o /dev/null -u admin:wrong "$L/api/schema")")"
+t=$(curl -s -o /dev/null -w '%{time_total}' "$L/api/schema")
+check "a request with no credential is not delayed" yes "$(awk -v t="$t" 'BEGIN { print (t < 0.8) ? "yes" : "no" }')"
+check "the sign-in page needs no credential" 200 "$(code "$L/login")"
+check "  nor its script" 200 "$(code "$L/login.js")"
+check "  nor the stylesheet" 200 "$(code "$L/style.css")"
+check "  and keeps its query" 200 "$(code "$L/login?out=1")"
+check "nothing else is served without one" 401 "$(code "$L/app.js")"
+tok_of() { printf '%s' "$1" | sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p'; }
+li() { curl -s -D - -o /tmp/login.body -X POST -H "Origin: $L" --data "$1" "$L/api/login"; }
+r=$(li 'user=admin&password=wrong')
+check "a wrong password is 401" yes "$(err "$r" '401 Unauthorized')"
+check "  and says so" yes "$(err "$(cat /tmp/login.body)" 'wrong username or password')"
+check "  and sets no cookie" no "$(case "$r" in *Set-Cookie*) echo yes ;; *) echo no ;; esac)"
+check "  and does not challenge" no "$(challenged "$r")"
+t=$(curl -s -o /dev/null -w '%{time_total}' -X POST -H "Origin: $L" --data 'user=admin&password=wrong' "$L/api/login")
+check "  and costs a second" yes "$(awk -v t="$t" 'BEGIN { print (t >= 0.9) ? "yes" : "no" }')"
+check "a wrong username is refused too" 401 \
+	"$(code -X POST -H "Origin: $L" --data "user=root&password=${AUTH#*:}" "$L/api/login")"
+check "a foreign page cannot sign in" 403 \
+	"$(code -X POST -H 'Origin: http://evil.example' --data "user=${AUTH%%:*}&password=${AUTH#*:}" "$L/api/login")"
+check "  nor a null Origin" 403 \
+	"$(code -X POST -H 'Origin: null' --data "user=${AUTH%%:*}&password=${AUTH#*:}" "$L/api/login")"
+r=$(li "user=${AUTH%%:*}&password=${AUTH#*:}")
+tok=$(tok_of "$r")
+check "the right password gets a 32-hex session cookie" 32 "${#tok}"
+check "  HttpOnly and SameSite=Strict" yes "$(err "$r" 'odi_session='"$tok"'; Path=/; HttpOnly; SameSite=Strict')"
+C="Cookie: odi_session=$tok"
+check "the session opens the API" 200 "$(code -H "$C" "$L/api/schema")"
+check "  and the page" 200 "$(code -H "$C" -H "$HTML" "$L/")"
+check "  among other cookies" 200 "$(code -H "Cookie: a=b; odi_session=$tok; c=d" "$L/api/schema")"
+check "a signed-in browser is sent on from /login" yes \
+	"$(err "$(curl -s -D - -o /dev/null -H "$C" "$L/login")" 'Location: /')"
+last=${tok: -1}
+if [ "$last" = 0 ]; then near=${tok%?}1; else near=${tok%?}0; fi
+check "a token one digit off is refused" 401 "$(code -H "Cookie: odi_session=$near" "$L/api/schema")"
+check "a token one digit too long is refused" 401 "$(code -H "Cookie: odi_session=${tok}0" "$L/api/schema")"
+check "a session write still refuses a foreign Origin" 403 \
+	"$(code -H "$C" -X POST -H 'Origin: http://evil.example' -d 'what=omci' "$L/api/apply")"
+check "  and a null Origin" 403 "$(code -H "$C" -X POST -H 'Origin: null' -d 'what=omci' "$L/api/apply")"
+# A Chromium form POST under Referrer-Policy: no-referrer sends Origin: null.
+r=$(curl -s -D - -o /dev/null -H "$C" -X POST -H 'Origin: null' "$L/api/logout")
+check "sign out from the page's form (Origin: null) goes to /login?out=1" yes "$(err "$r" 'Location: /login?out=1')"
+check "  and clears the cookie" yes "$(err "$r" 'odi_session=; Path=/; Max-Age=0')"
+check "  and the session is gone" 401 "$(code -H "$C" "$L/api/schema")"
+check "sign out with no session still lands on /login" yes \
+	"$(err "$(curl -s -D - -o /dev/null -X POST "$L/api/logout")" 'Location: /login?out=1')"
+login_tok() { tok_of "$(li "user=${AUTH%%:*}&password=${AUTH#*:}")"; }
+first=$(login_tok)
+for i in 1 2 3 4 5 6 7 8; do newest=$(login_tok); done
+check "a ninth session drops the least recently used" 401 "$(code -H "Cookie: odi_session=$first" "$L/api/schema")"
+check "  and keeps the newest" 200 "$(code -H "Cookie: odi_session=$newest" "$L/api/schema")"
+a=$(login_tok)
+b=$(login_tok)
+check "a password change from a session" 200 \
+	"$(code -H "Cookie: odi_session=$a" -X POST -H "Origin: $L" --data 'user=admin&password=n3wpass' "$L/api/password")"
+check "  keeps that session" 200 "$(code -H "Cookie: odi_session=$a" "$L/api/schema")"
+check "  and ends the others" 401 "$(code -H "Cookie: odi_session=$b" "$L/api/schema")"
+check "  and Basic takes the new password" 200 "$(code -u admin:n3wpass "$L/api/schema")"
+printf '%s' "$AUTH" > /etc/config/confd.auth
+
 echo "== csrf"
 check "cross-origin POST is refused" 403 \
 	"$(code -u "$AUTH" -X POST -H 'Origin: http://evil.example' \
@@ -451,11 +523,12 @@ check "and it says nothing about the stick" "cross-site request refused" "$(tr -
 check "and it is not delayed like a failed sign-in" yes \
 	"$(awk -v t="${probe#* }" 'BEGIN { print (t < 0.8) ? "yes" : "no" }')"
 nav=$(curl -s -D - -o /dev/null -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
-	-H 'Sec-Fetch-Dest: document' "$U/")
-check "the redirect navigation, with no credential, lands on the Basic challenge" yes \
-	"$(err "$nav" 'WWW-Authenticate: Basic')"
-check "the page after the redirect is the same sign-in: 401, not a token path" 401 \
-	"$(code -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' "$U/?t=abcdef")"
+	-H 'Sec-Fetch-Dest: document' -H 'Accept: text/html' "$U/")
+check "the redirect navigation, with no credential, lands on the sign-in page" yes \
+	"$(err "$nav" 'Location: /login')"
+check "the page after the redirect is the same sign-in: 303, not a token path" 303 \
+	"$(code -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Dest: document' \
+		-H 'Accept: text/html' "$U/?t=abcdef")"
 check "a followed link to /api/netaddr is refused" 403 \
 	"$(code -u "$AUTH" -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: navigate' \
 		-H 'Sec-Fetch-Dest: document' "$U/api/netaddr")"
@@ -734,7 +807,7 @@ echo "== web assets"
 # nothing at all in a log.
 for f in web/*.js web/*.css web/*.html; do
 	b=$(basename "$f")
-	u="/$b"; [ "$b" = index.html ] && u="/"
+	u="/$b"; [ "$b" = index.html ] && u="/"; [ "$b" = login.html ] && u="/login"
 	check "serves $b" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT$u")"
 done
 check "an unlisted file is refused" 404 \
@@ -746,11 +819,8 @@ for p in "/../confd.auth" "/..%2fconfd.auth" "//etc/config/confd.auth"; do
 done
 
 echo "== routes"
-check "sign out answers 401, not 405" 401 \
+check "sign out with a Basic header answers 401, not 405" 401 \
 	"$(code -u "$AUTH" -X POST "http://127.0.0.1:$PORT/api/logout")"
-# A Chromium form POST under Referrer-Policy: no-referrer sends Origin: null.
-check "sign out with Origin: null answers 401, not 403" 401 \
-	"$(code -u "$AUTH" -X POST -H 'Origin: null' "http://127.0.0.1:$PORT/api/logout")"
 check "any other write with Origin: null is still refused" 403 \
 	"$(code -u "$AUTH" -X POST -H 'Origin: null' -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")"
 check "values are parsed and served" yes \

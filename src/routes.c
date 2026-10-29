@@ -675,6 +675,117 @@ static int emit_ntp_status(int conn)
 	return 1;
 }
 
+/*
+ * The routes that answer before a credential is asked for: the sign-in page
+ * and what it loads, the sign-in itself, and sign-out. Returns 1 when it
+ * answered. Runs after request_refusal(), so a rebound DNS name gets none of
+ * them either, and before request_path(), so it reads the request as it came.
+ */
+static int serve_public(int conn, unsigned long body_have, unsigned long body_want)
+{
+	char target[32];
+
+	if (!request_target(req, target, sizeof(target)))
+		return 0;
+
+	if (spre(req, "GET ") &&
+	    (seq(target, "/login") || seq(target, "/login.js") || seq(target, "/style.css"))) {
+		/* Signed in already: nothing to do there. */
+		if (seq(target, "/login") && authorised(req) == AUTH_SESSION) {
+			respond(conn, "303 See Other", "text/plain", "Location: /\r\n");
+			return 1;
+		}
+		return serve_asset(conn, target);
+	}
+
+	/*
+	 * Sign in: the credential, once, for a session cookie.
+	 *
+	 * The page posts it with fetch(), which sends the real Origin, so a
+	 * foreign page is refused here like any other cross-site write. A wrong
+	 * credential costs the same second as a wrong Basic header.
+	 */
+	if (seq(target, "/api/login") && spre(req, "POST ")) {
+		char user[256], pass[512], tok[33], cookie[128];
+		char *body = request_body(req);
+		unsigned long k;
+		int ok;
+
+		if (body_want && body_have < body_want) {
+			respond(conn, "413 Payload Too Large", "text/plain", 0);
+			put_fd(conn, "request too large\n");
+			return 1;
+		}
+		if (!same_origin(req)) {
+			respond(conn, "403 Forbidden", "text/plain", 0);
+			put_fd(conn, "cross-site request refused\n");
+			return 1;
+		}
+		ok = form_get(body, "user", user, sizeof(user)) &&
+		     form_get(body, "password", pass, sizeof(pass)) &&
+		     credential_matches(user, pass);
+		for (k = 0; k < sizeof(pass); k++)
+			((volatile char *)pass)[k] = 0;
+		for (k = 0; body[k]; k++)
+			((volatile char *)body)[k] = 0;
+		if (!ok) {
+			sleep_s(1);
+			respond(conn, "401 Unauthorized", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"wrong username or password\"}");
+			return 1;
+		}
+		if (!session_start(tok)) {
+			respond(conn, "500 Internal Server Error", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"could not start a session: "
+				     "no random bytes from " RANDOM_PATH "\"}");
+			return 1;
+		}
+		str_copy(cookie, "Set-Cookie: " SESSION_COOKIE "=", sizeof(cookie));
+		str_copy(cookie + slen(cookie), tok, sizeof(cookie) - slen(cookie));
+		str_copy(cookie + slen(cookie), "; Path=/; HttpOnly; SameSite=Strict\r\n",
+			 sizeof(cookie) - slen(cookie));
+		respond(conn, "200 OK", "application/json", cookie);
+		put_fd(conn, "{\"ok\":true}");
+		return 1;
+	}
+
+	/*
+	 * Sign out, any method, signed in or not: there is nothing to protect.
+	 *
+	 * The page posts it as a plain form, and under this daemon's
+	 * `Referrer-Policy: no-referrer` a Chromium form POST carries
+	 * `Origin: null`, so it is not held to the cross-site check: a foreign
+	 * page that signs the operator out costs them a sign-in, nothing more.
+	 *
+	 * A session is deleted, which ends it for certain, and the browser is
+	 * sent to the sign-in page. A request that carries no session but a
+	 * Basic header gets what sign-out used to be: a 401 with a fresh
+	 * challenge, so a browser that cached the password drops it.
+	 */
+	if (seq(target, "/api/logout")) {
+		if (authorised(req) != AUTH_SESSION &&
+		    header_copy(req, "authorization", hdrbuf, sizeof(hdrbuf))) {
+			respond(conn, "401 Unauthorized", "text/html",
+				"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");
+			put_fd(conn,
+			       "<!doctype html><meta charset=utf-8>"
+			       "<title>Signed out</title>"
+			       "<body style=\"font:14px system-ui;padding:2rem\">"
+			       "<h1>Signed out</h1>"
+			       "<p>Close this tab to be sure the credential is gone. "
+			       "<a href=\"/login\">Sign in again</a>.</body>");
+			return 1;
+		}
+		session_end_current(req);
+		respond(conn, "303 See Other", "text/plain",
+			"Location: /login?out=1\r\n"
+			"Set-Cookie: " SESSION_COOKIE "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict\r\n");
+		put_fd(conn, "signed out\n");
+		return 1;
+	}
+	return 0;
+}
+
 void serve(int conn)
 {
 	char *path, *method, *body, *query;
@@ -705,26 +816,45 @@ void serve(int conn)
 		}
 	}
 
+	if (serve_public(conn, body_have, body_want))
+		return;
+
 	/* Authenticate BEFORE parsing, not after: request_path() NUL-terminates
 	 * the method and the path in place, and the first of those NULs stops
 	 * any later scan for a header dead. That cost an hour of a correct
 	 * password being rejected. */
 	if (!authorised(req)) {
+		int basic = header_copy(req, "authorization", hdrbuf, sizeof(hdrbuf));
+
 		/*
-		 * Sleep before answering a failed attempt. HTTP Basic has no
-		 * session and no lockout, so without this the only limit on
-		 * guessing is how fast the device can answer — measured at 319
-		 * attempts/sec, which is plenty to walk a human-chosen password.
+		 * Sleep before answering a wrong password. There is no lockout,
+		 * so without this the only limit on guessing is how fast the
+		 * device can answer -- measured at 319 attempts/sec, which is
+		 * plenty to walk a human-chosen password.
 		 *
 		 * This server is single-threaded and serial, which turns a
 		 * modest delay into a hard global rate limit: the sleep blocks
 		 * every other request too, so an attacker cannot open more
 		 * connections to go faster. It costs a legitimate typo one
-		 * second.
+		 * second. A request that offered no credential guessed nothing
+		 * and is answered at once.
 		 */
-		sleep_s(1);
+		if (basic)
+			sleep_s(1);
+		/* A browser opening a page goes to the sign-in page. */
+		if (spre(req, "GET ") && header_has(req, "accept", "text/html")) {
+			respond(conn, "303 See Other", "text/plain", "Location: /login\r\n");
+			put_fd(conn, "sign in at /login\n");
+			return;
+		}
+		/*
+		 * The Basic challenge only to a client that is speaking Basic.
+		 * Sent to the page, it makes the browser open its own password
+		 * dialog over the sign-in page: a fetch that finds the session
+		 * gone gets a bare 401, and the page goes to /login itself.
+		 */
 		respond(conn, "401 Unauthorized", "text/plain",
-			"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");
+			basic ? "WWW-Authenticate: Basic realm=\"odi-ui\"\r\n" : 0);
 		put_fd(conn, "authentication required\n");
 		return;
 	}
@@ -760,15 +890,7 @@ void serve(int conn)
 				query = path + q + 1;
 			}
 		}
-		/*
-		 * Sign out is let through. The page posts it as a plain form,
-		 * and under this daemon's `Referrer-Policy: no-referrer` a
-		 * Chromium form POST carries `Origin: null`, which is refused
-		 * here as foreign: the button answered "cross-site request
-		 * refused". Letting a foreign page sign the operator out costs
-		 * them a password prompt, nothing more.
-		 */
-		if (cross && !seq(method, "GET") && !seq(path, "/api/logout")) {
+		if (cross && !seq(method, "GET")) {
 			respond(conn, "403 Forbidden", "text/plain", 0);
 			put_fd(conn, "cross-site request refused\n");
 			return;
@@ -915,33 +1037,6 @@ void serve(int conn)
 	if (body_want && body_have < body_want) {
 		respond(conn, "413 Payload Too Large", "text/plain", 0);
 		put_fd(conn, "request too large\n");
-		return;
-	}
-
-	/*
-	 * Sign out, as far as HTTP Basic allows.
-	 *
-	 * There is no session to end -- the browser holds the credential and
-	 * replays it -- so the honest implementation is to answer 401 and let
-	 * the browser drop what it cached for this realm. It is not a guarantee
-	 * (the credential is cleared at the browser's discretion), which is why
-	 * the page says close the tab.
-	 *
-	 * The button shipped before this route did, and posting to a route that
-	 * does not exist fell through to the 405 handler: the whole UI was
-	 * replaced by a plain-text error page with no way back but retyping the
-	 * URL.
-	 */
-	if (seq(path, "/api/logout")) {
-		respond(conn, "401 Unauthorized", "text/html",
-			"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");
-		put_fd(conn,
-		       "<!doctype html><meta charset=utf-8>"
-		       "<title>Signed out</title>"
-		       "<body style=\"font:14px system-ui;padding:2rem\">"
-		       "<h1>Signed out</h1>"
-		       "<p>Close this tab to be sure the credential is gone. "
-		       "<a href=\"/\">Sign in again</a>.</body>");
 		return;
 	}
 
@@ -1130,11 +1225,11 @@ void serve(int conn)
 			put_fd(conn, "\"}");
 			return;
 		}
+		/* Whoever signed in with the old password is signed out; the
+		 * browser that made the change stays signed in. */
+		session_end_others();
 		respond(conn, "200 OK", "application/json", 0);
-		/* The browser is still holding the OLD credential and will
-		 * replay it on the next request, which now answers 401. Saying
-		 * so is the difference between "it worked" and "it broke". */
-		put_fd(conn, "{\"ok\":true,\"note\":\"saved -- sign out and back in with the new credential\"}");
+		put_fd(conn, "{\"ok\":true,\"note\":\"saved -- every other browser signed in to this page is signed out\"}");
 		return;
 	}
 

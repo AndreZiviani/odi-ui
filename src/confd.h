@@ -311,6 +311,20 @@
  */
 #define DEFAULT_AUTH "admin:admin"
 
+/*
+ * Browser sign-in sessions (http.c). A browser signs in once on /login and
+ * then carries a random token in a cookie; scripts keep sending HTTP Basic.
+ * The table is in RAM only, so a confd restart signs everybody out. A full
+ * table drops its least recently used session. A session ends after
+ * SESSION_IDLE_S without a request, and after SESSION_MAX_S whatever happens;
+ * an open page polls every 15 s, so only the second ends a session in use.
+ */
+#define SESSION_SLOTS   8
+#define SESSION_IDLE_S  1800
+#define SESSION_MAX_S   86400
+#define SESSION_COOKIE  "odi_session"
+#define RANDOM_PATH     "/dev/urandom"
+
 /* Written by the image build: image=, base=, confd=, exporter=, built=.
  * One file naming every component, so "what is on this stick" is a single read
  * rather than three build stamps that have to be correlated by hand. Absent on

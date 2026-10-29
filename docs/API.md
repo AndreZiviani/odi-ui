@@ -10,11 +10,44 @@ IP literal, a single label or a private suffix (`.local`, `.lan`, `.home.arpa`,
 `.localdomain`, `.internal`, `.localhost`, `.home`), or a name listed in
 `/etc/config/confd.hosts`; anything else is `403` (DNS rebinding). A request a
 browser marks `Sec-Fetch-Site: cross-site` or `same-site` is `403` unless it is a
-top-level navigation.
+top-level navigation. (Browsers send `Sec-Fetch-*` only to HTTPS and
+`localhost`, so over plain HTTP to the stick this rule rarely applies.)
 
-All writes require the same HTTP Basic credential as the page, refuse a
-cross-site `Origin`, and (for `/api/config`) read every value back before
-reporting success.
+Every route but the sign-in ones (below) needs a credential: the session cookie
+a browser gets from `/api/login`, or an HTTP Basic header, which is what `curl`
+and scripts send. Send Basic up front (`curl -u`, `wget --auth-no-challenge`):
+the `WWW-Authenticate` challenge is sent only in answer to a Basic header that
+was wrong, never to a request with no credential, so that a browser never opens
+its own password dialog. Without a credential, a `GET` that accepts
+`text/html` (a browser opening a page) is `303` to `/login`, anything else is
+`401`. A wrong credential costs one second.
+
+All writes refuse a cross-site `Origin`, and (for `/api/config`) read every
+value back before reporting success.
+
+## Sign in
+
+    GET  /login                          the sign-in page (and /login.js, /style.css),
+                                          no credential needed; `303` to `/` when the
+                                          browser already has a live session
+    POST /api/login    user=...&password=...
+                                          200 `{"ok":true}` with
+                                          `Set-Cookie: odi_session=<32 hex>; Path=/; HttpOnly; SameSite=Strict`;
+                                          401 `{"ok":false,"error":"wrong username or password"}`
+                                          after one second; 403 from another site
+                                          (a foreign or `null` Origin); 500 when no
+                                          random bytes could be read
+    POST /api/logout                     ends the session the cookie names, clears the
+                                          cookie, `303` to `/login?out=1`; any method,
+                                          any Origin, no credential needed. A request
+                                          with a Basic header and no session gets the
+                                          old answer instead: 401 with a fresh
+                                          challenge and a "Signed out" page
+
+A session is held in RAM, 8 at most (a ninth sign-in drops the least recently
+used), and ends after 30 minutes without a request, after 24 hours in all, when
+confd restarts, or at sign-out. A password change through `/api/password` ends
+every session but the one that made it.
 
 ## Config and values
 
@@ -242,9 +275,9 @@ no CORS grant and sends no credential. The stick answers that fetch with `403`
 and the text `cross-site request refused` before it looks at any credential (and
 so without the one-second delay a failed sign-in costs); nothing else leaves the
 stick. Then it navigates to the new address, a top-level navigation, which is
-allowed and answers `401` with the Basic challenge: the browser asks for the
-password there, because it keeps a credential per address. There is no token or
-cookie to hand over (DESIGN.md, "Moving the management address").
+allowed and answers `303` to the sign-in page there: the session cookie belongs
+to the old address. There is no token to hand over (DESIGN.md, "Moving the
+management address").
 
 ## Setup wizard marker
 
@@ -278,12 +311,10 @@ backup go through `/api/netaddr` instead when the image has the trial.
 
 ## Admin
 
-    GET  /api/logout                     always 401 with a fresh Basic challenge and
-                                          a "Signed out" page, so the browser drops the
-                                          cached credential (any method, any Origin)
     POST /api/password   user=...&password=...
                                           user 1-64 printable characters, no space or
-                                          colon; password 4-128 printable ASCII
+                                          colon; password 4-128 printable ASCII. Ends
+                                          every session but the one that made the change
     GET  /api/sshkeys                     {"path":..., "keys":[{"i":0,"line":"ssh-ed25519 AAAA... comment"}]}
     POST /api/sshkeys    key=<line>       append; the type is one of ssh-ed25519,
                                           ssh-rsa, ecdsa-sha2-nistp256/384/521 or an

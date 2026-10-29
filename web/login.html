@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Sign in · ODI DFP-34X-2C2</title>
+<!-- The same theme rule as index.html, before first paint. -->
+<script>try{var t=localStorage.getItem("odi-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body class="signin-page">
+<!--
+  The one page confd serves before a sign-in, with style.css and login.js.
+  login.js posts the form to /api/login, which answers with the session
+  cookie; without JavaScript the form does nothing, as the rest of the UI.
+-->
+<main class="signin">
+  <p class="device">ODI DFP-34X-2C2</p>
+  <h1>Sign in</h1>
+  <p id="signin-msg" role="status"></p>
+  <form id="signin" method="post" action="/api/login" novalidate>
+    <label>Username
+      <input id="user" name="user" autocomplete="username" autocapitalize="none" spellcheck="false"
+             required maxlength="64" value="admin">
+    </label>
+    <label>Password
+      <input id="pass" name="password" type="password" autocomplete="current-password"
+             required maxlength="128" autofocus>
+    </label>
+    <button id="signin-go" class="primary" type="submit">Sign in</button>
+  </form>
+  <p class="help">The password you set in System › Access. A stick that never had one, or that was
+     reset, uses <code>admin</code> / <code>admin</code>.</p>
+</main>
+<script type="module" src="/login.js"></script>
+</body>
+</html>
