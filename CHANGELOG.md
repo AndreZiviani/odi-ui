@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Sign out no longer answers *cross-site request refused* in Chromium browsers. The button posts a plain form, and because confd sends `Referrer-Policy: no-referrer` the browser sends that POST with `Origin: null`, which the cross-site check refused. `/api/logout` is now exempt from that check (every other write still refuses a foreign or `null` Origin); a foreign page signing you out costs a password prompt, nothing more. `make smoke` checks both. Refs AndreZiviani/odi-oss#239.
+
 ## v1.10.0 (2026-10-28)
 
 - Header bars are now ordered by severity, in `index.html`: the red chip temperature bar first, then the yellow ones (trial boot, safe mode, host link and host mode fallback), then the blue release notice. Before, the chip bar would have sat under the trial boot bar. Each bar keeps its own logic; `make check` asserts the order.

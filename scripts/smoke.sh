@@ -748,6 +748,11 @@ done
 echo "== routes"
 check "sign out answers 401, not 405" 401 \
 	"$(code -u "$AUTH" -X POST "http://127.0.0.1:$PORT/api/logout")"
+# A Chromium form POST under Referrer-Policy: no-referrer sends Origin: null.
+check "sign out with Origin: null answers 401, not 403" 401 \
+	"$(code -u "$AUTH" -X POST -H 'Origin: null' "http://127.0.0.1:$PORT/api/logout")"
+check "any other write with Origin: null is still refused" 403 \
+	"$(code -u "$AUTH" -X POST -H 'Origin: null' -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")"
 check "values are parsed and served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" '"LAN_IP_ADDR":"192.168.1.1"')"
 check "an indexed table row keeps its address" yes \
