@@ -280,7 +280,7 @@ backup go through `/api/netaddr` instead when the image has the trial.
 
     GET  /api/logout                     always 401 with a fresh Basic challenge and
                                           a "Signed out" page, so the browser drops the
-                                          cached credential (any method)
+                                          cached credential (any method, any Origin)
     POST /api/password   user=...&password=...
                                           user 1-64 printable characters, no space or
                                           colon; password 4-128 printable ASCII

@@ -760,7 +760,15 @@ void serve(int conn)
 				query = path + q + 1;
 			}
 		}
-		if (cross && !seq(method, "GET")) {
+		/*
+		 * Sign out is let through. The page posts it as a plain form,
+		 * and under this daemon's `Referrer-Policy: no-referrer` a
+		 * Chromium form POST carries `Origin: null`, which is refused
+		 * here as foreign: the button answered "cross-site request
+		 * refused". Letting a foreign page sign the operator out costs
+		 * them a password prompt, nothing more.
+		 */
+		if (cross && !seq(method, "GET") && !seq(path, "/api/logout")) {
 			respond(conn, "403 Forbidden", "text/plain", 0);
 			put_fd(conn, "cross-site request refused\n");
 			return;
