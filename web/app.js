@@ -195,12 +195,10 @@ async function savePassword() {
     const j = await r.json();
     if (!j.ok) { out.append(el('div', 'bad', j.error || 'refused')); return; }
     out.append(el('div', 'good', 'Saved to /etc/config/confd.auth.'));
-    /* The browser still holds the OLD credential and will replay it on the
-       next request, which now answers 401. Saying nothing here turns a
-       successful change into what looks like a broken page. */
+    /* This browser stays signed in; confd has signed out every other one. */
     out.append(el('div', null,
-      'Your browser is still using the old one. Sign out, then sign back in as '
-      + user + '.'));
+      'You stay signed in here. Any other browser signed in to this page is signed out, '
+      + 'and signs in again as ' + user + '.'));
     $('#pw-pass').value = '';
     $('#pw-pass2').value = '';
     await checkAuth();
@@ -358,7 +356,31 @@ async function refresh() {
   } catch (e) { fail(e); }
 }
 
+/*
+ * A 401 from the stick means this browser's session ended: signed out in
+ * another tab, confd restarted, or the session ran out. Every fetch the page
+ * makes goes through here, so whichever one finds out first takes the page to
+ * the sign-in page, keeping the view in the hash. Only the stick's own
+ * answers count: a 401 from GitHub (the release check) is not ours.
+ */
+export function watchSession(g = globalThis) {
+  const inner = g.fetch;
+  if (typeof inner !== 'function' || inner.watched) return;
+  const wrapped = async (...args) => {
+    const r = await inner.apply(g, args);
+    const loc = g.location;
+    if (r && r.status === 401 && loc && typeof r.url === 'string'
+        && (r.url.startsWith(loc.origin + '/') || r.url.startsWith('/'))) {
+      loc.href = '/login' + (loc.hash || '');
+    }
+    return r;
+  };
+  wrapped.watched = true;
+  g.fetch = wrapped;
+}
+
 (async function init() {
+  watchSession();
   try {
     let metaRows, consRows, baseRows, featRows, settRows;
     [S.SCHEMA, S.VALUES, metaRows, consRows, S.DEFAULTS, baseRows, featRows, settRows, S.FW] =

@@ -301,8 +301,8 @@ void emit_voip_json(int fd)
 /*
  * The same view with the SIP number, login and password in clear.
  *
- * Authentication has already happened (serve()), but the browser replays the
- * Basic header on its own, so the person must type the password again here. The
+ * Authentication has already happened (serve()), but the browser sends the
+ * session cookie on its own, so the person must type the password again here. The
  * factory credential admin:admin is refused outright: a password everybody
  * knows protects nothing. A wrong password costs a second, like a failed login.
  * Nothing here is logged, the password and the output are wiped after use, and

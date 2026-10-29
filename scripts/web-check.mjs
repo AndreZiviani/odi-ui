@@ -1623,7 +1623,7 @@ ok(inputsOf('#sections') > 100,
     S.FW = { switches: { 'omci-identity.on': false, 'confd.setup': false }, defaultauth: false, ...fw };
     S.VALUES = { ...HELD };
     S.SETTINGS = Object.fromEntries(SETT.map((r) => [r.name, r]));
-    Object.assign(W, { open: false, autoTried: false, marking: false, auth: null, pwChanged: false, phase: 'edit' });
+    Object.assign(W, { open: false, autoTried: false, marking: false, pwChanged: false, phase: 'edit' });
   };
   const all = (n, pred, out = []) => {
     if (pred(n)) out.push(n);
@@ -1853,12 +1853,11 @@ ok(inputsOf('#sections') > 100,
   const pc = posts('/api/password');
   ok(pc.length === 1 && posts('/api/config').length === 0, 'password: with nothing else to write, only the password is saved');
   ok(W.pwChanged && calls.filter((c) => c.key === '/api/status').length > 0
-     && calls.filter((c) => c.key === '/api/status').every((c) => c.auth === 'Basic ' + btoa('admin:pa55word')),
-     'password: the live view sends the new credential itself');
+     && calls.every((c) => c.auth === undefined),
+     'password: the live view goes on with the session, no credential of its own');
   const keepLoc = globalThis.location.href;
   await wz.exitWizard();
-  ok(globalThis.location.href === '/api/logout', 'password: closing signs out so the browser asks for the new one');
-  globalThis.location.href = keepLoc;
+  ok(globalThis.location.href === keepLoc, 'password: closing does not sign out (the session survives the change)');
   reset({ defaultauth: true });
   wz.openWizard(true);
   const skipPw = all(doc.querySelector('#wizard-body'), (n) => n.tagName === 'button' && n.textContent === 'Skip the password')[0];
@@ -2084,6 +2083,41 @@ await import(join(root, 'web', 'app.js'));
 await new Promise((r) => setTimeout(r, 50));
 ok(true, 'app.js bootstraps without throwing');
 ok(githubCalls.length === 0, 'updates: a stick running a non-release image never contacts GitHub');
+
+{
+  /* The session watcher: a 401 from the stick ends the page, any other answer does not. */
+  const { watchSession } = await import(join(root, 'web', 'app.js'));
+  const g = {
+    location: { origin: 'http://192.168.1.1', hash: '#config/vlan', href: '/' },
+    fetch: async (u) => ({ status: u === '/ok' ? 200 : 401,
+                           url: u === 'gh' ? 'https://api.github.com/x' : 'http://192.168.1.1' + u }),
+  };
+  watchSession(g);
+  await g.fetch('/ok');
+  ok(g.location.href === '/', 'session: a 200 leaves the page where it is');
+  await g.fetch('gh');
+  ok(g.location.href === '/', 'session: a 401 from another site is not the stick');
+  await g.fetch('/api/status');
+  ok(g.location.href === '/login#config/vlan', 'session: a 401 from the stick goes to the sign-in page, keeping the view');
+  const once = g.fetch;
+  watchSession(g);
+  ok(g.fetch === once, 'session: wrapping twice wraps once');
+}
+{
+  const { loginOutcome, signIn } = await import(join(root, 'web', 'login.js'));
+  ok(loginOutcome(200, { ok: true }).ok, 'sign-in: 200 with ok is a sign-in');
+  ok(loginOutcome(401, { ok: false, error: 'wrong username or password' }).text === 'Wrong username or password.',
+     'sign-in: a wrong password says so, as a sentence');
+  ok(loginOutcome(403, null).text === 'The stick answered 403.', 'sign-in: an answer that is not JSON gives the status');
+  let sent = null;
+  const out = await signIn('admin', 'p&ss=1', async (path, init) => {
+    sent = { path, init };
+    return { status: 200, json: async () => ({ ok: true }) };
+  });
+  ok(out.ok && sent.path === '/api/login' && sent.init.method === 'POST'
+     && new URLSearchParams(sent.init.body).get('password') === 'p&ss=1',
+     'sign-in: posts the credential to /api/login, form-encoded');
+}
 
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
 process.exit(failed ? 1 : 0);

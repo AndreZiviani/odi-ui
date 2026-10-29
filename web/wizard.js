@@ -52,7 +52,6 @@ const W = {
   open: false, auto: false, steps: [], step: '', phase: 'edit', f: {},
   key: '', keys: [],   /* the public key to add, and the lines already installed */
   pw: null,            /* { user, pass, again }: the admin password typed in, until it is saved */
-  auth: null,          /* the Authorization header, once the password is saved */
   pwChanged: false, timer: 0, polls: 0, autoTried: false, marking: false,
   live: null, out: null, msgs: {}, keysEl: null,
 };
@@ -197,9 +196,7 @@ function decide(facts, state = S) {
 }
 
 async function wfetch(path, init = {}) {
-  const headers = { ...(init.headers || {}) };
-  if (W.auth) headers.Authorization = W.auth;
-  return fetch(path, { cache: 'no-store', ...init, headers });
+  return fetch(path, { cache: 'no-store', ...init });
 }
 const post = (path, body) => wfetch(path, {
   method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
@@ -245,7 +242,7 @@ function openWizard(auto) {
   if (W.open) return;
   clearInterval(W.timer);
   Object.assign(W, {
-    open: true, auto: !!auto, phase: 'edit', f: initForm(), pw: null, auth: null,
+    open: true, auto: !!auto, phase: 'edit', f: initForm(), pw: null,
     pwChanged: false, polls: 0, live: null, out: null, key: '', keys: [], keysEl: null,
     steps: ['access', 'isp', 'vlan', 'review'],
   });
@@ -254,20 +251,17 @@ function openWizard(auto) {
   go(W.steps[0]);
 }
 
-/* Every way out. The marker first, then, if the admin password was changed, a
-   sign-out: the browser still holds the old credential. */
+/* Every way out: the marker first. A changed admin password needs no sign-out:
+   confd keeps this browser's session and ends every other one. */
 async function exitWizard() {
   if (!W.open) return;
   clearInterval(W.timer);
   W.timer = 0;
   await setMarker();
-  const changed = W.pwChanged;
   W.open = false;
   W.pw = null;
-  W.auth = null;
   W.live = null;
   showDialog(false);
-  if (changed) location.href = '/api/logout';
 }
 
 /* Escape: the browser would close the dialog by itself and skip the marker. */
@@ -349,8 +343,8 @@ function stepAccess(body) {
   if (S.FW.defaultauth) {
     W.pw = W.pw || { user: 'admin', pass: '', again: '' };
     body.append(el('p', 'lede', 'This page still answers to the built-in admin / admin: anyone who can reach it '
-      + 'can change the line settings. Choose a password now. It is saved when you apply the setup, and you '
-      + 'sign in again afterwards.'));
+      + 'can change the line settings. Choose a password now. It is saved when you apply the setup; '
+      + 'this browser stays signed in.'));
     const u = field('wiz-pw-user', 'Username', textInput(W.pw.user, (v) => { W.pw.user = v.trim(); }));
     const p = field('wiz-pw-pass', 'New password', textInput(W.pw.pass, (v) => { W.pw.pass = v; }, { secret: true }),
       '4 to 128 printable characters.');
@@ -628,18 +622,17 @@ async function addKey(out) {
   out.append(el('div', 'good', 'SSH key: added. dropbear reads the file on every login.'));
 }
 
-/* The admin password, last: the browser still holds the old credential, so
-   from here the wizard sends the new one itself, and signs out when it closes. */
+/* The admin password, last. This browser's session survives the change; every
+   other browser signed in to the page is signed out by confd. */
 async function savePassword(out) {
   const { user, pass, again } = W.pw;
   const bad = passwordProblem(user, pass, again);
   if (bad) { out.append(el('div', 'bad', 'Admin password: ' + bad)); return; }
   const j = await (await post('/api/password', new URLSearchParams({ user, password: pass }).toString())).json();
   if (!j.ok) { out.append(el('div', 'bad', 'Admin password: ' + (j.error || 'refused'))); return; }
-  W.auth = 'Basic ' + btoa(user + ':' + pass);
   W.pwChanged = true;
   W.pw = { user, pass: '', again: '' };
-  out.append(el('div', 'good', 'Admin password: saved. You sign in again when you close the setup.'));
+  out.append(el('div', 'good', 'Admin password: saved. Other browsers signed in to this page are signed out.'));
 }
 
 /* ------------------------------------------------------------ live view */

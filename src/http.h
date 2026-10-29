@@ -39,7 +39,25 @@ long read_request(int conn, char *buf, unsigned long cap,
 int same_origin(const char *r);
 /* Host and Sec-Fetch-Site: 0 if the request may go on, else a reason line. */
 const char *request_refusal(const char *r);
+/* What authorised() found: a browser session, or an HTTP Basic header. */
+#define AUTH_BASIC   1
+#define AUTH_SESSION 2
 int authorised(const char *r);
+/* Whether user and pass are the credential in force (constant time). */
+int credential_matches(const char *user, const char *pass);
+/* Start a browser session; its token (32 hex digits) goes into tok[33]. */
+int session_start(char *tok);
+/* End the session the request carries, if it carries a live one. */
+void session_end_current(const char *r);
+/* End every session but the one the request being served signed in with. */
+void session_end_others(void);
+/*
+ * The request target without its query, copied, for decisions made before
+ * request_path() edits the request. 0 when it does not fit.
+ */
+int request_target(const char *r, char *out, unsigned long cap);
+/* Whether a header holds `needle`, case-sensitive: Accept and text/html. */
+int header_has(const char *r, const char *name, const char *needle);
 /* Whether the credential came from the file or from the built-in default.
  * Reported to the page, because a well-known default that nobody can see is
  * the same thing as no password at all. */

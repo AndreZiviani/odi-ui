@@ -394,6 +394,37 @@ static unsigned long path_off(const char *r)
 	return r[i] == ' ' ? i + 1 : i;
 }
 
+int request_target(const char *r, char *out, unsigned long cap)
+{
+	unsigned long i = path_off(r), o = 0;
+
+	while (r[i] && r[i] != ' ' && r[i] != '?' && r[i] != '\r' && r[i] != '\n') {
+		if (o + 1 >= cap) {
+			out[0] = 0;
+			return 0;
+		}
+		out[o++] = r[i++];
+	}
+	out[o] = 0;
+	return o > 0;
+}
+
+int header_has(const char *r, const char *name, const char *needle)
+{
+	char v[512];
+	unsigned long i, k, n = slen(needle);
+
+	if (!header_copy(r, name, v, sizeof(v)))
+		return 0;
+	for (i = 0; v[i]; i++) {
+		for (k = 0; k < n && v[i + k] == needle[k]; k++)
+			;
+		if (k == n)
+			return 1;
+	}
+	return 0;
+}
+
 const char *request_refusal(const char *r)
 {
 	char host[128], site[32], mode[16], dest[16];
@@ -593,7 +624,7 @@ int password_matches(const char *pass)
  * WEAKER credential, not to none: every request is still checked, the
  * comparison is still constant-time, and a failure still costs a second.
  */
-int authorised(const char *r)
+static int basic_ok(const char *r)
 {
 	long n, want;
 	unsigned long i = 0;
@@ -619,6 +650,231 @@ int authorised(const char *r)
 	for (i = 0; i < (unsigned long)want && i + 1 < sizeof(authbuf); i++)
 		diff |= (authbuf[i] ^ credbuf[i]);
 	return diff == 0;
+}
+
+/*
+ * Whether `user` and `pass` are the credential in force, for the sign-in
+ * form. The same constant-time comparison as basic_ok, over "user:pass".
+ */
+int credential_matches(const char *user, const char *pass)
+{
+	long want = load_credential(0);
+	unsigned long u = slen(user), p = slen(pass), n = 0, k, i;
+	int diff = 0;
+
+	/* Too long for the buffer is too long to be the credential. */
+	if (want <= 0 || u + 1 + p + 1 > sizeof(authbuf))
+		return 0;
+	for (k = 0; k < u; k++)
+		authbuf[n++] = user[k];
+	authbuf[n++] = ':';
+	for (k = 0; k < p; k++)
+		authbuf[n++] = pass[k];
+	authbuf[n] = 0;
+	if ((long)n != want)
+		diff = 1;
+	for (i = 0; i < (unsigned long)want && i + 1 < sizeof(authbuf); i++)
+		diff |= (authbuf[i] ^ credbuf[i]);
+	for (i = 0; i < sizeof(authbuf); i++)
+		((volatile char *)authbuf)[i] = 0;
+	return diff == 0;
+}
+
+/* ------------------------------------------------------------- sessions --- */
+
+/*
+ * A browser signs in once, on /login, and is handed a random token in an
+ * HttpOnly, SameSite=Strict cookie; every request after that is checked
+ * against this table. The token never holds the password, so the password
+ * crosses the network once per sign-in instead of with every request, as it
+ * does under Basic. Sign out deletes the row, which ends the session for
+ * certain: Basic could only ask the browser to forget, and Chromium shows its
+ * own password dialog when asked.
+ *
+ * RAM only. A restart signs everyone out, which costs one sign-in and saves
+ * writing tokens to a flash partition every other process can read.
+ */
+struct session {
+	char tok[33];          /* 32 hex digits; empty when the row is free */
+	unsigned long born;    /* mono_s() at sign-in */
+	unsigned long used;    /* mono_s() at the last request */
+	/*
+	 * Which row was used last, from a counter. Not `used`: whole seconds
+	 * tie for every sign-in made in the same second, and a tie dropped the
+	 * session that had just signed in.
+	 */
+	unsigned long order;
+};
+
+static unsigned long session_tick;
+
+static struct session sessions[SESSION_SLOTS];
+/* The row the request being served signed in with, -1 for none. */
+static int cur_session = -1;
+
+/* Seconds on the monotonic clock, 0 when it cannot be read. */
+static unsigned long mono_s(void)
+{
+	long ts[2];
+
+	if (syscall3(__NR_clock_gettime, CLOCK_MONOTONIC, (long)ts, 0) < 0)
+		return 0;
+	return (unsigned long)ts[0];
+}
+
+static void session_clear(int i)
+{
+	unsigned long k;
+
+	for (k = 0; k < sizeof(sessions[i].tok); k++)
+		((volatile char *)sessions[i].tok)[k] = 0;
+	sessions[i].born = sessions[i].used = sessions[i].order = 0;
+}
+
+/* Drop the rows that have run out. */
+static void session_expire(unsigned long now)
+{
+	int i;
+
+	for (i = 0; i < SESSION_SLOTS; i++)
+		if (sessions[i].tok[0] &&
+		    (now - sessions[i].used > SESSION_IDLE_S ||
+		     now - sessions[i].born > SESSION_MAX_S))
+			session_clear(i);
+}
+
+/*
+ * The token in the request's session cookie, copied into out[33]. 0 when
+ * there is none, or when it is not exactly 32 hex digits.
+ */
+static int cookie_token(const char *r, char *out)
+{
+	char c[1024];
+	unsigned long i = 0, n = slen(SESSION_COOKIE), k;
+
+	out[0] = 0;
+	if (!header_copy(r, "cookie", c, sizeof(c)))
+		return 0;
+	while (c[i]) {
+		while (c[i] == ' ' || c[i] == ';')
+			i++;
+		for (k = 0; k < n && c[i + k] == SESSION_COOKIE[k]; k++)
+			;
+		if (k == n && c[i + n] == '=') {
+			i += n + 1;
+			for (k = 0; k < 32 && hexval(c[i + k]) >= 0; k++)
+				out[k] = c[i + k];
+			out[k] = 0;
+			if (k == 32 && (!c[i + k] || c[i + k] == ';' || c[i + k] == ' '))
+				return 1;
+			out[0] = 0;
+			return 0;
+		}
+		while (c[i] && c[i] != ';')
+			i++;
+	}
+	return 0;
+}
+
+/*
+ * The row whose token the request carries, -1 for none. Every live row is
+ * compared in full, so the time taken does not say which row came close.
+ */
+static int session_find(const char *r)
+{
+	char tok[33];
+	unsigned long now = mono_s(), k;
+	int i, hit = -1;
+
+	if (!now || !cookie_token(r, tok))
+		return -1;
+	session_expire(now);
+	for (i = 0; i < SESSION_SLOTS; i++) {
+		int diff = 0;
+
+		if (!sessions[i].tok[0])
+			continue;
+		for (k = 0; k < 32; k++)
+			diff |= sessions[i].tok[k] ^ tok[k];
+		if (!diff)
+			hit = i;
+	}
+	if (hit >= 0) {
+		sessions[hit].used = now;
+		sessions[hit].order = ++session_tick;
+	}
+	return hit;
+}
+
+/*
+ * Start a session and copy its token into tok[33]. 0 when no random bytes or
+ * no clock could be had: no session is better than a guessable one.
+ */
+int session_start(char *tok)
+{
+	static const char hex[] = "0123456789abcdef";
+	char raw[17];
+	unsigned long now = mono_s(), k;
+	int i, slot = -1;
+
+	tok[0] = 0;
+	if (!now || read_file(RANDOM_PATH, raw, sizeof(raw)) != 16)
+		return 0;
+	session_expire(now);
+	for (i = 0; i < SESSION_SLOTS; i++) {
+		if (!sessions[i].tok[0]) {
+			slot = i;
+			break;
+		}
+		if (slot < 0 || sessions[i].order < sessions[slot].order)
+			slot = i;
+	}
+	for (k = 0; k < 16; k++) {
+		sessions[slot].tok[2 * k] = hex[(raw[k] >> 4) & 15];
+		sessions[slot].tok[2 * k + 1] = hex[raw[k] & 15];
+		((volatile char *)raw)[k] = 0;
+	}
+	sessions[slot].tok[32] = 0;
+	sessions[slot].born = sessions[slot].used = now;
+	sessions[slot].order = ++session_tick;
+	str_copy(tok, sessions[slot].tok, 33);
+	return 1;
+}
+
+/* End the session the request being served signed in with, if any. */
+void session_end_current(const char *r)
+{
+	int i = session_find(r);
+
+	if (i >= 0)
+		session_clear(i);
+}
+
+/*
+ * End every session but the one the request being served signed in with:
+ * after a password change, a browser that signed in with the old password is
+ * not signed in any more. The browser that made the change stays signed in.
+ */
+void session_end_others(void)
+{
+	int i;
+
+	for (i = 0; i < SESSION_SLOTS; i++)
+		if (i != cur_session)
+			session_clear(i);
+}
+
+/*
+ * Whether the request is signed in: AUTH_SESSION for a live session cookie,
+ * AUTH_BASIC for a correct HTTP Basic header (curl and scripts), 0 otherwise.
+ * The cookie is looked at first and, when it is good, Basic is not looked at.
+ */
+int authorised(const char *r)
+{
+	cur_session = session_find(r);
+	if (cur_session >= 0)
+		return AUTH_SESSION;
+	return basic_ok(r) ? AUTH_BASIC : 0;
 }
 
 /*
@@ -756,6 +1012,8 @@ void serve_static(int fd, const char *name, const char *ctype)
 const struct web_asset web_assets[] = {
 	{ "/",              "index.html",  "text/html; charset=utf-8" },
 	{ "/index.html",    "index.html",  "text/html; charset=utf-8" },
+	{ "/login",         "login.html",  "text/html; charset=utf-8" },
+	{ "/login.js",      "login.js",    "application/javascript" },
 	{ "/style.css",     "style.css",   "text/css" },
 	{ "/app.js",        "app.js",      "application/javascript" },
 	{ "/dom.js",        "dom.js",      "application/javascript" },

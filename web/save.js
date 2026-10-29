@@ -154,7 +154,7 @@ async function save() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: encode(rest),
       });
-      if (r.status === 401) { location.href = '/'; return; }
+      if (r.status === 401) { location.href = '/login'; return; }
       res = await r.json();
     }
     const written = [];
