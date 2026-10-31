@@ -347,6 +347,7 @@ async function resetConfig() {
 }
 
 async function refresh() {
+  if (S.REBOOTING) return;
   try {
     const st = await get('/api/status');
     if (st.error) throw new Error(st.error);

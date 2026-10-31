@@ -2119,5 +2119,71 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
      'sign-in: posts the credential to /api/login, form-encoded');
 }
 
+/* --- following a reboot ----------------------------------------------------- */
+{
+  const fw = await import(join(root, 'web', 'firmware.js'));
+  const { rebootView: view, rebootLoop: loop, REBOOT_EXPECTED_S: EXP } = fw;
+  let v = view('stopping', 0);
+  ok(v.pct === 0 && /Shutting down/.test(v.text) && !v.reload, 'reboot: it starts at 0 %, shutting down');
+  v = view('starting', Math.round(EXP / 2));
+  ok(v.pct === 50 && /Starting up\./.test(v.text), 'reboot: the bar is the time gone against the measured reboot');
+  v = view('starting', EXP + 30);
+  ok(v.pct === 95 && /longer than usual/.test(v.text) && !v.reload, 'reboot: past the expected time it waits at 95 %');
+  v = view('starting', 300);
+  ok(v.reload && /reverts to the committed one/.test(v.text) && /keeps trying/.test(v.text),
+     'reboot: after 5 minutes it says why, offers Reload and keeps trying');
+  v = view('stopping', 60);
+  ok(v.reload && /still answers after 60 s/.test(v.text), 'reboot: a stick that never went down is called out');
+  v = view('back', 70);
+  ok(v.pct === 100 && /sign-in page/.test(v.text), 'reboot: back is 100 % and heads for the sign-in page');
+  v = view('stopped', 900);
+  ok(v.reload && /stopped following/.test(v.text), 'reboot: giving up says so and offers Reload');
+
+  /* A fake clock: each nap moves it 2 s, each probe answers from a script. */
+  const run = async (answers) => {
+    let t = 0, gone = 0, i = 0;
+    const shown = [];
+    const end = await loop({
+      probe: async () => (i < answers.length ? answers[i++] : answers[answers.length - 1]),
+      sleep: async (ms) => { t += ms; },
+      now: () => t,
+      go: () => { gone++; },
+    }, (x) => shown.push(x));
+    return { end, gone, shown, t };
+  };
+  let r = await run([true, true, false, false, false, true]);
+  ok(r.end === 'back' && r.gone === 1, 'reboot: up, down, up again opens the page once');
+  ok(/Shutting down/.test(r.shown[1].text) && /Starting up/.test(r.shown[3].text)
+     && r.shown[r.shown.length - 1].pct === 100, 'reboot: the words follow the phases, ending at 100 %');
+  ok(r.shown.every((x, k) => k === 0 || x.pct >= r.shown[k - 1].pct), 'reboot: the bar never goes backwards');
+  r = await run([true, true, true, true]);
+  ok(r.end === 'back' || r.end === 'stopped', 'reboot: a stick that keeps answering does not loop forever');
+  ok(r.end === 'stopped' && r.gone === 0, 'reboot: and the page is not reopened as if it had rebooted');
+  r = await run([false]);
+  ok(r.end === 'stopped' && r.gone === 0 && r.t >= 900000, 'reboot: a stick that never comes back stops after 15 minutes');
+
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  for (const id of ['reboot-dialog', 'reboot-secs', 'reboot-bar', 'reboot-fill', 'reboot-text', 'reboot-acts', 'reboot-reload']) {
+    ok(html.includes(`id="${id}"`), `reboot: index.html has #${id}`);
+  }
+
+  /* The dialog itself, driven through the page with the same fakes. */
+  let t = 0, gone = 0, i = 0;
+  const seq = [true, false, true];
+  Object.assign(fw.rebootDeps, {
+    probe: async () => seq[Math.min(i++, seq.length - 1)],
+    sleep: async (ms) => { t += ms; }, now: () => t, go: () => { gone++; },
+  });
+  const { S: St } = await import(join(root, 'web', 'state.js'));
+  await fw.followReboot();
+  ok(St.REBOOTING === true && gone === 1 && doc.querySelector('#reboot-fill').style.width === '100%'
+     && /sign-in page/.test(doc.querySelector('#reboot-text').textContent)
+     && doc.querySelector('#reboot-acts').hidden === true,
+     'reboot: the dialog fills the bar, says where it goes, and the status poll stays off');
+  const before = gone;
+  await fw.followReboot();
+  ok(gone === before, 'reboot: a second request while following starts no second loop');
+}
+
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
 process.exit(failed ? 1 : 0);

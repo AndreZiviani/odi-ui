@@ -21,6 +21,8 @@ const S = {
   SETTINGS: {},
   /* /api/firmware, for the switch files and the lan-ip override. */
   FW: {},
+  /* Set once a reboot is asked for: the page follows it, and polls nothing else. */
+  REBOOTING: false,
 };
 
 /*

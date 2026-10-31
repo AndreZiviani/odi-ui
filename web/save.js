@@ -25,6 +25,7 @@ import {
 import { invalidEdits } from './validate.js';
 import { renderAll, markPending } from './config.js';
 import { isNetKey, netaddrActive, startTrial, originOf, followAddresses } from './netaddr.js';
+import { followReboot } from './firmware.js';
 
 /* config.js raises this whenever a field changes; it does not import this
    module, so the dependency runs one way only. */
@@ -349,8 +350,10 @@ async function applyOmci(out, interrupts) {
 
 async function reboot(out) {
   try {
-    await fetch('/api/firmware', form({ action: 'reboot' }));
-    out.append(el('div', 'warn', 'Rebooting. This page will stop responding.'));
+    const r = await fetch('/api/firmware', form({ action: 'reboot' }));
+    const res = await r.json();
+    if (!res.ok) { out.append(el('div', 'bad', res.error || 'The reboot was refused.')); return; }
+    followReboot();
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
   }
