@@ -231,6 +231,16 @@ main { padding: 24px 24px 120px; }
 #netaddr-count { color: var(--yellow-ink); font-variant-numeric: tabular-nums; }
 #netaddr-dialog-out > div { margin: 6px 0; font-size: 14px; }
 #netaddr-link { word-break: break-all; }
+/* Following a reboot: the same shape, with the progress bar at full width. */
+#reboot-dialog {
+  width: min(56ch, calc(100vw - 32px)); padding: 18px 20px; border-radius: var(--r);
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line-2);
+}
+#reboot-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+#reboot-dialog .progress { max-width: none; margin: 12px 0; }
+#reboot-fill { transition: width 1.8s linear; }
+#reboot-secs { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { #reboot-fill { transition: none; } }
 
 /* The setup wizard: modal, one step at a time. */
 #wizard {

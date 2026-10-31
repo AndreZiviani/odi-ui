@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- System: a reboot is followed with a progress bar instead of *Rebooting. This page will stop responding.* After *Reboot* on System > Firmware, or *Reboot now* in the save bar, a dialog over the page shows the seconds gone and a bar measured against a real reboot (about a minute to the page answering again), says *Shutting down* and then *Starting up* from what the page sees of the stick, and reopens the same view when the stick answers, which is the sign-in page since the reboot ended the session. Past the usual time it says so; a stick that never went down, or does not answer after 5 minutes, gets an explanation and a *Reload* button, and after 15 minutes the page stops asking. *Reboot now* also reports a refused reboot now, where it used to say it was rebooting whatever the answer. No confd or API change. `make check` drives the phases, the bar and the dialog; docs/DESIGN.md describes it.
+
 ## v1.11.0 (2026-10-29)
 
 - Release: a tag with a hyphen after the version (`v1.11.0-beta.1`) is published as a pre-release, never as the latest release, with the `## Unreleased` changelog section as its notes, so an odi-oss pre-release can pin a confd that is not released yet. Before, such a tag would have been published as the latest release with the fallback notes.

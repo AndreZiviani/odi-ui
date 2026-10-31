@@ -168,6 +168,20 @@ for a reboot. The stock `nv` has no `commit` verb, and there confd falls back
 to a plain `nv setenv sw_commit`, one copy. It cannot be dismissed. When only
 the fallback copy disagrees the band says so.
 
+A **reboot** (System > Firmware *Reboot*, or *Reboot now* in the save bar)
+is followed in a modal dialog with a progress bar, since nothing on the page
+works until the stick answers again. The stick cannot report progress while it
+is down, so the bar is the time gone against a measured reboot (61 s from the
+request to confd answering, on a DFP-34X-2C2 with v1.14.0-beta.2; the bar
+assumes 70 s and waits at 95 % past it), and the words are what a probe sees
+every 2 s: *Shutting down* while the stick still answers, *Starting up* once it
+does not, then a reload of the same view, which lands on the sign-in page
+because the session ended with the old confd. The probe is a no-cors `GET
+/login.js` with no credential, so any HTTP answer counts and an opaque 401
+never trips the session watcher. The status poll stops meanwhile. A stick still
+answering after 60 s, or silent after 5 minutes, gets a sentence and a *Reload*
+button; after 15 minutes the page stops asking.
+
 The same striped band carries three more states, because in each the image
 changed what runs without being asked, and none may go unseen: an odi-oss
 **safe-mode boot** (the fibre off, the default passwords for this boot only), a

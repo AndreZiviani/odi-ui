@@ -8,6 +8,7 @@
 import { $, el, fail, get, bytes } from './dom.js';
 import { S, CLASS_LABEL, CLASS_RANK } from './state.js';
 import { uploadSizeProblem, tarProblem } from './validate.js';
+import { probeAddr } from './netaddr.js';
 
 /* How often the page asks how a background write is going. */
 const WRITE_POLL_MS = 3000;
@@ -381,12 +382,113 @@ async function fwAction(action, partition, warning) {
     } else if (action === 'commit') {
       out.append(el('div', 'good', `Committed: partition ${partition} is now the one it boots.`));
     } else {
-      out.append(el('div', 'warn', 'Rebooting. This page will stop responding.'));
+      followReboot();
+      return;
     }
-    if (action !== 'reboot') await renderFirmware();
+    await renderFirmware();
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
   }
+}
+
+/*
+ * Following a reboot. The stick cannot say how far along it is while it is
+ * down, so the bar is the time gone against a measured reboot, and the words
+ * are what a probe sees: the stick still answering (shutting down), not
+ * answering (starting up), answering again. Then the page opens the same view
+ * again; the session ended with the old confd, so that lands on the sign-in
+ * page. The probe is a no-cors fetch with no credential: any HTTP answer
+ * counts, a 401 included, and an opaque answer never trips watchSession.
+ */
+/* Reboot to confd answering again: 61 s on a DFP-34X-2C2 (v1.14.0-beta.2). */
+const REBOOT_EXPECTED_S = 70;
+/* Still answering after this long: the reboot did not start. */
+const REBOOT_NOT_DOWN_S = 60;
+/* Past the expected time the bar waits at 95 %; past this, the page says so. */
+const REBOOT_SLOW_S = 300;
+/* Then it stops asking, with a Reload button. */
+const REBOOT_GIVE_UP_S = 900;
+const REBOOT_PROBE_MS = 2000;
+
+const rebootDeps = {
+  probe: () => probeAddr(globalThis.location.origin + '/login.js', null, 1500),
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  now: () => Date.now(),
+  /* A reload, not an assign of the same path: that would only move the hash. */
+  go: () => globalThis.location.reload(),
+};
+
+/* What the dialog shows for a phase after `secs` seconds. Pure. */
+function rebootView(phase, secs) {
+  const pct = phase === 'back' ? 100 : Math.min(95, Math.round(secs * 100 / REBOOT_EXPECTED_S));
+  const v = { pct, secs, reload: false, text: '' };
+  if (phase === 'back') {
+    v.text = 'The stick is back. Opening the sign-in page…';
+  } else if (phase === 'stopped') {
+    v.reload = true;
+    v.text = `This page stopped following the reboot after ${Math.round(secs / 60)} minutes. `
+      + 'Reload it to see where the stick is. If it ran a trial image, it comes back on the committed '
+      + 'one, at the address that image has.';
+  } else if (phase === 'stopping') {
+    v.text = 'Shutting down…';
+    if (secs >= REBOOT_NOT_DOWN_S) {
+      v.reload = true;
+      v.text = `The stick still answers after ${secs} s: the reboot may not have started. Reload this page to see.`;
+    }
+  } else if (secs >= REBOOT_SLOW_S) {
+    v.reload = true;
+    v.text = `No answer after ${Math.round(secs / 60)} minutes. If the stick ran a trial image that did not `
+      + 'come up, it reverts to the committed one by itself, which takes another minute or two. '
+      + 'This page keeps trying.';
+  } else if (secs > REBOOT_EXPECTED_S) {
+    v.text = 'Starting up, taking longer than usual. This page opens again as soon as the stick answers.';
+  } else {
+    v.text = 'Starting up. This page opens again as soon as the stick answers.';
+  }
+  return v;
+}
+
+/* Probe until the stick has gone down and come back, showing each step. Returns
+   the phase it ended on: 'back' (and `go` was called) or 'stopped'. */
+async function rebootLoop({ probe, sleep, now, go }, show) {
+  const t0 = now();
+  let phase = 'stopping';
+  show(rebootView(phase, 0));
+  for (;;) {
+    const up = await probe();
+    const secs = Math.round((now() - t0) / 1000);
+    if (!up && phase === 'stopping') phase = 'starting';
+    if (up && phase === 'starting') {
+      show(rebootView('back', secs));
+      go();
+      return 'back';
+    }
+    if (secs >= REBOOT_GIVE_UP_S) {
+      show(rebootView('stopped', secs));
+      return 'stopped';
+    }
+    show(rebootView(phase, secs));
+    await sleep(REBOOT_PROBE_MS);
+  }
+}
+
+/* The dialog over every tab: nothing on the page works until the stick is back,
+   so it does not close. S.REBOOTING stops the status poll meanwhile. */
+async function followReboot() {
+  if (S.REBOOTING) return;
+  S.REBOOTING = true;
+  const d = $('#reboot-dialog');
+  d.addEventListener('cancel', (e) => e.preventDefault());
+  $('#reboot-reload').onclick = () => globalThis.location.reload();
+  if (typeof d.showModal === 'function' && !d.open) d.showModal(); else d.hidden = false;
+  const bar = $('#reboot-bar');
+  await rebootLoop(rebootDeps, (v) => {
+    $('#reboot-fill').style.width = v.pct + '%';
+    bar.setAttribute('aria-valuenow', String(v.pct));
+    $('#reboot-secs').textContent = v.secs + ' s';
+    $('#reboot-text').textContent = v.text;
+    $('#reboot-acts').hidden = !v.reload;
+  });
 }
 
 function wireFirmware() {
@@ -472,4 +574,7 @@ async function commitRunning() {
   } finally { btn.disabled = false; }
 }
 
-export { renderFirmware, wireFirmware, slotKind, renderTrial };
+export {
+  renderFirmware, wireFirmware, slotKind, renderTrial,
+  followReboot, rebootView, rebootLoop, rebootDeps, REBOOT_EXPECTED_S,
+};

@@ -684,6 +684,19 @@
   </div>
 </dialog>
 
+<!-- Following a reboot (firmware.js): modal and not closable, since nothing on
+     the page works until the stick answers again. -->
+<dialog id="reboot-dialog" aria-labelledby="reboot-title">
+  <p id="reboot-title"><strong>Rebooting the stick</strong> <span id="reboot-secs"></span></p>
+  <div id="reboot-bar" class="progress" role="progressbar" aria-label="Reboot progress"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="reboot-fill" class="fill"></div></div>
+  <p id="reboot-text" class="help" role="status"></p>
+  <p class="help">The fibre service comes back a little after this page.</p>
+  <div id="reboot-acts" class="switchrow" hidden>
+    <button id="reboot-reload" class="primary" type="button">Reload</button>
+  </div>
+</dialog>
+
 <!-- Notes of the odi-oss releases newer than this image (updates.js). -->
 <dialog id="update-dialog" aria-labelledby="update-dialog-title">
   <h2 id="update-dialog-title">Newer odi-oss releases</h2>
