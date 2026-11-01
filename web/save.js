@@ -6,7 +6,7 @@
  * table that is one or more of three actions, and the page runs or offers
  * each one according to its class:
  *
- *   LIVE                  network, and omci for the VLAN keys: applied straight
+ *   LIVE                  network, sfp, and omci for the VLAN keys: applied straight
  *                         after the save (omcid rebuilds in place on SIGHUP)
  *   SERVICE RESTART       syslog, ntp, igmp: the daemon restarts straight after the save
  *   INTERRUPTS INTERNET   omci: offered as "Apply now", behind a confirmation
@@ -227,6 +227,7 @@ async function followUp(res, written, out) {
   for (const [what, daemon] of [['syslog', 'syslogd'], ['ntp', 'ntpd'], ['igmp', 'igmpd']]) {
     if (needs.includes(what)) await applyService(out, what, daemon);
   }
+  if (needs.includes('sfp')) await applySfp(out);
   /* A key omcid reports only while the identity switch is on changes
      nothing on the line while it is off: omcid finds no difference, so
      there is nothing to apply and nothing drops. */
@@ -323,6 +324,22 @@ async function applyService(out, what, daemon) {
     out.append(el('div', res.ok ? 'good' : 'bad', res.ok
       ? `${daemon} restarted with the new setting.`
       : `Saved, but ${daemon} was not restarted: ` + (res.error || 'see above')));
+  } catch (e) {
+    out.append(el('div', 'bad', String(e.message || e)));
+  }
+}
+
+/* LIVE: apply.sh sfp re-reads SFP_HOST_DDM and turns the host-side SFP EEPROM
+   on or off. The fibre service is not touched; apply.sh exits 1 when the
+   kernel did not take it. */
+async function applySfp(out) {
+  try {
+    const r = await fetch('/api/apply', form({ what: 'sfp' }));
+    const res = await r.json();
+    if (res.output) out.append(el('pre', null, String(res.output).trim()));
+    out.append(el('div', res.ok ? 'good' : 'bad', res.ok
+      ? 'Applied. The router sees the new setting at its next read of the module.'
+      : 'Saved, but it was not applied: ' + (res.error || 'see above')));
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
   }

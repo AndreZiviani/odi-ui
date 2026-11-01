@@ -60,7 +60,7 @@ every session but the one that made it.
                                           On odi-oss also `needs` (the actions),
                                           `stock` and `interrupts` (whether the
                                           omci action drops the fibre service)
-    POST /api/apply     what=network|omci|syslog|ntp|igmp
+    POST /api/apply     what=network|omci|syslog|ntp|igmp|sfp
                                           apply.sh on odi-oss (`omci` signals the
                                           running omcid to reload: a VLAN change is
                                           rebuilt in place, an identity change

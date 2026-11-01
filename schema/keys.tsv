@@ -207,3 +207,4 @@ OMCI_TCONT_ALLOC_UNSET	cs	OMCI_TCONT_ALLOC_UNSET	omci	string	unknown	yes	no
 OMCI_POTS_PORTS	cs	OMCI_POTS_PORTS	omci	int	unknown	yes	no
 OMCI_POTS_SLOT_ID	cs	OMCI_POTS_SLOT_ID	omci	int	unknown	yes	no
 OMCI_VOIP_LINE_REPORT	cs	OMCI_VOIP_LINE_REPORT	omci	int	unknown	yes	no
+SFP_HOST_DDM	cs	SFP_HOST_DDM	lan	int	unknown	yes	no
