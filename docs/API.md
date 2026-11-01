@@ -305,6 +305,19 @@ it with the rest of `/etc/config`.
     POST /api/reset      _confirm=reset   `flash default cs` (service store only;
                                           `hs`, the hardware identity, is not reachable here)
 
+The route always answers plain XML. The page encrypts it in the browser when
+you give a password (nothing about the password reaches the stick), and the
+result is an OpenSSL `enc` file (`Salted__`, 8 salt bytes, AES-256-CBC), with the
+key and IV from PBKDF2-HMAC-SHA256 at a fixed 200000 rounds. Without this page or
+the stick, decrypt it with:
+
+    openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 \
+        -in odi-config-backup.xml.enc -out odi-config-backup.xml
+
+(OpenSSL 1.1.1 or later; it asks for the password.) To encrypt by hand the same
+way, drop `-d` and swap the files. The count is not stored in the file, so it is
+part of the format; `web/crypto.js` holds it as `ITER`.
+
 Restoring a backup has no dedicated endpoint: the browser replays it through
 `/api/config`, key by key — see DESIGN.md. The management address keys of a
 backup go through `/api/netaddr` instead when the image has the trial.

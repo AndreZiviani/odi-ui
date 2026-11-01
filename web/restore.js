@@ -18,6 +18,7 @@ import { $, el } from './dom.js';
 import { S } from './state.js';
 import { valueProblem, restoreSizeProblem } from './validate.js';
 import { isNetKey, netaddrActive, startTrial } from './netaddr.js';
+import { isEncrypted, encryptBackup, decryptBackup } from './crypto.js';
 
 /*
  * `flash all` prints the config store as <Value Name="X" Value="Y"/> nested in
@@ -70,6 +71,56 @@ function classify(backup) {
 }
 
 const line = (cls, text) => el('div', cls, text);
+
+/* Let the page paint a "working" line before the key derivation holds the thread. */
+const paint = () => new Promise((r) => setTimeout(r, 30));
+
+/*
+ * Fetch the backup and hand it to the browser, encrypted when a password is
+ * given (see crypto.js for the format and how to open it elsewhere). The key
+ * derivation runs here, in the page: the stick never sees the password.
+ */
+async function saveBackup(password) {
+  const r = await fetch('/api/backup', { cache: 'no-store' });
+
+  if (!r.ok) throw new Error('backup failed: HTTP ' + r.status);
+  let bytes = new Uint8Array(await r.arrayBuffer());
+
+  if (!bytes.length) throw new Error('the backup came back empty');
+  if (password) {
+    await paint();
+    bytes = encryptBackup(bytes, password);
+  }
+  /* Name it for the stick and the day, so a folder of these is still
+     readable in six months. */
+  const stamp = new Date().toISOString().slice(0, 10);
+  const a = document.createElement('a');
+
+  a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+  a.download = `odi-config-${location.hostname}-${stamp}.xml${password ? '.enc' : ''}`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  return { size: bytes.length, encrypted: !!password };
+}
+
+/*
+ * The text of a backup file, or null with the reason shown: a decrypted file
+ * is used only if it parses as a backup. CBC cannot tell a wrong password
+ * from damage, and one wrong password in 256 passes the padding check.
+ */
+function backupText(bytes, password, out) {
+  const plain = isEncrypted(bytes) ? decryptBackup(bytes, password) : bytes;
+  const text = plain ? new TextDecoder().decode(plain) : '';
+
+  if (parseBackup(text).size) return text;
+  out.append(line('bad', isEncrypted(bytes)
+    ? 'Wrong password, or the file is damaged. Nothing was read.'
+    : 'No settings found in that file. A backup looks like <Value Name="..." Value="..."/> — it is what the '
+      + 'Download button above produces.'));
+  return null;
+}
 
 function renderPlan(plan, host) {
   host.textContent = '';
@@ -148,16 +199,49 @@ async function apply(pairs, withIdentity) {
 }
 
 let PLAN = null;
+let BYTES = null;
+
+/* The Backup block: both fields must agree, and an empty one is not a password. */
+function wireBackup() {
+  const out = $('#backup-out');
+  const go = $('#backup-go');
+
+  go.onclick = async () => {
+    const pw = $('#backup-pass').value;
+
+    out.textContent = '';
+    if (!pw) { out.append(line('bad', 'Enter a password, or use Download without encryption.')); return; }
+    if (pw !== $('#backup-pass2').value) { out.append(line('bad', 'The two passwords differ.')); return; }
+    go.disabled = true;
+    out.append(line(null, 'Encrypting…'));
+    try {
+      const done = await saveBackup(pw);
+
+      out.textContent = '';
+      out.append(line('good', `Encrypted backup saved (${done.size} bytes). Keep the password: it cannot be recovered.`));
+    } catch (e) {
+      out.textContent = '';
+      out.append(line('bad', String(e.message || e)));
+    }
+    go.disabled = false;
+  };
+}
 
 function wireRestore() {
+  wireBackup();
   const file = $('#restore-file');
   const out = $('#restore-out');
   const go = $('#restore-go');
+  const passRow = $('#restore-pass-row');
+  const decrypt = $('#restore-decrypt');
 
   go.disabled = true;
 
   file.onchange = async () => {
     PLAN = null;
+    BYTES = null;
+    passRow.hidden = true;
+    $('#restore-pass').value = '';
     go.disabled = true;
     out.textContent = '';
     const f = file.files && file.files[0];
@@ -165,17 +249,34 @@ function wireRestore() {
     if (!f) return;
     const big = restoreSizeProblem(f.size);
     if (big) { out.append(line('bad', big)); return; }
-    const text = await f.text();
-    const backup = parseBackup(text);
-
-    if (!backup.size) {
-      out.append(line('bad', 'No settings found in that file. A backup looks '
-        + 'like <Value Name="..." Value="..."/> — it is what the Download '
-        + 'button above produces.'));
+    BYTES = new Uint8Array(await f.arrayBuffer());
+    if (isEncrypted(BYTES)) {
+      passRow.hidden = false;
+      out.append(line(null, 'This backup is encrypted. Enter its password and press Decrypt.'));
+      $('#restore-pass').focus();
       return;
     }
-    PLAN = classify(backup);
+    review();
+  };
+
+  /* Decrypt if need be, then the same parse, diff and review for both kinds. */
+  const review = () => {
+    out.textContent = '';
+    const text = backupText(BYTES, $('#restore-pass').value, out);
+
+    if (text === null) return;
+    PLAN = classify(parseBackup(text));
     go.disabled = !renderPlan(PLAN, out);
+  };
+
+  decrypt.onclick = async () => {
+    if (!BYTES) return;
+    PLAN = null;
+    go.disabled = true;
+    out.textContent = '';
+    out.append(line(null, 'Decrypting…'));
+    await paint();
+    review();
   };
 
   go.onclick = async () => {
@@ -224,4 +325,4 @@ function wireRestore() {
   };
 }
 
-export { parseBackup, classify, wireRestore };
+export { parseBackup, classify, wireRestore, saveBackup, backupText };

@@ -518,14 +518,27 @@
       <div class="block-row">
         <section class="block">
           <h2>Backup</h2>
-          <p class="help">Both config stores, identity included. Take one before anything you cannot undo.</p>
-          <p><a class="button" href="/api/backup" download>Download backup</a></p>
+          <p class="help">Both config stores, identity included: the serial number, the line login and the keys.
+             Take one before anything you cannot undo, and protect it with a password.</p>
+          <div class="formrow">
+            <label>Password <input id="backup-pass" type="password" autocomplete="new-password"></label>
+            <label>Again <input id="backup-pass2" type="password" autocomplete="new-password"></label>
+          </div>
+          <p><button id="backup-go" type="button">Download encrypted backup</button>
+             <a href="/api/backup" download id="backup-plain">Download without encryption</a></p>
+          <p class="help">The password is not stored anywhere: without it the file cannot be read, here or
+             anywhere else. The plain file keeps every secret readable by anyone who gets it.</p>
+          <div id="backup-out"></div>
         </section>
 
         <section class="block">
           <h2>Restore</h2>
           <div class="formrow">
-            <label class="grow">Backup file <input id="restore-file" type="file" accept=".xml,text/xml,text/plain"></label>
+            <label class="grow">Backup file <input id="restore-file" type="file" accept=".xml,.enc,text/xml,text/plain"></label>
+          </div>
+          <div class="formrow" id="restore-pass-row" hidden>
+            <label>Password <input id="restore-pass" type="password" autocomplete="off"></label>
+            <button id="restore-decrypt" type="button">Decrypt</button>
           </div>
           <div class="formrow">
             <label class="check"><input id="restore-identity" type="checkbox"> Include identity keys</label>
@@ -566,7 +579,12 @@
             </ul>
           </div>
         </div>
+        <div class="formrow">
+          <label>Backup password <input id="reset-pass" type="password" autocomplete="new-password"></label>
+          <label>Again <input id="reset-pass2" type="password" autocomplete="new-password"></label>
+        </div>
         <p class="help">A backup downloads first; the reset does not start until your browser has the file.
+           With a password it is encrypted; with both fields empty it is a plain file.
            The store is shared with the stock firmware in the other slot, so it is reset there too.</p>
         <details class="more">
           <summary>Why this is not <code>flash_eraseall</code></summary>
