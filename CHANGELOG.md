@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Build: `src/status.c` now includes `http.h`; it called `respond()` without a declaration, which GCC only warned about. Implicit function declarations are now a build error (`-Werror=implicit-function-declaration`), so the next one fails the build instead of scrolling past. No change in behaviour.
+
 ## v1.12.0 (2026-10-31)
 
 - System: a reboot is followed with a progress bar instead of *Rebooting. This page will stop responding.* After *Reboot* on System > Firmware, or *Reboot now* in the save bar, a dialog over the page shows the seconds gone and a bar measured against a real reboot (about a minute to the page answering again), says *Shutting down* and then *Starting up* from what the page sees of the stick, and reopens the same view when the stick answers, which is the sign-in page since the reboot ended the session. Past the usual time it says so; a stick that never went down, or does not answer after 5 minutes, gets an explanation and a *Reload* button, and after 15 minutes the page stops asking. *Reboot now* also reports a refused reboot now, where it used to say it was rebooting whatever the answer. No confd or API change. `make check` drives the phases, the bar and the dialog; docs/DESIGN.md describes it.
