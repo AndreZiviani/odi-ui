@@ -1030,6 +1030,7 @@ const struct web_asset web_assets[] = {
 	{ "/mebrowser.js",  "mebrowser.js", "application/javascript" },
 	{ "/phone.js",      "phone.js",     "application/javascript" },
 	{ "/restore.js",    "restore.js",  "application/javascript" },
+	{ "/crypto.js",     "crypto.js",   "application/javascript" },
 	{ "/l2.js",         "l2.js",       "application/javascript" },
 	{ "/tools.js",      "tools.js",    "application/javascript" },
 	{ "/hostlink.js",   "hostlink.js", "application/javascript" },
