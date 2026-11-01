@@ -591,6 +591,10 @@ check "NTP_SERVER needs the ntp action" yes \
 	"$(err "$(post 'NTP_SERVER=pool.ntp.org')" '"needs":["ntp"]')"
 check "IGMP_SNOOPING needs the igmp action" yes \
 	"$(err "$(post 'IGMP_SNOOPING=1')" '"needs":["igmp"]')"
+check "SFP_HOST_DDM needs the sfp action" yes \
+	"$(err "$(post 'SFP_HOST_DDM=0')" '"needs":["sfp"]')"
+check "SFP_HOST_DDM outside 0 and 1 is refused" yes \
+	"$(err "$(post 'SFP_HOST_DDM=2')" 'not one of the values')"
 check "IGMP_PON_DROP needs the igmp action" yes \
 	"$(err "$(post 'IGMP_PON_DROP=1')" '"needs":["igmp"]')"
 check "IGMP_PON_DROP outside 0 and 1 is refused" yes \
@@ -1071,6 +1075,8 @@ check "apply ntp runs apply.sh ntp" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=ntp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: ntp')"
 check "apply igmp runs apply.sh igmp" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=igmp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: igmp')"
+check "apply sfp runs apply.sh sfp" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=sfp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: sfp')"
 touch /tmp/apply-fail
 check "a failing apply is reported as not applied" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":false')"

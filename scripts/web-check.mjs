@@ -175,7 +175,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'phone', 'restore', 'l2', 'tools', 'hostlink', 'netaddr', 'updates', 'wizard'];
+              'omci', 'services', 'mebrowser', 'phone', 'restore', 'crypto', 'l2', 'tools', 'hostlink', 'netaddr', 'updates', 'wizard'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -441,7 +441,8 @@ ok(members('0x5') === 'host (port 0), fibre (port 2)', 'and each member, in port
 ok(members('0x0') === 'no ports', 'an empty mask says so');
 
 /* --- restoring a backup --------------------------------------------------- */
-const { parseBackup, classify } = await import(join(root, 'web', 'restore.js'));
+const { parseBackup, classify, backupText } = await import(join(root, 'web', 'restore.js'));
+const { encryptBackup } = await import(join(root, 'web', 'crypto.js'));
 
 /* The shape `flash all` prints: hs first, then cs, both wrapped in <Dir>, with
    table rows distinguished only by an XML comment. */
@@ -464,6 +465,25 @@ ok(parsed.get('GPON_SN') === 'ODI012345678', 'a backup parses to name/value pair
 ok(parsed.get('LAN_IP_ADDR') === '192.168.0.3', 'values from both stores are picked up');
 ok(parsed.size === 6, 'every Value element is read, comments and Dir nesting included');
 ok(parseBackup('not a backup at all').size === 0, 'a file that is not a backup yields nothing');
+
+/* An encrypted backup: the right password gives the text, anything else gives
+   a message and nothing to restore. Few rounds, the key derivation is tested
+   elsewhere. */
+{
+  const msgs = { append(...n) { this.n.push(...n); }, n: [] };
+  const sealed = encryptBackup(new TextEncoder().encode(BACKUP), 'secret', undefined, 200000);
+  const plainBytes = new TextEncoder().encode(BACKUP);
+
+  ok(backupText(plainBytes, '', msgs) === BACKUP, 'a plain backup is read as it is');
+  ok(backupText(sealed, 'secret', msgs) === BACKUP, 'an encrypted backup is read with its password');
+  ok(msgs.n.length === 0, 'and says nothing when it works');
+  ok(backupText(sealed, 'wrong', msgs) === null && msgs.n.length === 1, 'a wrong password reads nothing and says so');
+  ok(backupText(new TextEncoder().encode('not a backup'), '', msgs) === null && msgs.n.length === 2, 'a file that is no backup reads nothing');
+  /* Valid padding is not proof of the right key: this is the one-in-256 case,
+     where the plaintext is garbage that does not parse. */
+  const garbage = encryptBackup(new TextEncoder().encode('garbage, no values here'), 'secret', undefined, 200000);
+  ok(backupText(garbage, 'secret', msgs) === null && msgs.n.length === 3, 'decrypted text that is not a backup is refused');
+}
 
 /* VALUES has every key at '1', so everything in the backup differs. The point
    under test is WHERE each key lands. */

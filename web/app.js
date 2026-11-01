@@ -15,7 +15,7 @@ import { renderFirmware, wireFirmware, renderTrial } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
 import { renderPhone, wirePhone, hideSecrets } from './phone.js';
-import { wireRestore } from './restore.js';
+import { wireRestore, saveBackup } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
 import { renderHostlink, wireHostlink } from './hostlink.js';
@@ -305,23 +305,13 @@ async function resetConfig() {
 
   btn.disabled = true;
   try {
-    out.append(el('div', null, 'Downloading a backup…'));
-    const r = await fetch('/api/backup', { cache: 'no-store' });
-    if (!r.ok) throw new Error('backup failed: HTTP ' + r.status);
-    const blob = await r.blob();
-    if (!blob.size) throw new Error('the backup came back empty');
+    /* The same backup as the Backup block: encrypted when a password is given. */
+    const pw = $('#reset-pass').value;
 
-    /* Name it for the stick and the day, so a folder of these is still
-       readable in six months. */
-    const stamp = new Date().toISOString().slice(0, 10);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `odi-config-${location.hostname}-${stamp}.xml`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
-    out.append(el('div', 'good', `Backup saved (${blob.size} bytes).`));
+    if (pw !== $('#reset-pass2').value) throw new Error('the two backup passwords differ; nothing was reset');
+    out.append(el('div', null, 'Downloading a backup…'));
+    const done = await saveBackup(pw);
+    out.append(el('div', 'good', `Backup saved (${done.size} bytes${done.encrypted ? ', encrypted' : ', not encrypted'}).`));
 
     const p = await fetch('/api/reset', {
       method: 'POST',

@@ -167,7 +167,7 @@ static void handle_write(int conn, const char *body)
 	unsigned long i = 0;
 	int first = 1, confirm = 0;
 	int any_omci = 0, any_reboot = 0, any_untraced = 0, omci_interrupts = 0;
-	int need_net = 0, any_stock = 0, need_syslog = 0, need_ntp = 0, need_igmp = 0;
+	int need_net = 0, any_stock = 0, need_syslog = 0, need_ntp = 0, need_igmp = 0, need_sfp = 0;
 
 	if (read_file(SCHEMA_PATH_OVR, schema, sizeof(schema)) <= 0 &&
 	    read_file(SCHEMA_PATH, schema, sizeof(schema)) <= 0) {
@@ -345,6 +345,8 @@ static void handle_write(int conn, const char *body)
 						need_ntp = 1;
 					else if (seq(derived, "igmp"))
 						need_igmp = 1;
+					else if (seq(derived, "sfp"))
+						need_sfp = 1;
 					else if (seq(derived, "omci")) {
 						char cls[16];
 
@@ -431,6 +433,10 @@ next:
 		}
 		if (need_igmp) {
 			put_fd(conn, first_need ? "\"igmp\"" : ",\"igmp\"");
+			first_need = 0;
+		}
+		if (need_sfp) {
+			put_fd(conn, first_need ? "\"sfp\"" : ",\"sfp\"");
 			first_need = 0;
 		}
 		if (any_omci && sett[0]) {
@@ -1521,7 +1527,7 @@ void serve(int conn)
 
 	/*
 	 * Apply saved settings, when the caller asks. `what` names the action
-	 * the write response listed: network (live) or omci (interrupts the
+	 * the write response listed: network or sfp (live), or omci (interrupts the
 	 * internet). The page asks for confirmation before omci; this route
 	 * does not second-guess it, but it never runs one the caller did not
 	 * name, and a save never triggers one by itself.
@@ -1531,15 +1537,16 @@ void serve(int conn)
 	 * a stock-based image has, and network is refused.
 	 */
 	if (seq(path, "/api/apply") && seq(method, "POST")) {
-		char what[16];   /* "network", "omci", "syslog", "ntp" or "igmp" */
+		char what[16];   /* "network", "omci", "syslog", "ntp", "igmp" or "sfp" */
 		long code = -1, got;
 
 		if (!form_get(body, "what", what, sizeof(what)) || !what[0])
 			str_copy(what, "omci", sizeof(what));
 		if (!seq(what, "omci") && !seq(what, "network") &&
-		    !seq(what, "syslog") && !seq(what, "ntp") && !seq(what, "igmp")) {
+		    !seq(what, "syslog") && !seq(what, "ntp") && !seq(what, "igmp") &&
+		    !seq(what, "sfp")) {
 			respond(conn, "400 Bad Request", "application/json", 0);
-			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network, omci, syslog, ntp or igmp\"}");
+			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network, omci, syslog, ntp, igmp or sfp\"}");
 			return;
 		}
 		if (file_exists(APPLY_PATH)) {

@@ -102,6 +102,7 @@ check:
 	scripts/check-api-doc.sh
 	scripts/parser-check.sh
 	scripts/uimage-test.sh
+	node scripts/crypto-check.mjs
 	node scripts/web-check.mjs
 
 # Run the daemon under qemu and talk HTTP to it. No stick needed: it is the

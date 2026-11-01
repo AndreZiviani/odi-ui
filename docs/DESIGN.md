@@ -864,6 +864,33 @@ remember to copy out of is not a backup, and it carries the identity keys in
 clear — which is the point of it, and why it needs the same credential as
 everything else.
 
+### Encrypted backups
+
+The backup holds the serial number, the line login and every credential in the
+store, so the page encrypts it with a password before it is saved. Plain XML is
+still one explicit click away (*Download without encryption*), because the
+`flash set` recovery steps and a stick that cannot run this page need it.
+
+All of it runs in the browser, in `web/crypto.js`, and the daemon is unchanged:
+`/api/backup` still answers plain XML. The page is served over plain HTTP on a
+private address, where browsers hide `crypto.subtle`, so the module carries its
+own SHA-256, HMAC, PBKDF2 and AES-256-CBC (about 11 KB), checked against the
+FIPS, RFC and NIST vectors and against the `openssl` command line in both
+directions by `make check`. Only `crypto.getRandomValues` (the salt) is used from
+the browser.
+
+The file is what `openssl enc -aes-256-cbc -pbkdf2 -md sha256` writes, so it
+opens without this project (command in API.md). OpenSSL stores no iteration
+count, so 200000 is part of the format; it costs about 0.5 s in node and a few
+seconds on a slow phone, and it is the only brake on guessing a password from a
+stolen file.
+
+CBC does not authenticate. A wrong password gives bad padding 255 times in 256,
+and garbage that has valid padding the other time, so restore decrypts, then
+requires the text to parse as a backup (at least one `<Value>`) before it diffs
+anything. A file that fails is reported as *wrong password, or damaged* and
+nothing is written. The reset's backup takes the same optional password.
+
 ### Restoring a backup
 
 **No daemon route, deliberately.** The browser reads the file, parses it, and
