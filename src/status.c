@@ -4,6 +4,7 @@
 
 #include "confd.h"
 #include "buffers.h"
+#include "http.h"
 #include "status.h"
 
 /*

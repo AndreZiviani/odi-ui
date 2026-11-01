@@ -29,7 +29,7 @@ STRIP := $(CROSS)strip
 # Identical to odi-sfp-exporter's, and for the same reasons: MIPS-I because the
 # RLX5281 traps on much of MIPS32, big-endian, no FPU, no GOT, and freestanding
 # so nothing is quietly turned back into a libc call.
-CFLAGS  := -std=c99 -Os -Wall -Wextra \
+CFLAGS  := -std=c99 -Os -Wall -Wextra -Werror=implicit-function-declaration \
            -march=mips1 -mabi=32 -EB -msoft-float -G0 \
            -fno-pic -mno-abicalls -ffreestanding -fno-builtin -fno-stack-protector \
            -flto \
