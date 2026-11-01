@@ -15,7 +15,7 @@
 #                      and the ONU ranges and is provisioned again)
 #            reboot    only at the next boot, which also drops the service
 # action   what the page runs to apply it: network (apply.sh network), omci
-#          (apply.sh omci), syslog, ntp, reboot, or none (the daemon reads the key
+#          (apply.sh omci), syslog, ntp, igmp, sfp, reboot, or none (the daemon reads the key
 #          each time it uses it, nothing to run). confd reports the actions a
 #          save needs. omci sends SIGHUP to omcid, which rereads the store: for
 #          a live key it rebuilds in place, for an internet key it re-registers
@@ -74,3 +74,4 @@ OMCI_TCONT_ALLOC_UNSET	live	none		omcid, at every Get and MIB upload	Read at eve
 OMCI_POTS_PORTS	internet	omci		omcid, at start and on SIGHUP (re-registers)	An odi-only key, kept in odi.conf. Applying re-registers the ONU: the phone entities appear or disappear and the OLT provisions it again.	0
 OMCI_POTS_SLOT_ID	internet	omci		omcid, at start and on SIGHUP (re-registers)	An odi-only key, kept in odi.conf: empty removes it. Applying re-registers the ONU.	
 OMCI_VOIP_LINE_REPORT	live	none		omcid, at every Get of the VoIP line status	Read at every Get of the line status, so a change needs no reload and no re-registration. An odi-only key, kept in odi.conf.	0
+SFP_HOST_DDM	live	sfp		sfp-host-ddm.sh: a PON step at boot, and apply.sh sfp; the kernel does the rest (odi_switch.sfp_mirror)	An odi-only key, kept in odi.conf. Takes effect at once with apply.sh sfp, no reboot and the fibre service is not touched. 1, empty or absent serve it; any other value serves it and logs a bad value.	1

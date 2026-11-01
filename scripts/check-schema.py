@@ -62,7 +62,7 @@ sett = load("settings.tsv", 7)
 # settings.tsv, the image's own view. The classes are the four the page
 # labels; the actions are the three apply.sh and the reboot button perform.
 SETT_CLASSES = {"live", "restart", "internet", "reboot"}
-SETT_ACTIONS = {"network", "omci", "syslog", "ntp", "igmp", "reboot", "none"}
+SETT_ACTIONS = {"network", "omci", "syslog", "ntp", "igmp", "sfp", "reboot", "none"}
 
 names = {r[0] for r in keys}
 if not names:
@@ -166,7 +166,8 @@ for name, apply_, action, pair, reader, note_, unset in sett:
     if (apply_, action) not in {("live", "network"), ("live", "omci"),
                                 ("live", "none"), ("internet", "omci"),
                                 ("reboot", "reboot"), ("restart", "syslog"),
-                                ("restart", "ntp"), ("restart", "igmp")}:
+                                ("restart", "ntp"), ("restart", "igmp"),
+                                ("live", "sfp")}:
         note(name, f"class {apply_!r} does not match action {action!r}")
     if pair and pair not in sett_names:
         note(name, f"pair {pair!r} is not itself in settings.tsv")
