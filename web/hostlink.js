@@ -86,13 +86,15 @@ function bannerText(h) {
   const st = h.state || {};
   const now = h.safemode_now;
   const rec = h.safemode;
-  /* cleared is a list: HOST_AUTONEG, HOST_SERDES, both with a comma, none or failed. */
+  /* cleared is a list: HOST_AUTONEG, HOST_SERDES, OMCI_UNI_LOCK, joined
+     with commas, or none or failed. */
   const cleared = (s) => {
     const l = String((s && s.cleared) || '').split(',');
     const an = l.includes('HOST_AUTONEG'), sd = l.includes('HOST_SERDES');
-    if (an && sd) return ' It also cleared the host port settings (auto-negotiation and link mode).';
-    if (sd) return ' It also cleared the host port link mode.';
-    return an ? ' It also cleared the host port setting.' : '';
+    const ul = l.includes('OMCI_UNI_LOCK') ? ' It also turned off "Honour an OLT lock of the Ethernet port".' : '';
+    if (an && sd) return ' It also cleared the host port settings (auto-negotiation and link mode).' + ul;
+    if (sd) return ' It also cleared the host port link mode.' + ul;
+    return (an ? ' It also cleared the host port setting.' : '') + ul;
   };
   if (now) {
     out.safe = 'Safe mode. A recovery boot: the fibre (PON) is off and the default passwords work for this boot only.'

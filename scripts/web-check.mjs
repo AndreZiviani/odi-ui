@@ -855,9 +855,15 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG,HOST_SERDES' }, safemode: null });
   ok(/cleared the host port settings \(auto-negotiation and link mode\)/.test(b.safe) && b.safe.length < 260,
      'safe mode: cleared=HOST_AUTONEG,HOST_SERDES says both');
+  b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '5', cleared: 'OMCI_UNI_LOCK' }, safemode: null });
+  ok(/turned off "Honour an OLT lock of the Ethernet port"/.test(b.safe) && !/host port/.test(b.safe),
+     'safe mode: cleared=OMCI_UNI_LOCK names the OLT lock setting');
+  b = bannerText({ supported: true, state: st({}), serdes: sd({}), safemode_now: { short_boots: '3', cleared: 'HOST_AUTONEG,HOST_SERDES,OMCI_UNI_LOCK' }, safemode: null });
+  ok(/auto-negotiation and link mode/.test(b.safe) && /OLT lock/.test(b.safe) && b.safe.length < 330,
+     'safe mode: all three cleared, all three said');
   for (const c of ['none', 'failed', '']) {
     b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: c }, safemode: null });
-    ok(!/cleared the host port/.test(b.safe), `safe mode: cleared=${c || '(empty)'} claims nothing was cleared`);
+    ok(!/cleared the host port|turned off/.test(b.safe), `safe mode: cleared=${c || '(empty)'} claims nothing was cleared`);
   }
   b = bannerText({ supported: false, state: {}, serdes: sd({ setting: '2500basex', running: 'fiber1g', fallback: '1' }), safemode: null });
   ok(b.show && !b.safe && /^Host mode fallback\./.test(b.fallback) && /set to 2\.5G/.test(b.fallback) && /Fiber 1G/.test(b.fallback),
