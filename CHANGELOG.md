@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config, OMCI: *Honour an OLT lock of the Ethernet port* (`OMCI_UNI_LOCK`) is off by default, to match odi-oss: the OLT's lock is answered and the port stays up, since on this SFP that port is the only way in. The help says what turning it on costs (this page, ssh, syslog and metrics go when the OLT locks the port, after a warning in the log) and how to get back in (five short power cycles make a safe-mode boot, which turns the setting off). The safe-mode banner says so when that boot cleared it (`cleared=OMCI_UNI_LOCK`). `make check` covers the banner. Needs odi-oss with AndreZiviani/odi-oss#287 for the new default; an older image still honours the lock when the key is absent. Refs AndreZiviani/odi-oss#287.
+
 ## v1.13.0 (2026-11-02)
 
 - Build: `src/status.c` now includes `http.h`; it called `respond()` without a declaration, which GCC only warned about. Implicit function declarations are now a build error (`-Werror=implicit-function-declaration`), so the next one fails the build instead of scrolling past. No change in behaviour.
