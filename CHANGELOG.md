@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Config, OMCI: *Honour an OLT lock of the Ethernet port* (`OMCI_UNI_LOCK`) is off by default, to match odi-oss: the OLT's lock is answered and the port stays up, since on this SFP that port is the only way in. The help says what turning it on costs (this page, ssh, syslog and metrics go when the OLT locks the port, after a warning in the log) and how to get back in (five short power cycles make a safe-mode boot, which turns the setting off). The safe-mode banner says so when that boot cleared it (`cleared=OMCI_UNI_LOCK`). `make check` covers the banner. Needs odi-oss with AndreZiviani/odi-oss#287 for the new default; an older image still honours the lock when the key is absent. Refs AndreZiviani/odi-oss#287.
+- Config, OMCI: *Honour an OLT lock of the Ethernet port* (`OMCI_UNI_LOCK`) is off by default, to match odi-oss: the OLT's lock is answered and the port stays up, since on this SFP that port is the only way in. The help says what turning it on costs (this page, ssh, syslog and metrics go when the OLT locks the port, after a warning in the log) and how to get back in (restart with the fibre unplugged and turn it off, or five short power cycles: the safe-mode boot turns the setting off). The safe-mode banner says so when that boot cleared it (`cleared=OMCI_UNI_LOCK`). `make check` covers the banner. Needs odi-oss with AndreZiviani/odi-oss#287 for the new default; an older image still honours the lock when the key is absent. Refs AndreZiviani/odi-oss#287.
 
 ## v1.13.0 (2026-11-02)
 
