@@ -13,6 +13,12 @@
 #include "firmware.h"
 #include "status.h"
 
+/* The client output buffer, see write_all in syscall.h. */
+char outbuf[OUTBUF];
+unsigned long out_len;
+int out_fd = -1;
+int out_err;
+
 static unsigned long parse_u16(const char *s, unsigned long fallback)
 {
 	unsigned long v = 0, i;
@@ -124,7 +130,12 @@ int main(int argc, char **argv)
 		__syscall6(__NR_setsockopt, conn, SOL_SOCKET, SO_SNDTIMEO,
 			   (long)tv, sizeof(tv), 0);
 
+		out_fd = (int)conn;
+		out_len = 0;
+		out_err = 0;
 		serve((int)conn);
+		out_flush();
+		out_fd = -1;
 		syscall3(__NR_close, conn, 0, 0);
 	}
 }

@@ -189,6 +189,7 @@ static inline void sleep_s(long secs)
 {
 	long ts[2];
 
+	out_flush();
 	ts[0] = secs;
 	ts[1] = 0;
 	syscall3(__NR_nanosleep, (long)ts, 0, 0);

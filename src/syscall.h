@@ -258,7 +258,7 @@ __attribute__((unused)) static int wait_readable(int fd, long ms)
 	return syscall3(__NR_poll, (long)&pfd, 1, ms) > 0;
 }
 
-static long write_all(int fd, const char *buf, unsigned long len)
+static long write_direct(int fd, const char *buf, unsigned long len)
 {
 	unsigned long done = 0;
 
@@ -270,6 +270,66 @@ static long write_all(int fd, const char *buf, unsigned long len)
 		done += (unsigned long)n;
 	}
 	return (long)done;
+}
+
+/*
+ * What goes to the client is gathered in outbuf and sent OUTBUF bytes at a
+ * time.
+ *
+ * The JSON emitters write a token at a time, and put_json_str a byte at a
+ * time, each one its own write(). Measured on the stick: the 31 KB of
+ * /api/schema took 0.22 s and the 30 KB of /api/meta 0.31 s, almost all of it
+ * in those syscalls, and the page asks for both at once from a server that
+ * answers one request after another.
+ *
+ * main.c points out_fd at the connection around serve() and flushes after it.
+ * Any other descriptor (a pipe to a child, a file) is written straight
+ * through. out_flush() also runs before a fork and before a sleep, so an
+ * answer written ahead of an action still leaves first: the reboot route
+ * answers, then forks the delayed reboot.
+ *
+ * Once a send fails (the peer went away, or stopped reading for the whole
+ * send timeout) the rest of that response is dropped, instead of waiting
+ * out the timeout again for every chunk.
+ */
+#define OUTBUF 4096
+extern char outbuf[OUTBUF];
+extern unsigned long out_len;
+extern int out_fd;
+extern int out_err;
+
+__attribute__((unused)) static void out_flush(void)
+{
+	if (out_len && !out_err &&
+	    write_direct(out_fd, outbuf, out_len) != (long)out_len)
+		out_err = 1;
+	out_len = 0;
+}
+
+static long write_all(int fd, const char *buf, unsigned long len)
+{
+	unsigned long i;
+
+	if (fd < 0 || fd != out_fd)
+		return write_direct(fd, buf, len);
+	if (out_err)
+		return -1;
+	if (out_len + len > OUTBUF) {
+		out_flush();
+		if (out_err)
+			return -1;
+		if (len >= OUTBUF) {
+			long n = write_direct(fd, buf, len);
+
+			if (n != (long)len)
+				out_err = 1;
+			return n;
+		}
+	}
+	for (i = 0; i < len; i++)
+		outbuf[out_len + i] = buf[i];
+	out_len += len;
+	return (long)len;
 }
 
 __attribute__((unused)) static void put_fd(int fd, const char *s)
@@ -557,6 +617,9 @@ static long run_to_buf_ex(const char *path, char *const argv[],
 	long got;
 	int timed_out;
 
+	/* Before the fork: what was written so far leaves now, and the child
+	 * does not start with a copy of it. */
+	out_flush();
 	if (exitcode)
 		*exitcode = -1;
 	if (syscall3(__NR_pipe2, (long)fds, 0, 0) < 0)
@@ -651,6 +714,7 @@ __attribute__((unused)) static long run_script_to_buf(const char *path, char *co
 	while (script[slen])
 		slen++;
 
+	out_flush();
 	if (syscall3(__NR_pipe2, (long)in, 0, 0) < 0)
 		return -1;
 	if (syscall3(__NR_pipe2, (long)out, 0, 0) < 0) {
