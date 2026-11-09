@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- confd: responses are sent in 4 KB writes instead of one `write()` per token, and one per character inside JSON strings. On the stick `/api/schema` (31 KB) went from 0.22 s to 0.02 s and `/api/meta` (30 KB) from 0.31 s to 0.02 s, and since confd answers one request at a time, the nine requests the page makes when it opens now finish in about 0.2 s instead of 1.5 s (with AndreZiviani/odi-oss#304 for `/api/values`). The response bodies are byte for byte the same. Output is flushed before every fork and sleep, so the reboot answer still leaves before the reboot, and a client that stops reading costs one send timeout instead of one per write.
+
 - Config, OMCI: *Honour an OLT lock of the Ethernet port* (`OMCI_UNI_LOCK`) is off by default, to match odi-oss: the OLT's lock is answered and the port stays up, since on this SFP that port is the only way in. The help says what turning it on costs (this page, ssh, syslog and metrics go when the OLT locks the port, after a warning in the log) and how to get back in (restart with the fibre unplugged and turn it off, or five short power cycles: the safe-mode boot turns the setting off). The safe-mode banner says so when that boot cleared it (`cleared=OMCI_UNI_LOCK`). `make check` covers the banner. Needs odi-oss with AndreZiviani/odi-oss#287 for the new default; an older image still honours the lock when the key is absent. Refs AndreZiviani/odi-oss#287.
 
 ## v1.13.0 (2026-11-02)
