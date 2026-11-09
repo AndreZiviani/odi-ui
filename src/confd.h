@@ -100,6 +100,9 @@
 #define SERDES_SCRIPT     "/etc/scripts/host-serdes.sh"
 #define SERDES_STATE      "/var/run/host-serdes"
 #define HWMON_ROOT        "/sys/class/hwmon"
+#define PROC_STAT         "/proc/stat"
+#define PROC_MEMINFO      "/proc/meminfo"
+#define GPON_STATUS       "/proc/odi_gpon/status"
 #define UPTIME_FILE       "/proc/uptime"
 #define NTP_STATUS_FILE   "/tmp/ntp-status"
 /*

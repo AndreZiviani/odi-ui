@@ -20,16 +20,22 @@ import { $, el, bytes } from './dom.js';
  * A negative delta means the counter was reset between polls, so that sample is
  * dropped rather than rendered as a spike.
  */
-let PREV = null;
-function renderFlow(text) {
+/* `mib dump counter port all` as { port: { counter: value } }. */
+function parsePorts(text) {
   const ports = {};
   let cur = null;
-  for (const line of text.split('\n')) {
+  for (const line of (text || '').split('\n')) {
     const p = /^Port:\s*(\d+)/.exec(line);
     if (p) { cur = p[1]; ports[cur] = {}; continue; }
     const kv = /^(\w+)\s*:\s*(\d+)\s*$/.exec(line);
     if (kv && cur !== null) ports[cur][kv[1]] = kv[2];
   }
+  return ports;
+}
+
+let PREV = null;
+function renderFlow(text) {
+  const ports = parsePorts(text);
   const now = Date.now();
   const rate = (id, k) => {
     /* Both sides need the `|| {}`. side() had it and this did not, so a poll
@@ -71,4 +77,4 @@ function renderFlow(text) {
   PREV = { at: now, ports };
 }
 
-export { renderFlow };
+export { renderFlow, parsePorts };

@@ -514,6 +514,60 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 #saveout:not(:empty) { padding-bottom: 12px; }
 #saveout pre { max-height: 160px; }
 
+/* ------------------------------------------------------------- the stick
+   One row, the way light and frames travel: fibre, the stick (optics, the
+   SoC, the host lane), the router. The fibre is the one coloured line, in
+   the jacket yellow; inside the stick the links are dashed, electrical. */
+.overview { display: grid; grid-template-columns: auto 40px minmax(0, 1fr) 32px auto; align-items: center; margin: 4px 0 28px; }
+.ov-part { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer; }
+.ov-part:hover { border-color: var(--line-2); }
+.ov-name { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.ov-part .dot.ok { background: var(--green); }
+.ov-part .dot.warn { background: var(--yellow); }
+.ov-part .dot.bad { background: var(--red); }
+.ov-val { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ov-sub { font-size: 12px; color: var(--ink-3); }
+.ov-fibre { background: none; border-color: transparent; padding-left: 0; }
+.ov-fibre:hover { border-color: transparent; }
+.ov-big { display: flex; align-items: baseline; gap: 6px; }
+.ov-big .num { font: 700 26px/1.1 var(--readout); letter-spacing: -0.02em; }
+.ov-big .unit { font-size: 13px; color: var(--ink-3); }
+.ov-line { align-self: center; }
+.ov-glass { height: 4px; border-radius: 2px; background: var(--yellow); }
+.ov-pins { height: 2px; background: repeating-linear-gradient(90deg, var(--ink-3) 0 5px, transparent 5px 9px); }
+.ov-stick { position: relative; display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2.2fr) minmax(120px, 0.9fr);
+  gap: 22px; align-items: center; padding: 30px 18px 18px; background: var(--well); border: 1.5px solid var(--line-2); border-radius: 14px; }
+.ov-label { position: absolute; top: 8px; left: 14px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.ov-soc { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  padding: 30px 12px 12px; border: 1.5px dashed var(--line-2); border-radius: 10px; }
+.ov-soc::before, .ov-soc::after { content: ""; position: absolute; top: 50%; width: 22px; height: 2px;
+  background: repeating-linear-gradient(90deg, var(--ink-3) 0 5px, transparent 5px 9px); }
+.ov-soc::before { left: -24px; }
+.ov-soc::after { right: -24px; }
+.ov-flash { animation: ov-flash 1.4s ease-out; }
+@keyframes ov-flash { from { box-shadow: 0 0 0 3px var(--blue-ink); } to { box-shadow: 0 0 0 3px transparent; } }
+
+/* Narrower: the same path, top to bottom. */
+@media (max-width: 1100px) {
+  .overview { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
+  .ov-fibre { justify-self: start; }
+  .ov-glass { width: 4px; height: 24px; justify-self: start; margin-left: 28px; }
+  .ov-pins { width: 2px; height: 24px; justify-self: start; margin-left: 29px;
+    background: repeating-linear-gradient(180deg, var(--ink-3) 0 5px, transparent 5px 9px); }
+  .ov-stick { grid-template-columns: minmax(0, 1fr); }
+  .ov-soc { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ov-soc::before, .ov-soc::after { top: auto; left: 28px; right: auto; width: 2px; height: 22px;
+    background: repeating-linear-gradient(180deg, var(--ink-3) 0 5px, transparent 5px 9px); }
+  .ov-soc::before { top: -24px; }
+  .ov-soc::after { bottom: -24px; }
+}
+@media (max-width: 720px) {
+  .ov-soc { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-val { white-space: normal; }
+}
+
 /* ------------------------------------------------------------- status */
 .status-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); gap: 32px 48px; margin-bottom: 8px; }
 .optics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 28px 48px; }

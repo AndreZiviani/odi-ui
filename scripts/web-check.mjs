@@ -174,7 +174,7 @@ const ok = (cond, what) => {
   if (!cond) failed++;
 };
 
-const mods = ['dom', 'state', 'status', 'flow', 'validate', 'expert', 'config', 'save', 'firmware',
+const mods = ['dom', 'state', 'status', 'flow', 'overview', 'validate', 'expert', 'config', 'save', 'firmware',
               'omci', 'services', 'mebrowser', 'phone', 'restore', 'crypto', 'l2', 'tools', 'hostlink', 'netaddr', 'updates', 'wizard'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
@@ -313,6 +313,38 @@ ok(true, 'renderStatus runs against a diag capture');
      'chip temp: an alarm with no limit reported leaves the limit out');
   renderStatus(raw, { celsius: 80, max: 95, crit: 110, max_alarm: false, crit_alarm: false });
   ok(bar.hidden === true, 'chip temp: the bar goes when the alarm clears');
+}
+
+/* --- the stick diagram on top of the Status tab (overview.js) ------------ */
+{
+  const raw = 'RTK.0> pon get transceiver rx-power\n  Rx Power : -18.42 dBm\n'
+    + 'RTK.0> pon get transceiver tx-power\n  Tx Power : 2.15 dBm\n'
+    + 'RTK.0> pon get transceiver temperature\n  Temperature : 45.50 C\n'
+    + 'RTK.0> gpon get onu-state\n  Operation State(O5)\n'
+    + 'RTK.0> mib dump counter port all\nPort: 2\nifInOctets      :   1000000\nifOutOctets     :    500000\n';
+  const raw2 = raw.replace('1000000', '1300000').replace('500000', '560000');
+  const st = (cpu) => ({ raw, cpu, mem_total: '   27508 kB', mem_avail: '   14792 kB',
+    onu_id: '13', host_link: '1\n', host_mode: '2500basex' });
+  const ov = () => textOf(doc.querySelector('#overview'));
+  const realNow = Date.now;
+  let t = 1000000;
+  Date.now = () => t;
+  renderStatus(raw, { celsius: 52.4 }, st('100 0 100 800 0 0 0 0 0 0'));
+  ok(/Fibre−18\.4dBm/.test(ov()) && /Laser 2\.15 dBm/.test(ov()) && /Module 45\.5 °C/.test(ov())
+     && /O5 In service/.test(ov()) && /ONU-ID 13/.test(ov()) && /14\.4 MiB free/.test(ov())
+     && /SoC 52 °C/.test(ov()) && /2\.5G \(2500BASE-X\)/.test(ov()) && /Linked/.test(ov()),
+     'overview: every part shows its figure from one /api/status answer');
+  ok(/CPUmeasuring/.test(ov()) && /↓ measuring/.test(ov()), 'overview: CPU and rates wait for a second poll');
+  t += 10000;
+  renderStatus(raw2, null, st('150 0 150 900 0 0 0 0 0 0'));
+  ok(/50 % busy/.test(ov()), 'overview: CPU busy is the non-idle share between two polls');
+  ok(/↓ 30\.0 kB\/s/.test(ov()) && /↑ 6\.00 kB\/s/.test(ov()),
+     'overview: the switch rates are the fibre port deltas, down what it receives, up what it sends');
+  t += 10000;
+  renderStatus(raw2, null, { raw: raw2, host_link: '0' });
+  ok(/Memory—/.test(ov()) && /ONU-ID —/.test(ov()) && /No link/.test(ov()) && /CPUmeasuring/.test(ov()),
+     'overview: a stock slot without those files shows dashes, and a host link down says so');
+  Date.now = realNow;
 }
 
 /* --- the header bars are ordered by severity: red, yellow, blue ----------- */
