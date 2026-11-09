@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the VLAN subtab has a "VLAN forward operation override" field
+  (`RTK_DEVINFO_SPECVER`, the same setting and format as the stock firmware's
+  VLAN Forward Operation page, which odi-oss omcid now reads too). It
+  replaces the forward operation the OLT set on a VLAN filter, for lines
+  whose filter drops the 802.1X EAP frames the router needs. Applied live,
+  without re-ranging; empty removes it. Checked in the page and in confd.
+  Refs AndreZiviani/odi-oss#301.
+
 - Page start: two requests instead of nine. `GET /api/static` gathers the image files (schema, meta, consumers, settings, features, baseline, defaults) under one `ETag`, so it is usually a `304`; `GET /api/init` gathers what the device holds (values, firmware, host link), `no-store`. The page no longer reads `/api/firmware` and `/api/hostlink` a second time while it opens. The single routes stay, unchanged, for scripts. In confd the six file routes are one table (`tsv_routes`) shared with `/api/static`. docs/API.md lists both; `make smoke` checks that each member matches its single route, the `304`, and the credential.
 
 - confd: answers are HTTP/1.1 (still one request per connection, `Connection: close`). The web assets and the image files behind `/api/schema`, `meta`, `consumers`, `settings`, `features`, `baseline` and `defaults` carry an `ETag` and `Cache-Control: private, no-cache`: the browser keeps them, asks again on every load, and an unchanged one costs a `304` with no body. The tag is a hash of the confd build and the file, so a new image or a changed file is fetched again. `/api/values`, `/api/status` and everything else the device holds stay `no-store`. The page no longer asks the browser for `no-store` on every read, so the server's headers decide. `make smoke` covers the tags, the 304 and the credential it still needs.

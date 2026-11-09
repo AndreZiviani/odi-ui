@@ -283,9 +283,11 @@ static void handle_write(int conn, const char *body)
 		 * (SYSLOG_SERVER, NTP_SERVER, ONU_HW_VERSION, OMCI_FIXED_ME)
 		 * can be cleared: odi-oss flash keeps them in a plain file and
 		 * an empty value removes the key. Stock keys live in the vendor
-		 * XML, where an empty value is not a clear. */
+		 * XML, where an empty value is not a clear. The one exception
+		 * is fwdop (RTK_DEVINFO_SPECVER): empty is its off state, on
+		 * both firmwares, and is what the stock page stores to reset. */
 		else if (!value[0] && !seq(type, "hostport") && !seq(type, "ascii14") &&
-			 !seq(type, "fixedme"))
+			 !seq(type, "fixedme") && !seq(type, "fwdop"))
 			err = "cannot be cleared: flash set refuses an empty value";
 		else if (!type_ok(type, value))
 			err = "not valid for its type";

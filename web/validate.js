@@ -108,6 +108,33 @@ function fixedMeSerialise(rows) {
 
 const FME_HELP = `up to ${FME_MAX_ENTRIES} entries, CLASS:HEX or CLASS:INSTANCE:ATTR:HEX, separated by commas or spaces`;
 
+/* RTK_DEVINFO_SPECVER, the stock FwdOp override, as omcid and src/mib.c read
+   it: up to 12 entries separated by commas or spaces, INSTANCE[:FWDOP], each
+   number decimal or 0x hex (instance 0..65535, code 0..255), no instance twice. */
+const FWDOP_HELP = 'up to 12 entries, ENTITY or ENTITY:FWDOP (e.g. 0x1102:0x00), separated by commas';
+function fwdopNum(s, maxdig, max) {
+  const m = /^0[xX]([0-9a-fA-F]{1,4})$/.exec(s);
+  const n = m ? parseInt(m[1], 16) : new RegExp(`^\\d{1,${maxdig}}$`).test(s) ? Number(s) : NaN;
+  return Number.isInteger(n) && n <= max ? n : null;
+}
+function fwdopProblem(raw) {
+  if (raw === '') return null;
+  const parts = raw.split(/[ ,]+/).filter((p) => p !== '');
+  if (parts.length > 12) return FWDOP_HELP;
+  const seen = new Set();
+  for (const [n, p] of parts.entries()) {
+    const [inst, code, extra] = p.split(':');
+    const i = fwdopNum(inst, 5, 65535);
+    if (i === null || extra !== undefined) return `entry ${n + 1}: ${FWDOP_HELP}`;
+    if (code !== undefined && fwdopNum(code, 3, 255) === null) {
+      return `entry ${n + 1}: the FwdOp is 0x00 to 0xff`;
+    }
+    if (seen.has(i)) return `entry ${n + 1}: entity ${inst} is already listed`;
+    seen.add(i);
+  }
+  return null;
+}
+
 function fixedMeProblem(raw) {
   if (raw === '') return null;
   if (!/^[^ ,]+([ ,]+[^ ,]+)*$/.test(raw)) return 'a separator with no entry beside it; ' + FME_HELP;
@@ -224,8 +251,9 @@ function textProblem(raw, max) {
 
 function valueProblem(row, raw, ctx = defaultCtx) {
   /* hostport keys (SYSLOG_SERVER, NTP_SERVER), ascii14 (ONU_HW_VERSION) and
-     fixedme (OMCI_FIXED_ME) are odi-only and empty clears them. */
-  if (['hostport', 'ascii14', 'fixedme'].includes(row.type) && raw === '') return null;
+     fixedme (OMCI_FIXED_ME) are odi-only and empty clears them; fwdop
+     (RTK_DEVINFO_SPECVER) is a stock key whose empty value is its off state. */
+  if (['hostport', 'ascii14', 'fixedme', 'fwdop'].includes(row.type) && raw === '') return null;
   if (raw === '' || raw === undefined) {
     return 'cannot be empty \u2014 flash set refuses to clear a key';
   }
@@ -267,6 +295,7 @@ function valueProblem(row, raw, ctx = defaultCtx) {
     return 'a quote, < or & cannot be stored';
   }
   if (row.type === 'fixedme') return fixedMeProblem(raw);
+  if (row.type === 'fwdop') return fwdopProblem(raw);
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';
   }
@@ -466,5 +495,5 @@ export {
   rangeBad, valueProblem, hostMaskProblem, keyRuleProblem, hostportProblem, hexAscii, validateInput, invalidEdits,
   passwordProblem, sshKeyProblem, pingProblem, meProblem, entityProblem, uploadSizeProblem, tarProblem,
   restoreSizeProblem, UPLOAD_MAX, RESTORE_MAX,
-  fixedMeRowProblem, fixedMeRowProblems, fixedMeSetProblem, fixedMeParse, fixedMeSerialise, FME_MAX_ENTRIES,
+  fwdopProblem, fixedMeRowProblem, fixedMeRowProblems, fixedMeSetProblem, fixedMeParse, fixedMeSerialise, FME_MAX_ENTRIES,
 };
