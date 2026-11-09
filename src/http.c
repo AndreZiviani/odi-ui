@@ -1020,6 +1020,7 @@ const struct web_asset web_assets[] = {
 	{ "/state.js",      "state.js",    "application/javascript" },
 	{ "/status.js",     "status.js",   "application/javascript" },
 	{ "/flow.js",       "flow.js",     "application/javascript" },
+	{ "/overview.js",   "overview.js", "application/javascript" },
 	{ "/validate.js",   "validate.js", "application/javascript" },
 	{ "/config.js",     "config.js",   "application/javascript" },
 	{ "/expert.js",     "expert.js",   "application/javascript" },

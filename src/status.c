@@ -106,6 +106,50 @@ static void emit_chip_temp(int fd)
 }
 
 /*
+ * What the stick diagram on the Status tab needs beyond diag: the CPU and
+ * memory figures, the ONU-ID and the host side of the link. Plain file
+ * reads, no fork, so the poll costs no more than it did.
+ *
+ * Each member is one line of its file, after the prefix that finds it,
+ * passed on as a string: the browser parses it, as it does diag output.
+ * A file or a line that is not there emits nothing, so a stock slot (no
+ * /proc/odi_gpon, no host-link state) shows those blocks without a value.
+ */
+static void emit_line(int fd, const char *name, const char *path,
+		      const char *prefix, char *buf, unsigned long cap)
+{
+	unsigned long n = slen(prefix), i = 0, e;
+
+	if (read_file(path, buf, cap) <= 0)
+		return;
+	while (buf[i]) {
+		for (e = i; buf[e] && buf[e] != '\n'; e++)
+			;
+		if (e - i >= n && spre(buf + i, prefix)) {
+			put_fd(fd, ",\"");
+			put_fd(fd, name);
+			put_fd(fd, "\":\"");
+			put_json_str(fd, buf + i + n, e - i - n);
+			put_fd(fd, "\"");
+			return;
+		}
+		i = buf[e] ? e + 1 : e;
+	}
+}
+
+static void emit_overview(int fd)
+{
+	char buf[2048];
+
+	emit_line(fd, "cpu", PROC_STAT, "cpu ", buf, sizeof(buf));
+	emit_line(fd, "mem_total", PROC_MEMINFO, "MemTotal:", buf, sizeof(buf));
+	emit_line(fd, "mem_avail", PROC_MEMINFO, "MemAvailable:", buf, sizeof(buf));
+	emit_line(fd, "onu_id", GPON_STATUS, "onu_id ", buf, sizeof(buf));
+	emit_line(fd, "host_link", HOSTLINK_LINK, "", buf, sizeof(buf));
+	emit_line(fd, "host_mode", SERDES_STATE, "running=", buf, sizeof(buf));
+}
+
+/*
  * Device status, in one diag invocation. diag costs ~32 ms to start and almost
  * nothing to run, so every question goes in on stdin at once; see
  * odi-sfp-exporter's notes on the same trick.
@@ -134,6 +178,7 @@ void emit_status_json(int fd)
 	put_json_cstr(fd, status);
 	put_fd(fd, "\"");
 	emit_chip_temp(fd);
+	emit_overview(fd);
 	put_fd(fd, "}");
 }
 

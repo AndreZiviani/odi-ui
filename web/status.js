@@ -8,6 +8,7 @@
 
 import { $, el } from './dom.js';
 import { renderFlow } from './flow.js';
+import { renderOverview } from './overview.js';
 
 /* diag echoes each command after its "RTK.0> " prompt, so the reply splits back
  * into per-command sections on that marker. */
@@ -200,7 +201,7 @@ function chipBar(chip) {
       + 'Check the airflow around the router\'s SFP cage.'));
 }
 
-function renderStatus(raw, chip) {
+function renderStatus(raw, chip, st) {
   const s = sections(raw);
   $('#raw').textContent = raw;
 
@@ -209,7 +210,7 @@ function renderStatus(raw, chip) {
     return v === null ? null : Number(v);
   };
   const rx = meter('#rx', OPTICS.rx, dbm('rx-power'));
-  meter('#tx', OPTICS.tx, dbm('tx-power'));
+  const tx = meter('#tx', OPTICS.tx, dbm('tx-power'));
 
   const state = num(s['gpon get onu-state'], /Operation State\((O\d)\)/);
   ladder(state);
@@ -273,6 +274,12 @@ function renderStatus(raw, chip) {
   pill.title = ok ? 'Registered, receive level in window' : 'Not healthy: see Status';
 
   renderFlow(s['mib dump counter port all'] || '');
+
+  renderOverview({
+    rx, tx, state, los: lost, chip,
+    temp: temp === null ? null : Number(temp),
+    st: { ...(st || {}), raw_counters: s['mib dump counter port all'] || '' },
+  });
 }
 
 /*
