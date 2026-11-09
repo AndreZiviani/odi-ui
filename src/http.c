@@ -13,14 +13,22 @@
 
 /* ------------------------------------------------------------------ HTTP --- */
 
-void respond(int fd, const char *status_line, const char *ctype,
-		    const char *extra)
+/*
+ * HTTP/1.1, with Connection: close on every answer, so the body ends where the
+ * connection does and no Content-Length is needed. Keep-alive is not offered:
+ * this server is serial, and a browser holding an idle connection open would
+ * block every other request for as long as it kept it.
+ */
+static void respond_head(int fd, const char *status_line, const char *ctype,
+			 const char *cache, const char *extra)
 {
-	put_fd(fd, "HTTP/1.0 ");
+	put_fd(fd, "HTTP/1.1 ");
 	put_fd(fd, status_line);
 	put_fd(fd, "\r\nContent-Type: ");
 	put_fd(fd, ctype);
-	put_fd(fd, "\r\nCache-Control: no-store\r\nConnection: close\r\n");
+	put_fd(fd, "\r\nCache-Control: ");
+	put_fd(fd, cache);
+	put_fd(fd, "\r\nConnection: close\r\n");
 	/*
 	 * What a browser is told about this page, on every response. The page
 	 * must never be framed (a framed copy is a button an attacker can place
@@ -37,6 +45,70 @@ void respond(int fd, const char *status_line, const char *ctype,
 	if (extra)
 		put_fd(fd, extra);
 	put_fd(fd, "\r\n");
+}
+
+void respond(int fd, const char *status_line, const char *ctype,
+		    const char *extra)
+{
+	respond_head(fd, status_line, ctype, "no-store", extra);
+}
+
+/*
+ * Revalidation for what changes only with the image: the web assets and the
+ * files behind /api/schema, meta, consumers and the like. The browser keeps
+ * them and asks again on every load (no-cache), and an unchanged one costs a
+ * 304 with no body. Measured on the stick, those bodies were most of the bytes
+ * a page load sent.
+ *
+ * The tag is FNV-1a over the confd build and the bytes the answer is made
+ * from, not a file date: the jffs2 and squashfs dates on the stick say nothing,
+ * and a bind-mounted test file must not look unchanged. `private` keeps it out
+ * of any shared cache. What the device holds (values, status) stays no-store.
+ *
+ * inm is copied at the top of serve(): by the time a route answers,
+ * request_path has cut the headers short.
+ */
+static char inm[24];
+
+void note_cache_request(const char *r)
+{
+	header_copy(r, "if-none-match", inm, sizeof(inm));
+}
+
+int respond_cached(int fd, const char *ctype, const char *body, unsigned long len)
+{
+	static const char hexd[] = "0123456789abcdef";
+	static const char build[] = BUILD_ID;
+	unsigned long h = 2166136261UL, i;
+	char tag[11], hdr[32];
+	unsigned long n = 0;
+
+	for (i = 0; build[i]; i++)
+		h = (h ^ (unsigned char)build[i]) * 16777619UL;
+	for (i = 0; i < len; i++)
+		h = (h ^ (unsigned char)body[i]) * 16777619UL;
+	h &= 0xffffffffUL;
+
+	tag[0] = '"';
+	for (i = 0; i < 8; i++)
+		tag[1 + i] = hexd[(h >> (28 - 4 * i)) & 0xf];
+	tag[9] = '"';
+	tag[10] = 0;
+
+	for (i = 0; "ETag: "[i]; i++)
+		hdr[n++] = "ETag: "[i];
+	for (i = 0; tag[i]; i++)
+		hdr[n++] = tag[i];
+	hdr[n++] = '\r';
+	hdr[n++] = '\n';
+	hdr[n] = 0;
+
+	if (seq(inm, tag)) {
+		respond_head(fd, "304 Not Modified", ctype, "private, no-cache", hdr);
+		return 1;
+	}
+	respond_head(fd, "200 OK", ctype, "private, no-cache", hdr);
+	return 0;
 }
 
 /*
@@ -998,7 +1070,8 @@ void serve_static(int fd, const char *name, const char *ctype)
 		put_fd(fd, "not found\n");
 		return;
 	}
-	respond(fd, "200 OK", ctype, 0);
+	if (respond_cached(fd, ctype, filebuf, (unsigned long)got))
+		return;
 	write_all(fd, filebuf, (unsigned long)got);
 }
 

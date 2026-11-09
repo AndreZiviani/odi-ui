@@ -806,6 +806,7 @@ void serve(int conn)
 	}
 	if (n <= 0)
 		return;
+	note_cache_request(req);
 
 	/*
 	 * Which name and which kind of caller, before anything else: a rebound
@@ -1926,7 +1927,8 @@ void serve(int conn)
 						     "section", "type", "apply",
 						     "writable", "common" };
 
-			respond(conn, "200 OK", "application/json", 0);
+			if (respond_cached(conn, "application/json", schema, slen(schema)))
+				return;
 			emit_tsv_json(conn, schema, col, 8);
 		}
 		return;
@@ -1945,7 +1947,8 @@ void serve(int conn)
 			put_fd(conn, "[]");
 			return;
 		}
-		respond(conn, "200 OK", "application/json", 0);
+		if (respond_cached(conn, "application/json", schema, slen(schema)))
+			return;
 		emit_tsv_json(conn, schema, col, 6);
 		return;
 	}
@@ -1962,7 +1965,8 @@ void serve(int conn)
 			put_fd(conn, "[]");
 			return;
 		}
-		respond(conn, "200 OK", "application/json", 0);
+		if (respond_cached(conn, "application/json", schema, slen(schema)))
+			return;
 		emit_tsv_json(conn, schema, col, 3);
 		return;
 	}
@@ -1989,7 +1993,8 @@ void serve(int conn)
 		if (m < 0)
 			m = 0;
 		values[n + m] = 0;
-		respond(conn, "200 OK", "application/json", 0);
+		if (respond_cached(conn, "application/json", values, (unsigned long)(n + m)))
+			return;
 		emit_values_json(conn, values);
 		return;
 	}
@@ -2006,7 +2011,8 @@ void serve(int conn)
 			put_fd(conn, "[]");
 			return;
 		}
-		respond(conn, "200 OK", "application/json", 0);
+		if (respond_cached(conn, "application/json", sett, slen(sett)))
+			return;
 		emit_tsv_json(conn, sett, col, 7);
 		return;
 	}
@@ -2023,7 +2029,8 @@ void serve(int conn)
 			put_fd(conn, "[]");
 			return;
 		}
-		respond(conn, "200 OK", "application/json", 0);
+		if (respond_cached(conn, "application/json", schema, slen(schema)))
+			return;
 		emit_tsv_json(conn, schema, col, 4);
 		return;
 	}
@@ -2037,7 +2044,8 @@ void serve(int conn)
 			put_fd(conn, "[]");
 			return;
 		}
-		respond(conn, "200 OK", "application/json", 0);
+		if (respond_cached(conn, "application/json", schema, slen(schema)))
+			return;
 		emit_tsv_json(conn, schema, col, 2);
 		return;
 	}

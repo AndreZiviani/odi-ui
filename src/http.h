@@ -21,6 +21,14 @@
 
 void respond(int fd, const char *status_line, const char *ctype,
 	     const char *extra);
+/*
+ * A 200 that the browser may keep and revalidate, tagged from `body`, or a 304
+ * when the request already holds that tag. Returns 1 for the 304: the caller
+ * then writes no body. note_cache_request takes the request first, from
+ * serve(), before request_path cuts it.
+ */
+void note_cache_request(const char *r);
+int respond_cached(int fd, const char *ctype, const char *body, unsigned long len);
 char *request_path(char *r, char **method);
 char *request_body(char *r);
 int header_copy(const char *r, const char *name, char *out, unsigned long cap);
