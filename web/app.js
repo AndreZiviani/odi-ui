@@ -342,7 +342,7 @@ async function refresh() {
   try {
     const st = await get('/api/status');
     if (st.error) throw new Error(st.error);
-    renderStatus(st.raw, st.chip_temp);
+    renderStatus(st.raw, st.chip_temp, st);
     /* The setup wizard decides from the same read: open, mark, or leave alone. */
     await wizardSeen(lineFacts(st.raw));
   } catch (e) { fail(e); }
@@ -404,6 +404,10 @@ let INIT_HOSTLINK = null;
   /* Not awaited: a browser that cannot reach GitHub must not delay the page. */
   checkForUpdate();
   await refresh();
+  /* Rates (switch, Forwarding, CPU) are the difference between two polls, so
+     the first poll only shows "measuring". One extra poll 3 s later gives
+     them a figure then instead of 15 s after the page opened. */
+  setTimeout(refresh, 3000);
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is
      deliberately unhurried. */
   setInterval(refresh, 15000);

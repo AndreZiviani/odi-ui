@@ -184,7 +184,15 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           file is (temp1_input, temp1_max, temp1_crit,
                                           temp1_max_alarm, temp1_crit_alarm; older images
                                           have no limits or alarms); absent entirely
-                                          without the device or temp1_input (stock image)
+                                          without the device or temp1_input (stock image).
+                                          For the stick diagram, one line of a file each,
+                                          as a string after the prefix that finds it, and
+                                          absent when the file or line is: `cpu` (/proc/stat
+                                          "cpu "), `mem_total` and `mem_avail` (/proc/meminfo
+                                          "MemTotal:", "MemAvailable:"), `onu_id`
+                                          (/proc/odi_gpon/status "onu_id ", odi-oss),
+                                          `host_link` (odi_switch host_link, "0" or "1") and
+                                          `host_mode` (/var/run/host-serdes "running=")
     GET  /api/ntp                        {"now": the stick's clock, epoch seconds,
                                           "ntp": null, or {"event","time","offset",
                                           "stratum","last_sync"} from /tmp/ntp-status
