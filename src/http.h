@@ -29,6 +29,11 @@ void respond(int fd, const char *status_line, const char *ctype,
  */
 void note_cache_request(const char *r);
 int respond_cached(int fd, const char *ctype, const char *body, unsigned long len);
+/* The same tag built in steps, for an answer made from several files:
+ * etag_add over each, then respond_tagged (1 for the 304, as above). */
+unsigned long etag_start(void);
+unsigned long etag_add(unsigned long h, const char *b, unsigned long len);
+int respond_tagged(int fd, const char *ctype, unsigned long h);
 char *request_path(char *r, char **method);
 char *request_body(char *r);
 int header_copy(const char *r, const char *name, char *out, unsigned long cap);

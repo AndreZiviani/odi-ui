@@ -51,6 +51,19 @@ every session but the one that made it.
 
 ## Config and values
 
+    GET  /api/static                     what the page reads at start that changes only
+                                          with the image, in one answer:
+                                          {"schema","meta","consumers","settings",
+                                          "features","baseline": rows as their own
+                                          routes answer them, "defaults": object}.
+                                          `ETag`, `Cache-Control: private, no-cache`;
+                                          304 with no body to a matching `If-None-Match`.
+                                          500 when keys.tsv is missing, like /api/schema
+    GET  /api/init                       what the page reads at start that the device
+                                          holds: {"values","firmware","hostlink"}, each
+                                          as /api/values, /api/firmware and /api/hostlink
+                                          answer it; `no-store`; 500 when the config store
+                                          cannot be read, like /api/values
     GET  /api/settings                  settings.tsv as JSON, [] when absent
     GET  /api/values                     current values, as the daemon's own parser sees them
     POST /api/config   key=value&key2=value2

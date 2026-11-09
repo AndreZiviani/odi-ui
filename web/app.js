@@ -159,10 +159,11 @@ $('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $(
  * different decision, and one the operator has to be able to see they are
  * making.
  */
-async function checkAuth() {
+async function checkAuth(known) {
   try {
-    const fw = await get('/api/firmware');
-    S.FW = fw;
+    /* At start the firmware came with /api/init; after a password change it
+       is read again. */
+    S.FW = known || await get('/api/firmware');
   } catch (e) { /* the banner is advisory; a failed read must not blank the page */ }
   showAuth();
   renderTrial();
@@ -370,29 +371,33 @@ export function watchSession(g = globalThis) {
   g.fetch = wrapped;
 }
 
+/* The host link /api/init brought, for the first banner. */
+let INIT_HOSTLINK = null;
+
 (async function init() {
   watchSession();
   try {
-    let metaRows, consRows, baseRows, featRows, settRows;
-    [S.SCHEMA, S.VALUES, metaRows, consRows, S.DEFAULTS, baseRows, featRows, settRows, S.FW] =
-      await Promise.all([
-        get('/api/schema'), get('/api/values'), get('/api/meta'),
-        get('/api/consumers'), get('/api/defaults'), get('/api/baseline'),
-        get('/api/features'), get('/api/settings').catch(() => []),
-        get('/api/firmware').catch(() => ({})),
-      ]);
-    for (const m of metaRows) S.META[m.name] = m;
-    for (const r of settRows) S.SETTINGS[r.name] = r;
-    for (const c of consRows) S.CONS[c.name] = c;
-    for (const b of baseRows) S.BASELINE[b.name] = b.value;
-    for (const f of featRows) (S.FEATURES[f.mask] ||= []).push(f);
+    /* Two requests, not nine: /api/static is the image files (tagged, so
+       usually a 304) and /api/init what the device holds. confd answers one
+       request at a time, so each one saved is a wait saved. */
+    const [st, init] = await Promise.all([get('/api/static'), get('/api/init')]);
+    S.SCHEMA = st.schema;
+    S.DEFAULTS = st.defaults;
+    S.VALUES = init.values;
+    S.FW = init.firmware || {};
+    INIT_HOSTLINK = init.hostlink || null;
+    for (const m of st.meta) S.META[m.name] = m;
+    for (const r of st.settings) S.SETTINGS[r.name] = r;
+    for (const c of st.consumers) S.CONS[c.name] = c;
+    for (const b of st.baseline) S.BASELINE[b.name] = b.value;
+    for (const f of st.features) (S.FEATURES[f.mask] ||= []).push(f);
     renderAll();
     renderIdentitySwitch();
   } catch (e) { fail(e); }
-  await checkAuth();
+  await checkAuth(S.FW);
   renderSetupEntry();
-  /* The host-link banner: files read by confd, no fork. */
-  await renderHostlink();
+  /* The host-link banner, from what /api/init already brought. */
+  await renderHostlink(INIT_HOSTLINK);
   /* The address trial: whether the image has it (Save and Restore then go through it) and a trial that
      is already running, which raises its dialog. Before the form is used. */
   await renderNetaddr();

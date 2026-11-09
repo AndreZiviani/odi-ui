@@ -1,10 +1,14 @@
 #!/bin/sh
 # Every route src/routes.c answers is listed in docs/API.md, and every route
 # the docs list exists. A route shipped without its line is how /api/ntp and
-# eight others went undocumented. serve_public() names its routes by `target`.
+# eight others went undocumented. serve_public() names its routes by `target`,
+# and the image-file routes are rows of tsv_routes, `{ "name", NAME_PATH_OVR, ...`.
 set -eu
 cd "$(dirname "$0")/.."
-code=$(grep -ohE 'seq\((path|target), "/api/[a-z0-9_-]+"' src/routes.c | grep -oE '/api/[a-z0-9_-]+' | sort -u)
+code=$( {
+	grep -ohE 'seq\((path|target), "/api/[a-z0-9_-]+"' src/routes.c | grep -oE '/api/[a-z0-9_-]+'
+	grep -ohE '^[[:space:]]*\{ "[a-z0-9_-]+", [A-Z_]+_PATH_OVR,' src/routes.c | sed -E 's/^[^"]*"([^"]+)".*/\/api\/\1/'
+} | sort -u)
 doc=$(grep -ohE '(GET|POST) +/api/[a-z0-9_-]+' docs/API.md | grep -oE '/api/[a-z0-9_-]+' | sort -u)
 missing=$(printf '%s\n' "$code" | grep -vxF "$doc" || true)
 stale=$(printf '%s\n' "$doc" | grep -vxF "$code" || true)
