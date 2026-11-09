@@ -368,4 +368,4 @@ function wireHostlink() {
   };
 }
 
-export { bannerText, trialLeft, refresh as renderHostlink, wireHostlink };
+export { bannerText, trialLeft, refresh as renderHostlink, wireHostlink, serdesShort };
