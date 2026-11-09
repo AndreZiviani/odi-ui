@@ -41,6 +41,7 @@ VLAN_CFG_TYPE	live	omci		omcid, on SIGHUP	omcid tags only with type 1 and manual
 VLAN_MANU_MODE	live	omci		omcid, on SIGHUP	See VLAN config mode. Switching between stick tags and router tags (transparent) is rebuilt in place, without re-ranging the ONU.	0
 VLAN_MANU_TAG_VID	live	omci		omcid, on SIGHUP	Applying rebuilds the connections in place with the new tag; the ONU is not re-ranged.	
 VLAN_MANU_TAG_PRI	live	omci		omcid, on SIGHUP	Applied with the VLAN ID.	
+RTK_DEVINFO_SPECVER	live	omci		omcid, on SIGHUP	The stock firmware key and format, so both slots agree. Applying rebuilds the bridge connections in place with the new forward operation; the ONU stays in O5. Empty: no override.	
 GPON_PLOAM_PASSWD	internet	omci		rcS gponpw, omcid on SIGHUP	Sent to the kernel before the ONU is activated again; applying deactivates the ONU and ranges it with the new one.	
 LOID	internet	omci		omcid, on SIGHUP	Answered to CTC-profile OLTs in the LOID authentication entity. Written with LOID_OLD, because the OLD value wins whenever the two differ.	
 LOID_PASSWD	internet	omci		omcid, on SIGHUP	Written with LOID_PASSWD_OLD, for the same reason.	

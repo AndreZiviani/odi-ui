@@ -62,6 +62,43 @@ static int printable_ok(const char *v, unsigned long max)
 }
 
 /*
+ * One number of RTK_DEVINFO_SPECVER at v + *i, as omcid reads it: decimal of
+ * up to maxdig digits, or 0x and 1 to 4 hex digits; at most max. Advances *i
+ * past it. 0 when there is none or it is out of range.
+ */
+static int fwdop_num(const char *v, unsigned long *i, unsigned long maxdig,
+		     unsigned long max, unsigned long *out)
+{
+	unsigned long x = 0, d = 0, j = *i;
+
+	if (v[j] == '0' && (v[j + 1] == 'x' || v[j + 1] == 'X')) {
+		for (j += 2;; j++) {
+			char c = v[j];
+			int h = c >= '0' && c <= '9' ? c - '0' :
+				c >= 'a' && c <= 'f' ? c - 'a' + 10 :
+				c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+
+			if (h < 0)
+				break;
+			if (++d > 4)
+				return 0;
+			x = x * 16 + (unsigned long)h;
+		}
+	} else {
+		for (; v[j] >= '0' && v[j] <= '9'; j++) {
+			if (++d > maxdig)
+				return 0;
+			x = x * 10 + (unsigned long)(v[j] - '0');
+		}
+	}
+	if (!d || x > max)
+		return 0;
+	*i = j;
+	*out = x;
+	return 1;
+}
+
+/*
  * Type-level validation, server side.
  *
  * The browser also checks ranges and option lists from meta.tsv, but that is a
@@ -242,6 +279,38 @@ int type_ok(const char *type, const char *v)
 		 * id). The three flash refuses -- a quote, < and & -- are
 		 * refused here first. */
 		return printable_ok(v, 14);
+	}
+	if (seq(type, "fwdop")) {
+		/* RTK_DEVINFO_SPECVER, the stock FwdOp override, which odi-oss
+		 * omcid reads too: up to 12 entries separated by commas or
+		 * spaces, each INSTANCE or INSTANCE:FWDOP (no FWDOP means
+		 * 0x02). The class 84 instance is decimal or 0x hex, 0..65535,
+		 * the code likewise, 0..255. omcid turns the whole key off on
+		 * anything else or on an instance named twice, so it is
+		 * refused here. Empty: no override. */
+		unsigned long seen[12], n = 0, k, inst, code;
+
+		i = 0;
+		while (v[i]) {
+			if (v[i] == ',' || v[i] == ' ') {
+				i++;
+				continue;
+			}
+			if (n >= 12 || !fwdop_num(v, &i, 5, 65535, &inst))
+				return 0;
+			if (v[i] == ':') {
+				i++;
+				if (!fwdop_num(v, &i, 3, 255, &code))
+					return 0;
+			}
+			if (v[i] && v[i] != ',' && v[i] != ' ')
+				return 0;
+			for (k = 0; k < n; k++)
+				if (seen[k] == inst)
+					return 0;
+			seen[n++] = inst;
+		}
+		return 1;
 	}
 	if (seq(type, "fixedme")) {
 		/* OMCI_FIXED_ME: up to 16 entries separated by commas or

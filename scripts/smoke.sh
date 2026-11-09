@@ -831,6 +831,17 @@ check "sixteen OMCI_FIXED_ME entries pass" yes \
 	"$(err "$(post 'OMCI_FIXED_ME=1:aa,2:aa,3:aa,4:aa,5:aa,6:aa,7:aa,8:aa,9:aa,10:aa,11:aa,12:aa,13:aa,14:aa,15:aa,16:aa')" '"ok":true')"
 check "an empty OMCI_FIXED_ME clears it" yes \
 	"$(err "$(post 'OMCI_FIXED_ME=')" '"ok":true')"
+check "RTK_DEVINFO_SPECVER (FwdOp override) is written and applied live by omci" yes \
+	"$(err "$(post 'RTK_DEVINFO_SPECVER=0x1102:0x00,0x110b')" '"needs":["omci"],"stock":false,"interrupts":false')"
+check "RTK_DEVINFO_SPECVER in decimal with a space separator passes" yes \
+	"$(err "$(post 'RTK_DEVINFO_SPECVER=4354:0%204363:16')" '"ok":true')"
+for bad in 0x1102:0x100 0x10000 0x1102: zz 0x1102:0x00:1 0x1102,4354 \
+	0,1,2,3,4,5,6,7,8,9,10,11,12; do
+	check "a bad RTK_DEVINFO_SPECVER is refused: $bad" yes \
+		"$(err "$(post "RTK_DEVINFO_SPECVER=$bad")" 'not valid for its type')"
+done
+check "an empty RTK_DEVINFO_SPECVER clears the override" yes \
+	"$(err "$(post 'RTK_DEVINFO_SPECVER=')" '"ok":true')"
 check "settings.tsv is served" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")" '"name":"LAN_ENABLE_IP2","apply":"live","action":"network"')"
 check "the VLAN keys are live and applied by omci" yes \

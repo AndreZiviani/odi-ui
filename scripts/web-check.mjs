@@ -1307,6 +1307,15 @@ ok(['LAN_IP_ADDR', 'LAN_IP_ADDR2'].every((n) => S.SCHEMA.find((r) => r.name === 
    && S.SCHEMA.find((r) => r.name === 'GPON_SN').type === 'gponsn'
    && S.SCHEMA.find((r) => r.name === 'GPON_PLOAM_PASSWD').type === 'hex20',
    'the schema gives the address, mask, serial number and PLOAM keys their checks');
+const fwd = (v) => valueProblem({ name: 'RTK_DEVINFO_SPECVER', type: 'fwdop' }, v);
+ok(!fwd('') && !fwd('0x1102:0x00') && !fwd('0x1102:0x00,0x110b') && !fwd('4354:0, 4363:16')
+   && !fwd(Array.from({ length: 12 }, (_, i) => `${i}:0x02`).join(',')),
+   'fwdop accepts empty, ENTITY and ENTITY:FWDOP in decimal or 0x hex, either separator, twelve entries');
+ok(['0x1102:0x100', '0x10000', '65536', '0x1102:', 'zz', '0x1102:0x00:1', '0x1102,4354', '1:256',
+  Array.from({ length: 13 }, (_, i) => `${i}`).join(',')].every((v) => fwd(v)),
+   'fwdop rejects a code past 0xff, an entity past 65535, an empty code, text, a third field, an entity twice and 13 entries');
+ok(S.SCHEMA.find((r) => r.name === 'RTK_DEVINFO_SPECVER').type === 'fwdop',
+   'the schema gives RTK_DEVINFO_SPECVER the fwdop check');
 const fme = (v) => valueProblem({ name: 'OMCI_FIXED_ME', type: 'fixedme' }, v);
 ok(!fme('200:0x0011aa') && !fme('200:0x0011aa,201:01020304') && !fme('1:aa 65535:0XAB, 7:'+'ff'.repeat(25)) && !fme(''),
    'fixedme accepts one or more CLASS:HEX entries, either separator, and empty (it clears the key)');

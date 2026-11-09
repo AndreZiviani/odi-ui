@@ -100,7 +100,7 @@ FIBER_MODE	cs	FIBER_MODE	other	int	unknown	never	no
 RTK_DEVID_MANUFACTURER	cs	RTK_DEVID_MANUFACTURER	hardware	string	unknown	yes	no
 RTK_DEVID_OUI	cs	RTK_DEVID_OUI	hardware	string	unknown	yes	no
 RTK_DEVID_PRODUCTCLASS	cs	RTK_DEVID_PRODUCTCLASS	hardware	string	unknown	yes	no
-RTK_DEVINFO_SPECVER	cs	RTK_DEVINFO_SPECVER	hardware	string	unknown	yes	no
+RTK_DEVINFO_SPECVER	cs	RTK_DEVINFO_SPECVER	vlan	fwdop	restart:omci	yes	no
 RTK_DEVINFO_SWVER	cs	RTK_DEVINFO_SWVER	hardware	string	unknown	yes	no
 RTK_DEVINFO_HWVER	cs	RTK_DEVINFO_HWVER	hardware	string	unknown	yes	no
 DEVICE_NAME	cs	DEVICE_NAME	other	string	unknown	yes	no
