@@ -236,6 +236,30 @@ echo "== auth"
 check "no credential is refused"    401 "$(code "http://127.0.0.1:$PORT/api/schema")"
 check "wrong credential is refused" 401 "$(code -u admin:wrong "http://127.0.0.1:$PORT/api/schema")"
 check "right credential is served"  200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+
+# HTTP/1.1, and revalidation of what changes only with the image: an ETag, a
+# 304 with no body for a matching If-None-Match, the credential still asked
+# for. What the device holds stays no-store.
+U="http://127.0.0.1:$PORT"
+H=$(curl -s -i -u "$AUTH" "$U/api/schema" | tr -d '\r')
+check "http: answers HTTP/1.1" yes "$(err "$H" 'HTTP/1.1 200 OK')"
+check "http: and still closes the connection" yes "$(err "$H" 'Connection: close')"
+check "cache: schema may be kept if revalidated" yes "$(err "$H" 'Cache-Control: private, no-cache')"
+tag=$(printf '%s\n' "$H" | sed -n 's/^ETag: //p')
+check "cache: schema has a quoted tag" yes "$(printf '%s' "$tag" | grep -qE '^"[0-9a-f]{8}"$' && echo yes || echo "no: $tag")"
+check "cache: the same tag on the next request" "$tag" \
+	"$(curl -s -i -u "$AUTH" "$U/api/schema" | tr -d '\r' | sed -n 's/^ETag: //p')"
+check "cache: the tag answers 304" 304 "$(code -u "$AUTH" -H "If-None-Match: $tag" "$U/api/schema")"
+check "cache: and the 304 has no body" 0 \
+	"$(curl -s -u "$AUTH" -H "If-None-Match: $tag" "$U/api/schema" | wc -c | tr -d ' ')"
+check "cache: another tag gets the body" 200 "$(code -u "$AUTH" -H 'If-None-Match: "00000000"' "$U/api/schema")"
+check "cache: a 304 still needs the credential" 401 "$(code -H "If-None-Match: $tag" "$U/api/schema")"
+check "cache: meta has its own tag" no \
+	"$([ "$(curl -s -i -u "$AUTH" "$U/api/meta" | tr -d '\r' | sed -n 's/^ETag: //p')" = "$tag" ] && echo yes || echo no)"
+atag=$(curl -s -i -u "$AUTH" "$U/app.js" | tr -d '\r' | sed -n 's/^ETag: //p')
+check "cache: an asset answers 304 to its tag" 304 "$(code -u "$AUTH" -H "If-None-Match: $atag" "$U/app.js")"
+check "cache: values stay no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/values")" 'Cache-Control: no-store')"
+check "cache: status stays no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/status")" 'Cache-Control: no-store')"
 check "the credential file is in force" false \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
 

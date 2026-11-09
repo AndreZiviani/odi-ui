@@ -20,8 +20,11 @@ function fail(e) {
   box.hidden = false;
 }
 
+/* The server says what may be kept: the image files come with a tag and are
+   revalidated (a 304 when unchanged), and what the device holds is no-store.
+   Forcing no-store here threw the tags away. */
 async function get(path) {
-  const r = await fetch(path, { cache: 'no-store' });
+  const r = await fetch(path);
   if (!r.ok) {
     /* A refusal says why in {"error": ...}: show that, not only the status. */
     let why = '';
