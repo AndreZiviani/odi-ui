@@ -71,7 +71,11 @@ while read -r l; do
    *"transceiver voltage"*)     printf "  Voltage           : 3.28 V\n" ;;
    *onu-state*)  printf "  Operation State(O5)\n" ;;
    *alarm-status*) printf "  LOS Alarm         : clear\n  LOF Alarm         : clear\n  LCDA Alarm        : clear\n  SF Alarm          : clear\n  SD Alarm          : clear\n  TF Alarm          : clear\n  DACT Alarm        : clear\n" ;;
-   *"counter port all"*) printf "Port: 0\n  ifInOctets : 148392011\n  ifOutOctets : 91002233\n  dot1dTpPortInDiscards : 0\nPort: 2\n  ifInOctets : 91004410\n  ifOutOctets : 148390115\n  dot1dTpPortInDiscards : 0\n" ;;
+   # Unindented, as diag prints them, and moving with the clock so the
+   # rates between two polls are not zero.
+   *"counter port all"*) t=$(date +%s); d=$((t * 152000 % 1000000000)); u=$((t * 31000 % 1000000000))
+     printf "Port: 0\nifInOctets                         : %d\nifOutOctets                        : %d\ndot1dTpPortInDiscards              : 0\n" $u $d
+     printf "Port: 2\nifInOctets                         : %d\nifOutOctets                        : %d\ndot1dTpPortInDiscards              : 0\n" $d $u ;;
    *l2-table*) cat /src/scripts/fixtures/l2-table.txt ;;
    *) printf "  ok\n" ;;
   esac
@@ -158,6 +162,14 @@ NV
       { printf "\047\005\031\126\000\000\000\000"; printf "$(printf %s "$2" | sed "s/../\\\\x&/g")"
         head -c 20 /dev/zero; printf "%s" "$1"; head -c $((32 - ${#1})) /dev/zero; }
     }
+    # What the stick diagram reads besides diag: the ONU-ID from the odi-oss
+    # GPON driver, the host link and the host lane mode, and a stick-sized
+    # /proc/meminfo. /proc/stat is the container own.
+    mkdir -p $Q/proc/odi_gpon $Q/sys/module/odi_switch/parameters /var/run
+    printf "MemTotal:          27508 kB\nMemFree:            9120 kB\nMemAvailable:      14792 kB\n" > $Q/proc/meminfo
+    printf "state 5 (O5)\no7_hold keep 0 held 0\nonu_id 13\n" > $Q/proc/odi_gpon/status
+    echo 1 > $Q/sys/module/odi_switch/parameters/host_link
+    printf "setting=2500basex\nrunning=2500basex\nphase=steady\n" > /var/run/host-serdes
     uimage "Linux Kernel Image 6.18" 68d8a6f0 > $Q/dev/mtd4
     uimage "Linux Kernel Image" 632d9a47 > $Q/dev/mtd6
     exec qemu-mips-static -L $Q build/confd 18080'
