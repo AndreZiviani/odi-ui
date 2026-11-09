@@ -256,11 +256,17 @@ next:
 
 void emit_firmware_json(int fd)
 {
+	respond(fd, "200 OK", "application/json", 0);
+	emit_firmware_body(fd);
+}
+
+/* The object alone, without a response head: /api/init carries it too. */
+void emit_firmware_body(int fd)
+{
 	static char *const argv[] = { "nv", "getenv", 0 };
 	char buf[4096];
 	char ver[128];
 
-	respond(fd, "200 OK", "application/json", 0);
 	put_fd(fd, "{\"running\":\"");
 	if (read_file("/etc/version", ver, sizeof(ver)) > 0) {
 		unsigned long n = 0;

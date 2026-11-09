@@ -228,8 +228,11 @@ async function loadSerdesStatus() {
   renderBlock();
 }
 
-async function refresh() {
-  try { H = await get('/api/hostlink'); } catch (e) { H = null; }
+/* `known`: the host link already read (the page start has it from
+   /api/init), so it is not read twice. */
+async function refresh(known) {
+  if (known) H = known;
+  else try { H = await get('/api/hostlink'); } catch (e) { H = null; }
   renderBanner();
   renderBlock();
   loadSerdesStatus();

@@ -11,6 +11,7 @@
 #define CONFD_FIRMWARE_H
 
 void emit_firmware_json(int fd);
+void emit_firmware_body(int fd);
 int nv_set(const char *key, const char *value);
 /* 1 when kernel partition k<p> ('0' or '1') holds a uImage whose header and
  * data CRCs verify, i.e. one U-Boot's bootm would accept. */

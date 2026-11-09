@@ -75,19 +75,27 @@ void note_cache_request(const char *r)
 	header_copy(r, "if-none-match", inm, sizeof(inm));
 }
 
-int respond_cached(int fd, const char *ctype, const char *body, unsigned long len)
+unsigned long etag_add(unsigned long h, const char *b, unsigned long len)
+{
+	unsigned long i;
+
+	for (i = 0; i < len; i++)
+		h = ((h ^ (unsigned char)b[i]) * 16777619UL) & 0xffffffffUL;
+	return h;
+}
+
+unsigned long etag_start(void)
+{
+	static const char build[] = BUILD_ID;
+
+	return etag_add(2166136261UL, build, sizeof(build) - 1);
+}
+
+int respond_tagged(int fd, const char *ctype, unsigned long h)
 {
 	static const char hexd[] = "0123456789abcdef";
-	static const char build[] = BUILD_ID;
-	unsigned long h = 2166136261UL, i;
 	char tag[11], hdr[32];
-	unsigned long n = 0;
-
-	for (i = 0; build[i]; i++)
-		h = (h ^ (unsigned char)build[i]) * 16777619UL;
-	for (i = 0; i < len; i++)
-		h = (h ^ (unsigned char)body[i]) * 16777619UL;
-	h &= 0xffffffffUL;
+	unsigned long i, n = 0;
 
 	tag[0] = '"';
 	for (i = 0; i < 8; i++)
@@ -109,6 +117,11 @@ int respond_cached(int fd, const char *ctype, const char *body, unsigned long le
 	}
 	respond_head(fd, "200 OK", ctype, "private, no-cache", hdr);
 	return 0;
+}
+
+int respond_cached(int fd, const char *ctype, const char *body, unsigned long len)
+{
+	return respond_tagged(fd, ctype, etag_add(etag_start(), body, len));
 }
 
 /*

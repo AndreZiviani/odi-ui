@@ -160,6 +160,17 @@ globalThis.fetch = async (path) => {
     const raw = p.get('cmd') === 'me' ? (OMCI[p.get('me')] ?? '') : '';
     return { ok: true, status: 200, json: async () => ({ raw, ok: true, truncated: false }) };
   }
+  /* The two start-up bundles, made of the single routes so a check that
+     swaps one of those sees it here too. */
+  if (key === '/api/static') {
+    const body = { defaults: API['/api/defaults'] };
+    for (const k of ['schema', 'meta', 'consumers', 'settings', 'features', 'baseline']) body[k] = API['/api/' + k];
+    return { ok: true, status: 200, json: async () => body };
+  }
+  if (key === '/api/init') {
+    return { ok: true, status: 200, json: async () => ({
+      values: API['/api/values'], firmware: API['/api/firmware'], hostlink: API['/api/hostlink'] }) };
+  }
   if (!(key in API)) throw new Error('unexpected fetch: ' + key);
   return { ok: true, status: 200, json: async () => API[key] };
 };

@@ -792,6 +792,158 @@ static int serve_public(int conn, unsigned long body_have, unsigned long body_wa
 	return 0;
 }
 
+/*
+ * The image files the page reads, one row per route: /api/<name> answers the
+ * file as JSON rows with these columns, and /api/static gathers them all. Each
+ * is read from the /etc/config override when there is one.
+ */
+static const char *col_schema[] = { "name", "store", "address", "section",
+				    "type", "apply", "writable", "common" };
+static const char *col_meta[] = { "name", "label", "help", "options",
+				  "depends", "range" };
+static const char *col_cons[] = { "name", "apply", "readers" };
+static const char *col_sett[] = { "name", "apply", "action", "pair", "reader",
+				  "note", "unset" };
+static const char *col_feat[] = { "mask", "bit", "feature", "module" };
+static const char *col_base[] = { "name", "value" };
+
+struct tsv_route {
+	const char *name;
+	const char *ovr, *path;
+	char *buf;
+	unsigned long cap;
+	const char **col;
+	unsigned long ncol;
+	int required;
+};
+
+static const struct tsv_route tsv_routes[] = {
+	/* The keys the page can show and change. Without it there is no page. */
+	{ "schema", SCHEMA_PATH_OVR, SCHEMA_PATH, schema, sizeof(schema), col_schema, 8, 1 },
+	/* Curated help, hand-written and merged with the schema by the
+	 * browser. Absent is not an error: the UI degrades to bare key names
+	 * rather than refusing to load. */
+	{ "meta", META_PATH_OVR, META_PATH, schema, sizeof(schema), col_meta, 6, 0 },
+	/* Derived from the firmware by scripts/classify-apply.py: which
+	 * programs read each key, and therefore what it costs to change one.
+	 * Absent degrades to the schema's own apply column. */
+	{ "consumers", CONS_PATH_OVR, CONS_PATH, schema, sizeof(schema), col_cons, 3, 0 },
+	/* This image's own view of each key. Absent answers an empty list, and
+	 * the page then offers every key as it used to. */
+	{ "settings", SETT_PATH_OVR, SETT_PATH, sett, sizeof(sett), col_sett, 7, 0 },
+	/* The OMCI_CUSTOM_* bitmasks, decoded. Absent degrades to showing the
+	 * raw value, which is what every other tool for this device does. */
+	{ "features", FEAT_PATH_OVR, FEAT_PATH, schema, sizeof(schema), col_feat, 4, 0 },
+	{ "baseline", BASE_PATH_OVR, BASE_PATH, schema, sizeof(schema), col_base, 2, 0 },
+};
+#define TSV_ROUTES (sizeof(tsv_routes) / sizeof(tsv_routes[0]))
+
+static const struct tsv_route *tsv_route_for(const char *path)
+{
+	unsigned long i;
+
+	if (!spre(path, "/api/"))
+		return 0;
+	for (i = 0; i < TSV_ROUTES; i++)
+		if (seq(path + 5, tsv_routes[i].name))
+			return &tsv_routes[i];
+	return 0;
+}
+
+/* Read a row's file into its buffer. Returns its length, or -1 when neither
+ * the override nor the image file is there. */
+static long tsv_load(const struct tsv_route *t)
+{
+	if (read_file(t->ovr, t->buf, t->cap) <= 0 &&
+	    read_file(t->path, t->buf, t->cap) <= 0)
+		return -1;
+	return (long)slen(t->buf);
+}
+
+/*
+ * The image defaults, both stores, into `values`. Both files are small -- ten
+ * values between them -- so one buffer and the values parser already written
+ * cover it.
+ *
+ * Clear it FIRST. read_file returns without touching the buffer when open()
+ * fails, and `values` is the same buffer /api/values fills. A device missing
+ * both default files therefore served the previous /api/values response back
+ * as the image defaults, and the page labelled every key on it an image
+ * default -- the exact inversion of what it is for, and it suppressed the
+ * baseline "changed" labels too.
+ */
+static long load_defaults(void)
+{
+	long n, m;
+
+	values[0] = 0;
+	n = read_file(DEFAULT_CS, values, sizeof(values));
+	if (n < 0)
+		n = 0;
+	values[n] = 0;
+	m = read_file(DEFAULT_HS, values + n, sizeof(values) - (unsigned long)n);
+	if (m < 0)
+		m = 0;
+	values[n + m] = 0;
+	return n + m;
+}
+
+/*
+ * GET /api/hostlink without its response head: /api/init carries it too.
+ */
+static void emit_hostlink_body(int conn)
+{
+	char buf[1024];
+	long got;
+
+	put_fd(conn, "{\"supported\":");
+	put_fd(conn, file_exists(HOSTLINK_SCRIPT) ? "true" : "false");
+	put_fd(conn, ",\"state\":{");
+	got = read_file(HOSTLINK_STATE, buf, sizeof(buf));
+	if (got > 0)
+		put_kv_members(conn, buf);
+	put_fd(conn, "},\"serdes\":{\"supported\":");
+	put_fd(conn, file_exists(SERDES_SCRIPT) ? "true" : "false");
+	put_fd(conn, ",\"state\":{");
+	got = read_file(SERDES_STATE, buf, sizeof(buf));
+	if (got > 0)
+		put_kv_members(conn, buf);
+	put_fd(conn, "}},\"safemode_now\":");
+	got = read_file(SAFEMODE_FLAG, buf, sizeof(buf));
+	if (got >= 0) {
+		put_fd(conn, "{");
+		if (got > 0)
+			put_kv_members(conn, buf);
+		put_fd(conn, "}");
+	} else {
+		put_fd(conn, "null");
+	}
+	put_fd(conn, ",\"safemode\":");
+	got = read_file(HOSTLINK_SAFEMODE, buf, sizeof(buf));
+	if (got >= 0) {
+		put_fd(conn, "{");
+		if (got > 0)
+			put_kv_members(conn, buf);
+		put_fd(conn, "}");
+	} else {
+		put_fd(conn, "null");
+	}
+	put_fd(conn, ",\"link\":\"");
+	got = read_file(HOSTLINK_LINK, buf, sizeof(buf));
+	if (got > 0 && (buf[0] == '0' || buf[0] == '1'))
+		put_json_str(conn, buf, 1);
+	put_fd(conn, "\",\"uptime\":\"");
+	got = read_file(UPTIME_FILE, buf, sizeof(buf));
+	if (got > 0) {
+		unsigned long k = 0;
+
+		while (buf[k] >= '0' && buf[k] <= '9')
+			k++;
+		put_json_str(conn, buf, k);
+	}
+	put_fd(conn, "\"}");
+}
+
 void serve(int conn)
 {
 	char *path, *method, *body, *query;
@@ -1598,56 +1750,8 @@ void serve(int conn)
 	 */
 	if (seq(path, "/api/hostlink")) {
 		if (seq(method, "GET")) {
-			char buf[1024];
-			long got;
-
 			respond(conn, "200 OK", "application/json", 0);
-			put_fd(conn, "{\"supported\":");
-			put_fd(conn, file_exists(HOSTLINK_SCRIPT) ? "true" : "false");
-			put_fd(conn, ",\"state\":{");
-			got = read_file(HOSTLINK_STATE, buf, sizeof(buf));
-			if (got > 0)
-				put_kv_members(conn, buf);
-			put_fd(conn, "},\"serdes\":{\"supported\":");
-			put_fd(conn, file_exists(SERDES_SCRIPT) ? "true" : "false");
-			put_fd(conn, ",\"state\":{");
-			got = read_file(SERDES_STATE, buf, sizeof(buf));
-			if (got > 0)
-				put_kv_members(conn, buf);
-			put_fd(conn, "}},\"safemode_now\":");
-			got = read_file(SAFEMODE_FLAG, buf, sizeof(buf));
-			if (got >= 0) {
-				put_fd(conn, "{");
-				if (got > 0)
-					put_kv_members(conn, buf);
-				put_fd(conn, "}");
-			} else {
-				put_fd(conn, "null");
-			}
-			put_fd(conn, ",\"safemode\":");
-			got = read_file(HOSTLINK_SAFEMODE, buf, sizeof(buf));
-			if (got >= 0) {
-				put_fd(conn, "{");
-				if (got > 0)
-					put_kv_members(conn, buf);
-				put_fd(conn, "}");
-			} else {
-				put_fd(conn, "null");
-			}
-			put_fd(conn, ",\"link\":\"");
-			got = read_file(HOSTLINK_LINK, buf, sizeof(buf));
-			if (got > 0 && (buf[0] == '0' || buf[0] == '1'))
-				put_json_str(conn, buf, 1);
-			put_fd(conn, "\",\"uptime\":\"");
-			got = read_file(UPTIME_FILE, buf, sizeof(buf));
-			if (got > 0) {
-				unsigned long k = 0;
-
-				while (buf[k] >= '0' && buf[k] <= '9')
-					k++;
-				put_json_str(conn, buf, k);
-			}
-			put_fd(conn, "\"}");
+			emit_hostlink_body(conn);
 			return;
 		}
 		if (seq(method, "POST")) {
@@ -1915,138 +2019,111 @@ void serve(int conn)
 		return;
 	}
 
-	if (seq(path, "/api/schema")) {
-		if (read_file(SCHEMA_PATH_OVR, schema, sizeof(schema)) <= 0 &&
-		    read_file(SCHEMA_PATH, schema, sizeof(schema)) <= 0) {
-			respond(conn, "500 Internal Server Error", "application/json", 0);
-			put_fd(conn, "{\"error\":\"no schema\"}");
-			return;
-		}
-		{
-			static const char *col[] = { "name", "store", "address",
-						     "section", "type", "apply",
-						     "writable", "common" };
+	/* The image files, one route each, and all of them in /api/static. */
+	{
+		const struct tsv_route *t = tsv_route_for(path);
 
-			if (respond_cached(conn, "application/json", schema, slen(schema)))
+		if (t) {
+			if (tsv_load(t) < 0) {
+				if (t->required) {
+					respond(conn, "500 Internal Server Error", "application/json", 0);
+					put_fd(conn, "{\"error\":\"no schema\"}");
+					return;
+				}
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, "[]");
 				return;
-			emit_tsv_json(conn, schema, col, 8);
-		}
-		return;
-	}
-
-	if (seq(path, "/api/meta")) {
-		static const char *col[] = { "name", "label", "help",
-					     "options", "depends", "range" };
-
-		/* Curated help, hand-written and merged with the schema by the
-		 * browser. Absent is not an error: the UI degrades to bare key
-		 * names rather than refusing to load. */
-		if (read_file(META_PATH_OVR, schema, sizeof(schema)) <= 0 &&
-		    read_file(META_PATH, schema, sizeof(schema)) <= 0) {
-			respond(conn, "200 OK", "application/json", 0);
-			put_fd(conn, "[]");
+			}
+			if (respond_cached(conn, "application/json", t->buf, slen(t->buf)))
+				return;
+			emit_tsv_json(conn, t->buf, t->col, t->ncol);
 			return;
 		}
-		if (respond_cached(conn, "application/json", schema, slen(schema)))
-			return;
-		emit_tsv_json(conn, schema, col, 6);
-		return;
-	}
-
-	if (seq(path, "/api/consumers")) {
-		static const char *col[] = { "name", "apply", "readers" };
-
-		/* Derived from the firmware by scripts/classify-apply.py: which
-		 * programs read each key, and therefore what it costs to change
-		 * one. Absent degrades to the schema's own apply column. */
-		if (read_file(CONS_PATH_OVR, schema, sizeof(schema)) <= 0 &&
-		    read_file(CONS_PATH, schema, sizeof(schema)) <= 0) {
-			respond(conn, "200 OK", "application/json", 0);
-			put_fd(conn, "[]");
-			return;
-		}
-		if (respond_cached(conn, "application/json", schema, slen(schema)))
-			return;
-		emit_tsv_json(conn, schema, col, 3);
-		return;
 	}
 
 	if (seq(path, "/api/defaults")) {
-		/* Both files are small — ten values between them — so one buffer
-		 * and the values parser already written cover it.
-		 *
-		 * Clear it FIRST. read_file returns without touching the buffer
-		 * when open() fails, and `values` is the same buffer
-		 * /api/values fills. A device missing both default files
-		 * therefore served the previous /api/values response back as
-		 * the image defaults, and the page labelled every key on it an
-		 * image default -- the exact inversion of what it is for, and
-		 * it suppressed the baseline "changed" labels too. */
-		long n, m;
+		long n = load_defaults();
 
-		values[0] = 0;
-		n = read_file(DEFAULT_CS, values, sizeof(values));
-		if (n < 0)
-			n = 0;
-		values[n] = 0;
-		m = read_file(DEFAULT_HS, values + n, sizeof(values) - (unsigned long)n);
-		if (m < 0)
-			m = 0;
-		values[n + m] = 0;
-		if (respond_cached(conn, "application/json", values, (unsigned long)(n + m)))
+		if (respond_cached(conn, "application/json", values, (unsigned long)n))
 			return;
 		emit_values_json(conn, values);
 		return;
 	}
 
-	if (seq(path, "/api/settings")) {
-		static const char *col[] = { "name", "apply", "action", "pair",
-					     "reader", "note", "unset" };
+	/*
+	 * Everything the page reads when it opens that changes only with the
+	 * image, in one answer with one tag: the routes in tsv_routes plus the
+	 * defaults. Usually a 304. Each file is read twice, once for the tag and
+	 * once to emit it, because they share buffers; they are small and the
+	 * reads cost little next to a request.
+	 */
+	if (seq(path, "/api/static")) {
+		unsigned long h = etag_start(), i;
+		long n;
 
-		/* This image's own view of each key. Absent answers an empty
-		 * list, and the page then offers every key as it used to. */
-		if (read_file(SETT_PATH_OVR, sett, sizeof(sett)) <= 0 &&
-		    read_file(SETT_PATH, sett, sizeof(sett)) <= 0) {
-			respond(conn, "200 OK", "application/json", 0);
-			put_fd(conn, "[]");
-			return;
+		for (i = 0; i < TSV_ROUTES; i++) {
+			const struct tsv_route *t = &tsv_routes[i];
+
+			n = tsv_load(t);
+			if (n < 0 && t->required) {
+				respond(conn, "500 Internal Server Error", "application/json", 0);
+				put_fd(conn, "{\"error\":\"no schema\"}");
+				return;
+			}
+			h = etag_add(h, t->name, slen(t->name) + 1);
+			if (n > 0)
+				h = etag_add(h, t->buf, (unsigned long)n);
 		}
-		if (respond_cached(conn, "application/json", sett, slen(sett)))
+		n = load_defaults();
+		h = etag_add(h, "defaults", 9);
+		h = etag_add(h, values, (unsigned long)n);
+		if (respond_tagged(conn, "application/json", h))
 			return;
-		emit_tsv_json(conn, sett, col, 7);
+
+		put_fd(conn, "{");
+		for (i = 0; i < TSV_ROUTES; i++) {
+			const struct tsv_route *t = &tsv_routes[i];
+
+			put_fd(conn, i ? ",\"" : "\"");
+			put_fd(conn, t->name);
+			put_fd(conn, "\":");
+			if (tsv_load(t) > 0)
+				emit_tsv_json(conn, t->buf, t->col, t->ncol);
+			else
+				put_fd(conn, "[]");
+		}
+		put_fd(conn, ",\"defaults\":");
+		load_defaults();
+		emit_values_json(conn, values);
+		put_fd(conn, "}");
 		return;
 	}
 
-	if (seq(path, "/api/features")) {
-		static const char *col[] = { "mask", "bit", "feature", "module" };
+	/*
+	 * What the page reads when it opens that the device holds: the config
+	 * values, the firmware slots and the host link, each as its own route
+	 * answers it. no-store, like those routes. A config store that cannot be
+	 * read fails the whole answer, as /api/values does, since the page
+	 * cannot show a form without it.
+	 */
+	if (seq(path, "/api/init")) {
+		long n = load_values();
 
-		/* The OMCI_CUSTOM_* bitmasks, decoded. Absent degrades to
-		 * showing the raw value, which is what every other tool for
-		 * this device does. */
-		if (read_file(FEAT_PATH_OVR, schema, sizeof(schema)) <= 0 &&
-		    read_file(FEAT_PATH, schema, sizeof(schema)) <= 0) {
-			respond(conn, "200 OK", "application/json", 0);
-			put_fd(conn, "[]");
+		if (n < 0) {
+			respond(conn, "500 Internal Server Error", "application/json", 0);
+			put_fd(conn, n == -2
+			       ? "{\"error\":\"the config store is larger than confd can hold (64 KB)\"}"
+			       : "{\"error\":\"flash failed\"}");
 			return;
 		}
-		if (respond_cached(conn, "application/json", schema, slen(schema)))
-			return;
-		emit_tsv_json(conn, schema, col, 4);
-		return;
-	}
-
-	if (seq(path, "/api/baseline")) {
-		static const char *col[] = { "name", "value" };
-
-		if (read_file(BASE_PATH_OVR, schema, sizeof(schema)) <= 0 &&
-		    read_file(BASE_PATH, schema, sizeof(schema)) <= 0) {
-			respond(conn, "200 OK", "application/json", 0);
-			put_fd(conn, "[]");
-			return;
-		}
-		if (respond_cached(conn, "application/json", schema, slen(schema)))
-			return;
-		emit_tsv_json(conn, schema, col, 2);
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"values\":");
+		emit_values_json(conn, values);
+		put_fd(conn, ",\"firmware\":");
+		emit_firmware_body(conn);
+		put_fd(conn, ",\"hostlink\":");
+		emit_hostlink_body(conn);
+		put_fd(conn, "}");
 		return;
 	}
 

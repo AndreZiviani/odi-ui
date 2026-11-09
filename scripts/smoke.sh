@@ -260,6 +260,26 @@ atag=$(curl -s -i -u "$AUTH" "$U/app.js" | tr -d '\r' | sed -n 's/^ETag: //p')
 check "cache: an asset answers 304 to its tag" 304 "$(code -u "$AUTH" -H "If-None-Match: $atag" "$U/app.js")"
 check "cache: values stay no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/values")" 'Cache-Control: no-store')"
 check "cache: status stays no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/status")" 'Cache-Control: no-store')"
+# The start-up bundles: /api/static is every image file the single routes
+# answer, under one tag; /api/init is what the device holds, no-store. Each
+# member is the single route's answer byte for byte (the same emitter), so a
+# text match is the check; the container's python has no json module.
+SB=$(curl -s -u "$AUTH" "$U/api/static")
+for k in schema meta consumers settings features baseline defaults; do
+	check "static: $k is what /api/$k answers" yes "$(err "$SB" "\"$k\":$(curl -s -u "$AUTH" "$U/api/$k")")"
+done
+check "static: one object, schema first" yes "$(err "${SB%%:*}" '{"schema"')"
+stag=$(curl -s -i -u "$AUTH" "$U/api/static" | tr -d '\r' | sed -n 's/^ETag: //p')
+check "static: answers 304 to its tag" 304 "$(code -u "$AUTH" -H "If-None-Match: $stag" "$U/api/static")"
+check "static: a 304 still needs the credential" 401 "$(code -H "If-None-Match: $stag" "$U/api/static")"
+IB=$(curl -s -i -u "$AUTH" "$U/api/init" | tr -d '\r')
+check "init: no-store" yes "$(err "$IB" 'Cache-Control: no-store')"
+IJ=$(curl -s -u "$AUTH" "$U/api/init")
+check "init: values is what /api/values answers" yes "$(err "$IJ" "{\"values\":$(curl -s -u "$AUTH" "$U/api/values"),\"firmware\":{\"running\":")"
+# Up to the uptime, which may tick between the two requests.
+HL=$(curl -s -u "$AUTH" "$U/api/hostlink")
+check "init: hostlink is what /api/hostlink answers" yes "$(err "$IJ" ",\"hostlink\":${HL%%,\"uptime\"*},\"uptime\":")"
+check "init: needs the credential" 401 "$(code "$U/api/init")"
 check "the credential file is in force" false \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
 
