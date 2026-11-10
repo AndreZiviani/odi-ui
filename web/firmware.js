@@ -258,6 +258,8 @@ async function renderFirmware() {
       acts.append(b);
     }
     if (p !== committed && p === booted) {
+      const notes = devNotes(fw);
+      if (notes.length) card.append(...notes);
       const b = el('button', 'primary', 'Commit to partition ' + p);
       b.type = 'button';
       b.onclick = () => commitRunning();
@@ -496,6 +498,29 @@ function wireFirmware() {
 }
 
 /*
+ * What the development files on the stick mean for a commit. confirm-arp
+ * (dev_confirm_arp: the address, "" when the file has none, absent when there
+ * is no file) makes every boot of a committed slot wait for an ARP reply from
+ * that address, so it is a warning; the stick refuses to commit while the
+ * file exists, and the page offers no way around that. breadcrumbs.on
+ * (dev_breadcrumbs) is only temporary debug logging, a quiet note.
+ */
+function devNotes(fw) {
+  const out = [];
+  const arp = fw.dev_confirm_arp;
+  if (typeof arp === 'string') {
+    out.push(el('p', 'callout warn', arp
+      ? `confirm-arp is set (address ${arp}): every boot of a committed slot needs an ARP reply from `
+        + `${arp}, or it resets. Remove /etc/config/confirm-arp before committing.`
+      : 'confirm-arp is present but has no address, so it has no effect.'));
+  }
+  if (fw.dev_breadcrumbs === true) {
+    out.push(el('p', 'hint', 'breadcrumbs.on is present: temporary debug logging. Remove it when you are done.'));
+  }
+  return out;
+}
+
+/*
  * The trial-boot banner.
  *
  * A trial is any state in which U-Boot would boot a partition other than the
@@ -531,6 +556,9 @@ function renderTrial() {
 
   const commit = $('#trial-commit');
   commit.hidden = main === run;
+  const dev = $('#trial-dev');
+  dev.textContent = '';
+  if (!commit.hidden) dev.append(...devNotes(fw));
   commit.onclick = () => commitRunning();
 }
 
@@ -575,6 +603,6 @@ async function commitRunning() {
 }
 
 export {
-  renderFirmware, wireFirmware, slotKind, renderTrial,
+  renderFirmware, wireFirmware, slotKind, renderTrial, devNotes,
   followReboot, rebootView, rebootLoop, rebootDeps, REBOOT_EXPECTED_S,
 };

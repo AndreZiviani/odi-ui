@@ -168,8 +168,9 @@ button.themetoggle svg { width: 18px; height: 18px; fill: none; stroke: currentC
 }
 .trial p { margin: 0; flex: 1 1 420px; max-width: 90ch; }
 .trial strong { color: var(--yellow-ink); }
-#trial-out { flex-basis: 100%; font-size: 14px; }
-#trial-out:empty { display: none; }
+#trial-out, #trial-dev { flex-basis: 100%; font-size: 14px; }
+#trial-out:empty, #trial-dev:empty { display: none; }
+#trial-dev p { margin: 0 0 4px; flex: none; }
 /* Further bars (safe mode, host link fallback) stack under it, same width. */
 .trial a { font-size: 14px; white-space: nowrap; }
 .trial + .trial { margin-top: -24px; border-top-width: 1px; } /* cancels the header row gap */

@@ -1564,7 +1564,7 @@ void serve(int conn)
 				return;
 			}
 			if (seq(action, "commit")) {
-				char why[128];
+				char why[256];
 				int rc;
 
 				respond(conn, "200 OK", "application/json", 0);

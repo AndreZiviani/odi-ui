@@ -1166,6 +1166,33 @@ for bad in 'name=confd.auth&on=0' 'name=../confd.auth&on=0' 'name=omci-identity.
 done
 check "the credential file survived every refusal" yes "$([ -f /etc/config/confd.auth ] && echo yes)"
 
+# The two development files, plain reads in /api/firmware: confirm-arp is the
+# address (absent without the file, "" when it holds none), breadcrumbs.on is
+# true only when present. Nothing from the file reaches the JSON but a valid
+# dotted address.
+echo "== development files"
+fwj() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware"; }
+rm -f /etc/config/confirm-arp /etc/config/breadcrumbs.on
+check "no dev_confirm_arp without the file" no "$(yn "$(fwj)" 'dev_confirm_arp')"
+check "no dev_breadcrumbs without the file" no "$(yn "$(fwj)" 'dev_breadcrumbs')"
+echo 192.168.1.2 > /etc/config/confirm-arp
+check "confirm-arp reports its address" yes "$(err "$(fwj)" '"dev_confirm_arp":"192.168.1.2"')"
+printf '  10.0.0.254 \n\n' > /etc/config/confirm-arp
+check "blanks around the address are dropped" yes "$(err "$(fwj)" '"dev_confirm_arp":"10.0.0.254"')"
+: > /etc/config/confirm-arp
+check "an empty file is present without an address" yes "$(err "$(fwj)" '"dev_confirm_arp":""')"
+for bad in 'router' '192.168.1' '192.168.1.256' '192.168.01.2' '1.2.3.4.5' '1.2.3.4 x' '1.2.3.4"}'; do
+	printf '%s\n' "$bad" > /etc/config/confirm-arp
+	check "confirm-arp holding '$bad' is present without an address" yes "$(err "$(fwj)" '"dev_confirm_arp":""')"
+done
+rm -f /etc/config/confirm-arp
+touch /etc/config/breadcrumbs.on
+check "breadcrumbs.on is reported" yes "$(err "$(fwj)" '"dev_breadcrumbs":true')"
+check "and /api/init carries it too" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/init")" '"dev_breadcrumbs":true')"
+rm -f /etc/config/breadcrumbs.on
+check "and it is gone when the file is" no "$(yn "$(fwj)" 'dev_breadcrumbs')"
+
 # The setup wizard marker (web/wizard.js): the page opens the wizard on a
 # stick that has none, so it has to be absent by default, settable, kept on
 # the config partition, there again after the daemon restarts, and removable.

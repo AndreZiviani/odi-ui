@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: next to Commit (the Trial boot banner and the running partition),
+  the page warns while `/etc/config/confirm-arp` exists: every boot of a
+  committed slot then needs an ARP reply from the address in it, or the stick
+  resets. A file with no valid address says it has no effect. A quieter note
+  shows while `breadcrumbs.on` exists (temporary debug logging). `GET
+  /api/firmware` (and `/api/init`) carry `dev_confirm_arp` (the address, `""`
+  when the file holds none, absent without the file) and `dev_breadcrumbs`,
+  both plain file reads. Commit stays available: when `nv commit` refuses, its
+  reason is shown (the commit error text now holds up to 255 characters instead
+  of 127), and the page has no force option; removing the file is the way.
+  `PREVIEW_DEV=1 scripts/preview.sh` previews both. Checked in the page and in
+  confd. Refs AndreZiviani/odi-oss#334.
+
 ## v1.14.0 (2026-11-10)
 
 - Config: the VLAN subtab has a "VLAN forward operation override" field

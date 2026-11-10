@@ -254,6 +254,69 @@ next:
 	}
 }
 
+/*
+ * The address in confirm-arp, copied to out, or "" when the content is not a
+ * dotted IPv4 address. Blanks around it and a trailing newline are accepted;
+ * anything else (a name, a fifth octet, a value over 255, a leading zero,
+ * text after the address) is not an address, so the page never shows odd
+ * bytes and the JSON needs no escaping.
+ */
+static void confirm_arp_addr(const char *buf, char *out, unsigned long cap)
+{
+	unsigned long i = 0, from, n;
+	int oct;
+
+	out[0] = 0;
+	while (buf[i] == ' ' || buf[i] == '\t')
+		i++;
+	from = i;
+	for (oct = 0; oct < 4; oct++) {
+		unsigned long start = i, v = 0;
+
+		while (buf[i] >= '0' && buf[i] <= '9' && i - start < 4) {
+			v = v * 10 + (unsigned long)(buf[i] - '0');
+			i++;
+		}
+		if (i == start || i - start > 3 || v > 255 || (buf[start] == '0' && i - start > 1))
+			return;
+		if (oct < 3) {
+			if (buf[i] != '.')
+				return;
+			i++;
+		}
+	}
+	n = i - from;
+	while (buf[i] == ' ' || buf[i] == '\t' || buf[i] == '\r' || buf[i] == '\n')
+		i++;
+	if (buf[i] || n + 1 > cap)
+		return;
+	for (i = 0; i < n; i++)
+		out[i] = buf[from + i];
+	out[n] = 0;
+}
+
+/*
+ * The two development files, as plain file reads. dev_confirm_arp is absent
+ * when the file is absent, the address when it holds one, and "" when the
+ * file exists without a valid address; dev_breadcrumbs is true only when its
+ * file exists.
+ */
+static void emit_dev_files(int fd)
+{
+	char raw[64], addr[20];
+
+	if (file_exists(CONFIRM_ARP_PATH)) {
+		if (read_file(CONFIRM_ARP_PATH, raw, sizeof(raw)) < 0)
+			raw[0] = 0;
+		confirm_arp_addr(raw, addr, sizeof(addr));
+		put_fd(fd, ",\"dev_confirm_arp\":\"");
+		put_fd(fd, addr);
+		put_fd(fd, "\"");
+	}
+	if (file_exists(BREADCRUMBS_PATH))
+		put_fd(fd, ",\"dev_breadcrumbs\":true");
+}
+
 void emit_firmware_json(int fd)
 {
 	respond(fd, "200 OK", "application/json", 0);
@@ -409,6 +472,7 @@ void emit_firmware_body(int fd)
 	put_fd(fd, file_exists(SWITCH_DIR SWITCH_UPDATE_OFF) ? "true" : "false");
 	put_fd(fd, "},\"lanip_override\":");
 	put_fd(fd, file_exists(LANIP_OVERRIDE) ? "true" : "false");
+	emit_dev_files(fd);
 
 	/* Which credential is in force. A built-in default nobody can see is the
 	 * same thing as no password, so this is not decoration: it is what makes
