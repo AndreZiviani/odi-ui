@@ -636,6 +636,38 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .ladder li.done { color: var(--ink-2); background: color-mix(in srgb, var(--green) 14%, var(--well)); }
 .ladder li.here { color: var(--on-fill); background: var(--green); border-color: var(--green); }
 
+/* The shared PON section: the figure as the meters show theirs, a bar from
+   an empty to a full PON, and what this tab saw in the last hour. */
+.pon { max-width: 760px; }
+.pon .m-read { margin-bottom: 2px; flex-wrap: wrap; }
+.pon-wait { font-size: 16px; font-weight: 600; color: var(--ink-2); }
+.pon-rate { margin: 0 0 12px; font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pon-bar { height: 18px; overflow: hidden; }
+.pon .m-ticks span { white-space: nowrap; }
+.pon-fill { position: absolute; top: 0; bottom: 0; left: 0; min-width: 3px; background: var(--blue); border-radius: 2px 0 0 2px; }
+.pon-chart { margin-top: 14px; }
+.pon-plot { display: flex; gap: 6px; }
+/* A fixed width for the scale, so the bars and the time axis start at one
+   edge whatever the labels say, here and in any chart placed under this one. */
+.pon-y { display: flex; flex-direction: column; justify-content: space-between; flex: 0 0 96px; text-align: right; white-space: nowrap; font: 700 11px var(--readout); color: var(--ink-3); }
+.pon-bars {
+  flex: 1; display: flex; align-items: flex-end; gap: 1px; height: 96px; border-bottom: 1px solid var(--line-2);
+  background: linear-gradient(var(--line), var(--line)) 0 0 / 100% 1px no-repeat, linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat;
+}
+.pon-bars i { flex: 1 1 0; min-width: 0; background: var(--blue); border-radius: 1px 1px 0 0; }
+/* The ink yellow, not the jacket yellow: thin bars of the lighter one
+   barely show on the light theme. */
+.pon-bars i.mid { background: var(--yellow-ink); }
+.pon-bars i.hi { background: var(--red); }
+.pon-bars i.peak { box-shadow: 0 -2px 0 var(--ink); }
+.pon-bars i.gap { background: none; }
+.pon-bars i:hover { filter: brightness(1.35); }
+.pon-axis { display: flex; justify-content: space-between; gap: 12px; margin: 4px 0 12px 102px; font: 700 11px var(--readout); color: var(--ink-3); }
+.pon-note { color: var(--ink-2); }
+.pon-fill.mid { background: var(--yellow-ink); }
+.pon-fill.hi { background: var(--red); }
+@media (max-width: 560px) { .pon-bars { gap: 0; } }
+
 .env { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; }
 .env dt { color: var(--ink-2); font-size: 14px; }
 .env dd { margin: 0; font-size: 14px; }

@@ -123,4 +123,63 @@ function wireHelp() {
   $('#helptoggle').setAttribute('aria-pressed', String(isFullHelpOn()));
 }
 
-export { $, el, fail, get, bytes, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };
+/*
+ * What this tab saw, for the charts on the Status tab: one entry per poll,
+ * for the last hour, under a key of its own. It lives in sessionStorage, so
+ * it survives a reload and is gone with the tab; the stick keeps no history,
+ * and a longer one is the metrics exporter's job. A poll with nothing to
+ * record adds nothing and shows as a gap. Storage that is blocked only costs
+ * the reload.
+ *
+ * An entry is [time, value, ...]; histRecord(key, null) only drops what is
+ * older than the hour. histSlots() lays the entries out for a chart: one
+ * slot per poll interval, newest last, the last entry of an interval
+ * standing for it, null where there was none.
+ */
+const HIST_SLOT_MS = 15000;     /* the poll interval: one bar */
+const HIST_SLOTS = 240;         /* an hour of them */
+/* More than one entry can fall into a slot (the page polls once more 3 s
+   after it opens), so the cap is a few per slot, and a stored text beyond
+   what that many entries take is not read at all. */
+const HIST_MAX = HIST_SLOTS * 4;
+const HIST_MAX_TEXT = HIST_MAX * 96;
+const HISTS = {};
+function histLoad(key) {
+  if (HISTS[key]) return HISTS[key];
+  HISTS[key] = [];
+  try {
+    /* What this page wrote is a few kilobytes. Anything much larger is not
+       ours, and is not parsed: it would be parsed on every page load. */
+    const text = globalThis.sessionStorage.getItem(key) || '[]';
+    const raw = text.length > HIST_MAX_TEXT ? [] : JSON.parse(text);
+    if (Array.isArray(raw)) {
+      HISTS[key] = raw.filter((p) => Array.isArray(p) && p.length > 1 && p.length <= 8
+        && p.every((v) => Number.isFinite(v))).slice(-HIST_MAX);
+    }
+  } catch (e) { /* no storage, or not ours: start empty */ }
+  return HISTS[key];
+}
+function histRecord(key, vals) {
+  const now = Date.now();
+  const h = histLoad(key).filter((p) => p[0] > now - HIST_SLOT_MS * HIST_SLOTS && p[0] <= now);
+  if (vals && vals.every((v) => Number.isFinite(v))) h.push([now, ...vals]);
+  HISTS[key] = h.slice(-HIST_MAX);
+  try { globalThis.sessionStorage.setItem(key, JSON.stringify(HISTS[key])); } catch (e) { /* not kept */ }
+  return HISTS[key];
+}
+function histSlots(hist) {
+  const now = Date.now();
+  const slots = new Array(HIST_SLOTS).fill(null);
+  for (const p of hist) {
+    const k = HIST_SLOTS - 1 - Math.floor((now - p[0]) / HIST_SLOT_MS);
+    if (k >= 0 && k < HIST_SLOTS) slots[k] = p;
+  }
+  return slots;
+}
+const hhmm = (t) => {
+  const d = new Date(t);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+};
+const histStart = () => hhmm(Date.now() - HIST_SLOT_MS * HIST_SLOTS);
+
+export { $, el, fail, get, bytes, histRecord, histSlots, histStart, hhmm, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };

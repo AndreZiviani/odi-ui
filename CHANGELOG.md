@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the *Shared PON, all ONUs* section shows its figure the way the optics meters do, with a bar from an empty to a full PON and a chart of one bar per poll for the last hour. The chart scales to its highest bar and has its scale on the left; the colour of a bar is its level on the whole scale (blue under 50 %, yellow from 50 %, red from 80 %), and each bar gives its time and figure as a title and in the line under the chart while the pointer is on it. A bar is the average of a poll interval, so a shorter burst shows at a fraction of its rate. The chart is what the tab saw: it is kept in sessionStorage, survives a reload and goes with the tab. The stick keeps no history and confd is unchanged; a longer history is the metrics exporter's job. No library, divs and CSS as the meters are built. What the tab keeps is capped and checked when it is read back, so a stored text that is not the page's own is not parsed. `make check` covers the figure, the bar, the slots, the scale, the colours, the hour limit, a reload, and blocked or foreign storage.
+
 - Firmware: next to Commit (the Trial boot banner and the running partition),
   the page warns while `/etc/config/confirm-arp` exists: every boot of a
   committed slot then needs an ARP reply from the address in it, or the stick
