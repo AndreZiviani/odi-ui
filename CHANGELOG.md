@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the GPON part of the stick diagram shows the PON load, an estimate of how full the downstream of the whole tree is, every ONU together, from the idle GEM frames the OLT sends: the share of the downstream frames between two polls that was not idle. `/api/status` gains `ds_superframe`, `ds_fec`, `ds_gem_idle` and `ds_gem_idle_sat` (odi-oss driver), read so that they belong to one driver sample. The frame header, GEM headers and management traffic count as used, so an empty tree reads a little above zero; FEC parity is taken out; dummy frames an OLT sends in place of idle ones would read as load; nothing is said about the upstream. An interval that cannot be trusted (FEC changed, a reboot, a re-lock, the idle register read full) shows no figure. Outside O5 and on a stock slot it shows a dash. Checked on one lightly used line only (LL-XS2510, 1 to 3 %), not against a busy tree or an OLT reading. `make check` covers the arithmetic.
+
 - Config: the VLAN subtab has a "VLAN forward operation override" field
   (`RTK_DEVINFO_SPECVER`, the same setting and format as the stock firmware's
   VLAN Forward Operation page, which odi-oss omcid now reads too). It

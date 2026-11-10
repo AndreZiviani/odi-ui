@@ -353,8 +353,60 @@ ok(true, 'renderStatus runs against a diag capture');
      'overview: the switch rates are the fibre port deltas, down what it receives, up what it sends');
   t += 10000;
   renderStatus(raw2, null, { raw: raw2, host_link: '0' });
-  ok(/Memory—/.test(ov()) && /ONU-ID —/.test(ov()) && /No link/.test(ov()) && /CPUmeasuring/.test(ov()),
+  ok(/Memory—/.test(ov()) && /ONU-ID —/.test(ov()) && /No link/.test(ov()) && /CPUmeasuring/.test(ov())
+     && /PON load —/.test(ov()),
      'overview: a stock slot without those files shows dashes, and a host link down says so');
+
+  /* The PON load: the share of the downstream frames that was not idle GEM
+     frames, between two polls. 80000 frames are 10 s; with FEC on a frame
+     carries 38880 - 153 * 16 = 36432 bytes. */
+  const pon = (sf, idle, fec) => ({ ...st('100 0 100 800 0 0 0 0 0 0'),
+    ds_superframe: String(sf), ds_gem_idle: String(idle), ...(fec === undefined ? {} : { ds_fec: fec }) });
+  const half = 291456000;                       /* 80000 frames half full of idle, FEC on */
+  t += 10000;
+  renderStatus(raw, null, pon(1000, 5000000000, '1'));
+  ok(/PON load measuring/.test(ov()), 'pon load: the first poll has nothing to compare with');
+  t += 10000;
+  renderStatus(raw, null, pon(81000, 5000000000 + half, '1'));
+  ok(/PON load ↓ ≈ 50 %/.test(ov()), 'pon load: half the payload idle is 50 %, past 32 bits of idle frames');
+  t += 10000;
+  renderStatus(raw, null, pon(161000, 5000000000 + half + 571253760, '1'));
+  ok(/PON load ↓ ≈ 2\.0 %/.test(ov()), 'pon load: under 10 % it shows one decimal');
+  t += 10000;
+  renderStatus(raw, null, pon(241000, 5000000000 + 2 * half + 571253760, '0'));
+  ok(/PON load measuring/.test(ov()), 'pon load: FEC changing between two polls gives no figure');
+  t += 10000;
+  renderStatus(raw, null, pon(321000, 5000000000 + 2 * half + 571253760 + 80000 * 7776, '0'));
+  ok(/PON load ↓ ≈ 0\.0 %/.test(ov()), 'pon load: with FEC off the whole 38880 bytes count, all idle is 0 %');
+  t += 10000;
+  renderStatus(raw.replace('(O5)', '(O2)'), null, pon(401000, 5000000000 + 3 * half + 571253760 + 80000 * 7776, '0'));
+  ok(/PON load —/.test(ov()), 'pon load: outside O5 there is no figure and the next one starts over');
+  {
+    const { ponLoad } = await import(join(root, 'web', 'overview.js'));
+    const s = (sf, idle) => ({ ds_superframe: String(sf), ds_gem_idle: String(idle), ds_fec: '1' });
+    ponLoad(null);
+    ok(ponLoad(s(0x40000000 - 40000, 0)) === null, 'pon load: no figure without an earlier poll');
+    t += 10000;
+    ok(Math.abs(ponLoad(s(40000, half)) - 50) < 1e-9, 'pon load: the 30-bit frame counter wraps');
+    t += 10000;
+    ok(ponLoad(s(120000, half - 1)) === null, 'pon load: an idle count that went backwards (a reboot) gives no figure');
+    t += 10000;
+    ok(ponLoad(s(120000 + 800000, 2 * half)) === null,
+       'pon load: more frames than the time between the polls allows (a re-lock) gives no figure');
+    t += 10000;
+    ok(ponLoad(s(120000 + 880000, 2 * half + 80000 * 8000)) === null,
+       'pon load: more idle bytes than the frames hold gives no figure');
+    t += 10000;
+    ok(ponLoad({ ...s(120000 + 960000, 3 * half + 80000 * 8000), ds_gem_idle_sat: '1' }) === null,
+       'pon load: an interval in which the idle register read full gives no figure');
+    t += 10000;
+    ok(Math.abs(ponLoad({ ...s(120000 + 1040000, 4 * half + 80000 * 8000), ds_gem_idle_sat: '1' }) - 50) < 1e-9,
+       'pon load: an old saturation does not spoil later intervals');
+    t += 10000;
+    ok(ponLoad({ ds_superframe: '5', ds_gem_idle: 'x' }) === null && ponLoad(s(80005, half)) === null,
+       'pon load: a member that is not a number starts over');
+    ponLoad(null);
+  }
   Date.now = realNow;
 }
 

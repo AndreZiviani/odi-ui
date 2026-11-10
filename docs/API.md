@@ -193,6 +193,16 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           (/proc/odi_gpon/status "onu_id ", odi-oss),
                                           `host_link` (odi_switch host_link, "0" or "1") and
                                           `host_mode` (/var/run/host-serdes "running=")
+                                          For the PON load, all three or none: `ds_superframe`
+                                          and `ds_fec` (/proc/odi_gpon/status "ds_superframe ",
+                                          "fec_now ds ") and `ds_gem_idle` (/proc/odi_gpon/counters
+                                          "ctr ds_gem_idle ", a 64-bit total), odi-oss. Status
+                                          is read before and after counters and the set is
+                                          left out when the driver sampled in between, so
+                                          the three always belong to one sample; `ds_fec`
+                                          alone is absent when its line is. `ds_gem_idle_sat`
+                                          ("ctr_saturated ds_gem_idle ") comes with them when
+                                          a sample ever read the idle register full
     GET  /api/ntp                        {"now": the stick's clock, epoch seconds,
                                           "ntp": null, or {"event","time","offset",
                                           "stratum","last_sync"} from /tmp/ntp-status

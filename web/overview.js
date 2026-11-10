@@ -6,8 +6,8 @@
  *
  * Everything here is read off the one /api/status answer the page already
  * fetches every 15 s: diag for the optics, the ONU state and the port
- * counters, and plain file reads in confd for CPU, memory, ONU-ID and the
- * host side (src/status.c, emit_overview). A part whose source is missing
+ * counters, and plain file reads in confd for CPU, memory, ONU-ID, the
+ * PON load and the host side (src/status.c, emit_overview). A part whose source is missing
  * (a stock slot has no /proc/odi_gpon) shows a dash, never a guess.
  *
  * Clicking a part goes to the section that explains it.
@@ -37,6 +37,58 @@ function cpuBusy(line) {
   PREV_CPU = { total, idle };
   if (!prev || total <= prev.total) return null;
   return 100 * (1 - (idle - prev.idle) / (total - prev.total));
+}
+
+/*
+ * How full the downstream of the whole PON is, every ONU on the tree
+ * together. The OLT fills what nobody needs with idle GEM frames, five
+ * bytes each, and they are addressed to nobody, so the share of a frame
+ * that was not idle is what the OLT sent to somebody. An estimate:
+ *
+ *   - the frame header (PCBd, with the bandwidth map), GEM headers and
+ *     management traffic count as used, so a tree with no traffic at all
+ *     reads a little above zero;
+ *   - with FEC on, the 16 parity bytes of each of the 153 code words of a
+ *     frame carry nothing and are taken out first;
+ *   - an OLT may send dummy frames instead of idle ones (G.984.3 lets it,
+ *     to control the idle pattern); they would read as load;
+ *   - downstream only: nothing here says how busy the upstream is.
+ *
+ * Counted against the superframe counter (one per 125 us frame, 30 bits)
+ * rather than the clock, so the poll interval drops out. confd sends the
+ * members only as a consistent set (src/status.c, emit_pon_load).
+ *
+ * No figure, rather than a clamped one, on the first poll and whenever the
+ * interval cannot be trusted: FEC changed, the idle count went backwards
+ * (a reboot), the driver read the idle register full meanwhile, the frame
+ * count moved more than the time between the polls allows (the line
+ * re-locked), or the result is outside 0 to 100 %.
+ */
+const PON_FRAME = 38880;        /* bytes in 125 us at 2.488 Gbit/s */
+const PON_FEC_PARITY = 153 * 16;
+const GEM_IDLE = 5;
+let PREV_PON = null;
+function ponLoad(st) {
+  const sf = Number(st && st.ds_superframe);
+  const fec = st && typeof st.ds_fec === 'string' ? st.ds_fec.trim() : '';
+  const sat = st && typeof st.ds_gem_idle_sat === 'string' ? Number(st.ds_gem_idle_sat) : 0;
+  let idle = null;
+  try { idle = BigInt(String(st && st.ds_gem_idle).trim()); } catch (e) { /* not there */ }
+  if (!st || typeof st.ds_superframe !== 'string' || !Number.isFinite(sf) || !Number.isFinite(sat)
+      || idle === null) {
+    PREV_PON = null;
+    return null;
+  }
+  const now = Date.now();
+  const prev = PREV_PON;
+  PREV_PON = { at: now, sf, idle, fec, sat };
+  if (!prev || idle < prev.idle || fec !== prev.fec || sat !== prev.sat) return null;
+  const frames = (sf - prev.sf + 0x40000000) % 0x40000000;
+  if (frames <= 0 || frames > (now - prev.at) * 8 * 1.1 + 16) return null;
+  const payload = PON_FRAME - (fec === '1' ? PON_FEC_PARITY : 0);
+  const used = payload - Number(idle - prev.idle) * GEM_IDLE / frames;
+  const pct = 100 * used / payload;
+  return pct < 0 || pct > 100 ? null : pct;
 }
 
 /* "  14792 kB" -> bytes. */
@@ -126,9 +178,15 @@ function renderOverview(f) {
   ], avail === null ? 'none' : avail < 4 * 1048576 ? 'warn' : 'ok', scrollTo('#stickblock'));
 
   const onuId = /^\s*(\d+)/.exec(f.st.onu_id || '');
+  /* undefined outside O5 and on a slot whose driver has no such counters,
+     null while there is no interval to go by. */
+  const load = f.state === 'O5' && typeof f.st.ds_superframe === 'string'
+    ? ponLoad(f.st) : (ponLoad(null), undefined);
   const gpon = part('ov-gpon', 'GPON', [
     [f.state ? `${f.state} ${STATE_NAMES[f.state] || ''}`.trim() : 'No state'],
     [onuId ? 'ONU-ID ' + onuId[1] : 'ONU-ID —', 'ov-sub'],
+    [load === undefined ? 'PON load —' : load === null ? 'PON load measuring'
+      : `PON load ↓ ≈ ${load < 10 ? load.toFixed(1) : load.toFixed(0)} %`, 'ov-sub'],
   ], !f.state ? 'none' : f.state === 'O5' ? 'ok' : 'bad', scrollTo('#ladder'));
 
   const r = fibreRates(f.st.raw_counters);
@@ -163,4 +221,4 @@ function renderOverview(f) {
   host.append(fibre, fibreLine, stick, pins, router);
 }
 
-export { renderOverview, cpuBusy };
+export { renderOverview, cpuBusy, ponLoad };
