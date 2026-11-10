@@ -146,6 +146,32 @@ function meter(hostSel, spec, value) {
   return { verdict, value };
 }
 
+/*
+ * What the OLT says about itself in the PON-ID message (G.984.3 Annex C),
+ * as the odi-oss driver decodes it: the class of the fibre plant and its own
+ * launch power, TOL, in 0.1 dB above -30 dBm, 65535 when it sends none.
+ * Launch power less what arrives here is what the path between them loses:
+ * fibre, splitters, connectors. With the reach extender flag the power is
+ * the extender's, and the path is the one from it. A line under the receive
+ * meter; nothing when the OLT sends no PON-ID or no power, or without a
+ * receive reading. The receive reading may be a few dB off (SFF-8472), and
+ * so may this. The identifier in the line is not shown.
+ */
+const ODN_CLASS = ['A', 'B', 'B+', 'C', 'C+'];
+function pathLoss(st, rxv) {
+  const m = /odn_class (\d+) reach_extender (\d+) tol (\d+)/.exec((st && st.pon_id) || '');
+  if (!m || rxv === null || Number(m[3]) >= 65535) return null;
+  const tol = -30 + Number(m[3]) / 10;
+  const loss = tol - rxv;
+  const cls = ODN_CLASS[Number(m[1])];
+  const who = m[2] === '1' ? 'The reach extender' : 'The OLT';
+  const from = m[2] === '1' ? ' from it' : '';
+  $('#rx').append(el('p', 'm-note',
+    `${who} sends ${signed(tol, 1)} dBm, so the path${from} loses about ${loss.toFixed(1)} dB`
+    + (cls ? ` (it names its fibre plant class ${cls})` : '')));
+  return loss;
+}
+
 /* O1 to O5 is a real sequence — an ONU climbs it on every registration — which
    is the one thing on this page worth numbering. */
 const STATES = {
@@ -313,6 +339,7 @@ function renderStatus(raw, chip, st) {
   };
   const rx = meter('#rx', OPTICS.rx, dbm('rx-power'));
   const tx = meter('#tx', OPTICS.tx, dbm('tx-power'));
+  pathLoss(st, rx.value);
 
   const state = num(s['gpon get onu-state'], /Operation State\((O\d)\)/);
   ladder(state);
@@ -402,4 +429,4 @@ function lineFacts(raw) {
   };
 }
 
-export { renderStatus, lineFacts, ponLoad, OPTICS, STATES, tight };
+export { renderStatus, lineFacts, ponLoad, pathLoss, OPTICS, STATES, tight };

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: under the receive meter, the launch power the OLT reports in its PON-ID (AndreZiviani/odi-oss#322) and what the path loses between it and the stick, with the fibre plant class the OLT names: "The OLT sends 3.4 dBm, so the path loses about 19.9 dB (it names its fibre plant class B+)". With the reach extender flag the line says so and the path is the one from the extender. `/api/status` gains `pon_id` (odi-oss driver), a plain file read; the line is left out when the OLT sends no PON-ID or no power, or without a receive reading, and the identifier in the PON-ID is not shown. The receive reading may be a few dB off, and so may the loss.
+
 - Firmware: a commit is accepted only for the partition the stick is running,
   on every path. `POST /api/firmware action=commit` read no `sw_active`, so a
   stale tab could name a slot that never booted and, on a stock `nv` without

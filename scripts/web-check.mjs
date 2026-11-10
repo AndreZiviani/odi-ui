@@ -437,6 +437,26 @@ ok(true, 'renderStatus runs against a diag capture');
   Date.now = realNow;
 }
 
+/* --- the path loss under the receive meter --------------------------------- */
+{
+  const { renderStatus, pathLoss } = await import(join(root, 'web', 'status.js'));
+  const raw = 'RTK.0> pon get transceiver rx-power\n  Rx Power : -17.00 dBm\n'
+    + 'RTK.0> pon get transceiver tx-power\n  Tx Power : 1.87 dBm\n';
+  const notes = () => doc.querySelector('#rx').children.filter((c) => c.className === 'm-note').map(textOf);
+  renderStatus(raw, null, {});
+  ok(notes().length === 1, 'path loss: no line without a PON-ID');
+  renderStatus(raw, null, { pon_id: 'odn_class 2 reach_extender 0 tol 334 id 00112233445566 ms 5' });
+  ok(notes()[1] === 'The OLT sends 3.4 dBm, so the path loses about 20.4 dB (it names its fibre plant class B+)'
+     && !/0011223344/.test(textOf(doc.querySelector('#rx'))),
+     'path loss: launch power less receive level, with the class, and without the identifier');
+  ok(pathLoss({ pon_id: 'odn_class 2 reach_extender 0 tol 65535 id 00 ms 5' }, -17) === null
+     && pathLoss({}, -17) === null && pathLoss({ pon_id: 'odn_class 2 reach_extender 0 tol 334 id 00 ms 5' }, null) === null,
+     'path loss: nothing without a launch power, a PON-ID or a receive reading');
+  renderStatus(raw, null, { pon_id: 'odn_class 9 reach_extender 1 tol 300 id 00 ms 5' });
+  ok(notes()[1] === 'The reach extender sends 0.0 dBm, so the path from it loses about 17.0 dB',
+     'path loss: a reach extender is named, an unknown class is left out');
+}
+
 /* --- the header bars are ordered by severity: red, yellow, blue ----------- */
 {
   const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');

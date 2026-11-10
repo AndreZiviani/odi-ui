@@ -191,6 +191,10 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           "cpu "), `mem_total` and `mem_avail` (/proc/meminfo
                                           "MemTotal:", "MemAvailable:"), `onu_id`
                                           (/proc/odi_gpon/status "onu_id ", odi-oss),
+                                          `pon_id` (/proc/odi_gpon/status "pon_id ", odi-oss:
+                                          what the OLT says of itself, "odn_class N
+                                          reach_extender N tol N id HEX ms N"; absent
+                                          when the OLT sends no PON-ID),
                                           `host_link` (odi_switch host_link, "0" or "1") and
                                           `host_mode` (/var/run/host-serdes "running=")
                                           For the shared PON section, from one read of
