@@ -236,8 +236,19 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `slots` ({"0":{"kernel":..., "built":<unix>}},
                                           from each kernel partition's uImage header;
                                           {} when it cannot be read);
-                                          `exe`, the path this confd was started from
+                                          `exe`, the path this confd was started from;
+                                          `dev_confirm_arp`, only while
+                                          `/etc/config/confirm-arp` exists: the IPv4
+                                          address in it, or "" when it holds none
+                                          (a name, a malformed or out-of-range
+                                          address); `dev_breadcrumbs`, true only
+                                          while `/etc/config/breadcrumbs.on` exists.
+                                          Plain file reads; the UI never writes them
     POST /api/firmware   action=try|commit|reboot&partition=N
+                                          a refused commit answers
+                                          {"ok":false,"error":"commit N: <nv reason>"},
+                                          e.g. while confirm-arp exists; there is no
+                                          force parameter
 
 ## Host port and safe mode (odi-oss)
 

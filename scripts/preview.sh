@@ -14,6 +14,7 @@
 #
 #   scripts/preview.sh                     -> http://127.0.0.1:18080
 #   PREVIEW_TRIAL=1 scripts/preview.sh     -> the same, mid trial boot
+#   PREVIEW_DEV=1 scripts/preview.sh       -> with confirm-arp (192.168.1.2) and breadcrumbs.on set
 #   scripts/shot.mjs                       -> screenshots + console errors
 #   docker rm -f odi-ui-preview            -> stop it
 set -e
@@ -22,7 +23,7 @@ docker rm -f odi-ui-preview >/dev/null 2>&1 || true
 # --cap-add SYSLOG so the Tools tab has a kernel log to show: klogctl is
 # refused in a default container. It reads the host VM's buffer, which is not
 # what a stick would say but is the right SHAPE -- priority prefixes and all.
-docker run -d --name odi-ui-preview -p 18080:18080 --cap-add SYSLOG -e PREVIEW_TRIAL \
+docker run -d --name odi-ui-preview -p 18080:18080 --cap-add SYSLOG -e PREVIEW_TRIAL -e PREVIEW_DEV \
   -v "$PWD":/src -w /src "$IMAGE" bash -c '
     mkdir -p /etc/confd /etc/config /etc/scripts
     cp schema/*.tsv web/*.html web/*.css web/*.js /etc/confd/
@@ -150,6 +151,8 @@ NV
     chmod +x /bin/nv
     # PREVIEW_TRIAL=1 previews a trial boot: running slot 0, committed slot 1.
     if [ -n "$PREVIEW_TRIAL" ]; then sed -i "s/sw_commit=0/sw_commit=1/g" /bin/nv; fi
+    # PREVIEW_DEV=1 previews the two development files on the Firmware tab.
+    if [ -n "$PREVIEW_DEV" ]; then echo 192.168.1.2 > /etc/config/confirm-arp; : > /etc/config/breadcrumbs.on; fi
     # The slot probe reads /proc/mtd and the first 64 bytes of each kernel
     # partition, and a container has neither. qemu-user looks a path up under
     # its -L prefix first, so these stand in for them: slot 0 carries an

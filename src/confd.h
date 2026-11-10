@@ -223,6 +223,20 @@
 #define SWITCH_UPDATE_OFF    "update-check.off"
 
 /*
+ * Two development files odi-oss reads at boot, reported to the Firmware tab
+ * and never written by this UI. confirm-arp holds the IPv4 address the boot
+ * must get an ARP reply from before it confirms the watchdog; breadcrumbs.on
+ * turns on temporary debug logging. Both are overridable at build time so a
+ * test can point them elsewhere.
+ */
+#ifndef CONFIRM_ARP_PATH
+#define CONFIRM_ARP_PATH  "/etc/config/confirm-arp"
+#endif
+#ifndef BREADCRUMBS_PATH
+#define BREADCRUMBS_PATH  "/etc/config/breadcrumbs.on"
+#endif
+
+/*
  * Where an uploaded image lands. /tmp is ramfs sharing ~27 MB with everything
  * else running, and about 12.9 MB of that is actually free -- so a 3 MB image
  * fits with room, and something much larger would not. UPLOAD_MAX is the guard:

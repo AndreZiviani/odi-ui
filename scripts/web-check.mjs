@@ -879,6 +879,30 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   st.S.FW = { env: {} };
   renderTrial();
   ok(bar.hidden === true, 'an unreadable environment is not reported as a trial');
+  /* The development files, next to the Commit action. */
+  const dev = doc.querySelector('#trial-dev');
+  const trialDev = (extra) => ({ env: { sw_active: '0', sw_commit: '1' }, fallback: {}, slots: {}, ...extra });
+  st.S.FW = trialDev({});
+  renderTrial();
+  ok(dev.children.length === 0, 'no development file, no note beside Commit');
+  st.S.FW = trialDev({ dev_confirm_arp: '192.168.1.2' });
+  renderTrial();
+  ok(/confirm-arp is set \(address 192\.168\.1\.2\): every boot of a committed slot needs an ARP reply from 192\.168\.1\.2, or it resets\. Remove \/etc\/config\/confirm-arp before committing\./
+       .test(textOf(dev)) && dev.children[0].classList.contains('warn'),
+     'confirm-arp with an address is a warning that names the address and the file');
+  ok(doc.querySelector('#trial-commit').hidden === false && !/force/i.test(textOf(dev)),
+     'Commit stays offered (the stick decides) and no force is offered');
+  st.S.FW = trialDev({ dev_confirm_arp: '' });
+  renderTrial();
+  ok(/confirm-arp is present but has no address, so it has no effect\./.test(textOf(dev)),
+     'confirm-arp without an address says it has no effect');
+  st.S.FW = trialDev({ dev_breadcrumbs: true });
+  renderTrial();
+  ok(/breadcrumbs\.on is present: temporary debug logging/.test(textOf(dev)) && !dev.children[0].classList.contains('warn'),
+     'breadcrumbs.on is a quiet note, not a warning');
+  st.S.FW = { env: { sw_active: '0', sw_commit: '0' }, fallback: { sw_commit: '1' }, dev_confirm_arp: '10.0.0.1' };
+  renderTrial();
+  ok(dev.children.length === 0, 'without a Commit action the banner carries no development note');
   st.S.FW = keepFW;
 }
 
@@ -1202,6 +1226,11 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd' });
   ok(!/Try partition/.test(t) && /holds no kernel the bootloader would boot/.test(t),
      'a slot with no uImage header gets no Try button, and says why');
+  t = await fwText({ ...trialFW, exe: '/bin/confd', dev_confirm_arp: '192.168.1.2', dev_breadcrumbs: true });
+  ok(/confirm-arp is set \(address 192\.168\.1\.2\)/.test(t) && /breadcrumbs\.on is present/.test(t),
+     'the running slot card carries both notes next to Commit');
+  t = await fwText({ ...trialFW, exe: '/bin/confd' });
+  ok(!/confirm-arp|breadcrumbs/.test(t), 'and neither without the files');
   API['/api/firmware'] = keep;
 }
 

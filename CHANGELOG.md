@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: next to Commit (the Trial boot banner and the running partition),
+  the page warns while `/etc/config/confirm-arp` exists: every boot of a
+  committed slot then needs an ARP reply from the address in it, or the stick
+  resets. A file with no valid address says it has no effect. A quieter note
+  shows while `breadcrumbs.on` exists (temporary debug logging). `GET
+  /api/firmware` (and `/api/init`) carry `dev_confirm_arp` (the address, `""`
+  when the file holds none, absent without the file) and `dev_breadcrumbs`,
+  both plain file reads. Commit stays available: when `nv commit` refuses, its
+  reason is shown (the commit error text now holds up to 255 characters instead
+  of 127), and the page has no force option; removing the file is the way.
+  `PREVIEW_DEV=1 scripts/preview.sh` previews both. Checked in the page and in
+  confd. Refs AndreZiviani/odi-oss#334.
 - Status: a section of its own, *Shared PON, all ONUs*, shows an estimate of how full the downstream of the whole PON is, every ONU on the fibre together and not this stick's traffic, as a percentage and in Mbit/s. It is the share of the downstream frames between two refreshes that was not idle GEM frames. `/api/status` gains `ds_superframe`, `ds_fec`, `ds_gem_idle` and `ds_gem_idle_sat`, one read of `/proc/odi_gpon/counters`; the section needs the `ctr_ds_superframe` line of the odi-oss driver (AndreZiviani/odi-oss#320) and is left out without it, as on a stock slot. Frame headers and management traffic count as in use, so an empty PON reads a little above zero; FEC parity is taken out; dummy frames an OLT sends in place of idle ones would read as load; nothing is said about the upstream. An interval that cannot be trusted (FEC changed, a reboot, a re-lock, the idle register read full) shows no figure, and outside O5 the section shows a dash. `make check` covers the arithmetic. Refs AndreZiviani/odi-oss#319.
 
 ## v1.14.0 (2026-11-10)
