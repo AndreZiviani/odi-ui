@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.14.0 (2026-11-10)
+
 - Config: the VLAN subtab has a "VLAN forward operation override" field
   (`RTK_DEVINFO_SPECVER`, the same setting and format as the stock firmware's
   VLAN Forward Operation page, which odi-oss omcid now reads too). It
