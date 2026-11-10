@@ -355,6 +355,64 @@ ok(true, 'renderStatus runs against a diag capture');
   renderStatus(raw2, null, { raw: raw2, host_link: '0' });
   ok(/Memory—/.test(ov()) && /ONU-ID —/.test(ov()) && /No link/.test(ov()) && /CPUmeasuring/.test(ov()),
      'overview: a stock slot without those files shows dashes, and a host link down says so');
+
+  /* The PON load has a section of its own, not a line on the diagram: the
+     whole PON beside the figures of this stick would read as this stick. */
+  const half = 291456000;        /* 80000 frames (10 s) half full of idle, FEC on: 36432 bytes a frame */
+  const pon = (sf, idle, fec) => ({ ...st('100 0 100 800 0 0 0 0 0 0'),
+    ds_superframe: String(sf), ds_gem_idle: String(idle), ...(fec === undefined ? {} : { ds_fec: fec }) });
+  const block = doc.querySelector('#ponblock');
+  const pv = () => textOf(doc.querySelector('#pon'));
+  ok(block.hidden === true && pv() === '' && !/PON load|in use/.test(ov()),
+     'pon load: no section without the counters (a stock slot, an older driver), and nothing on the diagram');
+  t += 10000;
+  renderStatus(raw, null, pon(1000, 5000000000, '1'));
+  ok(block.hidden === false && pv() === 'Downstream in usemeasuring', 'pon load: the first poll has nothing to compare with');
+  t += 10000;
+  renderStatus(raw, null, pon(81000, 5000000000 + half, '1'));
+  ok(pv() === 'Downstream in use\u2248 50 %Sent to all ONUs\u2248 1166 Mbit/s of 2332',
+     'pon load: half the payload idle is 50 %, past 32 bits of idle frames, with the rate it stands for');
+  t += 10000;
+  renderStatus(raw, null, pon(161000, 5000000000 + half + 571253760, '1'));
+  ok(/\u2248 2\.0 %/.test(pv()) && /\u2248 46\.6 Mbit\/s/.test(pv()), 'pon load: under 10 % it shows one decimal');
+  t += 10000;
+  renderStatus(raw, null, pon(241000, 5000000000 + 2 * half + 571253760, '0'));
+  ok(pv() === 'Downstream in usemeasuring', 'pon load: FEC changing between two polls gives no figure');
+  t += 10000;
+  renderStatus(raw, null, pon(321000, 5000000000 + 2 * half + 571253760 + 80000 * 7776, '0'));
+  ok(/\u2248 0\.0 %/.test(pv()) && /of 2488$/.test(pv()), 'pon load: with FEC off the whole 38880 bytes count, all idle is 0 %');
+  t += 10000;
+  renderStatus(raw.replace('(O5)', '(O2)'), null, pon(401000, 5000000000 + 3 * half + 571253760 + 80000 * 7776, '0'));
+  ok(block.hidden === false && pv() === 'Downstream in use\u2014', 'pon load: outside O5 the section stays, with a dash');
+  t += 10000;
+  renderStatus(raw, null, pon(481000, 5000000000 + 4 * half + 571253760 + 80000 * 7776, '0'));
+  ok(pv() === 'Downstream in usemeasuring', 'pon load: and back in O5 it starts over');
+  {
+    const { ponLoad } = await import(join(root, 'web', 'status.js'));
+    const s = (sf, idle) => ({ ds_superframe: String(sf), ds_gem_idle: String(idle), ds_fec: '1' });
+    ponLoad(null);
+    ok(ponLoad(s(0x40000000 - 40000, 0)) === null, 'pon load: no figure without an earlier poll');
+    t += 10000;
+    ok(Math.abs(ponLoad(s(40000, half)).pct - 50) < 1e-9, 'pon load: the 30-bit frame counter wraps');
+    t += 10000;
+    ok(ponLoad(s(120000, half - 1)) === null, 'pon load: an idle count that went backwards (a reboot) gives no figure');
+    t += 10000;
+    ok(ponLoad(s(120000 + 800000, 2 * half)) === null,
+       'pon load: more frames than the time between the polls allows (a re-lock) gives no figure');
+    t += 10000;
+    ok(ponLoad(s(120000 + 880000, 2 * half + 80000 * 8000)) === null,
+       'pon load: more idle bytes than the frames hold gives no figure');
+    t += 10000;
+    ok(ponLoad({ ...s(120000 + 960000, 3 * half + 80000 * 8000), ds_gem_idle_sat: '1' }) === null,
+       'pon load: an interval in which the idle register read full gives no figure');
+    t += 10000;
+    ok(Math.abs(ponLoad({ ...s(120000 + 1040000, 4 * half + 80000 * 8000), ds_gem_idle_sat: '1' }).pct - 50) < 1e-9,
+       'pon load: an old saturation does not spoil later intervals');
+    t += 10000;
+    ok(ponLoad({ ds_superframe: '5', ds_gem_idle: 'x' }) === null && ponLoad(s(80005, half)) === null,
+       'pon load: a member that is not a number starts over');
+    ponLoad(null);
+  }
   Date.now = realNow;
 }
 

@@ -105,6 +105,33 @@ static void emit_chip_temp(int fd)
 	put_fd(fd, "}");
 }
 
+/* The text after `prefix` on the line of `buf` that starts with it, and its
+ * length in *len; 0 when no line does. */
+static const char *find_line(const char *buf, const char *prefix, unsigned long *len)
+{
+	unsigned long n = slen(prefix), i = 0, e;
+
+	while (buf[i]) {
+		for (e = i; buf[e] && buf[e] != '\n'; e++)
+			;
+		if (e - i >= n && spre(buf + i, prefix)) {
+			*len = e - i - n;
+			return buf + i + n;
+		}
+		i = buf[e] ? e + 1 : e;
+	}
+	return 0;
+}
+
+static void emit_member(int fd, const char *name, const char *v, unsigned long len)
+{
+	put_fd(fd, ",\"");
+	put_fd(fd, name);
+	put_fd(fd, "\":\"");
+	put_json_str(fd, v, len);
+	put_fd(fd, "\"");
+}
+
 /*
  * What the stick diagram on the Status tab needs beyond diag: the CPU and
  * memory figures, the ONU-ID and the host side of the link. Plain file
@@ -118,23 +145,50 @@ static void emit_chip_temp(int fd)
 static void emit_line(int fd, const char *name, const char *path,
 		      const char *prefix, char *buf, unsigned long cap)
 {
-	unsigned long n = slen(prefix), i = 0, e;
+	const char *v;
+	unsigned long len;
 
 	if (read_file(path, buf, cap) <= 0)
 		return;
-	while (buf[i]) {
-		for (e = i; buf[e] && buf[e] != '\n'; e++)
-			;
-		if (e - i >= n && spre(buf + i, prefix)) {
-			put_fd(fd, ",\"");
-			put_fd(fd, name);
-			put_fd(fd, "\":\"");
-			put_json_str(fd, buf + i + n, e - i - n);
-			put_fd(fd, "\"");
-			return;
-		}
-		i = buf[e] ? e + 1 : e;
-	}
+	v = find_line(buf, prefix, &len);
+	if (v)
+		emit_member(fd, name, v, len);
+}
+
+/*
+ * What the PON load figure is worked out from: the idle GEM frames the OLT
+ * sent (a 64-bit total), and the downstream superframe count and FEC bit
+ * of the sample that total comes from. One read of counters has all of
+ * them, so they belong together; status has the frame count too, but a
+ * driver sample between two reads would pair an idle count with a frame
+ * count one second ahead of it. A driver without ctr_ds_superframe (odi-oss
+ * before it had the line, or a stock slot) emits nothing and the page
+ * leaves the section out.
+ * ds_gem_idle_sat is how many samples read the idle register full (it is
+ * 32 bits, cleared on read, and fills in about 70 s); absent when none did.
+ */
+static void emit_pon_load(int fd)
+{
+	/* counters ends with one ctr_saturated line per counter that ever
+	 * read full, so it can outgrow the 2 KB the other reads use. */
+	char ct[4096];
+	const char *sf, *idle, *v;
+	unsigned long nsf, nidle, n;
+
+	if (read_file(GPON_COUNTERS, ct, sizeof(ct)) <= 0)
+		return;
+	sf = find_line(ct, "ctr_ds_superframe ", &nsf);
+	idle = find_line(ct, "ctr ds_gem_idle ", &nidle);
+	if (!sf || !idle)
+		return;
+	emit_member(fd, "ds_superframe", sf, nsf);
+	emit_member(fd, "ds_gem_idle", idle, nidle);
+	v = find_line(ct, "ctr_fec_now ds ", &n);
+	if (v)
+		emit_member(fd, "ds_fec", v, n);
+	v = find_line(ct, "ctr_saturated ds_gem_idle ", &n);
+	if (v)
+		emit_member(fd, "ds_gem_idle_sat", v, n);
 }
 
 static void emit_overview(int fd)
@@ -147,6 +201,7 @@ static void emit_overview(int fd)
 	emit_line(fd, "onu_id", GPON_STATUS, "onu_id ", buf, sizeof(buf));
 	emit_line(fd, "host_link", HOSTLINK_LINK, "", buf, sizeof(buf));
 	emit_line(fd, "host_mode", SERDES_STATE, "running=", buf, sizeof(buf));
+	emit_pon_load(fd);
 }
 
 /*
