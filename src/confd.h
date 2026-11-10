@@ -103,6 +103,7 @@
 #define PROC_STAT         "/proc/stat"
 #define PROC_MEMINFO      "/proc/meminfo"
 #define GPON_STATUS       "/proc/odi_gpon/status"
+#define GPON_COUNTERS     "/proc/odi_gpon/counters"
 #define UPTIME_FILE       "/proc/uptime"
 #define NTP_STATUS_FILE   "/tmp/ntp-status"
 /*

@@ -171,6 +171,9 @@ NV
     mkdir -p $Q/proc/odi_gpon $Q/sys/module/odi_switch/parameters /var/run
     printf "MemTotal:          27508 kB\nMemFree:            9120 kB\nMemAvailable:      14792 kB\n" > $Q/proc/meminfo
     printf "state 5 (O5)\no7_hold keep 0 held 0\nonu_id 13\n" > $Q/proc/odi_gpon/status
+    printf "ctr_samples 11\nctr_ds_superframe 305491896\nctr_fec_now ds 1\nctr ds_gem_idle 4843967295\n" > $Q/proc/odi_gpon/counters
+    # The counters behind the shared PON section. The file stands still, so
+    # the section shows "measuring".
     echo 1 > $Q/sys/module/odi_switch/parameters/host_link
     printf "setting=2500basex\nrunning=2500basex\nphase=steady\n" > /var/run/host-serdes
     uimage "Linux Kernel Image 6.18" 68d8a6f0 > $Q/dev/mtd4
