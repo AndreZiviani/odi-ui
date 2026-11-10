@@ -201,6 +201,83 @@ function chipBar(chip) {
       + 'Check the airflow around the router\'s SFP cage.'));
 }
 
+/*
+ * How full the downstream of the whole PON is, every ONU on the fibre
+ * together. The OLT fills what nobody needs with idle GEM frames, five
+ * bytes each, and they are addressed to nobody, so the share of a frame
+ * that was not idle is what the OLT sent to somebody. An estimate:
+ *
+ *   - the frame header (PCBd, with the bandwidth map), GEM headers and
+ *     management traffic count as used, so a PON with no traffic at all
+ *     reads a little above zero;
+ *   - with FEC on, the 16 parity bytes of each of the 153 code words of a
+ *     frame carry nothing and are taken out first;
+ *   - an OLT may send dummy frames instead of idle ones (G.984.3 lets it,
+ *     to control the idle pattern); they would read as load;
+ *   - downstream only: nothing here says how busy the upstream is.
+ *
+ * Counted against the superframe counter (one per 125 us frame, 30 bits)
+ * rather than the clock, so the poll interval drops out. confd takes the
+ * members from one read of /proc/odi_gpon/counters, where the driver puts
+ * the frame count of the sample its totals come from (src/status.c).
+ *
+ * Returns { pct, mbps, of } (of: what the frames can carry, less with FEC
+ * on), or null, rather than a clamped figure, on the
+ * first poll and whenever the interval cannot be trusted: FEC changed, the
+ * idle count went backwards (a reboot), the driver read the idle register
+ * full meanwhile, the frame count moved more than the time between the
+ * polls allows (the line re-locked), or the result is outside 0 to 100 %.
+ */
+const PON_FRAME = 38880;        /* bytes in 125 us at 2.488 Gbit/s */
+const PON_FEC_PARITY = 153 * 16;
+const GEM_IDLE = 5;
+let PREV_PON = null;
+function ponLoad(st) {
+  const sf = Number(st && st.ds_superframe);
+  const fec = st && typeof st.ds_fec === 'string' ? st.ds_fec.trim() : '';
+  const sat = st && typeof st.ds_gem_idle_sat === 'string' ? Number(st.ds_gem_idle_sat) : 0;
+  let idle = null;
+  try { idle = BigInt(String(st && st.ds_gem_idle).trim()); } catch (e) { /* not there */ }
+  if (!st || typeof st.ds_superframe !== 'string' || !Number.isFinite(sf) || !Number.isFinite(sat)
+      || idle === null) {
+    PREV_PON = null;
+    return null;
+  }
+  const now = Date.now();
+  const prev = PREV_PON;
+  PREV_PON = { at: now, sf, idle, fec, sat };
+  if (!prev || idle < prev.idle || fec !== prev.fec || sat !== prev.sat) return null;
+  const frames = (sf - prev.sf + 0x40000000) % 0x40000000;
+  if (frames <= 0 || frames > (now - prev.at) * 8 * 1.1 + 16) return null;
+  const payload = PON_FRAME - (fec === '1' ? PON_FEC_PARITY : 0);
+  const used = payload - Number(idle - prev.idle) * GEM_IDLE / frames;
+  const pct = 100 * used / payload;
+  if (pct < 0 || pct > 100) return null;
+  return { pct, mbps: used * 8 * 8000 / 1e6, of: payload * 8 * 8000 / 1e6 };
+}
+
+/* The section of its own: shown when the driver has the counters, a dash
+   outside O5, where there is no downstream to measure. */
+function renderPon(st, state) {
+  const block = $('#ponblock');
+  const have = !!st && typeof st.ds_superframe === 'string' && typeof st.ds_gem_idle === 'string';
+  block.hidden = !have;
+  const dl = $('#pon');
+  dl.textContent = '';
+  if (!have || state !== 'O5') {
+    ponLoad(null);
+    if (have) dl.append(el('dt', null, 'Downstream in use'), el('dd', null, '\u2014'));
+    return;
+  }
+  const load = ponLoad(st);
+  dl.append(el('dt', null, 'Downstream in use'),
+    el('dd', load ? 'num' : null, load ? `\u2248 ${load.pct < 10 ? load.pct.toFixed(1) : load.pct.toFixed(0)} %` : 'measuring'));
+  if (load) {
+    dl.append(el('dt', null, 'Sent to all ONUs'),
+      el('dd', 'num', `\u2248 ${load.mbps < 100 ? load.mbps.toFixed(1) : load.mbps.toFixed(0)} Mbit/s of ${load.of.toFixed(0)}`));
+  }
+}
+
 function renderStatus(raw, chip, st) {
   const s = sections(raw);
   $('#raw').textContent = raw;
@@ -274,6 +351,7 @@ function renderStatus(raw, chip, st) {
   pill.title = ok ? 'Registered, receive level in window' : 'Not healthy: see Status';
 
   renderFlow(s['mib dump counter port all'] || '');
+  renderPon(st, state);
 
   renderOverview({
     rx, tx, state, los: lost, chip,
@@ -299,4 +377,4 @@ function lineFacts(raw) {
   };
 }
 
-export { renderStatus, lineFacts, OPTICS, STATES, tight };
+export { renderStatus, lineFacts, ponLoad, OPTICS, STATES, tight };

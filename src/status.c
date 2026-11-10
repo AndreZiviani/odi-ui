@@ -157,13 +157,13 @@ static void emit_line(int fd, const char *name, const char *path,
 
 /*
  * What the PON load figure is worked out from: the idle GEM frames the OLT
- * sent (a 64-bit total in counters) and the downstream superframe count
- * and FEC state (status). The driver moves both once a second, in one
- * sample, but they are two files: a sample that lands between the two
- * reads would pair an idle count with a frame count one second ahead of
- * it, a fifteenth of a 15 s poll. So status is read on both sides of
- * counters, and the three members go out only when the frame count is the
- * same on both; one more try, then nothing, and the page keeps waiting.
+ * sent (a 64-bit total), and the downstream superframe count and FEC bit
+ * of the sample that total comes from. One read of counters has all of
+ * them, so they belong together; status has the frame count too, but a
+ * driver sample between two reads would pair an idle count with a frame
+ * count one second ahead of it. A driver without ctr_ds_superframe (odi-oss
+ * before it had the line, or a stock slot) emits nothing and the page
+ * leaves the section out.
  * ds_gem_idle_sat is how many samples read the idle register full (it is
  * 32 bits, cleared on read, and fills in about 70 s); absent when none did.
  */
@@ -171,41 +171,24 @@ static void emit_pon_load(int fd)
 {
 	/* counters ends with one ctr_saturated line per counter that ever
 	 * read full, so it can outgrow the 2 KB the other reads use. */
-	char st[2048], ct[4096];
-	char sf[16];
-	const char *v, *idle, *fec, *sat;
-	unsigned long n, nidle, nfec, nsat, i;
-	int pass;
+	char ct[4096];
+	const char *sf, *idle, *v;
+	unsigned long nsf, nidle, n;
 
-	for (pass = 0; pass < 2; pass++) {
-		if (read_file(GPON_STATUS, st, sizeof(st)) <= 0)
-			return;
-		v = find_line(st, "ds_superframe ", &n);
-		if (!v || n >= sizeof(sf))
-			return;
-		for (i = 0; i < n; i++)
-			sf[i] = v[i];
-		sf[n] = 0;
-		if (read_file(GPON_COUNTERS, ct, sizeof(ct)) <= 0)
-			return;
-		idle = find_line(ct, "ctr ds_gem_idle ", &nidle);
-		if (!idle)
-			return;
-		if (read_file(GPON_STATUS, st, sizeof(st)) <= 0)
-			return;
-		v = find_line(st, "ds_superframe ", &i);
-		if (!v || i != n || !spre(v, sf))
-			continue;
-		emit_member(fd, "ds_superframe", sf, n);
-		emit_member(fd, "ds_gem_idle", idle, nidle);
-		fec = find_line(st, "fec_now ds ", &nfec);
-		if (fec)
-			emit_member(fd, "ds_fec", fec, nfec);
-		sat = find_line(ct, "ctr_saturated ds_gem_idle ", &nsat);
-		if (sat)
-			emit_member(fd, "ds_gem_idle_sat", sat, nsat);
+	if (read_file(GPON_COUNTERS, ct, sizeof(ct)) <= 0)
 		return;
-	}
+	sf = find_line(ct, "ctr_ds_superframe ", &nsf);
+	idle = find_line(ct, "ctr ds_gem_idle ", &nidle);
+	if (!sf || !idle)
+		return;
+	emit_member(fd, "ds_superframe", sf, nsf);
+	emit_member(fd, "ds_gem_idle", idle, nidle);
+	v = find_line(ct, "ctr_fec_now ds ", &n);
+	if (v)
+		emit_member(fd, "ds_fec", v, n);
+	v = find_line(ct, "ctr_saturated ds_gem_idle ", &n);
+	if (v)
+		emit_member(fd, "ds_gem_idle_sat", v, n);
 }
 
 static void emit_overview(int fd)
