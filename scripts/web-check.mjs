@@ -345,12 +345,18 @@ ok(true, 'renderStatus runs against a diag capture');
      && /O5 In service/.test(ov()) && /ONU-ID 13/.test(ov()) && /14\.4 MiB free/.test(ov())
      && /SoC 52 °C/.test(ov()) && /2\.5G \(2500BASE-X\)/.test(ov()) && /Linked/.test(ov()),
      'overview: every part shows its figure from one /api/status answer');
+  ok(/Light in2\.15dBmLight out/.test(ov()), 'overview: the fibre names both directions, light in and light out');
   ok(/CPUmeasuring/.test(ov()) && /↓ measuring/.test(ov()), 'overview: CPU and rates wait for a second poll');
   t += 10000;
   renderStatus(raw2, null, st('150 0 150 900 0 0 0 0 0 0'));
   ok(/50 % busy/.test(ov()), 'overview: CPU busy is the non-idle share between two polls');
   ok(/↓ 30\.0 kB\/s/.test(ov()) && /↑ 6\.00 kB\/s/.test(ov()),
      'overview: the switch rates are the fibre port deltas, down what it receives, up what it sends');
+  {
+    const line = doc.querySelector('#overview').children[1];
+    ok(line.className === 'ov-line ov-glass flowing' && textOf(line) === '\u2193 30.0 kB/s\u2191 6.00 kB/s',
+       'overview: in service the fibre line moves and carries the two rates of the fibre side');
+  }
   t += 10000;
   renderStatus(raw2, null, { raw: raw2, host_link: '0' });
   ok(/Memory—/.test(ov()) && /ONU-ID —/.test(ov()) && /No link/.test(ov()) && /CPUmeasuring/.test(ov()),
