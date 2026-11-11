@@ -59,6 +59,14 @@ cat > /etc/scripts/flash <<'FLASH'
 #!/bin/sh
 case "$1" in
 all)
+	# /etc/config/failstore names a store whose dump fails the way the odi-oss
+	# script does without its file: one line on stderr and exit 1.
+	# /etc/config/emptystore names one that prints nothing and exits 0.
+	if [ "$(cat /etc/config/failstore 2>/dev/null)" = "$2" ]; then
+		echo "flash: /var/config/lastgood_$2.xml is not there -- is the config partition mounted?" >&2
+		exit 1
+	fi
+	[ "$(cat /etc/config/emptystore 2>/dev/null)" = "$2" ] && exit 0
 	# /etc/config/padcs holds a row count: the cs store then starts with that
 	# many table rows, the way a stick that ran a router firmware keeps its WAN
 	# table, and the hs store carries GPON_SN, so a cut shows as a missing key.
@@ -729,6 +737,10 @@ done
 # says which, so the page applies the first at once and asks before the second.
 check "a VLAN key needs omci, and does not interrupt" yes \
 	"$(err "$(post 'VLAN_MANU_TAG_VID=120')" '"needs":["omci"],"stock":false,"interrupts":false')"
+check "VLAN_EAPOL_UNTAGGED is written and applied live by omci" yes \
+	"$(err "$(post 'VLAN_EAPOL_UNTAGGED=1')" '"needs":["omci"],"stock":false,"interrupts":false')"
+check "VLAN_EAPOL_UNTAGGED outside 0 and 1 is refused" yes \
+	"$(err "$(post 'VLAN_EAPOL_UNTAGGED=2')" 'not one of the values')"
 check "transparent mode is a listed value and does not interrupt" yes \
 	"$(err "$(post 'VLAN_MANU_MODE=0')" '"ok":true,"value":"0"')"
 check "an identity key needs omci and interrupts" yes \
@@ -974,6 +986,24 @@ check "and says why" yes \
 check "a backup that would be cut is refused" 500 \
 	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
 rm -f /etc/config/padcs
+# A dump that failed or printed nothing is not a backup either. flash's error
+# line comes down the same pipe as the store, so by byte count alone it passed
+# for one, and an empty hs dump was accepted as it was.
+echo hs > /etc/config/failstore
+check "a backup whose hs dump failed is refused" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
+check "and the values are still served, so the page opens" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" '"VLAN_MANU_TAG_VID":"110"')"
+echo cs > /etc/config/failstore
+check "a backup whose cs dump failed is refused" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
+rm -f /etc/config/failstore
+echo hs > /etc/config/emptystore
+check "a backup whose hs dump is empty is refused" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
+rm -f /etc/config/emptystore
+check "and with both dumps back the backup is served" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
 
 echo "== diagnostics bundle"
 # /api/diag runs the image /etc/scripts/diag-bundle.sh and streams the file it

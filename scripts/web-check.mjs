@@ -1736,10 +1736,18 @@ EDITS.clear();
     ok(/Not used in this mode/.test(textOf(vidRow())) && /Stored/.test(textOf(vidRow())),
        'gated: and shows no value in the field, only under Details');
     ok(!EDITS.has('VLAN_MANU_TAG_VID'), 'gated: and drops the VLAN ID edit made before');
+    {
+      const eapRow = rowsOf('#set-vlan').find((r) => r.dataset.name === 'VLAN_EAPOL_UNTAGGED');
+      ok(field('VLAN_EAPOL_UNTAGGED') === null && eapRow && /Not editable now/.test(textOf(eapRow))
+         && /VLAN_CFG_TYPE=1/.test(textOf(eapRow)),
+         'gated: config mode 0 locks the EAPOL switch too, beside the VLAN ID');
+    }
     field('VLAN_CFG_TYPE').value = '1';
     field('VLAN_CFG_TYPE').oninput();
     ok(field('VLAN_MANU_TAG_VID') !== null && !EDITS.has('VLAN_CFG_TYPE'),
        'gated: setting mode 1 back unlocks it, with nothing pending');
+    ok(field('VLAN_EAPOL_UNTAGGED') !== null && field('VLAN_EAPOL_UNTAGGED').tagName === 'select',
+       'gated: and the EAPOL switch is a choice again');
     EDITS.set('VLAN_CFG_TYPE', '0');
     EDITS.set('VLAN_MANU_TAG_VID', '100');
     ok(invalidEdits().some(([k, why]) => k === 'VLAN_MANU_TAG_VID' && /ignored by the firmware/.test(why)),

@@ -2159,7 +2159,7 @@ void serve(int conn)
 	 * cannot show a form without it.
 	 */
 	if (seq(path, "/api/init")) {
-		long n = load_values();
+		long n = load_values(0);
 
 		if (n < 0) {
 			respond(conn, "500 Internal Server Error", "application/json", 0);
@@ -2180,7 +2180,7 @@ void serve(int conn)
 	}
 
 	if (seq(path, "/api/values")) {
-		long n = load_values();
+		long n = load_values(0);
 
 		if (n == -2) {
 			respond(conn, "500 Internal Server Error", "application/json", 0);
@@ -2216,7 +2216,7 @@ void serve(int conn)
 	 * it is why it needs the same credential as everything else.
 	 */
 	if (seq(path, "/api/backup")) {
-		long n = load_values();
+		long n = load_values(1);
 
 		/* A cut backup would be missing the hs store, the one part that
 		 * cannot be regenerated, while looking complete. */
@@ -2226,6 +2226,8 @@ void serve(int conn)
 				     "copy /var/config off the stick instead\n");
 			return;
 		}
+		/* Nor one where a dump failed or printed nothing: the file would
+		 * hold flash's error line, or no hs store, under the same header. */
 		if (n < 0) {
 			respond(conn, "500 Internal Server Error", "text/plain", 0);
 			put_fd(conn, "flash failed\n");

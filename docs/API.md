@@ -355,6 +355,8 @@ it with the rest of `/etc/config`.
 ## Backup and reset
 
     GET  /api/backup                      both config stores as a file, identity included
+                                          500 when a dump (`flash all cs`, `flash all hs`)
+                                          exits non-zero, prints nothing or does not fit
     POST /api/reset      _confirm=reset   `flash default cs` (service store only;
                                           `hs`, the hardware identity, is not reachable here)
 
