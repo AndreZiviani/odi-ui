@@ -13,7 +13,7 @@ import {
   S, EDITS, provenance, applyOf, dependsUnmet, gatesOthers, dropIgnoredEdits, decodeMask,
   CLASS_LABEL, CLASS_MEANS, costBadge, imageAware, settingOf, identitySwitchOn,
 } from './state.js';
-import { hexAscii, validateInput } from './validate.js';
+import { hexAscii, snFromHex, snToHex, validateInput } from './validate.js';
 import { renderFixedMeEditor } from './expert.js';
 
 /*
@@ -257,6 +257,10 @@ function renderValue(row, raw, readonly = false) {
      to model the one. */
   let follow = null;
   input.oninput = input.onchange = () => {
+    /* A serial number typed or pasted as 16 hex digits becomes the form the
+       stick stores, in the field, so what is saved is what is shown. */
+    const sn = row.type === 'gponsn' ? snFromHex(input.value) : null;
+    if (sn) input.value = sn;
     const v = input.value;
     const same = v === raw || (fallback !== undefined && v === fallback);
     if (same) EDITS.delete(row.name); else EDITS.set(row.name, v);
@@ -300,6 +304,19 @@ function renderValue(row, raw, readonly = false) {
     paint(shown);
     follow = paint;
     box.append(bits);
+  }
+
+  /* The serial number as 16 hex digits, the form on the label of an ISP
+     modem, beside the form the stick stores; it follows the field. */
+  if (row.type === 'gponsn') {
+    const aside = el('div', 's-aside');
+    const paint = (v) => {
+      const hex = snToHex(v);
+      aside.textContent = hex ? 'In hex: ' + hex : 'Also takes the 16 hex digits of a modem ID';
+    };
+    paint(input.value);
+    follow = paint;
+    box.append(aside);
   }
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form

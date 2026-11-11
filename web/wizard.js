@@ -34,7 +34,7 @@
 
 import { $, el } from './dom.js';
 import { S, imageAware, settingOf, vlanRisk, costBadge } from './state.js';
-import { valueProblem, passwordProblem, sshKeyProblem } from './validate.js';
+import { valueProblem, passwordProblem, sshKeyProblem, snFromHex } from './validate.js';
 import { withPairs, encode, applyOmci } from './save.js';
 import { renderAll } from './config.js';
 import { OPTICS, STATES, lineFacts } from './status.js';
@@ -396,8 +396,15 @@ function stepIsp(body) {
   const f = W.f;
   body.append(el('p', 'lede', 'What your ISP gave you for this connection. A field already filled in is what '
     + 'the stick holds now: leave it as it is unless your ISP says otherwise.'));
-  const sn = field('wiz-sn', 'Serial number', textInput(f.sn, (v) => { f.sn = v.trim(); }),
-    'Four letters and eight hex digits, such as ABCD0123ABCD. A wrong serial keeps the stick off the line.');
+  /* 16 hex digits, the way a modem label gives the serial, become the stored form in the field. */
+  const snIn = textInput(f.sn, (v) => {
+    const conv = snFromHex(v);
+    f.sn = conv || v.trim();
+    if (conv) snIn.value = conv;
+  });
+  const sn = field('wiz-sn', 'Serial number', snIn,
+    'Four letters and eight hex digits, such as ABCD0123ABCD. The same number as 16 hex digits, the modem ID '
+    + 'on the label of an ISP modem, is converted. A wrong serial keeps the stick off the line.');
   const pl = field('wiz-ploam', 'PLOAM password (optional)',
     textInput(f.ploam, (v) => { f.ploam = v; },
       { secret: true, placeholder: S.VALUES.GPON_PLOAM_PASSWD ? 'Unchanged: a password is set' : 'None set' }),

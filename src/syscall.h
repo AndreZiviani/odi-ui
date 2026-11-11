@@ -58,6 +58,12 @@
 #define SYSLOG_READ_ALL 3
 #define __NR_rt_sigaction 4194
 #define __NR_kill       4037
+/* flock(2), o32 number 4000 + 143; operation bits are the generic ones. */
+#define __NR_flock      4143
+#define LOCK_EX         2
+#define LOCK_NB         4
+#define LOCK_UN         8
+#define EAGAIN_MIPS     11
 #define __NR_poll       4188
 #define __NR_clock_gettime 4263
 #define CLOCK_REALTIME  0
