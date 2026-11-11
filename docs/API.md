@@ -249,6 +249,7 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           while `/etc/config/breadcrumbs.on` exists.
                                           Plain file reads; the UI never writes them
     POST /api/firmware   action=try|commit|reboot&partition=N
+                                          reboot answers 409 while a write is running
                                           a refused commit answers
                                           {"ok":false,"error":"commit N: <nv reason>"},
                                           e.g. while confirm-arp exists; there is no

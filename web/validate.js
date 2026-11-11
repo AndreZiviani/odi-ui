@@ -306,7 +306,10 @@ function valueProblem(row, raw, ctx = defaultCtx) {
     return 'a multicast address (the second digit must be even); the stick cannot use it';
   }
   if (row.type === 'elanmac' && /^0+$/.test(raw)) return 'all zeros is not an address';
-  if (row.type === 'gponsn' && !/^[\x21-\x7e]{4}[0-9a-fA-F]{8}$/.test(raw)) {
+  if (row.type === 'gponsn' && SN_HEX16.test(snBare(raw)) && !snFromHex(raw)) {
+    return 'as 16 hex digits, the first eight must be the codes of four printable characters';
+  }
+  if (row.type === 'gponsn' && !SN_FORM.test(raw)) {
     return 'four characters of vendor id and eight hex digits, 12 in all';
   }
   if (row.type === 'gponsn' && /["<&]/.test(raw)) return 'a quote, < or & cannot be stored';
@@ -337,6 +340,33 @@ function valueProblem(row, raw, ctx = defaultCtx) {
     if (!allowed.includes(raw)) return 'not one of: ' + allowed.join(', ');
   }
   return rangeBad(row, raw);
+}
+
+/*
+ * The serial number written out in hex: 16 digits, the vendor id as the codes
+ * of its four characters. That is how the label of an ISP modem and some
+ * customer portals give it ("modem ID"), often in groups. The stick stores
+ * four characters and eight hex digits, the form the gponsn verb takes, so
+ * the fields turn the one into the other as it is typed and the stored form
+ * never changes.
+ *
+ * snFromHex() gives the stored form, or null for anything that is not 16 hex
+ * digits whose first four bytes are characters the stick can store.
+ * snToHex() is the way back, for the line under the field.
+ */
+const SN_FORM = /^[\x21-\x7e]{4}[0-9a-fA-F]{8}$/;
+const SN_HEX16 = /^[0-9a-fA-F]{16}$/;
+const snBare = (text) => String(text).replace(/[\s:.-]/g, '');
+function snFromHex(text) {
+  const h = snBare(text);
+  if (!SN_HEX16.test(h)) return null;
+  const vendor = hexAscii(h.slice(0, 8));
+  if (vendor === null || !/^[\x21-\x7e]{4}$/.test(vendor) || /["<&]/.test(vendor)) return null;
+  return vendor + h.slice(8);
+}
+function snToHex(sn) {
+  if (!SN_FORM.test(String(sn))) return null;
+  return ([...sn.slice(0, 4)].map((c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('') + sn.slice(4)).toUpperCase();
 }
 
 /*
@@ -492,7 +522,7 @@ function restoreSizeProblem(size) {
 }
 
 export {
-  rangeBad, valueProblem, hostMaskProblem, keyRuleProblem, hostportProblem, hexAscii, validateInput, invalidEdits,
+  rangeBad, valueProblem, hostMaskProblem, keyRuleProblem, hostportProblem, hexAscii, snFromHex, snToHex, validateInput, invalidEdits,
   passwordProblem, sshKeyProblem, pingProblem, meProblem, entityProblem, uploadSizeProblem, tarProblem,
   restoreSizeProblem, UPLOAD_MAX, RESTORE_MAX,
   fwdopProblem, fixedMeRowProblem, fixedMeRowProblems, fixedMeSetProblem, fixedMeParse, fixedMeSerialise, FME_MAX_ENTRIES,

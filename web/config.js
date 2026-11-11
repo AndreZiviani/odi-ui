@@ -13,7 +13,7 @@ import {
   S, EDITS, provenance, applyOf, dependsUnmet, gatesOthers, dropIgnoredEdits, decodeMask,
   CLASS_LABEL, CLASS_MEANS, costBadge, imageAware, settingOf, identitySwitchOn,
 } from './state.js';
-import { hexAscii, validateInput } from './validate.js';
+import { hexAscii, snFromHex, snToHex, validateInput } from './validate.js';
 import { renderFixedMeEditor } from './expert.js';
 
 /*
@@ -257,6 +257,10 @@ function renderValue(row, raw, readonly = false) {
      to model the one. */
   let follow = null;
   input.oninput = input.onchange = () => {
+    /* A serial number typed or pasted as 16 hex digits becomes the form the
+       stick stores, in the field, so what is saved is what is shown. */
+    const sn = row.type === 'gponsn' ? snFromHex(input.value) : null;
+    if (sn) input.value = sn;
     const v = input.value;
     const same = v === raw || (fallback !== undefined && v === fallback);
     if (same) EDITS.delete(row.name); else EDITS.set(row.name, v);
@@ -300,6 +304,19 @@ function renderValue(row, raw, readonly = false) {
     paint(shown);
     follow = paint;
     box.append(bits);
+  }
+
+  /* The serial number as 16 hex digits, the form on the label of an ISP
+     modem, beside the form the stick stores; it follows the field. */
+  if (row.type === 'gponsn') {
+    const aside = el('div', 's-aside');
+    const paint = (v) => {
+      const hex = snToHex(v);
+      aside.textContent = hex ? 'In hex: ' + hex : 'Also takes the 16 hex digits of a modem ID';
+    };
+    paint(input.value);
+    follow = paint;
+    box.append(aside);
   }
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form
@@ -356,6 +373,17 @@ function renderRow(row, readonly) {
         + 'Over ssh: flash set OMCI_CUSTOM_ME ' + ((Number.isFinite(me) ? me : 0) | 0x100)
         + ', then Apply now.'));
     }
+  }
+  /* omcid builds its rules from the override and leaves the attribute as the
+     OLT wrote it, where the stock firmware writes the code over it. So the
+     OMCI tab and `omcicli mib get 84` keep showing the old FwdOp, which reads
+     as "not applied" to anyone following a guide for the stock firmware. Said
+     by the row while a value is stored, on the image that behaves this way. */
+  if (row.name === 'RTK_DEVINFO_SPECVER' && imageAware() && S.VALUES[row.name]) {
+    left.append(el('p', 's-help', 'The OMCI tab and omcicli mib get 84 keep showing the FwdOp the OLT set '
+      + '(0x10, for example): the override changes how frames are forwarded, not that value. '
+      + 'To see it in force: omcli vlan over ssh, or pon/omcli_vlan.txt in the diagnostics bundle '
+      + '(System, Download diagnostics).'));
   }
   /* Said once by the identity switch above the rows, so each row carries only
      a tag, and the sentence goes in its help. */

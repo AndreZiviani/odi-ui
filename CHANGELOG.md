@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: once a "VLAN forward operation override" (`RTK_DEVINFO_SPECVER`) is
+  stored, its row says that the OMCI tab and `omcicli mib get 84` keep showing
+  the FwdOp the OLT set, and that `omcli vlan` or `pon/omcli_vlan.txt` in the
+  diagnostics bundle (AndreZiviani/odi-oss#344) shows the override in force.
+  The sentence was only in the help under Details, and the unchanged 0x10 read
+  as "not applied" to users coming from the stock firmware, which writes the
+  code over the attribute. Only the page changes. Refs AndreZiviani/odi-oss#301.
+
+- Firmware: a reboot is refused while a firmware write is running. `POST
+  /api/firmware action=reboot` answers 409 with a message the page shows, the
+  same refusal `/api/upload` already gave; before, a reboot could cut a write
+  half way through the erase. The Reboot button is off while the write state
+  is running, also when the write was started from the page (held from the
+  request on, released if it fails), and on again when it ends. "A write is
+  running" is now one test for the reboot and upload refusals and for the
+  status: the pid in the state file is alive, or the writer lock
+  (`/tmp/fwu.state.lock`, which fwu.sh inherits) is held, so a killed
+  supervisor does not hide a flasher still writing. A state left at `running`
+  with neither is reported by `GET /api/firmware` as `unknown` (after reading
+  the file once more, in case the result was just recorded): the writer is
+  gone and no result was recorded, as after a `--foreground` write. The page
+  says so, tells you to check the partition before trying or rebooting, and
+  leaves Reboot on. The write follow loop no longer
+  reads a failed status poll as "written": a failed poll is unknown, it keeps
+  asking every 3 s, and after 40 failures in a row (two minutes) it says contact
+  was lost and the result is unknown. The reboot action is the only route that reboots the stick, so no other
+  needed the same check. Refs #79.
+
 - Status: under the receive meter, the launch power the OLT reports in its PON-ID (AndreZiviani/odi-oss#322) and what the path loses between it and the stick, with the fibre plant class the OLT names: "The OLT sends 3.4 dBm, so the path loses about 19.9 dB (it names its fibre plant class B+)". With the reach extender flag the line says so and the path is the one from the extender. `/api/status` gains `pon_id` (odi-oss driver), a plain file read; the line is left out when the OLT sends no PON-ID or no power, or without a receive reading, and the identifier in the PON-ID is not shown. The receive reading may be a few dB off, and so may the loss.
 
 - Firmware: a commit is accepted only for the partition the stick is running,
@@ -23,6 +51,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PON. The bar is blue under 50 %, yellow from 50 % and red from 80 %, as a
   guide and not a limit. The page keeps no history; that stays the metrics
   exporter's job. Only the page changes, confd and the API are untouched.
+
+- Config and the setup wizard: the serial number field also takes the 16 hex
+  digits some ISPs print as a modem ID, the vendor id as the codes of its four
+  characters, with or without spaces, colons, dots or hyphens. It is converted
+  in the field to the four characters and eight hex digits the stick stores,
+  so what is saved does not change and confd is untouched. Under the field on
+  the Config tab the serial is shown in hex as well. 16 hex digits whose first
+  four bytes are not characters the stick can store are refused, with a
+  message that says so.
 
 - Firmware: next to Commit (the Trial boot banner and the running partition),
   the page warns while `/etc/config/confirm-arp` exists: every boot of a

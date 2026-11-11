@@ -1272,6 +1272,70 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
      'the running slot card carries both notes next to Commit');
   t = await fwText({ ...trialFW, exe: '/bin/confd' });
   ok(!/confirm-arp|breadcrumbs/.test(t), 'and neither without the files');
+
+  /* The Reboot button while a write runs. The follow loop that a running state
+     starts is parked: its poll answers and its nap never ends. */
+  const fwm = await import(join(root, 'web', 'firmware.js'));
+  const rebootBtn = () => {
+    let b = null;
+    const visit = (n) => { if (n.classList && n.classList.contains('cost-reboot')) b = n; (n.children || []).forEach(visit); };
+    visit(doc.querySelector('#parts'));
+    return b;
+  };
+  /* Before the parked loops below, which leave a follow running for good.
+     A write started from this page: the button was rendered before it, so it
+     is held when the write starts, not only by the next render. */
+  const idleFW = { ...trialFW, exe: '/bin/confd' };
+  await fwText(idleFW);
+  const btn0 = rebootBtn();
+  let seen = null;
+  const keepGet = fwm.followDeps.get, keepFetch = globalThis.fetch, keepConfirm = globalThis.confirm;
+  fwm.followDeps.get = async () => {
+    seen = { disabled: btn0.disabled, title: btn0.title };
+    return { write: { state: 'ok', slot: '0', rc: '', log: '' } };
+  };
+  globalThis.confirm = () => true;
+  let atPost = null;
+  globalThis.fetch = async (path, opts) => {
+    if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
+    atPost = { disabled: btn0.disabled, title: btn0.title };
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  await fwm.writeImage('0', idleFW);
+  for (let i = 0; i < 20 && rebootBtn() === btn0; i++) await new Promise((r) => setTimeout(r, 0));
+  fwm.followDeps.get = keepGet; globalThis.fetch = keepFetch; globalThis.confirm = keepConfirm;
+  ok(seen && seen.disabled === true && /being written/.test(seen && seen.title),
+     'reboot: a write started on this page turns the button off from the start');
+  ok(rebootBtn() !== btn0 && !rebootBtn().disabled, 'reboot: and the render after the write turns it on');
+  ok(atPost && atPost.disabled === true && /being written/.test(atPost.title),
+     'reboot: the button is already off while the write request is pending');
+  /* A request that fails or is refused gives the button back. */
+  for (const post of [async () => ({ ok: true, json: async () => ({ ok: false, error: 'refused' }) }),
+                      async () => { throw new Error('network'); }]) {
+    await fwText(idleFW);
+    const b1 = rebootBtn();
+    globalThis.confirm = () => true;
+    globalThis.fetch = async (path, opts) => (opts && opts.method === 'POST' ? post() : keepFetch(path, opts));
+    await fwm.writeImage('0', idleFW);
+    globalThis.fetch = keepFetch; globalThis.confirm = keepConfirm;
+    ok(b1.disabled === false, 'reboot: a write request that is refused or fails leaves the button on');
+  }
+  /* A writer that is gone with no recorded result: the page says so, and Reboot is not held. */
+  await fwText({ ...idleFW, write: { state: 'unknown', pid: '4242', slot: '0', rc: '', log: '' } });
+  ok(rebootBtn().disabled === false && /ended without recording a result/.test(textOf(doc.querySelector('#parts'))),
+     'reboot: an unknown write result leaves Reboot on and says the writer is gone');
+
+  const keepSleep = fwm.followDeps.sleep;
+  fwm.followDeps.sleep = () => new Promise(() => {});
+  await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'running', pid: '4242', slot: '0', rc: '', log: '' } });
+  ok(rebootBtn() && rebootBtn().disabled === true && /being written/.test(rebootBtn().title),
+     'reboot: the button is off while a write runs, and says why');
+  await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'ok', pid: '4242', slot: '0', rc: '', log: '' } });
+  ok(rebootBtn() && !rebootBtn().disabled, 'reboot: and on again once the write is no longer running');
+  await fwText({ ...trialFW, exe: '/bin/confd' });
+  ok(rebootBtn() && !rebootBtn().disabled, 'reboot: and on when there is no write at all');
+
+  fwm.followDeps.sleep = keepSleep;
   API['/api/firmware'] = keep;
 }
 
@@ -1419,6 +1483,23 @@ ok(['255.0.255.0', '0.0.0.0', '255.255.255.255', '255.255.255.254', '254.0.0.0',
 ok(!vp('gponsn', 'ODI0123456aB') && !vp('gponsn', 'TMBB0077D9B9'), 'gponsn accepts four characters and eight hex digits');
 ok(['ODI12345678', 'ODI0123456789', 'ODI01234567G', 'OD 012345678', 'ODI"01234567', ''].every((v) => vp('gponsn', v)),
    'gponsn rejects 11 and 13 characters, a non-hex serial, a space and a quote');
+{
+  /* The serial number as 16 hex digits, a modem ID, and the way back. */
+  const { snFromHex, snToHex } = await import(join(root, 'web', 'validate.js'));
+  ok(snFromHex('4F44495800000009') === 'ODIX00000009' && snFromHex('4f44 4958-0000:00a9') === 'ODIX000000a9'
+     && snFromHex(' 4F44.4958 0000 0009 ') === 'ODIX00000009',
+     'serial in hex: 16 hex digits become four characters and eight digits, with or without separators');
+  ok([' ', 'ODIX00000009', '4F4449580000000', '4F444958000000090', '4F44495800000g09', '0044495800000009',
+      '4F44492000000009', '4F44492200000009', '4F44493C00000009', '4F44492600000009', '4F44497F00000009']
+    .every((v) => snFromHex(v) === null),
+     'serial in hex: not 16 hex digits, or a vendor id that is not four storable characters, is left alone');
+  ok(snToHex('ODIX000000a9') === '4F444958000000A9' && snToHex('ODIX0000000') === null && snToHex('') === null
+     && snFromHex(snToHex('TMBB0077D9B9')) === 'TMBB0077D9B9',
+     'serial in hex: the stored form reads back as 16 hex digits, and round-trips');
+  ok(/first eight/.test(vp('gponsn', '0044495800000009')) && /12 in all/.test(vp('gponsn', '4F4449580000000'))
+     && !vp('gponsn', snFromHex('4F44495800000009')),
+     'serial in hex: 16 digits with an unprintable vendor id say so, 15 get the usual message');
+}
 ok(!vp('hex20', '31323334353637383930'), 'hex20 accepts 20 hex digits');
 ok(['3132333435363738393', '313233343536373839303132', '1234', 'zz323334353637383930'].every((v) => vp('hex20', v)),
    'hex20 rejects odd, longer, shorter and non-hex values (the kernel would read a shorter one as text)');
@@ -1615,6 +1696,35 @@ EDITS.clear();
     };
     const vidRow = () => rowsOf('#set-vlan').find((r) => r.dataset.name === 'VLAN_MANU_TAG_VID');
     renderAll();
+    {
+      /* The serial number field takes a modem ID and shows the stored form. */
+      let sn = null;
+      let aside = null;
+      walk(doc.querySelector('#set-line'), (x) => {
+        if (x.tagName === 'input' && x.dataset && x.dataset.name === 'GPON_SN') sn = x;
+      });
+      const find = () => {
+        walk(doc.querySelector('#set-line'), (x) => {
+          if (x.children && x.children.includes(sn)) aside = x.children.find((c) => c.className === 's-aside');
+        });
+        return textOf(aside);
+      };
+      const was = sn.value;
+      sn.value = 'ODIX00000001';
+      sn.oninput();
+      ok(find() === 'In hex: 4F44495800000001', 'serial field: the serial is shown in hex under the field');
+      sn.value = '4f44 4958 0000 00a9';
+      sn.oninput();
+      ok(sn.value === 'ODIX000000a9' && EDITS.get('GPON_SN') === 'ODIX000000a9' && find() === 'In hex: 4F444958000000A9'
+         && !sn.classList.contains('invalid'),
+         'serial field: 16 hex digits are converted in the field, and the converted form is the pending edit');
+      sn.value = 'ODIX0000';
+      sn.oninput();
+      ok(/modem ID/.test(find()), 'serial field: an unfinished serial shows the hint instead');
+      sn.value = was;
+      sn.oninput();
+      ok(!EDITS.has('GPON_SN'), 'serial field: back to the stored value, nothing is pending');
+    }
     ok(field('VLAN_MANU_TAG_VID') !== null, 'gated: the VLAN ID is editable in manual mode');
     EDITS.set('VLAN_MANU_TAG_VID', '100');
     const mode = field('VLAN_CFG_TYPE');
@@ -1635,6 +1745,23 @@ EDITS.clear();
     ok(invalidEdits().some(([k, why]) => k === 'VLAN_MANU_TAG_VID' && /ignored by the firmware/.test(why)),
        'gated: Save refuses a leftover edit to an ignored key');
     EDITS.clear();
+    renderAll();
+  }
+
+  /* The FwdOp override leaves the attribute as the OLT wrote it, so the OMCI
+     tab still shows the old code: the row says so once a value is stored. */
+  {
+    const fwdRow = () => rowsOf('#set-vlan').find((r) => r.dataset.name === 'RTK_DEVINFO_SPECVER');
+    const before = S.VALUES.RTK_DEVINFO_SPECVER;
+    S.VALUES.RTK_DEVINFO_SPECVER = '';
+    renderAll();
+    ok(fwdRow() && !/keep showing the FwdOp/.test(textOf(fwdRow())), 'FwdOp override: no note while the key is empty');
+    S.VALUES.RTK_DEVINFO_SPECVER = '0x1102:0x00,0x110b:0x00';
+    renderAll();
+    ok(fwdRow() && /keep showing the FwdOp the OLT set/.test(textOf(fwdRow())) && /omcli vlan over ssh/.test(textOf(fwdRow()))
+       && /pon\/omcli_vlan\.txt in the diagnostics bundle/.test(textOf(fwdRow())) && !/stays 0x10/.test(textOf(fwdRow())),
+       'FwdOp override: with a value stored the row says the MIB still shows the OLT code, and both ways to check');
+    if (before === undefined) delete S.VALUES.RTK_DEVINFO_SPECVER; else S.VALUES.RTK_DEVINFO_SPECVER = before;
     renderAll();
   }
 
@@ -1990,6 +2117,9 @@ ok(inputsOf('#sections') > 100,
   reset();
   wz.openWizard(true);
   await wz.next();
+  type('wiz-sn', '4F44 4958 0000 0009');
+  ok(wz.W.f.sn === 'ODIX00000009' && byId('wiz-sn').value === 'ODIX00000009' && !wz.problems(wz.W.f).sn,
+     'wizard: a serial typed as 16 hex digits is converted in the field');
   type('wiz-sn', 'ODIX00000009');
   type('wiz-ploam', 'hunter2pw');
   type('wiz-loid', 'newloid');
@@ -2389,6 +2519,44 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   const before = gone;
   await fw.followReboot();
   ok(gone === before, 'reboot: a second request while following starts no second loop');
+}
+
+/* --- following a write -------------------------------------------------- */
+{
+  const fw = await import(join(root, 'web', 'firmware.js'));
+  const run = async (answers) => {
+    let i = 0, naps = 0;
+    const out = doc.querySelector('#fwout');
+    out.textContent = '';
+    await fw.followLoop('1', {
+      get: async () => {
+        const a = answers[Math.min(i++, answers.length - 1)];
+        if (a === 'fail') throw new Error('HTTP 503');
+        return a;
+      },
+      sleep: async () => { naps++; },
+    });
+    return { text: textOf(out), polls: i, naps };
+  };
+  const done = { write: { state: 'ok', slot: '1', rc: '', log: 'fwu: done' } };
+  let r = await run(['fail', 'fail', done]);
+  ok(/written and read back/.test(r.text) && r.polls === 3 && r.naps === 2,
+     'write follow: failed polls are unknown, the loop keeps asking and ends on the real status');
+  r = await run(['fail', { write: { state: 'running', slot: '1', rc: '', log: 'erasing' } }, 'fail', done]);
+  ok(/written and read back/.test(r.text) && r.polls === 4, 'write follow: running, then a failed poll, then ok');
+  r = await run(['fail']);
+  ok(r.polls === fw.WRITE_LOST_POLLS && /Lost contact/.test(r.text) && !/written/.test(r.text),
+     'write follow: a stick that never answers stops after the bound, and never says written');
+  r = await run([{ write: { state: 'failed', slot: '1', rc: '3', log: '' } }]);
+  ok(/failed \(exit 3\)/.test(r.text) && !/written/.test(r.text), 'write follow: a failed write is reported as failed');
+  r = await run([{ write: { state: 'failed', slot: '1', rc: '', log: '' } }]);
+  ok(/failed\./.test(r.text) && !/exit/.test(r.text) && !/written/.test(r.text),
+     'write follow: a failed write with no exit code (a vanished writer) ends the loop as failed');
+  r = await run([{ write: { state: 'unknown', slot: '1', rc: '', log: '' } }]);
+  ok(r.polls === 1 && /ended without recording a result/.test(r.text) && /unknown/.test(r.text) && !/written/.test(r.text),
+     'write follow: a writer that is gone with no result ends the loop as unknown, not failed');
+  r = await run([{ env: {} }]);
+  ok(/written/.test(r.text) && r.polls === 1, 'write follow: an answered poll with no write state is the blocking starter, finished');
 }
 
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
