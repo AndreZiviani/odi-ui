@@ -418,6 +418,52 @@ check "no temp file is left beside the keys" no \
 	"$([ -e /etc/config/dropbear.d/authorized_keys.new ] || [ -L /etc/config/dropbear.d/authorized_keys.new ] && echo yes || echo no)"
 check "the key file holds both lines" 2 "$(wc -l < /etc/config/dropbear.d/authorized_keys | tr -d ' ')"
 rm -f /tmp/planted
+KF=/etc/config/dropbear.d/authorized_keys
+# The file holds K2, then K1. A delete that names the line as it was listed
+# removes it only while the file still reads so: a list from before another
+# change (a second tab, an edit over ssh) names by number what is now another
+# key.
+check "a delete naming the text of another line is refused" 409 \
+	"$(code -u "$AUTH" -X POST -d 'delete=0' --data-urlencode "line=$K1" "http://127.0.0.1:$PORT/api/sshkeys")"
+check "and nothing was removed" 2 "$(wc -l < $KF | tr -d ' ')"
+check "a delete naming the line as it reads removes it" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'delete=0' --data-urlencode "line=$K2" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "and the other key is what is left" "$K1" "$(cat $KF)"
+# A file larger than the daemon's buffer, as one written by hand over ssh can
+# be. The daemon kept what fit: the list was short, and a delete wrote the file
+# back without the rest.
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do echo "${K2% desk} host$i"; done > $KF
+big=$(wc -c < $KF | tr -d ' ')
+check "a key file larger than the buffer is not listed cut" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" 'larger than confd can hold')"
+check "a delete from it is refused" 500 \
+	"$(code -u "$AUTH" -X POST -d 'delete=0' "http://127.0.0.1:$PORT/api/sshkeys")"
+check "and so is an add" 500 \
+	"$(code -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")"
+check "and the file is as it was ($big bytes)" "$big" "$(wc -c < $KF | tr -d ' ')"
+# A file that cannot be read is not an empty one: an add replaced it with the
+# one new key. A link to itself is a read error a root process still gets.
+rm -f $KF
+ln -s authorized_keys $KF
+check "a key file that cannot be read is not listed as empty" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" 'could not read authorized_keys')"
+check "an add to it is refused" 500 \
+	"$(code -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")"
+check "and it was not replaced" yes "$([ -L $KF ] && echo yes || echo no)"
+rm -f $KF
+# The page cannot grow the file past what it reads back: 4094 bytes fit, and
+# this file has no newline at its end, so the add writes two more than the key.
+pad=$((4094 - 2 - ${#K1}))
+printf '#%*s' $((pad - 1)) '' > $KF
+check "a key that fills the file to the last byte that fits is added" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" '"ok":true')"
+check "and the file, now 4094 bytes, still lists" "4094 yes" \
+	"$(wc -c < $KF | tr -d ' ') $(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/sshkeys")" '{"i":1,"line":"ssh-ed25519')"
+printf '#%*s' "$pad" '' > $KF
+check "one byte more and the add is refused as full" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST --data-urlencode "key=$K1" "http://127.0.0.1:$PORT/api/sshkeys")" 'authorized_keys is full')"
+rm -f $KF
+printf '%s\n' "$K1" > $KF
 check "without a credential the keys are not readable" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/sshkeys")"
 rm -f /etc/config/dropbear.d/authorized_keys

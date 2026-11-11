@@ -1200,25 +1200,50 @@ void serve(int conn)
 	 * key: the jffs2 partition, so a key survives a reflash the way the
 	 * host key does. One line per key, OpenSSH format, as ssh-keygen prints
 	 * it. GET lists them; POST with key=<line> appends one, POST with
-	 * delete=<index> removes one. The check on a new key is shape only --
+	 * delete=<index> removes one, and with line=<text> beside it only while
+	 * that line still reads so. The check on a new key is shape only --
 	 * type word, base64 blob, optional comment, one line -- because the
 	 * one failure that matters is a pasted line that is not a key at all,
 	 * and dropbear itself decides whether the blob decodes.
 	 */
 	if (seq(path, "/api/sshkeys")) {
 		static char keys[4096];
-		long n = read_file(SSHKEYS_PATH, keys, sizeof(keys) - 1);
+		long n = read_file(SSHKEYS_PATH, keys, sizeof(keys));
 		unsigned long i, ls, idx;
 
-		if (n < 0)
+		/* No file is no keys (-2 is ENOENT). A file that cannot be read,
+		 * or that does not fit, is refused, the list included: read_file
+		 * keeps what fits, so a delete wrote the file back without the
+		 * rest, and after a read error an add replaced it with the one
+		 * new key. One that fills the buffer to the last byte counts as
+		 * cut; the two cannot be told apart. */
+		if (n == -2)
 			n = 0;
+		if (n < 0 || (unsigned long)n + 1 >= sizeof(keys)) {
+			respond(conn, "500 Internal Server Error", "application/json", 0);
+			put_fd(conn, n < 0
+			       ? "{\"ok\":false,\"error\":\"could not read authorized_keys\"}"
+			       : "{\"ok\":false,\"error\":\"authorized_keys is larger than confd can hold (4 KB); edit it over ssh\"}");
+			return;
+		}
 		keys[n] = 0;
 		if (seq(method, "POST")) {
 			char key[1024], del[8];
 
 			if (form_get(body, "delete", del, sizeof(del)) && del[0]) {
+				static char line[sizeof(keys)];
 				unsigned long want = 0, at = 0, out = 0;
 				int found = 0;
+				/* The line the caller saw at that number. The page
+				 * sends it; without it the number alone decides, as
+				 * it always did. */
+				int pinned = form_has(body, "line");
+
+				if (pinned && !form_get(body, "line", line, sizeof(line))) {
+					respond(conn, "400 Bad Request", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"line is too long or badly encoded\"}");
+					return;
+				}
 
 				for (i = 0; del[i]; i++) {
 					if (del[i] < '0' || del[i] > '9') {
@@ -1238,6 +1263,20 @@ void serve(int conn)
 					if (keys[le] == '\n')
 						le++;
 					if (at == want) {
+						unsigned long ll = le - ls, k = 0;
+
+						if (ll && keys[le - 1] == '\n')
+							ll--;
+						while (pinned && k < ll && line[k] == keys[ls + k])
+							k++;
+						/* A list from before another tab or an ssh
+						 * session changed the file: the number now
+						 * names a different key. */
+						if (pinned && (k < ll || line[k])) {
+							respond(conn, "409 Conflict", "application/json", 0);
+							put_fd(conn, "{\"ok\":false,\"error\":\"the key list has changed; nothing was removed\"}");
+							return;
+						}
 						found = 1;
 					} else {
 						unsigned long k;
@@ -1279,7 +1318,9 @@ void serve(int conn)
 					return;
 				}
 			}
-			if ((unsigned long)n + str_len(key) + 2 > sizeof(keys) - 1) {
+			/* One byte short of the buffer, or the file this writes
+			 * would read back as one that does not fit. */
+			if ((unsigned long)n + str_len(key) + 2 > sizeof(keys) - 2) {
 				respond(conn, "400 Bad Request", "application/json", 0);
 				put_fd(conn, "{\"ok\":false,\"error\":\"authorized_keys is full\"}");
 				return;

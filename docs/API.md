@@ -391,3 +391,11 @@ backup go through `/api/netaddr` instead when the image has the trial.
                                           line of at most 1000 characters; a key
                                           already in the file is refused
     POST /api/sshkeys    delete=<i>       rewrite the file without line i
+                         [&line=<text>]   only while line i still reads <text>, as
+                                          the list gave it; 409 when it does not
+
+A missing `authorized_keys` is an empty list. One that cannot be read, or that
+does not fit the daemon's 4 KB buffer (4094 bytes fit), answers 500 with
+`{"ok":false,"error":...}` to all three, and nothing is written: edit it over
+ssh. Send `line` with a delete: without it the number alone decides, and a
+list that is out of date removes whatever key holds that line now.

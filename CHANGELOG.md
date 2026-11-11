@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Access: `/api/sshkeys` no longer changes an `authorized_keys` it has not
+  read whole. The handler read the file into a 4 KB buffer and kept what fit:
+  the list was short, and removing a key wrote the file back without everything
+  behind the cut. A read error counted as an empty file, so adding a key
+  replaced the file with that one key. A file that does not fit (4094 bytes do)
+  or cannot be read now answers 500 to the list, an add and a delete, and stays
+  as it is; a missing file is still an empty list. The page only ever grew the
+  file to the buffer, so this takes one written by hand over ssh. A delete can
+  carry `line=<text>` beside the line number and is then refused with 409 when
+  that line no longer reads so. The page sends it and reads the list again
+  after a refusal: before, a list that was out of date (a second tab, a change
+  over ssh) removed whatever key held that line number. `delete=<i>` alone
+  works as before. The setup wizard says when the keys could not be listed
+  rather than "No keys installed yet". Refs #88.
+
 - Backup: `/api/backup` answers 500 when `flash all cs` or `flash all hs`
   exits non-zero or prints nothing. Before, the exit status was not read and
   an empty hs dump was accepted: a file with flash's error line in place of a

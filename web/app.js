@@ -208,8 +208,10 @@ async function savePassword() {
 
 /*
  * SSH public keys for the device login. The list is the file as it is, so a
- * key added over ssh by hand shows up here too, and a delete names the line
- * number the server reported rather than re-sending the key text.
+ * key added over ssh by hand shows up here too. A delete names the line number
+ * the server reported and the line as it was listed, so that a list that is out
+ * of date (a second tab, a change over ssh) removes nothing, where the number
+ * alone would have removed whatever key holds that line now.
  */
 /* The lines on the stick as last listed, for the duplicate check and for the
    warning before the last one is removed. */
@@ -233,7 +235,7 @@ async function renderSshKeys() {
       const del = el('button', 'danger-quiet', 'Remove');
       del.type = 'button';
       del.setAttribute('aria-label', 'Remove key ' + (parts.slice(2).join(' ') || blob.slice(-8)));
-      del.onclick = () => delSshKey(k.i);
+      del.onclick = () => delSshKey(k.i, k.line);
       li.append(del);
       t.append(li);
     }
@@ -261,7 +263,7 @@ async function addSshKey() {
   } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
 }
 
-async function delSshKey(i) {
+export async function delSshKey(i, line) {
   const out = $('#sshkey-out');
   out.textContent = '';
   /* The only way into a keys-only stick, and a removal that cannot be undone
@@ -275,10 +277,12 @@ async function delSshKey(i) {
     const r = await fetch('/api/sshkeys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ delete: String(i) }).toString(),
+      body: new URLSearchParams({ delete: String(i), line }).toString(),
     });
     const j = await r.json();
-    if (!j.ok) { out.append(el('div', 'bad', j.error || 'refused')); return; }
+    /* Refused or not, the list is read again: a refusal is most often a list
+       that no longer matches the file. */
+    if (!j.ok) out.append(el('div', 'bad', j.error || 'refused'));
     await renderSshKeys();
   } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
 }

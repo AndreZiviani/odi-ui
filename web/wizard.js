@@ -51,6 +51,7 @@ const MAX_POLLS = 100;
 const W = {
   open: false, auto: false, steps: [], step: '', phase: 'edit', f: {},
   key: '', keys: [],   /* the public key to add, and the lines already installed */
+  keysErr: '',         /* why the installed keys could not be listed, when they could not */
   pw: null,            /* { user, pass, again }: the admin password typed in, until it is saved */
   pwChanged: false, timer: 0, polls: 0, autoTried: false, marking: false,
   live: null, out: null, msgs: {}, keysEl: null,
@@ -243,7 +244,7 @@ function openWizard(auto) {
   clearInterval(W.timer);
   Object.assign(W, {
     open: true, auto: !!auto, phase: 'edit', f: initForm(), pw: null,
-    pwChanged: false, polls: 0, live: null, out: null, key: '', keys: [], keysEl: null,
+    pwChanged: false, polls: 0, live: null, out: null, key: '', keys: [], keysErr: '', keysEl: null,
     steps: ['access', 'isp', 'vlan', 'review'],
   });
   showDialog(true);
@@ -379,14 +380,18 @@ const keyLabel = (line) => {
 };
 function paintKeys() {
   if (!W.keysEl) return;
-  W.keysEl.textContent = W.keys.length
-    ? `${W.keys.length} key${W.keys.length === 1 ? '' : 's'} installed: ${W.keys.map(keyLabel).join(', ')}.`
-    : 'No keys installed yet.';
+  W.keysEl.textContent = W.keysErr ? `The installed keys could not be listed: ${W.keysErr}.`
+    : W.keys.length
+      ? `${W.keys.length} key${W.keys.length === 1 ? '' : 's'} installed: ${W.keys.map(keyLabel).join(', ')}.`
+      : 'No keys installed yet.';
 }
 async function loadKeys() {
+  W.keysErr = '';
   try {
     const j = await (await wfetch('/api/sshkeys')).json();
     W.keys = (j.keys || []).map((x) => x.line);
+    /* A file the daemon will not list, too large or unreadable, is not "no keys". */
+    if (!j.keys) W.keysErr = j.error || 'no list came back';
   } catch (e) { W.keys = []; }
   paintKeys();
   if (W.step === 'access') paint();
