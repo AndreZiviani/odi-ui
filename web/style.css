@@ -636,6 +636,19 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .ladder li.done { color: var(--ink-2); background: color-mix(in srgb, var(--green) 14%, var(--well)); }
 .ladder li.here { color: var(--on-fill); background: var(--green); border-color: var(--green); }
 
+/* The shared PON section: the figure as the meters show theirs, a bar from
+   an empty to a full PON. */
+.pon { max-width: 760px; }
+.pon .m-read { margin-bottom: 2px; flex-wrap: wrap; }
+.pon-wait { font-size: 16px; font-weight: 600; color: var(--ink-2); }
+.pon-rate { margin: 0 0 12px; font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pon-bar { height: 18px; overflow: hidden; }
+.pon .m-ticks span { white-space: nowrap; }
+.pon-fill { position: absolute; top: 0; bottom: 0; left: 0; min-width: 3px; background: var(--blue); border-radius: 2px 0 0 2px; }
+/* The ink yellow, not the jacket yellow, which barely shows on the light theme. */
+.pon-fill.mid { background: var(--yellow-ink); }
+.pon-fill.hi { background: var(--red); }
+
 .env { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; }
 .env dt { color: var(--ink-2); font-size: 14px; }
 .env dd { margin: 0; font-size: 14px; }

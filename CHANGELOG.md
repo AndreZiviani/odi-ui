@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the *Shared PON, all ONUs* section shows its figure the way the
+  optics meters do, with the rate under it and a bar from an empty to a full
+  PON. The bar is blue under 50 %, yellow from 50 % and red from 80 %, as a
+  guide and not a limit. The page keeps no history; that stays the metrics
+  exporter's job. Only the page changes, confd and the API are untouched.
+
 - Firmware: next to Commit (the Trial boot banner and the running partition),
   the page warns while `/etc/config/confirm-arp` exists: every boot of a
   committed slot then needs an ARP reply from the address in it, or the stick
