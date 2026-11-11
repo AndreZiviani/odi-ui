@@ -1055,6 +1055,28 @@ int form_get(const char *body, const char *want, char *out, unsigned long cap)
 	return 0;
 }
 
+/* Whether a urlencoded body names a field at all, whatever it holds. For a
+ * field whose absence means something: form_get answers 0 for a value that is
+ * too long or badly encoded as well. */
+int form_has(const char *body, const char *want)
+{
+	char name[64];
+	unsigned long i = 0;
+
+	while (body[i]) {
+		unsigned long k = url_decode(body, i, '=', name, sizeof(name));
+
+		if (!k)
+			return 0;
+		if (seq(name, want))
+			return 1;
+		i = url_skip(body, k);
+		if (body[i] == '&')
+			i++;
+	}
+	return 0;
+}
+
 /* Serve a static file, preferring the /etc/config override. */
 void serve_static(int fd, const char *name, const char *ctype)
 {

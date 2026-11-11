@@ -1937,6 +1937,7 @@ ok(inputsOf('#sections') > 100,
     }
     if (key === '/api/apply') return ans({ ok: true, output: 'secret-looking output' });
     if (key === '/api/password') return ans({ ok: true });
+    if (key === '/api/sshkeys' && method === 'GET' && INSTALLED === null) return ans({ ok: false, error: 'authorized_keys is larger than confd can hold (4 KB); edit it over ssh' });
     if (key === '/api/sshkeys' && method === 'GET') return ans({ path: 'x', keys: INSTALLED.map((line, i) => ({ i, line })) });
     if (key === '/api/sshkeys') {
       const line = new URLSearchParams(body).get('key');
@@ -2242,6 +2243,15 @@ ok(inputsOf('#sections') > 100,
   await wz.next(); await wz.next(); await wz.next();
   await click('#wizard-next');
   ok(!posts('/api/sshkeys').length, 'ssh key: skipping it sends nothing');
+  /* a key file the daemon refuses to list is not "no keys" */
+  await wz.exitWizard();
+  reset();
+  INSTALLED = null;
+  wz.openWizard(true);
+  await tick();
+  ok(/could not be listed: authorized_keys is larger/.test(body()) && !/No keys installed yet/.test(body()),
+     'ssh key: a key file the daemon will not list is reported, not shown as no keys');
+  INSTALLED = [];
 
   /* the hints under the ladder */
   ok(wz.liveHint(L('O5', '-18', false), 0).cls === 'good', 'live hint: O5 is good news');
@@ -2419,6 +2429,28 @@ await import(join(root, 'web', 'app.js'));
 await new Promise((r) => setTimeout(r, 50));
 ok(true, 'app.js bootstraps without throwing');
 ok(githubCalls.length === 0, 'updates: a stick running a non-release image never contacts GitHub');
+
+{
+  /* Removing an SSH key sends the line as it was listed beside its number, so
+     the daemon can refuse a list that is out of date; a refusal is shown and
+     the list is read again. */
+  const { delSshKey } = await import(join(root, 'web', 'app.js'));
+  const keep = { fetch: globalThis.fetch, confirm: globalThis.confirm };
+  const LINE = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5+/AAAAI= me@laptop';
+  let sent = null, lists = 0;
+  globalThis.confirm = () => true;
+  globalThis.fetch = async (path, init) => {
+    if (path !== '/api/sshkeys') return keep.fetch(path, init);
+    if (!init || init.method !== 'POST') { lists++; return { ok: true, status: 200, json: async () => ({ path: 'x', keys: [] }) }; }
+    sent = new URLSearchParams(init.body);
+    return { ok: false, status: 409, json: async () => ({ ok: false, error: 'the key list has changed; nothing was removed' }) };
+  };
+  await delSshKey(1, LINE);
+  ok(sent && sent.get('delete') === '1' && sent.get('line') === LINE, 'ssh keys: a removal sends the line as listed with its number');
+  ok(/the key list has changed/.test(textOf(doc.querySelector('#sshkey-out'))) && lists === 1,
+     'ssh keys: a refused removal says why and reads the list again');
+  Object.assign(globalThis, keep);
+}
 
 {
   /* The session watcher: a 401 from the stick ends the page, any other answer does not. */
