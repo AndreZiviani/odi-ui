@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Backup: `/api/backup` answers 500 when `flash all cs` or `flash all hs`
+  exits non-zero or prints nothing. Before, the exit status was not read and
+  an empty hs dump was accepted: a file with flash's error line in place of a
+  store, or with no hs store (`GPON_SN`, `ELAN_MAC_ADDR`, `MAC_KEY`), was served
+  as 200 under the header "Both stores". The page already stops on a failed
+  backup, also the one a reset takes first. `/api/values` and `/api/init` are
+  as before, so the page still opens on a stick whose hs dump fails. Refs #87.
+
 - Config: once a "VLAN forward operation override" (`RTK_DEVINFO_SPECVER`) is
   stored, its row says that the OMCI tab and `omcicli mib get 84` keep showing
   the FwdOp the OLT set, and that `omcli vlan` or `pon/omcli_vlan.txt` in the

@@ -805,21 +805,28 @@ int apply_omci(void)
  * store was cut, and the hs store -- the identity keys, which /api/backup
  * exists to save -- is the half that goes. A dump that fills the buffer to the
  * last byte exactly is counted as cut too; it cannot be told apart.
+ *
+ * `strict` is for /api/backup, which says the file holds both stores: each
+ * dump must then exit 0 and print something. Without it an hs dump may fail
+ * or be empty and the cs values are still served, with whatever flash said
+ * in place of the hs store (stderr comes down the same pipe), so the page
+ * opens on a stick whose hs store is gone. That is not a backup.
  */
-long load_values(void)
+long load_values(int strict)
 {
 	static char *const cs[] = { "flash", "all", "cs", 0 };
 	static char *const hs[] = { "flash", "all", "hs", 0 };
-	long a, b;
+	long a, b, code = -1;
 
-	a = run_to_buf(FLASH_PATH, cs, values, sizeof(values), FLASH_TIMEOUT_MS);
-	if (a <= 0)
+	a = run_to_buf_ex(FLASH_PATH, cs, values, sizeof(values), &code,
+			  FLASH_TIMEOUT_MS);
+	if (a <= 0 || (strict && code != 0))
 		return -1;
 	if ((unsigned long)a + 1 >= sizeof(values))
 		return -2;
-	b = run_to_buf(FLASH_PATH, hs, values + a, sizeof(values) - (unsigned long)a,
-		       FLASH_TIMEOUT_MS);
-	if (b < 0)
+	b = run_to_buf_ex(FLASH_PATH, hs, values + a, sizeof(values) - (unsigned long)a,
+			  &code, FLASH_TIMEOUT_MS);
+	if (b < 0 || (strict && (b == 0 || code != 0)))
 		return -1;
 	if ((unsigned long)(a + b) + 1 >= sizeof(values))
 		return -2;
