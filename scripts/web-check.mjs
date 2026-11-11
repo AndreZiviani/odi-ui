@@ -358,7 +358,7 @@ ok(true, 'renderStatus runs against a diag capture');
 
   /* The PON load has a section of its own, not a line on the diagram: the
      whole PON beside the figures of this stick would read as this stick.
-     The figure, a bar and a chart of what this tab saw in the last hour. */
+     The figure, the rate and a bar. */
   const half = 291456000;        /* 80000 frames (10 s) half full of idle, FEC on: 36432 bytes a frame */
   const pon = (sf, idle, fec) => ({ ...st('100 0 100 800 0 0 0 0 0 0'),
     ds_superframe: String(sf), ds_gem_idle: String(idle), ...(fec === undefined ? {} : { ds_fec: fec }) });
@@ -366,97 +366,47 @@ ok(true, 'renderStatus runs against a diag capture');
   const host = doc.querySelector('#pon');
   const read = () => textOf(host.children[0]);
   const all = () => textOf(host);
-  const chart = () => host.children[host.children.length - 1];
-  const bars = () => chart().children[0].children[1].children;
-  const yaxis = () => textOf(chart().children[0].children[0]);
-  const filled = () => bars().filter((b) => b.className !== 'gap');
   const fill = () => host.children.map((c) => c.children.find((x) => /^pon-fill/.test(x.className))).find(Boolean);
-  const store = new Map();
-  globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
   ok(block.hidden === true && all() === '' && !/PON load|in use/.test(ov()),
      'pon load: no section without the counters (a stock slot, an older driver), and nothing on the diagram');
   t += 10000;
   renderStatus(raw, null, pon(1000, 5000000000, '1'));
-  ok(block.hidden === false && read() === 'measuring' && bars().length === 240 && filled().length === 0 && !fill()
-     && /collecting/.test(all()),
-     'pon load: the first poll has nothing to compare with: an empty bar and an empty chart of 240 slots');
+  ok(block.hidden === false && read() === 'measuring' && !fill() && /0 %25 %50 %75 %100 %$/.test(all()),
+     'pon load: the first poll has nothing to compare with: an empty bar with its scale');
   t += 10000;
   renderStatus(raw, null, pon(81000, 5000000000 + half, '1'));
-  ok(read() === '\u2248 50% of the downstream in use' && /\u2248 1166 of 2332 Mbit\/s sent to all ONUs/.test(all()),
+  ok(read() === '≈ 50% of the downstream in use' && /≈ 1166 of 2332 Mbit\/s sent to all ONUs/.test(all()),
      'pon load: half the payload idle is 50 %, past 32 bits of idle frames, with the rate it stands for');
-  ok(fill().style.width === '50%' && fill().className === 'pon-fill mid' && filled().length === 1
-     && bars()[239].className === 'mid peak' && bars()[239].style.height === '100%'
-     && yaxis() === '50 %25 %0' && /highest 50 % in the last hour/.test(all()),
-     'pon load: the bar is filled to the figure, and the chart has its first bar on the right, with its scale');
-  ok(/^\d\d:\d\d  \u2248 50 %$/.test(bars()[239].title), 'pon load: a bar says its time and its figure');
-  t += 15000;
-  renderStatus(raw, null, pon(201000, 5000000000 + half + 1.5 * 571253760, '1'));
-  ok(read() === '\u2248 2.0% of the downstream in use' && /\u2248 46\.6 of 2332 Mbit\/s/.test(all()),
+  ok(fill().style.width === '50%' && fill().className === 'pon-fill mid', 'pon load: the bar is filled to the figure');
+  t += 10000;
+  renderStatus(raw, null, pon(161000, 5000000000 + half + 571253760, '1'));
+  ok(read() === '≈ 2.0% of the downstream in use' && /≈ 46\.6 of 2332 Mbit\/s/.test(all())
+     && fill().style.width === '2%' && fill().className === 'pon-fill lo',
      'pon load: under 10 % it shows one decimal');
-  ok(filled().length === 2 && bars()[238].className === 'mid peak' && bars()[239].className === 'lo'
-     && bars()[239].style.height === '4%' && fill().style.width === '2%' && fill().className === 'pon-fill lo',
-     'pon load: a new poll moves the chart one slot to the left; height is the zoom, colour the level on the whole scale');
   t += 10000;
-  renderStatus(raw, null, pon(281000, 5000000000 + 2 * half + 1.5 * 571253760, '0'));
-  ok(read() === 'measuring' && !fill() && filled().length === 2, 'pon load: FEC changing between two polls gives no figure and no bar');
+  renderStatus(raw, null, pon(241000, 5000000000 + 2 * half + 571253760, '0'));
+  ok(read() === 'measuring' && !fill(), 'pon load: FEC changing between two polls gives no figure');
   t += 10000;
-  renderStatus(raw, null, pon(361000, 5000000000 + 2 * half + 1.5 * 571253760 + 80000 * 7776, '0'));
-  ok(/^\u2248 0\.0%/.test(read()) && /of 2488 Mbit\/s/.test(all()), 'pon load: with FEC off the whole 38880 bytes count, all idle is 0 %');
+  renderStatus(raw, null, pon(321000, 5000000000 + 2 * half + 571253760 + 80000 * 7776, '0'));
+  ok(/^≈ 0\.0%/.test(read()) && /of 2488 Mbit\/s/.test(all()), 'pon load: with FEC off the whole 38880 bytes count, all idle is 0 %');
   t += 10000;
-  renderStatus(raw.replace('(O5)', '(O2)'), null, pon(441000, 5000000000 + 3 * half + 1.5 * 571253760 + 80000 * 7776, '0'));
-  ok(block.hidden === false && read() === '\u2014' && !fill() && filled().length === 3,
-     'pon load: outside O5 the section stays, with a dash, and the chart keeps what it has');
+  renderStatus(raw.replace('(O5)', '(O2)'), null, pon(401000, 5000000000 + 3 * half + 571253760 + 80000 * 7776, '0'));
+  ok(block.hidden === false && read() === '—' && !fill(), 'pon load: outside O5 the section stays, with a dash');
   t += 10000;
-  renderStatus(raw, null, pon(521000, 5000000000 + 4 * half + 1.5 * 571253760 + 80000 * 7776, '0'));
+  renderStatus(raw, null, pon(481000, 5000000000 + 4 * half + 571253760 + 80000 * 7776, '0'));
   ok(read() === 'measuring', 'pon load: and back in O5 it starts over');
-  ok(JSON.parse(store.get('pon-hist')).length === 3, 'pon load: the chart is kept in sessionStorage, one entry per figure');
-  t += 3600000;
-  renderStatus(raw, null, pon(601000, 5000000000 + 5 * half + 1.5 * 571253760 + 80000 * 7776, '0'));
-  ok(filled().length === 1 && JSON.parse(store.get('pon-hist')).length === 1,
-     'pon load: figures older than an hour leave the chart, only the new one is left');
-  globalThis.sessionStorage = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
-  t += 10000;
-  renderStatus(raw, null, pon(681000, 5000000000 + 6 * half + 1.5 * 571253760 + 80000 * 7776, '0'));
-  ok(/^\u2248 /.test(read()) && filled().length === 1, 'pon load: blocked storage costs the reload, not the chart');
-  delete globalThis.sessionStorage;
   {
-    /* The tab history itself (dom.js), under keys of its own. */
-    const { histRecord, histSlots } = await import(join(root, 'web', 'dom.js'));
-    const mem = new Map();
-    globalThis.sessionStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-    const now = Date.now();
-    mem.set('h-reload', JSON.stringify([[now - 30000, 4], [now - 3600000, 9], [now + 5000, 9], [now - 15000, 6], 'x', [1], [now, NaN]]));
-    const h = histRecord('h-reload', null);
-    ok(h.length === 2 && h[0][1] === 4 && h[1][1] === 6,
-       'tab history: a reload reads what was kept, without what is an hour old, in the future or not an entry');
-    const sl = histSlots(histRecord('h-reload', [7]));
-    ok(sl.length === 240 && sl[239][1] === 7 && sl[238][1] === 6 && sl[237][1] === 4 && sl[236] === null,
-       'tab history: one slot per interval, newest last');
-    ok(histSlots(histRecord('h-reload', [8]))[239][1] === 8 && histRecord('h-reload', [NaN]).length === 4,
-       'tab history: the last entry of an interval stands for it, and what is not a number is not kept');
-    mem.set('h-big', '[' + new Array(40000).fill('[' + now + ',1]').join(',') + ']');
-    ok(histRecord('h-big', null).length === 0, 'tab history: a stored text far larger than the page writes is not read');
-    mem.set('h-many', JSON.stringify(new Array(2000).fill([now - 1000, 1])));
-    ok(histRecord('h-many', null).length === 960, 'tab history: the entries are capped at a few per slot');
-    delete globalThis.sessionStorage;
-  }
-  {
-    /* The colour of a bar is its level on the whole scale. */
-    const mem = new Map();
-    globalThis.sessionStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-    const { histRecord } = await import(join(root, 'web', 'dom.js'));
-    histRecord('pon-hist', null);
+    /* The colour of the bar follows the figure as it is shown. */
     const cls = (pct) => {
-      t += 15000;
+      t += 10000;
       renderStatus(raw, null, pon(0, 0, '1'));
       t += 10000;
       renderStatus(raw, null, pon(80000, Math.round(80000 * 36432 * (1 - pct / 100) / 5), '1'));
-      return bars()[239].className.split(' ')[0] + '/' + fill().className;
+      return fill().className;
     };
-    ok(cls(49.9) === 'lo/pon-fill lo' && cls(50) === 'mid/pon-fill mid' && cls(79.9) === 'mid/pon-fill mid'
-       && cls(80) === 'hi/pon-fill hi',
-       'pon load: blue under 50 %, yellow from 50 %, red from 80 %, the bar and the chart alike');
-    delete globalThis.sessionStorage;
+    ok(cls(49.4) === 'pon-fill lo' && cls(50) === 'pon-fill mid' && cls(79.4) === 'pon-fill mid'
+       && cls(79.6) === 'pon-fill hi' && cls(80) === 'pon-fill hi',
+       'pon load: blue under 50 %, yellow from 50 %, red from 80 %, by the figure shown');
   }
   {
     const { ponLoad } = await import(join(root, 'web', 'status.js'));

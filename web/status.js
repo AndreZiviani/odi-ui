@@ -6,7 +6,7 @@
  * costs no C and no reflash.
  */
 
-import { $, el, histRecord, histSlots, histStart, hhmm } from './dom.js';
+import { $, el } from './dom.js';
 import { renderFlow } from './flow.js';
 import { renderOverview } from './overview.js';
 
@@ -256,63 +256,16 @@ function ponLoad(st) {
   return { pct, mbps: used * 8 * 8000 / 1e6, of: payload * 8 * 8000 / 1e6 };
 }
 
-/* The key of the PON figures in the tab history (dom.js). */
-const PON_HIST_KEY = 'pon-hist';
-
-/* The top of the chart: the smallest of these that holds the peak, so a
-   quiet PON is not a flat line at the bottom of a 0 to 100 scale. */
-const PON_TOPS = [2, 5, 10, 15, 20, 30, 50, 75, 100];
 const ponPct = (v) => (v < 10 ? v.toFixed(1) : v.toFixed(0));
 
-/* Where a bar stands on the whole scale, whatever the chart is zoomed to:
-   the chart scales to its peak, so the colour is what says how full the
-   PON was. Bands for the eye, not limits of anything. */
+/* Where the figure stands between an empty and a full PON, taken from the
+   figure as it is shown. Bands for the eye, not limits of anything. */
 const ponBand = (v) => (v >= 80 ? 'hi' : v >= 50 ? 'mid' : 'lo');
 
-/* The bars, newest on the right, one per poll interval; the last figure of
-   an interval stands for it, an interval without one stays empty. The scale
-   on the left is the zoom, the colour is the absolute level, and each bar
-   says its time and figure: as a title, and in the line under the chart
-   while the pointer is on it. */
-function ponChart(hist) {
-  /* Only what a share can be: a stored figure outside 0 to 100 is not ours. */
-  const slots = histSlots(hist).map((p) => (p !== null && p[1] >= 0 && p[1] <= 100 ? p : null));
-  const seen = slots.filter((p) => p !== null).map((p) => p[1]);
-  const peak = seen.length ? Math.max(...seen) : 0;
-  const top = PON_TOPS.find((t) => t >= peak) || 100;
-  const fig = el('div', 'pon-chart');
-  fig.setAttribute('role', 'img');
-  fig.setAttribute('aria-label', seen.length
-    ? `Downstream in use over the last hour: ${seen.length} readings, lowest ${ponPct(Math.min(...seen))} %, `
-      + `highest ${ponPct(peak)} %, latest ${ponPct(seen[seen.length - 1])} %`
-    : 'Downstream in use over the last hour: no readings yet');
-  const y = el('div', 'pon-y');
-  y.append(el('span', null, top + ' %'), el('span', null, top / 2 + ' %'), el('span', null, '0'));
-  const bars = el('div', 'pon-bars');
-  const summary = seen.length ? `highest ${ponPct(peak)} % in the last hour` : 'collecting';
-  const note = el('span', 'pon-note', summary);
-  for (const p of slots) {
-    const b = el('i', p === null ? 'gap' : ponBand(p[1]) + (p[1] === peak ? ' peak' : ''));
-    if (p !== null) {
-      b.style.height = Math.max(2, Math.round((p[1] / top) * 1000) / 10) + '%';
-      b.title = `${hhmm(p[0])}  \u2248 ${ponPct(p[1])} %`;
-    }
-    bars.append(b);
-  }
-  bars.addEventListener('mouseover', (e) => { note.textContent = (e.target && e.target.title) || summary; });
-  bars.addEventListener('mouseleave', () => { note.textContent = summary; });
-  const plot = el('div', 'pon-plot');
-  plot.append(y, bars);
-  const axis = el('div', 'pon-axis');
-  axis.append(el('span', null, histStart()), note, el('span', null, 'now'));
-  fig.append(plot, axis);
-  return fig;
-}
-
 /* The section of its own: shown when the driver has the counters. The
-   figure as the meters show theirs, a bar for its place between an empty
-   and a full PON, and the chart. A dash outside O5, where there is no
-   downstream to measure; the chart keeps what it has. */
+   figure as the meters show theirs, and a bar for its place between an
+   empty and a full PON. A dash outside O5, where there is no downstream to
+   measure. */
 function renderPon(st, state) {
   const block = $('#ponblock');
   const have = !!st && typeof st.ds_superframe === 'string' && typeof st.ds_gem_idle === 'string';
@@ -322,9 +275,6 @@ function renderPon(st, state) {
   if (!have) { ponLoad(null); return; }
   const live = state === 'O5';
   const load = live ? ponLoad(st) : (ponLoad(null), null);
-  /* The figure as it is kept, so the bar and the chart colour it alike. */
-  const kept = load ? Math.round(load.pct * 100) / 100 : null;
-  const hist = histRecord(PON_HIST_KEY, load ? [kept] : null);
 
   const read = el('div', 'm-read');
   /* Only a figure is set in the readout face; the wait for one is said plainly. */
@@ -340,7 +290,7 @@ function renderPon(st, state) {
   bar.style.setProperty('--n', '10');
   bar.append(el('div', 'ticks'));
   if (load) {
-    const fill = el('div', 'pon-fill ' + ponBand(kept));
+    const fill = el('div', 'pon-fill ' + ponBand(Number(ponPct(load.pct))));
     fill.style.width = Math.max(0.5, Math.round(load.pct * 10) / 10) + '%';
     bar.append(fill);
   }
@@ -350,7 +300,7 @@ function renderPon(st, state) {
     t.style.left = v + '%';
     lab.append(t);
   }
-  host.append(bar, lab, ponChart(hist));
+  host.append(bar, lab);
 }
 
 function renderStatus(raw, chip, st) {
