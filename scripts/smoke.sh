@@ -691,6 +691,10 @@ done
 # says which, so the page applies the first at once and asks before the second.
 check "a VLAN key needs omci, and does not interrupt" yes \
 	"$(err "$(post 'VLAN_MANU_TAG_VID=120')" '"needs":["omci"],"stock":false,"interrupts":false')"
+check "VLAN_EAPOL_UNTAGGED is written and applied live by omci" yes \
+	"$(err "$(post 'VLAN_EAPOL_UNTAGGED=1')" '"needs":["omci"],"stock":false,"interrupts":false')"
+check "VLAN_EAPOL_UNTAGGED outside 0 and 1 is refused" yes \
+	"$(err "$(post 'VLAN_EAPOL_UNTAGGED=2')" 'not one of the values')"
 check "transparent mode is a listed value and does not interrupt" yes \
 	"$(err "$(post 'VLAN_MANU_MODE=0')" '"ok":true,"value":"0"')"
 check "an identity key needs omci and interrupts" yes \
