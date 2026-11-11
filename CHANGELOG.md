@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config and the setup wizard: the serial number field also takes the 16 hex
+  digits some ISPs print as a modem ID, the vendor id as the codes of its four
+  characters, with or without spaces, colons, dots or hyphens. It is converted
+  in the field to the four characters and eight hex digits the stick stores,
+  so what is saved does not change and confd is untouched. Under the field on
+  the Config tab the serial is shown in hex as well. 16 hex digits whose first
+  four bytes are not characters the stick can store are refused, with a
+  message that says so.
+
 - Firmware: next to Commit (the Trial boot banner and the running partition),
   the page warns while `/etc/config/confirm-arp` exists: every boot of a
   committed slot then needs an ARP reply from the address in it, or the stick
