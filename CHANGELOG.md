@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: a reboot is refused while a firmware write is running. `POST
+  /api/firmware action=reboot` answers 409 with a message the page shows, the
+  same refusal `/api/upload` already gave; before, a reboot could cut a write
+  half way through the erase. The Reboot button is off while the write state
+  is running and on again when it ends. The write follow loop no longer
+  reads a failed status poll as "written": a failed poll is unknown, it keeps
+  asking every 3 s, and after 40 failures in a row (two minutes) it says contact
+  was lost and the result is unknown. The reboot action is the only route that reboots the stick, so no other
+  needed the same check. Refs #79.
+
 - Status: the *Shared PON, all ONUs* section shows its figure the way the
   optics meters do, with the rate under it and a bar from an empty to a full
   PON. The bar is blue under 50 %, yellow from 50 % and red from 80 %, as a

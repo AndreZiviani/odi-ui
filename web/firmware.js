@@ -158,14 +158,39 @@ async function followWrite(part) {
   renderFirmware();
 }
 
-async function followLoop(part) {
+/* Consecutive failed polls before the page stops asking: 40 x 3 s, two
+   minutes. The stick is busy erasing flash, so a poll can fail for a while. */
+const WRITE_LOST_POLLS = 40;
+
+const followDeps = {
+  get: (path) => get(path),
+  sleep: (ms) => new Promise((res) => setTimeout(res, ms)),
+};
+
+async function followLoop(part, deps = followDeps) {
   const out = $('#fwout');
   const log = el('pre', null, '');
+  let lost = 0;
   out.append(log);
   for (;;) {
     let fw;
-    try { fw = await get('/api/firmware'); } catch (e) { fw = {}; }
+    /* A poll that fails says nothing about the write: it is unknown, never
+       "written". Keep asking, up to a bound. */
+    try { fw = await deps.get('/api/firmware'); } catch (e) { fw = null; }
+    if (!fw || typeof fw !== 'object') {
+      if (++lost >= WRITE_LOST_POLLS) {
+        out.append(el('div', 'bad', `Lost contact with the stick, so the write of partition ${part} `
+          + 'is unknown. Reload the page once it answers, and read the status before '
+          + 'trying or rebooting.'));
+        break;
+      }
+      await deps.sleep(WRITE_POLL_MS);
+      continue;
+    }
+    lost = 0;
     const w = fw.write;
+    /* No write state on a poll that was answered: the starter blocked and
+       had finished when the write request returned ok. */
     if (!w) {
       out.append(el('div', 'good', `Partition ${part} written. Press Try on it — a `
         + 'trial boots once, and reverts by itself if the image does not come up.'));
@@ -184,7 +209,7 @@ async function followLoop(part) {
         + 'far as erasing; the running partition was not touched.'));
       break;
     }
-    await new Promise((res) => setTimeout(res, WRITE_POLL_MS));
+    await deps.sleep(WRITE_POLL_MS);
   }
 }
 
@@ -318,6 +343,12 @@ async function renderFirmware() {
   const rb = el('button', 'danger cost-reboot');
   rb.type = 'button';
   rb.append(el('i', 'bars'), document.createTextNode('Reboot'));
+  /* Off while a write runs: the page re-renders when it ends, which turns
+     the button back on. confd refuses the reboot too. */
+  if (writing) {
+    rb.disabled = true;
+    rb.title = `Partition ${fw.write.slot} is being written; reboot when it finishes.`;
+  }
   rb.onclick = () => fwAction('reboot', '',
     'The stick reboots and the fibre service drops for about two minutes.'
     + (trial ? ` This is a trial of partition ${booted}: the reboot comes back on `
@@ -605,4 +636,5 @@ async function commitRunning() {
 export {
   renderFirmware, wireFirmware, slotKind, renderTrial, devNotes,
   followReboot, rebootView, rebootLoop, rebootDeps, REBOOT_EXPECTED_S,
+  followLoop, followDeps, WRITE_LOST_POLLS,
 };

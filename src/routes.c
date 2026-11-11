@@ -1665,6 +1665,20 @@ void serve(int conn)
 					"( sleep 1; /sbin/reboot || /bin/reboot ) >/dev/null 2>&1 &\n";
 				char out[64];
 
+				/*
+				 * A reboot in the middle of a write leaves the
+				 * partition half erased, and the upload refuses
+				 * for the same reason. The write is what the
+				 * page is following; say so, and do not reboot.
+				 */
+				if (fwu_running()) {
+					respond(conn, "409 Conflict", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"a firmware write is running; "
+						     "rebooting now would leave the partition half written. "
+						     "Wait for it to finish\"}");
+					return;
+				}
+
 				/* Answer first, then reboot a second later: the
 				 * reply cannot be delivered by a kernel that is
 				 * already going down. */

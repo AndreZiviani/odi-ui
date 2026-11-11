@@ -1875,6 +1875,11 @@ printf 'running %s 1\n' "$LIVE" > /tmp/fwu.state
 check "an upload is refused while a firmware write is running" 409 \
 	"$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
 check "and the image it was reading is untouched" "$SMALL_BYTES" "$(wc -c < /tmp/img.tar | tr -d ' ')"
+# The same state refuses a reboot: nothing is rebooted under a running write.
+r=$(curl -s -u "$AUTH" -X POST -d 'action=reboot&partition=' "$U/api/firmware")
+check "a reboot is refused while a firmware write is running" 409 \
+	"$(code -u "$AUTH" -X POST -d 'action=reboot&partition=' "$U/api/firmware")"
+check "and says why" yes "$(err "$r" '"ok":false,"error":"a firmware write is running; rebooting now')"
 kill "$LIVE" 2>/dev/null || true
 wait "$LIVE" 2>/dev/null || true
 check "a state naming a dead process does not block an upload" 200 \
