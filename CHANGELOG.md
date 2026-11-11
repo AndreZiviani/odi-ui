@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: *802.1X EAPOL without the service tag* (`VLAN_EAPOL_UNTAGGED`,
+  experimental) is on the VLAN page after the service VLAN ID and priority.
+  `1`, with the manual tag on ("stick tags"), lets EAPOL frames cross the
+  stick untagged in both directions while everything else keeps the service
+  tag, for an ISP that authenticates the line with 802.1X on untagged or
+  VLAN 0 frames while the service is on a VLAN; the router can then use one
+  untagged WAN interface. Off (unset or anything else) is the default. Shown
+  as ignored unless VLAN config mode and manual VLAN mode are both 1. Saving
+  applies it live through the `omci` action (`apply.sh omci`, no reboot).
+  Not yet run against a line that uses EAP. Pairs with AndreZiviani/odi-oss#336;
+  refs AndreZiviani/odi-oss#301.
 - Config: once a "VLAN forward operation override" (`RTK_DEVINFO_SPECVER`) is
   stored, its row says that the OMCI tab and `omcicli mib get 84` keep showing
   the FwdOp the OLT set, and that `omcli vlan` or `pon/omcli_vlan.txt` in the
