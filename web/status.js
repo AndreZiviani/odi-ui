@@ -256,26 +256,51 @@ function ponLoad(st) {
   return { pct, mbps: used * 8 * 8000 / 1e6, of: payload * 8 * 8000 / 1e6 };
 }
 
-/* The section of its own: shown when the driver has the counters, a dash
-   outside O5, where there is no downstream to measure. */
+const ponPct = (v) => (v < 10 ? v.toFixed(1) : v.toFixed(0));
+
+/* Where the figure stands between an empty and a full PON, taken from the
+   figure as it is shown. Bands for the eye, not limits of anything. */
+const ponBand = (v) => (v >= 80 ? 'hi' : v >= 50 ? 'mid' : 'lo');
+
+/* The section of its own: shown when the driver has the counters. The
+   figure as the meters show theirs, and a bar for its place between an
+   empty and a full PON. A dash outside O5, where there is no downstream to
+   measure. */
 function renderPon(st, state) {
   const block = $('#ponblock');
   const have = !!st && typeof st.ds_superframe === 'string' && typeof st.ds_gem_idle === 'string';
   block.hidden = !have;
-  const dl = $('#pon');
-  dl.textContent = '';
-  if (!have || state !== 'O5') {
-    ponLoad(null);
-    if (have) dl.append(el('dt', null, 'Downstream in use'), el('dd', null, '\u2014'));
-    return;
-  }
-  const load = ponLoad(st);
-  dl.append(el('dt', null, 'Downstream in use'),
-    el('dd', load ? 'num' : null, load ? `\u2248 ${load.pct < 10 ? load.pct.toFixed(1) : load.pct.toFixed(0)} %` : 'measuring'));
+  const host = $('#pon');
+  host.textContent = '';
+  if (!have) { ponLoad(null); return; }
+  const live = state === 'O5';
+  const load = live ? ponLoad(st) : (ponLoad(null), null);
+
+  const read = el('div', 'm-read');
+  /* Only a figure is set in the readout face; the wait for one is said plainly. */
+  read.append(el('span', load ? 'num' : 'pon-wait', load ? '\u2248 ' + ponPct(load.pct) : (live ? 'measuring' : '\u2014')));
+  if (load) read.append(el('span', 'unit', '% of the downstream in use'));
+  host.append(read);
   if (load) {
-    dl.append(el('dt', null, 'Sent to all ONUs'),
-      el('dd', 'num', `\u2248 ${load.mbps < 100 ? load.mbps.toFixed(1) : load.mbps.toFixed(0)} Mbit/s of ${load.of.toFixed(0)}`));
+    host.append(el('p', 'pon-rate',
+      `\u2248 ${load.mbps < 100 ? load.mbps.toFixed(1) : load.mbps.toFixed(0)} of ${load.of.toFixed(0)} Mbit/s sent to all ONUs`));
   }
+
+  const bar = el('div', 'scale pon-bar');
+  bar.style.setProperty('--n', '10');
+  bar.append(el('div', 'ticks'));
+  if (load) {
+    const fill = el('div', 'pon-fill ' + ponBand(Number(ponPct(load.pct))));
+    fill.style.width = Math.max(0.5, Math.round(load.pct * 10) / 10) + '%';
+    bar.append(fill);
+  }
+  const lab = el('div', 'm-ticks');
+  for (const v of [0, 25, 50, 75, 100]) {
+    const t = el('span', null, v + ' %');
+    t.style.left = v + '%';
+    lab.append(t);
+  }
+  host.append(bar, lab);
 }
 
 function renderStatus(raw, chip, st) {

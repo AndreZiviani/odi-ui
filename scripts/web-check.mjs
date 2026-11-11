@@ -357,36 +357,57 @@ ok(true, 'renderStatus runs against a diag capture');
      'overview: a stock slot without those files shows dashes, and a host link down says so');
 
   /* The PON load has a section of its own, not a line on the diagram: the
-     whole PON beside the figures of this stick would read as this stick. */
+     whole PON beside the figures of this stick would read as this stick.
+     The figure, the rate and a bar. */
   const half = 291456000;        /* 80000 frames (10 s) half full of idle, FEC on: 36432 bytes a frame */
   const pon = (sf, idle, fec) => ({ ...st('100 0 100 800 0 0 0 0 0 0'),
     ds_superframe: String(sf), ds_gem_idle: String(idle), ...(fec === undefined ? {} : { ds_fec: fec }) });
   const block = doc.querySelector('#ponblock');
-  const pv = () => textOf(doc.querySelector('#pon'));
-  ok(block.hidden === true && pv() === '' && !/PON load|in use/.test(ov()),
+  const host = doc.querySelector('#pon');
+  const read = () => textOf(host.children[0]);
+  const all = () => textOf(host);
+  const fill = () => host.children.map((c) => c.children.find((x) => /^pon-fill/.test(x.className))).find(Boolean);
+  ok(block.hidden === true && all() === '' && !/PON load|in use/.test(ov()),
      'pon load: no section without the counters (a stock slot, an older driver), and nothing on the diagram');
   t += 10000;
   renderStatus(raw, null, pon(1000, 5000000000, '1'));
-  ok(block.hidden === false && pv() === 'Downstream in usemeasuring', 'pon load: the first poll has nothing to compare with');
+  ok(block.hidden === false && read() === 'measuring' && !fill() && /0 %25 %50 %75 %100 %$/.test(all()),
+     'pon load: the first poll has nothing to compare with: an empty bar with its scale');
   t += 10000;
   renderStatus(raw, null, pon(81000, 5000000000 + half, '1'));
-  ok(pv() === 'Downstream in use\u2248 50 %Sent to all ONUs\u2248 1166 Mbit/s of 2332',
+  ok(read() === '≈ 50% of the downstream in use' && /≈ 1166 of 2332 Mbit\/s sent to all ONUs/.test(all()),
      'pon load: half the payload idle is 50 %, past 32 bits of idle frames, with the rate it stands for');
+  ok(fill().style.width === '50%' && fill().className === 'pon-fill mid', 'pon load: the bar is filled to the figure');
   t += 10000;
   renderStatus(raw, null, pon(161000, 5000000000 + half + 571253760, '1'));
-  ok(/\u2248 2\.0 %/.test(pv()) && /\u2248 46\.6 Mbit\/s/.test(pv()), 'pon load: under 10 % it shows one decimal');
+  ok(read() === '≈ 2.0% of the downstream in use' && /≈ 46\.6 of 2332 Mbit\/s/.test(all())
+     && fill().style.width === '2%' && fill().className === 'pon-fill lo',
+     'pon load: under 10 % it shows one decimal');
   t += 10000;
   renderStatus(raw, null, pon(241000, 5000000000 + 2 * half + 571253760, '0'));
-  ok(pv() === 'Downstream in usemeasuring', 'pon load: FEC changing between two polls gives no figure');
+  ok(read() === 'measuring' && !fill(), 'pon load: FEC changing between two polls gives no figure');
   t += 10000;
   renderStatus(raw, null, pon(321000, 5000000000 + 2 * half + 571253760 + 80000 * 7776, '0'));
-  ok(/\u2248 0\.0 %/.test(pv()) && /of 2488$/.test(pv()), 'pon load: with FEC off the whole 38880 bytes count, all idle is 0 %');
+  ok(/^≈ 0\.0%/.test(read()) && /of 2488 Mbit\/s/.test(all()), 'pon load: with FEC off the whole 38880 bytes count, all idle is 0 %');
   t += 10000;
   renderStatus(raw.replace('(O5)', '(O2)'), null, pon(401000, 5000000000 + 3 * half + 571253760 + 80000 * 7776, '0'));
-  ok(block.hidden === false && pv() === 'Downstream in use\u2014', 'pon load: outside O5 the section stays, with a dash');
+  ok(block.hidden === false && read() === '—' && !fill(), 'pon load: outside O5 the section stays, with a dash');
   t += 10000;
   renderStatus(raw, null, pon(481000, 5000000000 + 4 * half + 571253760 + 80000 * 7776, '0'));
-  ok(pv() === 'Downstream in usemeasuring', 'pon load: and back in O5 it starts over');
+  ok(read() === 'measuring', 'pon load: and back in O5 it starts over');
+  {
+    /* The colour of the bar follows the figure as it is shown. */
+    const cls = (pct) => {
+      t += 10000;
+      renderStatus(raw, null, pon(0, 0, '1'));
+      t += 10000;
+      renderStatus(raw, null, pon(80000, Math.round(80000 * 36432 * (1 - pct / 100) / 5), '1'));
+      return fill().className;
+    };
+    ok(cls(49.4) === 'pon-fill lo' && cls(50) === 'pon-fill mid' && cls(79.4) === 'pon-fill mid'
+       && cls(79.6) === 'pon-fill hi' && cls(80) === 'pon-fill hi',
+       'pon load: blue under 50 %, yellow from 50 %, red from 80 %, by the figure shown');
+  }
   {
     const { ponLoad } = await import(join(root, 'web', 'status.js'));
     const s = (sf, idle) => ({ ds_superframe: String(sf), ds_gem_idle: String(idle), ds_fec: '1' });

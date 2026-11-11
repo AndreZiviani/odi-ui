@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: a commit is accepted only for the partition the stick is running,
+  on every path. `POST /api/firmware action=commit` read no `sw_active`, so a
+  stale tab could name a slot that never booted and, on a stock `nv` without
+  the commit verb, the one-copy `setenv` made it the permanent boot target.
+  confd now reads `sw_active` itself and answers 400 for any other partition,
+  or when it cannot be read. That one-copy fallback now runs only when `nv`
+  prints its usage text, not on any failed commit. `make smoke` covers the
+  other partition, the running one, an unreadable `sw_active` and both
+  fallback outcomes. Refs #78.
+
+- Status: the *Shared PON, all ONUs* section shows its figure the way the
+  optics meters do, with the rate under it and a bar from an empty to a full
+  PON. The bar is blue under 50 %, yellow from 50 % and red from 80 %, as a
+  guide and not a limit. The page keeps no history; that stays the metrics
+  exporter's job. Only the page changes, confd and the API are untouched.
+
 - Config and the setup wizard: the serial number field also takes the 16 hex
   digits some ISPs print as a modem ID, the vendor id as the codes of its four
   characters, with or without spaces, colons, dots or hyphens. It is converted

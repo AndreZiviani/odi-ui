@@ -131,10 +131,15 @@
     <!-- The whole PON, every ONU on the fibre together, not this stick; shown when the driver has the counters. -->
     <section class="block" id="ponblock" hidden>
       <h2>Shared PON, all ONUs</h2>
-      <dl class="env" id="pon"></dl>
+      <div class="pon" id="pon"></div>
       <p class="help">How full the downstream of the whole PON is: every ONU on this fibre together, not the traffic of this stick, which is under Forwarding. An estimate, worked out between two refreshes of this page from the idle frames the OLT sends when nobody needs the capacity.</p>
       <details class="more">
         <summary>What the figure leaves out</summary>
+        <p>The figure is the average between two refreshes, about 15 seconds: a
+           burst shorter than that, a speed test for one, shows at a fraction of
+           its rate. The colour of the bar is a guide, blue under 50 %, yellow
+           from 50 %, red from 80 %. The page keeps no history; that is the
+           metrics exporter's job.</p>
         <p>Frame headers and management traffic count as in use, so a PON with no
            traffic at all reads a little above zero. An OLT may send dummy frames
            in place of idle ones, which would read as load. It says nothing about
