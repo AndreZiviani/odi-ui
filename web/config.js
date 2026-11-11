@@ -364,8 +364,9 @@ function renderRow(row, readonly) {
      by the row while a value is stored, on the image that behaves this way. */
   if (row.name === 'RTK_DEVINFO_SPECVER' && imageAware() && S.VALUES[row.name]) {
     left.append(el('p', 's-help', 'The OMCI tab and omcicli mib get 84 keep showing the FwdOp the OLT set '
-      + '(0x10 stays 0x10): the override changes how frames are forwarded, not that value. '
-      + 'To see it in force, over ssh: omcli vlan.'));
+      + '(0x10, for example): the override changes how frames are forwarded, not that value. '
+      + 'To see it in force: omcli vlan over ssh, or pon/omcli_vlan.txt in the diagnostics bundle '
+      + '(System, Download diagnostics).'));
   }
   /* Said once by the identity switch above the rows, so each row carries only
      a tag, and the sentence goes in its help. */

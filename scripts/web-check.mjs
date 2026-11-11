@@ -1628,8 +1628,9 @@ EDITS.clear();
     ok(fwdRow() && !/keep showing the FwdOp/.test(textOf(fwdRow())), 'FwdOp override: no note while the key is empty');
     S.VALUES.RTK_DEVINFO_SPECVER = '0x1102:0x00,0x110b:0x00';
     renderAll();
-    ok(fwdRow() && /keep showing the FwdOp the OLT set/.test(textOf(fwdRow())) && /omcli vlan/.test(textOf(fwdRow())),
-       'FwdOp override: with a value stored the row says the MIB still shows the OLT code, and how to check');
+    ok(fwdRow() && /keep showing the FwdOp the OLT set/.test(textOf(fwdRow())) && /omcli vlan over ssh/.test(textOf(fwdRow()))
+       && /pon\/omcli_vlan\.txt in the diagnostics bundle/.test(textOf(fwdRow())) && !/stays 0x10/.test(textOf(fwdRow())),
+       'FwdOp override: with a value stored the row says the MIB still shows the OLT code, and both ways to check');
     if (before === undefined) delete S.VALUES.RTK_DEVINFO_SPECVER; else S.VALUES.RTK_DEVINFO_SPECVER = before;
     renderAll();
   }
