@@ -249,6 +249,12 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           {"ok":false,"error":"commit N: <nv reason>"},
                                           e.g. while confirm-arp exists; there is no
                                           force parameter
+                                          a commit is accepted only for the running
+                                          partition (`sw_active`, read by confd): any
+                                          other, or an unreadable `sw_active`, answers
+                                          400 {"ok":false,"error":...}; the one-copy
+                                          setenv fallback needs that check too and runs
+                                          only when nv prints its usage text
 
 ## Host port and safe mode (odi-oss)
 
