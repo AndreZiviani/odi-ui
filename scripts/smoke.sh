@@ -59,6 +59,14 @@ cat > /etc/scripts/flash <<'FLASH'
 #!/bin/sh
 case "$1" in
 all)
+	# /etc/config/failstore names a store whose dump fails the way the odi-oss
+	# script does without its file: one line on stderr and exit 1.
+	# /etc/config/emptystore names one that prints nothing and exits 0.
+	if [ "$(cat /etc/config/failstore 2>/dev/null)" = "$2" ]; then
+		echo "flash: /var/config/lastgood_$2.xml is not there -- is the config partition mounted?" >&2
+		exit 1
+	fi
+	[ "$(cat /etc/config/emptystore 2>/dev/null)" = "$2" ] && exit 0
 	# /etc/config/padcs holds a row count: the cs store then starts with that
 	# many table rows, the way a stick that ran a router firmware keeps its WAN
 	# table, and the hs store carries GPON_SN, so a cut shows as a missing key.
@@ -932,6 +940,24 @@ check "and says why" yes \
 check "a backup that would be cut is refused" 500 \
 	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
 rm -f /etc/config/padcs
+# A dump that failed or printed nothing is not a backup either. flash's error
+# line comes down the same pipe as the store, so by byte count alone it passed
+# for one, and an empty hs dump was accepted as it was.
+echo hs > /etc/config/failstore
+check "a backup whose hs dump failed is refused" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
+check "and the values are still served, so the page opens" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/values")" '"VLAN_MANU_TAG_VID":"110"')"
+echo cs > /etc/config/failstore
+check "a backup whose cs dump failed is refused" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
+rm -f /etc/config/failstore
+echo hs > /etc/config/emptystore
+check "a backup whose hs dump is empty is refused" 500 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
+rm -f /etc/config/emptystore
+check "and with both dumps back the backup is served" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/backup")"
 
 echo "== diagnostics bundle"
 # /api/diag runs the image /etc/scripts/diag-bundle.sh and streams the file it
