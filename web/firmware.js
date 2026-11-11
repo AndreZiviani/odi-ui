@@ -128,6 +128,9 @@ async function writeImage(part, fw) {
 
   out.textContent = '';
   out.append(el('div', 'warn', `Writing partition ${part}.`));
+  /* Held before the request: with a starter that blocks, or a slow answer,
+     the button would be on for the whole of it. */
+  if (RB) holdReboot(RB, part);
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -138,6 +141,7 @@ async function writeImage(part, fw) {
     if (j.output) out.append(el('pre', null, String(j.output).trim()));
     if (!j.ok) {
       out.append(el('div', 'bad', j.error || 'the updater refused'));
+      releaseReboot();
       return;
     }
     /* An image whose starter writes in the background leaves a state in
@@ -146,7 +150,29 @@ async function writeImage(part, fw) {
     await followWrite(part);
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
+    releaseReboot();
   }
+}
+
+/* The Reboot button of the current render, for followWrite to hold. */
+let RB = null;
+
+function holdReboot(btn, slot) {
+  btn.disabled = true;
+  btn.title = `Partition ${slot} is being written; reboot when it finishes.`;
+}
+
+function releaseReboot() {
+  if (!RB || FOLLOWING) return;
+  RB.disabled = false;
+  RB.title = '';
+}
+
+/* What the page says of a write whose writer is gone without a recorded result. */
+function writeUnknownText(slot) {
+  return `The writer of partition ${slot} has ended without recording a result, so whether `
+    + 'it finished is unknown (a killed writer cannot record one). Check the state of the '
+    + 'partition, in the log above and on the cards, before trying it or rebooting.';
 }
 
 /* Poll a background write until it says ok or failed. One poll at a time:
@@ -154,18 +180,46 @@ async function writeImage(part, fw) {
 async function followWrite(part) {
   if (FOLLOWING) return;
   FOLLOWING = true;
+  /* A write started from this page: the Reboot button was rendered before
+     it and would stay on until the render that follows the end. */
+  if (RB) holdReboot(RB, part);
   try { await followLoop(part); } finally { FOLLOWING = false; }
   renderFirmware();
 }
 
-async function followLoop(part) {
+/* Consecutive failed polls before the page stops asking: 40 x 3 s, two
+   minutes. The stick is busy erasing flash, so a poll can fail for a while. */
+const WRITE_LOST_POLLS = 40;
+
+const followDeps = {
+  get: (path) => get(path),
+  sleep: (ms) => new Promise((res) => setTimeout(res, ms)),
+};
+
+async function followLoop(part, deps = followDeps) {
   const out = $('#fwout');
   const log = el('pre', null, '');
+  let lost = 0;
   out.append(log);
   for (;;) {
     let fw;
-    try { fw = await get('/api/firmware'); } catch (e) { fw = {}; }
+    /* A poll that fails says nothing about the write: it is unknown, never
+       "written". Keep asking, up to a bound. */
+    try { fw = await deps.get('/api/firmware'); } catch (e) { fw = null; }
+    if (!fw || typeof fw !== 'object') {
+      if (++lost >= WRITE_LOST_POLLS) {
+        out.append(el('div', 'bad', `Lost contact with the stick, so the write of partition ${part} `
+          + 'is unknown. Reload the page once it answers, and read the status before '
+          + 'trying or rebooting.'));
+        break;
+      }
+      await deps.sleep(WRITE_POLL_MS);
+      continue;
+    }
+    lost = 0;
     const w = fw.write;
+    /* No write state on a poll that was answered: the starter blocked and
+       had finished when the write request returned ok. */
     if (!w) {
       out.append(el('div', 'good', `Partition ${part} written. Press Try on it — a `
         + 'trial boots once, and reverts by itself if the image does not come up.'));
@@ -184,7 +238,11 @@ async function followLoop(part) {
         + 'far as erasing; the running partition was not touched.'));
       break;
     }
-    await new Promise((res) => setTimeout(res, WRITE_POLL_MS));
+    if (w.state === 'unknown') {
+      out.append(el('div', 'bad', writeUnknownText(w.slot)));
+      break;
+    }
+    await deps.sleep(WRITE_POLL_MS);
   }
 }
 
@@ -318,6 +376,10 @@ async function renderFirmware() {
   const rb = el('button', 'danger cost-reboot');
   rb.type = 'button';
   rb.append(el('i', 'bars'), document.createTextNode('Reboot'));
+  /* Off while a write runs: the page re-renders when it ends, which turns
+     the button back on. confd refuses the reboot too. */
+  RB = rb;
+  if (writing) holdReboot(rb, fw.write.slot);
   rb.onclick = () => fwAction('reboot', '',
     'The stick reboots and the fibre service drops for about two minutes.'
     + (trial ? ` This is a trial of partition ${booted}: the reboot comes back on `
@@ -353,6 +415,9 @@ async function renderFirmware() {
 
   if (fw.mem) $('#memtotal').textContent = fw.mem;
 
+  if (fw.write && fw.write.state === 'unknown') {
+    host.append(el('p', 'callout warn', writeUnknownText(fw.write.slot)));
+  }
   if (writing) {
     host.append(el('p', 'callout warn', `Partition ${fw.write.slot} is being written. `
       + 'Do not reboot or power off until it finishes.'));
@@ -605,4 +670,5 @@ async function commitRunning() {
 export {
   renderFirmware, wireFirmware, slotKind, renderTrial, devNotes,
   followReboot, rebootView, rebootLoop, rebootDeps, REBOOT_EXPECTED_S,
+  followLoop, followDeps, WRITE_LOST_POLLS, writeImage,
 };

@@ -458,31 +458,6 @@ next:
 }
 
 /*
- * Whether fwu_starter.sh has a write running: FWU_STATE reads `running <pid>
- * <slot>` and the pid is alive. The same test the script itself uses to refuse
- * a second write, and for the same reason the upload needs it: the flasher
- * reads UPLOAD_PATH for the eighty seconds it takes, so a second upload (a
- * double click, another tab) would truncate the image under it and write what
- * is left into the slot. No state file, or a state that is not running, or a
- * pid that is gone (a kill left it stale): not running.
- */
-static int fwu_running(void)
-{
-	char st[64];
-	unsigned long i = 0, pid = 0;
-
-	if (read_file(FWU_STATE, st, sizeof(st)) <= 0 || !spre(st, "running "))
-		return 0;
-	for (i = 8; st[i] >= '0' && st[i] <= '9' && i < 8 + 9; i++)
-		pid = pid * 10 + (unsigned long)(st[i] - '0');
-	if (!pid)
-		return 0;
-	/* Signal 0 only tests that the process exists. EPERM would also mean
-	 * it does; confd runs as root, so only ESRCH (gone) says no. */
-	return syscall3(__NR_kill, (long)pid, 0, 0) == 0;
-}
-
-/*
  * The shape of one OpenSSH public key line, as `ssh-keygen` prints it:
  * TYPE BLOB [COMMENT]. NULL when it is one, else what is wrong, in words that
  * say what is allowed. The page makes the same checks (web/validate.js,
@@ -1684,6 +1659,20 @@ void serve(int conn)
 					"trap '' HUP\n"
 					"( sleep 1; /sbin/reboot || /bin/reboot ) >/dev/null 2>&1 &\n";
 				char out[64];
+
+				/*
+				 * A reboot in the middle of a write leaves the
+				 * partition half erased, and the upload refuses
+				 * for the same reason. The write is what the
+				 * page is following; say so, and do not reboot.
+				 */
+				if (fwu_running()) {
+					respond(conn, "409 Conflict", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"a firmware write is running; "
+						     "rebooting now would leave the partition half written. "
+						     "Wait for it to finish\"}");
+					return;
+				}
 
 				/* Answer first, then reboot a second later: the
 				 * reply cannot be delivered by a kernel that is

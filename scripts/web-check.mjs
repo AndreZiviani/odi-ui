@@ -1252,6 +1252,70 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
      'the running slot card carries both notes next to Commit');
   t = await fwText({ ...trialFW, exe: '/bin/confd' });
   ok(!/confirm-arp|breadcrumbs/.test(t), 'and neither without the files');
+
+  /* The Reboot button while a write runs. The follow loop that a running state
+     starts is parked: its poll answers and its nap never ends. */
+  const fwm = await import(join(root, 'web', 'firmware.js'));
+  const rebootBtn = () => {
+    let b = null;
+    const visit = (n) => { if (n.classList && n.classList.contains('cost-reboot')) b = n; (n.children || []).forEach(visit); };
+    visit(doc.querySelector('#parts'));
+    return b;
+  };
+  /* Before the parked loops below, which leave a follow running for good.
+     A write started from this page: the button was rendered before it, so it
+     is held when the write starts, not only by the next render. */
+  const idleFW = { ...trialFW, exe: '/bin/confd' };
+  await fwText(idleFW);
+  const btn0 = rebootBtn();
+  let seen = null;
+  const keepGet = fwm.followDeps.get, keepFetch = globalThis.fetch, keepConfirm = globalThis.confirm;
+  fwm.followDeps.get = async () => {
+    seen = { disabled: btn0.disabled, title: btn0.title };
+    return { write: { state: 'ok', slot: '0', rc: '', log: '' } };
+  };
+  globalThis.confirm = () => true;
+  let atPost = null;
+  globalThis.fetch = async (path, opts) => {
+    if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
+    atPost = { disabled: btn0.disabled, title: btn0.title };
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  await fwm.writeImage('0', idleFW);
+  for (let i = 0; i < 20 && rebootBtn() === btn0; i++) await new Promise((r) => setTimeout(r, 0));
+  fwm.followDeps.get = keepGet; globalThis.fetch = keepFetch; globalThis.confirm = keepConfirm;
+  ok(seen && seen.disabled === true && /being written/.test(seen && seen.title),
+     'reboot: a write started on this page turns the button off from the start');
+  ok(rebootBtn() !== btn0 && !rebootBtn().disabled, 'reboot: and the render after the write turns it on');
+  ok(atPost && atPost.disabled === true && /being written/.test(atPost.title),
+     'reboot: the button is already off while the write request is pending');
+  /* A request that fails or is refused gives the button back. */
+  for (const post of [async () => ({ ok: true, json: async () => ({ ok: false, error: 'refused' }) }),
+                      async () => { throw new Error('network'); }]) {
+    await fwText(idleFW);
+    const b1 = rebootBtn();
+    globalThis.confirm = () => true;
+    globalThis.fetch = async (path, opts) => (opts && opts.method === 'POST' ? post() : keepFetch(path, opts));
+    await fwm.writeImage('0', idleFW);
+    globalThis.fetch = keepFetch; globalThis.confirm = keepConfirm;
+    ok(b1.disabled === false, 'reboot: a write request that is refused or fails leaves the button on');
+  }
+  /* A writer that is gone with no recorded result: the page says so, and Reboot is not held. */
+  await fwText({ ...idleFW, write: { state: 'unknown', pid: '4242', slot: '0', rc: '', log: '' } });
+  ok(rebootBtn().disabled === false && /ended without recording a result/.test(textOf(doc.querySelector('#parts'))),
+     'reboot: an unknown write result leaves Reboot on and says the writer is gone');
+
+  const keepSleep = fwm.followDeps.sleep;
+  fwm.followDeps.sleep = () => new Promise(() => {});
+  await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'running', pid: '4242', slot: '0', rc: '', log: '' } });
+  ok(rebootBtn() && rebootBtn().disabled === true && /being written/.test(rebootBtn().title),
+     'reboot: the button is off while a write runs, and says why');
+  await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'ok', pid: '4242', slot: '0', rc: '', log: '' } });
+  ok(rebootBtn() && !rebootBtn().disabled, 'reboot: and on again once the write is no longer running');
+  await fwText({ ...trialFW, exe: '/bin/confd' });
+  ok(rebootBtn() && !rebootBtn().disabled, 'reboot: and on when there is no write at all');
+
+  fwm.followDeps.sleep = keepSleep;
   API['/api/firmware'] = keep;
 }
 
@@ -2369,6 +2433,44 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   const before = gone;
   await fw.followReboot();
   ok(gone === before, 'reboot: a second request while following starts no second loop');
+}
+
+/* --- following a write -------------------------------------------------- */
+{
+  const fw = await import(join(root, 'web', 'firmware.js'));
+  const run = async (answers) => {
+    let i = 0, naps = 0;
+    const out = doc.querySelector('#fwout');
+    out.textContent = '';
+    await fw.followLoop('1', {
+      get: async () => {
+        const a = answers[Math.min(i++, answers.length - 1)];
+        if (a === 'fail') throw new Error('HTTP 503');
+        return a;
+      },
+      sleep: async () => { naps++; },
+    });
+    return { text: textOf(out), polls: i, naps };
+  };
+  const done = { write: { state: 'ok', slot: '1', rc: '', log: 'fwu: done' } };
+  let r = await run(['fail', 'fail', done]);
+  ok(/written and read back/.test(r.text) && r.polls === 3 && r.naps === 2,
+     'write follow: failed polls are unknown, the loop keeps asking and ends on the real status');
+  r = await run(['fail', { write: { state: 'running', slot: '1', rc: '', log: 'erasing' } }, 'fail', done]);
+  ok(/written and read back/.test(r.text) && r.polls === 4, 'write follow: running, then a failed poll, then ok');
+  r = await run(['fail']);
+  ok(r.polls === fw.WRITE_LOST_POLLS && /Lost contact/.test(r.text) && !/written/.test(r.text),
+     'write follow: a stick that never answers stops after the bound, and never says written');
+  r = await run([{ write: { state: 'failed', slot: '1', rc: '3', log: '' } }]);
+  ok(/failed \(exit 3\)/.test(r.text) && !/written/.test(r.text), 'write follow: a failed write is reported as failed');
+  r = await run([{ write: { state: 'failed', slot: '1', rc: '', log: '' } }]);
+  ok(/failed\./.test(r.text) && !/exit/.test(r.text) && !/written/.test(r.text),
+     'write follow: a failed write with no exit code (a vanished writer) ends the loop as failed');
+  r = await run([{ write: { state: 'unknown', slot: '1', rc: '', log: '' } }]);
+  ok(r.polls === 1 && /ended without recording a result/.test(r.text) && /unknown/.test(r.text) && !/written/.test(r.text),
+     'write follow: a writer that is gone with no result ends the loop as unknown, not failed');
+  r = await run([{ env: {} }]);
+  ok(/written/.test(r.text) && r.polls === 1, 'write follow: an answered poll with no write state is the blocking starter, finished');
 }
 
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
