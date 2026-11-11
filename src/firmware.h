@@ -26,6 +26,8 @@ int slot_kernel_ok(char p);
  * said), and -1 when this nv has no commit verb (the stock one): the caller
  * decides what that means. msg is always a NUL-terminated string.
  */
+/* Whether fwu_starter.sh has a write running (state file says so and its pid is alive). */
+int fwu_running(void);
 int nv_commit(const char *slot, char *msg, unsigned long cap);
 /* Rewrite /var/run/odi-slot from the environment. 1 when it ran and exited 0. */
 int slot_state_refresh(void);

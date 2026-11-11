@@ -427,6 +427,19 @@ void emit_firmware_body(int fd)
 		char st[96];
 		long n = read_file(FWU_STATE, st, sizeof(st));
 
+		/*
+		 * A state of running with nothing running any more: the writer may
+		 * have finished between the read and the check, so read once more.
+		 * If it still says running, no result was recorded (a --foreground
+		 * write never does, a killed supervisor cannot): "unknown", not
+		 * failed, and the page must not wait for it.
+		 */
+		int gone = 0;
+
+		if (n > 0 && spre(st, "running ") && !fwu_running()) {
+			n = read_file(FWU_STATE, st, sizeof(st));
+			gone = n > 0 && spre(st, "running ");
+		}
 		if (n > 0) {
 			unsigned long i = 0, f;
 			static const char *field[] = { "state", "pid", "slot", "rc" };
@@ -445,7 +458,10 @@ void emit_firmware_body(int fd)
 				put_fd(fd, "\"");
 				put_fd(fd, field[f]);
 				put_fd(fd, "\":\"");
-				put_json_str(fd, st + b, i - b);
+				if (!f && gone)
+					put_fd(fd, "unknown");
+				else
+					put_json_str(fd, st + b, i - b);
 				put_fd(fd, "\"");
 			}
 			put_fd(fd, ",\"log\":\"");
@@ -492,6 +508,47 @@ void emit_firmware_body(int fd)
 			put_kv_members(fd, man);
 		put_fd(fd, "}}");
 	}
+}
+
+/*
+ * Whether fwu_starter.sh has a write running. The pid in FWU_STATE is the
+ * supervising shell, not the flasher: killing it leaves fwu.sh writing on. What
+ * every process of a write shares is the writer lock (fd 9, inherited), so the
+ * evidence is: the state says `running <pid>` and that pid is alive, OR the
+ * lock is held. The same test the upload and the reboot refuse by, and the
+ * status the page polls reports from it, so they cannot disagree.
+ */
+static int fwu_lock_held(void)
+{
+	long fd, r;
+
+	/* Opened apart from any holder, so its flock conflicts with theirs; taken
+	 * non-blocking and dropped at once. No lock file (an older image): no
+	 * evidence either way, and the pid alone has to do. */
+	fd = syscall3(__NR_open, (long)FWU_LOCK, O_RDONLY, 0);
+	if (fd < 0)
+		return 0;
+	r = syscall3(__NR_flock, fd, LOCK_EX | LOCK_NB, 0);
+	if (r == 0)
+		syscall3(__NR_flock, fd, LOCK_UN, 0);
+	syscall3(__NR_close, fd, 0, 0);
+	return r == -EAGAIN_MIPS;
+}
+
+int fwu_running(void)
+{
+	char st[64];
+	unsigned long i = 0, pid = 0;
+
+	if (read_file(FWU_STATE, st, sizeof(st)) > 0 && spre(st, "running ")) {
+		for (i = 8; st[i] >= '0' && st[i] <= '9' && i < 8 + 9; i++)
+			pid = pid * 10 + (unsigned long)(st[i] - '0');
+		/* Signal 0 only tests that the process exists. EPERM would also
+		 * mean it does; confd runs as root, so only ESRCH (gone) says no. */
+		if (pid && syscall3(__NR_kill, (long)pid, 0, 0) == 0)
+			return 1;
+	}
+	return fwu_lock_held();
 }
 
 int nv_set(const char *key, const char *value)

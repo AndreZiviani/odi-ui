@@ -1126,15 +1126,83 @@ rm -f /tmp/nv.calls
 
 # A background write, as odi-oss fwu_starter.sh leaves it: the state and the
 # log are reported so the page can follow it.
-printf 'running 4242 1\n' > /tmp/fwu.state
+sleep 300 &
+LIVE1=$!
+printf 'running %s 1\n' "$LIVE1" > /tmp/fwu.state
 printf 'fwu: slot 1 -> kernel /dev/mtd6\nfwu: erasing /dev/mtd6\n' > /tmp/fwu.log
 check "a running write is reported" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"write":{"state":"running","pid":"4242","slot":"1","rc":""')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" "\"write\":{\"state\":\"running\",\"pid\":\"$LIVE1\",\"slot\":\"1\",\"rc\":\"\"")"
 check "with the end of its log" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" 'erasing /dev/mtd6')"
+kill "$LIVE1" 2>/dev/null || true
+wait "$LIVE1" 2>/dev/null || true
 printf 'failed 4242 1 3\n' > /tmp/fwu.state
 check "and a failed one with its exit code" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"state":"failed","pid":"4242","slot":"1","rc":"3"')"
+# The pid in the state file is the supervising shell of fwu_starter.sh; what
+# every process of a write shares is the writer lock (/tmp/fwu.state.lock, fd 9,
+# inherited). A write is running while that pid is alive OR the lock is held.
+# The lock is held here by a helper process, as fwu.sh would hold it after its
+# supervisor was killed. The reboot is only posted where it is refused: an
+# accepted one would reboot the machine this runs on.
+FLOCKER=
+holdlock() {
+	: >> /tmp/fwu.state.lock
+	if python3 -c 'import fcntl' 2>/dev/null; then
+		python3 -c 'import fcntl,time
+f = open("/tmp/fwu.state.lock", "a")
+fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+time.sleep(300)' &
+	else
+		flock -x /tmp/fwu.state.lock sleep 299 &
+	fi
+	FLOCKER=$!
+	sleep 1
+}
+freelock() {
+	if [ -n "$FLOCKER" ]; then
+		kill "$FLOCKER" 2>/dev/null || true
+		wait "$FLOCKER" 2>/dev/null || true
+	fi
+	FLOCKER=
+}
+fwget() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware"; }
+sleep 0.1 &
+DEAD=$!
+wait "$DEAD" 2>/dev/null || true
+rm -f /tmp/fwu.state.lock
+
+# No lock file (an older image): the pid alone decides. A dead one with no
+# recorded result is unknown, not failed: a --foreground write leaves exactly
+# this behind when it finishes, and a killed supervisor may have left a writer.
+printf 'running %s 1\n' "$DEAD" > /tmp/fwu.state
+r=$(fwget)
+check "a running state, dead pid, no lock: not reported as running" no "$(yn "$r" '"state":"running"')"
+check "and not as failed" no "$(yn "$r" '"state":"failed"')"
+check "but as unknown, with its slot and no exit code" yes "$(err "$r" "\"state\":\"unknown\",\"pid\":\"$DEAD\",\"slot\":\"1\",\"rc\":\"\"")"
+# The result was recorded after all: it is what is reported.
+printf 'ok %s 1\n' "$DEAD" > /tmp/fwu.state
+check "an ok state with a dead pid is reported as ok" yes "$(err "$(fwget)" "\"state\":\"ok\",\"pid\":\"$DEAD\"")"
+
+# The pid is gone but the lock is held: the writer is still at work.
+printf 'running %s 1\n' "$DEAD" > /tmp/fwu.state
+holdlock
+r=$(fwget)
+check "dead pid, lock held: still reported as running" yes "$(err "$r" '"state":"running"')"
+check "a reboot is refused" 409 "$(code -u "$AUTH" -X POST -d 'action=reboot&partition=' "$U/api/firmware")"
+check "and an upload is refused" 409 "$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
+freelock
+check "the lock freed, the same state is unknown" yes "$(err "$(fwget)" '"state":"unknown"')"
+check "and the lock probe took nothing: it can be taken again" yes \
+	"$(holdlock; if kill -0 "$FLOCKER" 2>/dev/null; then echo yes; else echo no; fi; freelock)"
+sleep 300 &
+LIVE2=$!
+printf 'running %s 1\n' "$LIVE2" > /tmp/fwu.state
+check "and one with a live writer still is running" yes \
+	"$(err "$(fwget)" '"state":"running"')"
+kill "$LIVE2" 2>/dev/null || true
+wait "$LIVE2" 2>/dev/null || true
+rm -f /tmp/fwu.state.lock
 rm -f /tmp/fwu.state /tmp/fwu.log
 check "no state file, no write field" no \
 	"$(case "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" in *'"write"'*) echo yes ;; *) echo no ;; esac)"
