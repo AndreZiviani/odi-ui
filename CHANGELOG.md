@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: once a "VLAN forward operation override" (`RTK_DEVINFO_SPECVER`) is
+  stored, its row says that the OMCI tab and `omcicli mib get 84` keep showing
+  the FwdOp the OLT set, and that `omcli vlan` shows the override in force.
+  The sentence was only in the help under Details, and the unchanged 0x10 read
+  as "not applied" to users coming from the stock firmware, which writes the
+  code over the attribute. Only the page changes. Refs AndreZiviani/odi-oss#301.
+
 - Firmware: a commit is accepted only for the partition the stick is running,
   on every path. `POST /api/firmware action=commit` read no `sw_active`, so a
   stale tab could name a slot that never booted and, on a stock `nv` without

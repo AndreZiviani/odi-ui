@@ -1618,6 +1618,22 @@ EDITS.clear();
     renderAll();
   }
 
+  /* The FwdOp override leaves the attribute as the OLT wrote it, so the OMCI
+     tab still shows the old code: the row says so once a value is stored. */
+  {
+    const fwdRow = () => rowsOf('#set-vlan').find((r) => r.dataset.name === 'RTK_DEVINFO_SPECVER');
+    const before = S.VALUES.RTK_DEVINFO_SPECVER;
+    S.VALUES.RTK_DEVINFO_SPECVER = '';
+    renderAll();
+    ok(fwdRow() && !/keep showing the FwdOp/.test(textOf(fwdRow())), 'FwdOp override: no note while the key is empty');
+    S.VALUES.RTK_DEVINFO_SPECVER = '0x1102:0x00,0x110b:0x00';
+    renderAll();
+    ok(fwdRow() && /keep showing the FwdOp the OLT set/.test(textOf(fwdRow())) && /omcli vlan/.test(textOf(fwdRow())),
+       'FwdOp override: with a value stored the row says the MIB still shows the OLT code, and how to check');
+    if (before === undefined) delete S.VALUES.RTK_DEVINFO_SPECVER; else S.VALUES.RTK_DEVINFO_SPECVER = before;
+    renderAll();
+  }
+
   /* OMCI_VEIP_SLOT_ID does nothing without bit 256 of OMCI_CUSTOM_ME, which
      the page cannot edit: the row says so, and says what to run. */
   {
