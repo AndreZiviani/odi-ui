@@ -10,7 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   /api/firmware action=reboot` answers 409 with a message the page shows, the
   same refusal `/api/upload` already gave; before, a reboot could cut a write
   half way through the erase. The Reboot button is off while the write state
-  is running and on again when it ends. The write follow loop no longer
+  is running, also when the write was started from the page (held from the
+  request on, released if it fails), and on again when it ends. "A write is
+  running" is now one test for the reboot and upload refusals and for the
+  status: the pid in the state file is alive, or the writer lock
+  (`/tmp/fwu.state.lock`, which fwu.sh inherits) is held, so a killed
+  supervisor does not hide a flasher still writing. A state left at `running`
+  with neither is reported by `GET /api/firmware` as `unknown` (after reading
+  the file once more, in case the result was just recorded): the writer is
+  gone and no result was recorded, as after a `--foreground` write. The page
+  says so, tells you to check the partition before trying or rebooting, and
+  leaves Reboot on. The write follow loop no longer
   reads a failed status poll as "written": a failed poll is unknown, it keeps
   asking every 3 s, and after 40 failures in a row (two minutes) it says contact
   was lost and the result is unknown. The reboot action is the only route that reboots the stick, so no other

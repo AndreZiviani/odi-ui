@@ -65,6 +65,9 @@
  */
 #define FWU_STATE    "/tmp/fwu.state"
 #define FWU_LOG      "/tmp/fwu.log"
+/* The writer lock fwu_starter.sh takes on fd 9 (flock -n) and every process it
+ * starts inherits: held for as long as any of them lives. Beside the state file. */
+#define FWU_LOCK     FWU_STATE ".lock"
 /*
  * How the image applies saved settings without a reboot (odi-oss
  * /etc/scripts/apply.sh): `apply.sh network` re-applies the management
