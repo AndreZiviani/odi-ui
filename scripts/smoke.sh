@@ -182,14 +182,21 @@ echo "$*" >> /tmp/nv.calls
 # /tmp/nv.vendor makes it the stock nv, which prints usage and knows no commit.
 if [ "$1" = commit ]; then
 	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
+	[ -f /tmp/nv.crash ] && { echo "boom"; exit 2; }
 	[ -f /tmp/nv.refuse ] && { echo "nv: commit $2: that is not the slot this kernel was booted from (root= in /proc/cmdline), nothing written"; exit 1; }
 	echo "nv: commit $2: committed in both copies, read back"
 	exit 0
 fi
+# The running partition: 0, or what /tmp/nv.active holds; /tmp/nv.noactive
+# leaves sw_active out of the environment altogether.
+act=0
+[ -f /tmp/nv.active ] && act=$(cat /tmp/nv.active)
+sw=""
+[ -f /tmp/nv.noactive ] || sw="sw_active=$act\n"
 case "$1 $2" in
-"getenv sw_active") echo "sw_active=0" ;;
-"getenv ") printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
-"getenv")  printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
+"getenv sw_active") echo "sw_active=$act" ;;
+"getenv ") printf "${sw}sw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
+"getenv")  printf "${sw}sw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
 esac
 exit 0
 NV
@@ -1069,15 +1076,37 @@ check "a failed refresh is reported, the commit still stands" yes \
 	"$(err "$(fw 'action=commit&partition=0')" '"ok":true,"note":"committed","refreshed":false')"
 rm -f /tmp/slot-state.fail /tmp/slot-state.calls
 touch /tmp/nv.refuse
-r=$(fw 'action=commit&partition=1')
-check "a refusal by nv is an error with nv's reason" yes "$(err "$r" '"ok":false,"error":"commit 1: that is not the slot this kernel was booted from')"
+r=$(fw 'action=commit&partition=0')
+check "a refusal by nv is an error with nv's reason" yes "$(err "$r" '"ok":false,"error":"commit 0: that is not the slot this kernel was booted from')"
 check "and slot-state.sh is not run for it" no "$(test -e /tmp/slot-state.calls && echo yes || echo no)"
 rm -f /tmp/nv.refuse /tmp/nv.calls
+# Only the running partition is committed (the stub runs 0), on every path.
+r=$(fw 'action=commit&partition=1')
+check "the other partition is refused" yes "$(err "$r" '"ok":false,"error":"only the running partition can be committed, and partition 1 is not')"
+check "and nv was not asked to commit or set anything" no "$(test -e /tmp/nv.calls && grep -qE 'commit|setenv' /tmp/nv.calls && echo yes || echo no)"
+echo 1 > /tmp/nv.active
+check "the other partition is accepted once it is the running one" yes "$(err "$(fw 'action=commit&partition=1')" '"ok":true,"note":"committed"')"
+check "through nv commit 1" yes "$(grep -qx 'commit 1' /tmp/nv.calls && echo yes || echo no)"
+rm -f /tmp/nv.active /tmp/nv.calls /tmp/slot-state.calls
+touch /tmp/nv.noactive
+r=$(fw 'action=commit&partition=0')
+check "an unreadable running partition refuses the commit" yes "$(err "$r" 'cannot tell which partition this stick is running')"
+check "and nv was not asked to commit or set anything" no "$(test -e /tmp/nv.calls && grep -qE 'commit|setenv' /tmp/nv.calls && echo yes || echo no)"
+rm -f /tmp/nv.noactive /tmp/nv.calls
 touch /tmp/nv.vendor
+r=$(fw 'action=commit&partition=1')
+check "the stock nv fallback refuses the other partition too" yes "$(err "$r" 'only the running partition can be committed')"
+check "and never ran setenv sw_commit" no "$(test -e /tmp/nv.calls && grep -q 'setenv sw_commit' /tmp/nv.calls && echo yes || echo no)"
+rm -f /tmp/nv.calls
 r=$(fw 'action=commit&partition=0')
 check "the stock nv has no commit verb: one-copy setenv, and it says so" yes "$(err "$r" 'one environment copy')"
 check "that setenv is what ran" yes "$(err "$(cat /tmp/nv.calls)" 'setenv sw_commit 0')"
 rm -f /tmp/nv.vendor /tmp/nv.calls /tmp/slot-state.calls
+touch /tmp/nv.crash
+r=$(fw 'action=commit&partition=0')
+check "an nv that fails without its usage text is a failed commit" yes "$(err "$r" '"ok":false,"error":"nv commit failed"')"
+check "and no one-copy setenv is tried for it" no "$(test -e /tmp/nv.calls && grep -q 'setenv sw_commit' /tmp/nv.calls && echo yes || echo no)"
+rm -f /tmp/nv.crash /tmp/nv.calls /tmp/slot-state.calls
 check "a bad partition is refused before nv is asked" 400 \
 	"$(code -u "$AUTH" -X POST -d 'action=commit&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
 check "and nv was not run" no "$(test -e /tmp/nv.calls && echo yes || echo no)"

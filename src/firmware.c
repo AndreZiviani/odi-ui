@@ -553,8 +553,18 @@ int nv_commit(const char *slot, char *msg, unsigned long cap)
 	if (code == 0)
 		return 1;
 	if (!spre(buf, "nv: commit ")) {
-		str_copy(msg, "this nv has no commit verb", cap);
-		return -1;
+		/*
+		 * Only the usage text means "no commit verb". Any other
+		 * failure (a crash, a bad environment, an empty answer) is a
+		 * failed commit, not licence for the caller to write one copy.
+		 * The exact stock wording is known only to start with Usage.
+		 */
+		if (spre(buf, "Usage")) {
+			str_copy(msg, "this nv has no commit verb", cap);
+			return -1;
+		}
+		str_copy(msg, "nv commit failed", cap);
+		return 0;
 	}
 	/* The first line, with the "nv: " prefix dropped: it names the reason. */
 	for (i = 4; buf[i] && buf[i] != '\n' && k + 1 < cap; i++)

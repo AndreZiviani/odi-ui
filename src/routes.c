@@ -1564,17 +1564,37 @@ void serve(int conn)
 				return;
 			}
 			if (seq(action, "commit")) {
-				char why[256];
+				char why[256], act[8];
 				int rc;
 
+				/*
+				 * Only the running partition is ever committed, on every path below,
+				 * the setenv fallback included: a slot that never booted must not
+				 * become the permanent boot target, and a stale tab can name any
+				 * slot. The running one is read here, never taken from the caller.
+				 * When it cannot be read the commit is refused.
+				 */
+				if (!nv_get("sw_active", act, sizeof(act)) || !act[0]) {
+					respond(conn, "400 Bad Request", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"cannot tell which partition this stick is running, so nothing was committed\"}");
+					return;
+				}
+				if (!seq(act, part)) {
+					respond(conn, "400 Bad Request", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"only the running partition can be committed, and partition ");
+					put_json_cstr(conn, part);
+					put_fd(conn, " is not the one this stick is running; nothing was committed\"}");
+					return;
+				}
 				respond(conn, "200 OK", "application/json", 0);
 				/*
 				 * `nv commit` writes BOTH environment copies,
 				 * read back, and refuses a slot that is not the
 				 * running one. A plain setenv wrote one copy and
 				 * left the other naming the old slot. The stock
-				 * nv has no such verb: only then is the single
-				 * setenv all there is.
+				 * nv has no such verb (it prints its usage text): only then
+				 * is the single setenv all there is, and the running-partition
+				 * check above has already passed.
 				 */
 				rc = nv_commit(part, why, sizeof(why));
 				if (rc < 0) {
