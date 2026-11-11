@@ -1463,6 +1463,23 @@ ok(['255.0.255.0', '0.0.0.0', '255.255.255.255', '255.255.255.254', '254.0.0.0',
 ok(!vp('gponsn', 'ODI0123456aB') && !vp('gponsn', 'TMBB0077D9B9'), 'gponsn accepts four characters and eight hex digits');
 ok(['ODI12345678', 'ODI0123456789', 'ODI01234567G', 'OD 012345678', 'ODI"01234567', ''].every((v) => vp('gponsn', v)),
    'gponsn rejects 11 and 13 characters, a non-hex serial, a space and a quote');
+{
+  /* The serial number as 16 hex digits, a modem ID, and the way back. */
+  const { snFromHex, snToHex } = await import(join(root, 'web', 'validate.js'));
+  ok(snFromHex('4F44495800000009') === 'ODIX00000009' && snFromHex('4f44 4958-0000:00a9') === 'ODIX000000a9'
+     && snFromHex(' 4F44.4958 0000 0009 ') === 'ODIX00000009',
+     'serial in hex: 16 hex digits become four characters and eight digits, with or without separators');
+  ok([' ', 'ODIX00000009', '4F4449580000000', '4F444958000000090', '4F44495800000g09', '0044495800000009',
+      '4F44492000000009', '4F44492200000009', '4F44493C00000009', '4F44492600000009', '4F44497F00000009']
+    .every((v) => snFromHex(v) === null),
+     'serial in hex: not 16 hex digits, or a vendor id that is not four storable characters, is left alone');
+  ok(snToHex('ODIX000000a9') === '4F444958000000A9' && snToHex('ODIX0000000') === null && snToHex('') === null
+     && snFromHex(snToHex('TMBB0077D9B9')) === 'TMBB0077D9B9',
+     'serial in hex: the stored form reads back as 16 hex digits, and round-trips');
+  ok(/first eight/.test(vp('gponsn', '0044495800000009')) && /12 in all/.test(vp('gponsn', '4F4449580000000'))
+     && !vp('gponsn', snFromHex('4F44495800000009')),
+     'serial in hex: 16 digits with an unprintable vendor id say so, 15 get the usual message');
+}
 ok(!vp('hex20', '31323334353637383930'), 'hex20 accepts 20 hex digits');
 ok(['3132333435363738393', '313233343536373839303132', '1234', 'zz323334353637383930'].every((v) => vp('hex20', v)),
    'hex20 rejects odd, longer, shorter and non-hex values (the kernel would read a shorter one as text)');
@@ -1659,6 +1676,35 @@ EDITS.clear();
     };
     const vidRow = () => rowsOf('#set-vlan').find((r) => r.dataset.name === 'VLAN_MANU_TAG_VID');
     renderAll();
+    {
+      /* The serial number field takes a modem ID and shows the stored form. */
+      let sn = null;
+      let aside = null;
+      walk(doc.querySelector('#set-line'), (x) => {
+        if (x.tagName === 'input' && x.dataset && x.dataset.name === 'GPON_SN') sn = x;
+      });
+      const find = () => {
+        walk(doc.querySelector('#set-line'), (x) => {
+          if (x.children && x.children.includes(sn)) aside = x.children.find((c) => c.className === 's-aside');
+        });
+        return textOf(aside);
+      };
+      const was = sn.value;
+      sn.value = 'ODIX00000001';
+      sn.oninput();
+      ok(find() === 'In hex: 4F44495800000001', 'serial field: the serial is shown in hex under the field');
+      sn.value = '4f44 4958 0000 00a9';
+      sn.oninput();
+      ok(sn.value === 'ODIX000000a9' && EDITS.get('GPON_SN') === 'ODIX000000a9' && find() === 'In hex: 4F444958000000A9'
+         && !sn.classList.contains('invalid'),
+         'serial field: 16 hex digits are converted in the field, and the converted form is the pending edit');
+      sn.value = 'ODIX0000';
+      sn.oninput();
+      ok(/modem ID/.test(find()), 'serial field: an unfinished serial shows the hint instead');
+      sn.value = was;
+      sn.oninput();
+      ok(!EDITS.has('GPON_SN'), 'serial field: back to the stored value, nothing is pending');
+    }
     ok(field('VLAN_MANU_TAG_VID') !== null, 'gated: the VLAN ID is editable in manual mode');
     EDITS.set('VLAN_MANU_TAG_VID', '100');
     const mode = field('VLAN_CFG_TYPE');
@@ -2034,6 +2080,9 @@ ok(inputsOf('#sections') > 100,
   reset();
   wz.openWizard(true);
   await wz.next();
+  type('wiz-sn', '4F44 4958 0000 0009');
+  ok(wz.W.f.sn === 'ODIX00000009' && byId('wiz-sn').value === 'ODIX00000009' && !wz.problems(wz.W.f).sn,
+     'wizard: a serial typed as 16 hex digits is converted in the field');
   type('wiz-sn', 'ODIX00000009');
   type('wiz-ploam', 'hunter2pw');
   type('wiz-loid', 'newloid');
