@@ -88,7 +88,16 @@ function meter(hostSel, spec, value) {
   const win = el('div', 'win');
   win.style.left = pct(spec.winLo) + '%';
   win.style.width = (pct(spec.winHi) - pct(spec.winLo)) + '%';
-  scale.append(el('div', 'ticks'), win);
+  win.style.setProperty('--t', TIGHT_SHARE * 100 + '%');
+  win.title = 'Green: the middle of the window. Yellow: the outer '
+    + TIGHT_SHARE * 100 + ' % at each end, near the edge.';
+  /* Outside the window, on both sides. */
+  const below = el('div', 'out lo');
+  below.style.width = pct(spec.winLo) + '%';
+  const above = el('div', 'out hi');
+  above.style.width = (100 - pct(spec.winHi)) + '%';
+  below.title = above.title = 'Outside the window';
+  scale.append(below, above, el('div', 'ticks'), win);
   if (value !== null) {
     const n = el('div', 'needle');
     n.style.left = pct(value) + '%';

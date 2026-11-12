@@ -457,6 +457,21 @@ ok(true, 'renderStatus runs against a diag capture');
      'path loss: a reach extender is named, an unknown class is left out');
 }
 
+/* --- the zones of the optics meters --------------------------------------- */
+{
+  const { renderStatus } = await import(join(root, 'web', 'status.js'));
+  renderStatus('RTK.0> pon get transceiver rx-power\n  Rx Power : -16.40 dBm\n'
+    + 'RTK.0> pon get transceiver tx-power\n  Tx Power : 1.87 dBm\n', null, {});
+  const sc = (sel) => doc.querySelector(sel).children.find((c) => c.className === 'instrument').children[0].children;
+  const by = (sel, cls) => sc(sel).find((c) => c.className === cls);
+  ok(by('#rx', 'win').style['--t'] === '16%' && by('#tx', 'win').style['--t'] === '16%',
+     'meter zones: the window carries the near-the-edge share its zones are drawn from');
+  ok(Math.abs(parseFloat(by('#rx', 'out lo').style.width) - 100 * 3 / 26) < 0.01
+     && Math.abs(parseFloat(by('#rx', 'out hi').style.width) - 100 * 4 / 26) < 0.01
+     && Math.abs(parseFloat(by('#tx', 'out lo').style.width) - 100 * 3.5 / 11) < 0.01,
+     'meter zones: both sides outside the window are marked, to the window limits');
+}
+
 /* --- the header bars are ordered by severity: red, yellow, blue ----------- */
 {
   const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');

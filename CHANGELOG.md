@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the optics meters draw the zones their verdict goes by. The middle of the window is green, the outer 16 % at each end ('Near the edge') yellow, with a short fade centred on the line between the two, and what lies outside the window is faintly red. The limits of the window keep their hard edges; needle, dimension lines and figures are as they were. A title on the zones says what the colours mean. No new thresholds: the share is the one the verdict already used.
+
 - Access: `/api/sshkeys` no longer changes an `authorized_keys` it has not
   read whole. The handler read the file into a 4 KB buffer and kept what fit:
   the list was short, and removing a key wrote the file back without everything

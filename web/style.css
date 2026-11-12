@@ -594,11 +594,22 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
     repeating-linear-gradient(to right, var(--line-2) 0 1px, transparent 1px calc(100% / var(--n)))
       0 100% / 100% 8px no-repeat;
 }
+/* The window, in the zones the verdict above the meter goes by: the middle
+   of it green, the outer share at each end yellow ("Near the edge", --t,
+   set from TIGHT_SHARE), each fade centred on the line between two zones so
+   the line stays where it is. The two limits of the window keep their hard
+   yellow edges, and what lies outside is faintly red. */
 .win {
-  position: absolute; top: 0; bottom: 0;
-  background: color-mix(in srgb, var(--yellow) 22%, transparent);
+  position: absolute; top: 0; bottom: 0; --t: 16%;
+  --edge: color-mix(in srgb, var(--yellow) 34%, transparent);
+  --mid: color-mix(in srgb, var(--green) 30%, transparent);
+  background: linear-gradient(to right, var(--edge) 0, var(--edge) calc(var(--t) - 4%), var(--mid) calc(var(--t) + 4%),
+    var(--mid) calc(100% - var(--t) - 4%), var(--edge) calc(100% - var(--t) + 4%), var(--edge) 100%);
   border-left: 2px solid var(--yellow); border-right: 2px solid var(--yellow);
 }
+.out { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--red) 10%, transparent); }
+.out.lo { left: 0; border-radius: 2px 0 0 2px; }
+.out.hi { right: 0; border-radius: 0 2px 2px 0; }
 .needle { position: absolute; top: -8px; bottom: -8px; width: 3px; margin-left: -1.5px; background: var(--ink); border-radius: 2px; }
 .needle::before {
   content: ""; position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
