@@ -72,7 +72,8 @@ function part(cls, name, lines, verdict, go) {
   const head = el('span', 'ov-name');
   head.append(el('i', 'dot ' + (verdict || 'none')), document.createTextNode(name));
   b.append(head);
-  for (const [text, extra] of lines) b.append(el('span', 'ov-val' + (extra ? ' ' + extra : ''), text));
+  /* The first line is the figure of the part, the rest say more about it. */
+  lines.forEach(([text, extra], i) => b.append(el('span', 'ov-val' + (extra ? ' ' + extra : i === 0 ? ' ov-main' : ''), text)));
   b.addEventListener('click', go);
   return b;
 }
@@ -105,6 +106,15 @@ function renderOverview(f) {
   const fval = el('span', 'ov-big');
   fval.append(el('span', 'num', rxv === null ? '—' : signed(rxv, 1)), el('span', 'unit', 'dBm'));
   fibre.append(fhead, fval, el('span', 'ov-val ov-sub', f.los ? 'Loss of signal' : 'Light in'));
+  /* The fibre carries both directions: what the laser sends is the other
+     half of it, said here as well as in the Optics part: a second figure
+     with its name, under the first and smaller than it. */
+  if (f.tx.value !== null) {
+    /* The same pair as light in, a figure and its name, one size down. */
+    const out = el('span', 'ov-big ov-out');
+    out.append(el('span', 'num', signed(f.tx.value, 2)), el('span', 'unit', 'dBm'));
+    fibre.append(out, el('span', 'ov-val ov-sub', 'Light out'));
+  }
   fibre.addEventListener('click', scrollTo('#rx'));
 
   const txv = f.tx.value;
@@ -156,8 +166,17 @@ function renderOverview(f) {
   const stick = el('div', 'ov-stick');
   stick.append(el('span', 'ov-label ov-stick-label', 'The stick'), optics, soc, lane);
 
-  const fibreLine = el('div', 'ov-line ov-glass');
+  /* The fibre between the wall and the stick carries what the Switch part
+     counts on its fibre side: the two rates sit on the line, down above it
+     and up below, and the line moves while the ONU is in service. The same
+     figures are in the Switch part, so the line stays out of the way of a
+     screen reader. */
+  const fibreLine = el('div', 'ov-line ov-glass' + (f.state === 'O5' && !f.los ? ' flowing' : ''));
   fibreLine.setAttribute('aria-hidden', 'true');
+  if (r && r.down !== null && r.up !== null) {
+    fibreLine.append(el('span', 'ov-rate down', '\u2193 ' + bytes(r.down) + '/s'),
+      el('span', 'ov-rate up', '\u2191 ' + bytes(r.up) + '/s'));
+  }
   const pins = el('div', 'ov-line ov-pins');
   pins.setAttribute('aria-hidden', 'true');
   host.append(fibre, fibreLine, stick, pins, router);

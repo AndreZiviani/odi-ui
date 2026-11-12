@@ -519,7 +519,7 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
    One row, the way light and frames travel: fibre, the stick (optics, the
    SoC, the host lane), the router. The fibre is the one coloured line, in
    the jacket yellow; inside the stick the links are dashed, electrical. */
-.overview { display: grid; grid-template-columns: auto 40px minmax(0, 1fr) 32px auto; align-items: center; margin: 4px 0 28px; }
+.overview { display: grid; grid-template-columns: auto 96px minmax(0, 1fr) 32px auto; align-items: center; margin: 4px 0 24px; }
 .ov-part { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; padding: 10px 12px;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); color: var(--ink);
   font: inherit; text-align: left; cursor: pointer; }
@@ -529,20 +529,42 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .ov-part .dot.warn { background: var(--yellow); }
 .ov-part .dot.bad { background: var(--red); }
 .ov-val { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The figure of a part, larger than what says more about it. One that is
+   longer than its part wraps inside it. */
+.ov-main { font-size: 16px; font-weight: 600; }
+.ov-part .ov-main { white-space: normal; }
+/* The host lane names a whole mode, "2.5G (2500BASE-X)": at the size of
+   the other figures it would break inside the name. */
+.ov-lane .ov-main { font-size: 14px; white-space: nowrap; }
 .ov-sub { font-size: 12px; color: var(--ink-3); }
 .ov-fibre { background: none; border-color: transparent; padding-left: 0; }
 .ov-fibre:hover { border-color: transparent; }
 .ov-big { display: flex; align-items: baseline; gap: 6px; }
 .ov-big .num { font: 700 26px/1.1 var(--readout); letter-spacing: -0.02em; }
 .ov-big .unit { font-size: 13px; color: var(--ink-3); }
+.ov-out { margin-top: 6px; }
+.ov-out .num { font-size: 17px; }
+.ov-out .unit { font-size: 12px; }
 .ov-line { align-self: center; }
-.ov-glass { height: 4px; border-radius: 2px; background: var(--yellow); }
+.ov-glass { position: relative; height: 4px; border-radius: 2px; background: var(--yellow); }
+/* In service: light runs down the fibre towards the stick. */
+.ov-glass.flowing {
+  background: repeating-linear-gradient(90deg, var(--yellow) 0 10px, color-mix(in srgb, var(--yellow) 45%, transparent) 10px 16px) 0 0 / 16px 100%;
+  animation: ov-flow 0.9s linear infinite;
+}
+@keyframes ov-flow { from { background-position: 0 0; } to { background-position: 16px 0; } }
+@keyframes ov-flow-down { from { background-position: 0 0; } to { background-position: 0 16px; } }
+@media (prefers-reduced-motion: reduce) { .ov-glass.flowing { animation: none; } }
+/* The two rates of the fibre side, on the line: down above it, up below. */
+.ov-rate { position: absolute; left: 0; right: 0; text-align: center; font: 700 11px var(--readout); color: var(--ink-2); white-space: nowrap; }
+.ov-rate.down { bottom: 8px; }
+.ov-rate.up { top: 8px; }
 .ov-pins { height: 2px; background: repeating-linear-gradient(90deg, var(--ink-3) 0 5px, transparent 5px 9px); }
-.ov-stick { position: relative; display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2.2fr) minmax(120px, 0.9fr);
-  gap: 22px; align-items: center; padding: 30px 18px 18px; background: var(--well); border: 1.5px solid var(--line-2); border-radius: 14px; }
+.ov-stick { position: relative; display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2.2fr) minmax(120px, 1fr);
+  gap: 22px; align-items: center; padding: 28px 16px 14px; background: var(--well); border: 1.5px solid var(--line-2); border-radius: 14px; }
 .ov-label { position: absolute; top: 8px; left: 14px; font-size: 12px; font-weight: 600; color: var(--ink-3); }
 .ov-soc { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
-  padding: 30px 12px 12px; border: 1.5px dashed var(--line-2); border-radius: 10px; }
+  padding: 28px 10px 10px; border: 1.5px dashed var(--line-2); border-radius: 10px; }
 .ov-soc::before, .ov-soc::after { content: ""; position: absolute; top: 50%; width: 22px; height: 2px;
   background: repeating-linear-gradient(90deg, var(--ink-3) 0 5px, transparent 5px 9px); }
 .ov-soc::before { left: -24px; }
@@ -554,7 +576,11 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 @media (max-width: 1100px) {
   .overview { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
   .ov-fibre { justify-self: start; }
-  .ov-glass { width: 4px; height: 24px; justify-self: start; margin-left: 28px; }
+  .ov-glass { width: 4px; height: 40px; justify-self: start; margin-left: 28px; }
+  .ov-glass.flowing { background: repeating-linear-gradient(180deg, var(--yellow) 0 10px, color-mix(in srgb, var(--yellow) 45%, transparent) 10px 16px) 0 0 / 100% 16px; animation-name: ov-flow-down; }
+  .ov-rate { left: 14px; right: auto; text-align: left; }
+  .ov-rate.down { top: 3px; bottom: auto; }
+  .ov-rate.up { top: 20px; }
   .ov-pins { width: 2px; height: 24px; justify-self: start; margin-left: 29px;
     background: repeating-linear-gradient(180deg, var(--ink-3) 0 5px, transparent 5px 9px); }
   .ov-stick { grid-template-columns: minmax(0, 1fr); }

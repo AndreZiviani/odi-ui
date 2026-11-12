@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: on the stick diagram the fibre line carries the two rates of the fibre side, down above it and up below, and moves while the ONU is in service (not with `prefers-reduced-motion`). The same figures stay in the Switch part, so the line is hidden from screen readers as before. The Fibre part names both directions, light in and light out. The first figure of each part is larger than what says more about it, and the diagram is a little tighter. Nothing new is read from the stick.
+
 ## v1.15.0 (2026-11-11)
 
 - Status: the optics meters draw the zones their verdict goes by. The middle of the window is green, the outer 16 % at each end ('Near the edge') yellow, with a short fade centred on the line between the two, and what lies outside the window is faintly red. The limits of the window keep their hard edges; needle, dimension lines and figures are as they were. A title on the zones says what the colours mean. No new thresholds: the share is the one the verdict already used.
