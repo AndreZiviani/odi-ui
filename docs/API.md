@@ -195,6 +195,9 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           what the OLT says of itself, "odn_class N
                                           reach_extender N tol N id HEX ms N"; absent
                                           when the OLT sends no PON-ID),
+                                          `ranging` (/proc/odi_gpon/status "ranging_time ",
+                                          odi-oss: "eqd_bits N protection_path N ..." from
+                                          the last Ranging_Time, or "none"),
                                           `host_link` (odi_switch host_link, "0" or "1") and
                                           `host_mode` (/var/run/host-serdes "running=")
                                           For the shared PON section, from one read of

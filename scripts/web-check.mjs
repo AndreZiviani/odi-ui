@@ -452,7 +452,7 @@ ok(true, 'renderStatus runs against a diag capture');
   renderStatus(raw, null, {});
   ok(notes().length === 1, 'path loss: no line without a PON-ID');
   renderStatus(raw, null, { pon_id: 'odn_class 2 reach_extender 0 tol 334 id 00112233445566 ms 5' });
-  ok(notes()[1] === 'The OLT sends 3.4 dBm, so the path loses about 20.4 dB (it names its fibre plant class B+)'
+  ok(notes()[1] === 'The OLT sends 3.4 dBm, so the path loses about 20.4 dB (it names its fibre plant class B+, 13 to 28 dB: about 7.6 dB to spare)'
      && !/0011223344/.test(textOf(doc.querySelector('#rx'))),
      'path loss: launch power less receive level, with the class, and without the identifier');
   ok(pathLoss({ pon_id: 'odn_class 2 reach_extender 0 tol 65535 id 00 ms 5' }, -17) === null
@@ -461,6 +461,41 @@ ok(true, 'renderStatus runs against a diag capture');
   renderStatus(raw, null, { pon_id: 'odn_class 9 reach_extender 1 tol 300 id 00 ms 5' });
   ok(notes()[1] === 'The reach extender sends 0.0 dBm, so the path from it loses about 17.0 dB',
      'path loss: a reach extender is named, an unknown class is left out');
+}
+
+/* --- the budget a class allows, and the equalisation delay --------------- */
+{
+  const { renderStatus, pathLoss, eqd } = await import(join(root, 'web', 'status.js'));
+  const raw = 'RTK.0> pon get transceiver rx-power\n  Rx Power : -27.00 dBm\n';
+  const notes = () => doc.querySelector('#rx').children.filter((c) => c.className === 'm-note').map(textOf);
+  renderStatus(raw, null, { pon_id: 'odn_class 2 reach_extender 0 tol 334 id 00 ms 5' });
+  ok(notes()[1] === 'The OLT sends 3.4 dBm, so the path loses about 30.4 dB (it names its fibre plant class B+, 13 to 28 dB: about 2.4 dB more than it allows)',
+     'budget: a loss above the class says by how much');
+  renderStatus(raw.replace('-27.00', '-8.00'), null, { pon_id: 'odn_class 4 reach_extender 0 tol 334 id 00 ms 5' });
+  ok(notes()[1] === 'The OLT sends 3.4 dBm, so the path loses about 11.4 dB (it names its fibre plant class C+, 17 to 32 dB: about 5.6 dB less than it expects)',
+     'budget: a loss below the class says so');
+
+  renderStatus(raw, null, { ranging: 'none' });
+  ok(notes().length === 1, 'eqd: no line on ranging_time none, nor without localStorage');
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)) };
+  const day = Date.UTC(2026, 10, 12);
+  const line = 'eqd_bits 283549 protection_path 0 min_resp_delay 0x00000000 multframe 1 inframe 2';
+  ok(JSON.stringify(eqd({ ranging: line }, day)) === '{"bits":283549,"prev":null}'
+     && textOf(doc.querySelector('#rx').children.at(-1)) === 'The OLT set an equalisation delay of 283549 bits (227.9 \u00b5s)',
+     'eqd: the figure in bits and microseconds, no change on first sight');
+  ok(eqd({ ranging: line }, day + 1000).prev === null, 'eqd: the same figure again is no change');
+  eqd({ ranging: line.replace('283549', '283427') }, day + 86400000);
+  ok(textOf(doc.querySelector('#rx').children.at(-1)) === 'The OLT set an equalisation delay of 283427 bits (227.8 \u00b5s), '
+     + '122 bits less than before the ranging of 2026-11-13: about 10 m more fibre, if the OLT kept its reference',
+     'eqd: a smaller figure is a longer path, with the date of that ranging');
+  eqd({ ranging: line.replace('283549', '283430') }, day + 2 * 86400000);
+  ok(/3 bits more .*: under a metre less fibre/.test(textOf(doc.querySelector('#rx').children.at(-1))),
+     'eqd: a change of a few bits is under a metre');
+  store.set('odi-ui.eqd', '{"bits":"x"}');
+  ok(eqd({ ranging: line }, day).prev === null, 'eqd: a stored value that is not a figure starts over');
+  ok(eqd({}, day) === null && eqd({ ranging: 'eqd_bits x' }, day) === null, 'eqd: nothing without a figure');
+  delete globalThis.localStorage;
 }
 
 /* --- the zones of the optics meters --------------------------------------- */

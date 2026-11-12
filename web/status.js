@@ -167,6 +167,18 @@ function meter(hostSel, spec, value) {
  * so may this. The identifier in the line is not shown.
  */
 const ODN_CLASS = ['A', 'B', 'B+', 'C', 'C+'];
+/* The loss each class allows between OLT and ONU, ITU-T G.984.2 (B+ and C+
+   from its amendments). What is left to the upper figure is what a dirty
+   connector, a new splice or a longer route may still cost. */
+const ODN_LOSS = { A: [5, 20], B: [10, 25], 'B+': [13, 28], C: [15, 30], 'C+': [17, 32] };
+function budget(cls, loss) {
+  const r = ODN_LOSS[cls];
+  if (!r) return '';
+  const span = `, ${r[0]} to ${r[1]} dB`;
+  if (loss > r[1]) return `${span}: about ${(loss - r[1]).toFixed(1)} dB more than it allows`;
+  if (loss < r[0]) return `${span}: about ${(r[0] - loss).toFixed(1)} dB less than it expects`;
+  return `${span}: about ${(r[1] - loss).toFixed(1)} dB to spare`;
+}
 function pathLoss(st, rxv) {
   const m = /odn_class (\d+) reach_extender (\d+) tol (\d+)/.exec((st && st.pon_id) || '');
   if (!m || rxv === null || Number(m[3]) >= 65535) return null;
@@ -177,8 +189,47 @@ function pathLoss(st, rxv) {
   const from = m[2] === '1' ? ' from it' : '';
   $('#rx').append(el('p', 'm-note',
     `${who} sends ${signed(tol, 1)} dBm, so the path${from} loses about ${loss.toFixed(1)} dB`
-    + (cls ? ` (it names its fibre plant class ${cls})` : '')));
+    + (cls ? ` (it names its fibre plant class ${cls}${budget(cls, loss)})` : '')));
   return loss;
+}
+
+/*
+ * The equalisation delay the OLT set in its last Ranging_Time (G.984.3
+ * 9.2.3.4), in bits at 1.24416 Gbit/s, as the odi-oss driver decodes it.
+ * The OLT sets it to its own reference delay less the round trip it
+ * measured, so a longer path gives a smaller figure. That reference is the
+ * OLT's own and never sent, so no distance follows from one figure; a
+ * change between two rangings is a change of the path, as long as the OLT
+ * kept its reference. Half a bit time in fibre (group index 1.468) is
+ * about 8.2 cm of one way. The last figure and the one before it are kept
+ * in this browser only (localStorage), so the change is the one this
+ * browser saw. A line under the receive meter; nothing on "ranging_time
+ * none" or without the line.
+ */
+const EQD_KEY = 'odi-ui.eqd';
+const M_PER_BIT = 0.0821;
+function eqd(st, now) {
+  const m = /^eqd_bits (\d+)/.exec((st && st.ranging) || '');
+  if (!m) return null;
+  const bits = Number(m[1]);
+  let seen = null;
+  try { seen = JSON.parse(localStorage.getItem(EQD_KEY) || 'null'); } catch (e) { seen = null; }
+  if (!seen || typeof seen.bits !== 'number' || (seen.prev !== null && typeof seen.prev !== 'number')) seen = null;
+  if (!seen || seen.bits !== bits) {
+    seen = { bits, prev: seen ? seen.bits : null, at: now === undefined ? Date.now() : now };
+    try { localStorage.setItem(EQD_KEY, JSON.stringify(seen)); } catch (e) { /* not kept */ }
+  }
+  let text = `The OLT set an equalisation delay of ${bits} bits (${(bits / 1244.16).toFixed(1)} \u00b5s)`;
+  if (seen.prev !== null) {
+    const d = bits - seen.prev;
+    const metres = Math.abs(d) * M_PER_BIT;
+    const far = metres < 1 ? 'under a metre' : `about ${metres.toFixed(0)} m`;
+    text += `, ${Math.abs(d)} bits ${d < 0 ? 'less' : 'more'} than before the ranging of `
+      + `${new Date(seen.at).toISOString().slice(0, 10)}: ${far} ${d < 0 ? 'more' : 'less'} fibre,`
+      + ' if the OLT kept its reference';
+  }
+  $('#rx').append(el('p', 'm-note', text));
+  return { bits, prev: seen.prev };
 }
 
 /* O1 to O5 is a real sequence — an ONU climbs it on every registration — which
@@ -349,6 +400,7 @@ function renderStatus(raw, chip, st) {
   const rx = meter('#rx', OPTICS.rx, dbm('rx-power'));
   const tx = meter('#tx', OPTICS.tx, dbm('tx-power'));
   pathLoss(st, rx.value);
+  eqd(st);
 
   const state = num(s['gpon get onu-state'], /Operation State\((O\d)\)/);
   ladder(state);
@@ -438,4 +490,4 @@ function lineFacts(raw) {
   };
 }
 
-export { renderStatus, lineFacts, ponLoad, pathLoss, OPTICS, STATES, tight };
+export { renderStatus, lineFacts, ponLoad, pathLoss, eqd, OPTICS, STATES, tight };

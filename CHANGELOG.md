@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the path loss line under the receive meter says what the fibre plant class the OLT names allows (ITU-T G.984.2: A 5 to 20 dB, B 10 to 25, B+ 13 to 28, C 15 to 30, C+ 17 to 32) and how much is left to its upper figure, or by how much the loss is above or below it: "(it names its fibre plant class B+, 13 to 28 dB: about 7.6 dB to spare)". The receive reading may be a few dB off, and so may this.
+- Status: a line under the receive meter gives the equalisation delay the OLT set in its last Ranging_Time, in bits and microseconds. The OLT sets it to a reference delay of its own less the round trip it measured, and never sends that reference, so no distance is shown. When the figure changes, the line says by how much and what that is in fibre (about 8.2 cm per bit, a smaller figure is a longer path) since the ranging of that day, as long as the OLT kept its reference; the last two figures are kept in this browser only (localStorage). `/api/status` gains `ranging`, the `ranging_time` line of `/proc/odi_gpon/status` (odi-oss), a plain file read; the line is left out on `ranging_time none` or without it. `make check` covers both.
 - Status: on the stick diagram the fibre line carries the two rates of the fibre side, down above it and up below, and moves while the ONU is in service (not with `prefers-reduced-motion`). The same figures stay in the Switch part, so the line is hidden from screen readers as before. The Fibre part names both directions, light in and light out. The first figure of each part is larger than what says more about it, and the diagram is a little tighter. Nothing new is read from the stick.
 
 ## v1.15.0 (2026-11-11)
