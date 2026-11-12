@@ -633,6 +633,12 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
     var(--mid) calc(100% - var(--t) - 4%), var(--edge) calc(100% - var(--t) + 4%), var(--edge) 100%);
   border-left: 2px solid var(--yellow); border-right: 2px solid var(--yellow);
 }
+/* A window where only the upper end is a margin to watch (path loss: too
+   little loss is the receive meter's overload, not this one's concern). */
+.win.upper {
+  background: linear-gradient(to right, var(--mid) 0, var(--mid) calc(100% - var(--t) - 4%),
+    var(--edge) calc(100% - var(--t) + 4%), var(--edge) 100%);
+}
 .out { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--red) 10%, transparent); }
 .out.lo { left: 0; border-radius: 2px 0 0 2px; }
 .out.hi { right: 0; border-radius: 0 2px 2px 0; }

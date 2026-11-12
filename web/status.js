@@ -62,6 +62,8 @@ const signed = (v, d) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
 
 function meter(hostSel, spec, value) {
   const host = $(hostSel);
+  const unit = spec.unit || 'dBm';
+  const dig = spec.digits === undefined ? 2 : spec.digits;
   host.textContent = '';
   const pct = (v) => ((Math.max(spec.lo, Math.min(spec.hi, v)) - spec.lo) / (spec.hi - spec.lo)) * 100;
 
@@ -70,7 +72,7 @@ function meter(hostSel, spec, value) {
   if (value !== null) {
     const m = Math.min(value - spec.winLo, spec.winHi - value);
     if (value < spec.winLo || value > spec.winHi) { verdict = 'bad'; say = 'Out of window'; }
-    else if (m < tight(spec)) { verdict = 'warn'; say = 'Near the edge'; }
+    else if ((spec.upperOnly ? spec.winHi - value : m) < tight(spec)) { verdict = 'warn'; say = 'Near the edge'; }
     else { verdict = 'ok'; say = 'In window'; }
   }
   host.className = 'meter v-' + verdict;
@@ -80,17 +82,18 @@ function meter(hostSel, spec, value) {
   host.append(head);
 
   const read = el('div', 'm-read');
-  read.append(el('span', 'num', value === null ? '—' : signed(value, 2)), el('span', 'unit', 'dBm'));
+  read.append(el('span', 'num', value === null ? '—' : signed(value, dig)), el('span', 'unit', unit));
   host.append(read);
 
   const scale = el('div', 'scale');
   scale.style.setProperty('--n', String(spec.hi - spec.lo));
-  const win = el('div', 'win');
+  const win = el('div', spec.upperOnly ? 'win upper' : 'win');
   win.style.left = pct(spec.winLo) + '%';
   win.style.width = (pct(spec.winHi) - pct(spec.winLo)) + '%';
   win.style.setProperty('--t', TIGHT_SHARE * 100 + '%');
-  win.title = 'Green: the middle of the window. Yellow: the outer '
-    + TIGHT_SHARE * 100 + ' % at each end, near the edge.';
+  win.title = spec.upperOnly
+    ? 'Green: the window. Yellow: the upper ' + TIGHT_SHARE * 100 + ' %, near the limit.'
+    : 'Green: the middle of the window. Yellow: the outer ' + TIGHT_SHARE * 100 + ' % at each end, near the edge.';
   /* Outside the window, on both sides. */
   const below = el('div', 'out lo');
   below.style.width = pct(spec.winLo) + '%';
@@ -132,25 +135,25 @@ function meter(hostSel, spec, value) {
     const toHi = spec.winHi - value;
     if (toLo < 0) {
       dim(value, spec.winLo, `${(-toLo).toFixed(1)} dB below ${spec.loName}`, 'over');
-      label = `${signed(value, 2)} dBm, ${(-toLo).toFixed(1)} dB below the ${spec.loName} edge.`;
+      label = `${signed(value, dig)} ${unit}, ${(-toLo).toFixed(1)} dB below the ${spec.loName} edge.`;
     } else if (toHi < 0) {
       dim(spec.winHi, value, `${(-toHi).toFixed(1)} dB over ${spec.hiName}`, 'over');
-      label = `${signed(value, 2)} dBm, ${(-toHi).toFixed(1)} dB over the ${spec.hiName} edge.`;
+      label = `${signed(value, dig)} ${unit}, ${(-toHi).toFixed(1)} dB over the ${spec.hiName} edge.`;
     } else {
-      dim(spec.winLo, value, `${toLo.toFixed(1)} dB to ${spec.loName}`, toLo < tight(spec) ? 'tight' : '');
+      dim(spec.winLo, value, `${toLo.toFixed(1)} dB to ${spec.loName}`, toLo < tight(spec) && !spec.upperOnly ? 'tight' : '');
       dim(value, spec.winHi, `${toHi.toFixed(1)} dB to ${spec.hiName}`, toHi < tight(spec) ? 'tight' : '');
-      label = `${signed(value, 2)} dBm: ${toLo.toFixed(1)} dB above ${spec.loName}, `
+      label = `${signed(value, dig)} ${unit}: ${toLo.toFixed(1)} dB above ${spec.loName}, `
         + `${toHi.toFixed(1)} dB below ${spec.hiName}.`;
     }
   }
   const inst = el('div', 'instrument');
   inst.setAttribute('role', 'img');
   inst.setAttribute('aria-label', label + ' ' + spec.note + ', '
-    + signed(spec.winLo, 1) + ' to ' + signed(spec.winHi, 1) + ' dBm.');
+    + signed(spec.winLo, 1) + ' to ' + signed(spec.winHi, 1) + ' ' + unit + '.');
   inst.append(scale, lab, dims);
   host.append(inst);
   const foot = el('p', 'm-note');
-  foot.textContent = `${spec.note}, ${signed(spec.winLo, 1)} to ${signed(spec.winHi, 1)} dBm`;
+  foot.textContent = spec.foot || `${spec.note}, ${signed(spec.winLo, 1)} to ${signed(spec.winHi, 1)} ${unit}`;
   host.append(foot);
   return { verdict, value };
 }
@@ -167,18 +170,102 @@ function meter(hostSel, spec, value) {
  * so may this. The identifier in the line is not shown.
  */
 const ODN_CLASS = ['A', 'B', 'B+', 'C', 'C+'];
+/* The loss each class allows between OLT and ONU, ITU-T G.984.2 (B+ and C+
+   from its amendments). Drawn as a third meter, the same instrument as the
+   receive and transmit ones: the class range is the window, and what is left
+   to its upper figure is what a dirty connector, a new splice or a longer
+   route may still cost. Without a class the OLT names, no window can be
+   drawn, and the figure goes on a plain line under the receive meter. */
+const ODN_LOSS = { A: [5, 20], B: [10, 25], 'B+': [13, 28], C: [15, 30], 'C+': [17, 32] };
 function pathLoss(st, rxv) {
+  const host = $('#loss');
+  host.hidden = true;
   const m = /odn_class (\d+) reach_extender (\d+) tol (\d+)/.exec((st && st.pon_id) || '');
   if (!m || rxv === null || Number(m[3]) >= 65535) return null;
   const tol = -30 + Number(m[3]) / 10;
   const loss = tol - rxv;
   const cls = ODN_CLASS[Number(m[1])];
-  const who = m[2] === '1' ? 'The reach extender' : 'The OLT';
-  const from = m[2] === '1' ? ' from it' : '';
-  $('#rx').append(el('p', 'm-note',
-    `${who} sends ${signed(tol, 1)} dBm, so the path${from} loses about ${loss.toFixed(1)} dB`
-    + (cls ? ` (it names its fibre plant class ${cls})` : '')));
+  const who = m[2] === '1' ? 'Reach extender' : 'OLT';
+  const r = ODN_LOSS[cls];
+  if (!r) {
+    $('#rx').append(el('p', 'm-note', `Path loss about ${loss.toFixed(1)} dB (${who} sends ${signed(tol, 1)} dBm)`));
+    return loss;
+  }
+  host.hidden = false;
+  meter('#loss', {
+    name: 'Path loss', unit: 'dB', digits: 1, lo: r[0] - 8, hi: r[1] + 5, winLo: r[0], winHi: r[1],
+    loName: 'class minimum', hiName: 'class limit', note: `Class ${cls} loss range`, upperOnly: true,
+    foot: `Estimate. ${who} sends ${signed(tol, 1)} dBm, class ${cls}: ${r[0]} to ${r[1]} dB`,
+  }, loss);
   return loss;
+}
+
+/*
+ * The equalisation delay the OLT set in its last Ranging_Time (G.984.3
+ * 9.2.3.4), in bits at 1.24416 Gbit/s, as the odi-oss driver decodes it.
+ * The OLT sets it to its own reference delay less the round trip it
+ * measured, so a longer round trip gives a smaller figure. That reference
+ * is the OLT's own and never sent, so no distance follows from one figure.
+ * The round trip is not the fibre alone: the stick's response time is in
+ * it too, so a change is given as the fibre it equals (half a bit time in
+ * fibre, group index 1.468, about 8.2 cm of one way), not as fibre that
+ * was added, and holds only while the OLT keeps its reference.
+ * A ranging after a reboot moves the figure by a bit or two on a path that
+ * did not change. So the page keeps a settled figure, base, and moves it
+ * only when a reading is EQD_NOISE bits or more away from it: small steps
+ * neither clear a change already shown nor hide a drift that adds up. With
+ * a move it keeps the figure it moved from and the day this browser first
+ * saw the new one (the driver keeps no time of the ranging). All of it in
+ * this browser only (localStorage). A Ranging_Time for the protection path
+ * is not the path this ONU ranged on, and the driver applies none, so it is
+ * not shown and not kept. A row under Registration; hidden on
+ * "ranging_time none" or without the line.
+ */
+const EQD_KEY = 'odi-ui.eqd';
+const M_PER_BIT = 0.0821;
+const EQD_NOISE = 25;
+function eqdState(v) {
+  const whole = (x) => Number.isSafeInteger(x) && x >= 0;
+  if (!v || !whole(v.base)) return null;
+  if (v.from === null && v.at === null) return v;
+  if (!whole(v.from) || !Number.isFinite(v.at) || Number.isNaN(new Date(v.at).getTime())) return null;
+  return v;
+}
+function eqd(st, now) {
+  const host = $('#ranging');
+  host.hidden = true;
+  host.textContent = '';
+  const m = /^eqd_bits (\d+) protection_path 0\b/.exec((st && st.ranging) || '');
+  if (!m) return null;
+  const bits = Number(m[1]);
+  let kept = null;
+  try { kept = eqdState(JSON.parse(localStorage.getItem(EQD_KEY) || 'null')); } catch (e) { kept = null; }
+  let next = kept;
+  if (!kept) next = { base: bits, from: null, at: null };
+  else if (Math.abs(bits - kept.base) >= EQD_NOISE) {
+    next = { base: bits, from: kept.base, at: now === undefined ? Date.now() : now };
+  }
+  if (next !== kept) {
+    try { localStorage.setItem(EQD_KEY, JSON.stringify(next)); } catch (e) { /* not kept */ }
+  }
+  const dt = el('dt', null, 'EqD');
+  dt.title = 'Equalisation delay the OLT set at ranging. It depends on a reference only the OLT knows, '
+    + 'so it gives no distance.';
+  const dd = el('dd', 'num', `${bits} bit`);
+  dd.append(el('em', null, ` ${(bits / 1244.16).toFixed(1)} µs`));
+  host.append(dt, dd);
+  const shown = next.from !== null;
+  if (shown) {
+    const d = next.base - next.from;
+    const since = el('dt', null, 'Changed');
+    since.title = 'Against the settled figure before it, as this browser saw it. Given as the fibre it equals: '
+      + 'it also moves when the OLT changes its reference or the stick its response time.';
+    host.append(since, el('dd', 'num',
+      `${d < 0 ? '−' : '+'}${Math.abs(d)} bit ≈ ${d < 0 ? '+' : '−'}${(Math.abs(d) * M_PER_BIT).toFixed(0)} m fibre, `
+      + new Date(next.at).toISOString().slice(0, 10)));
+  }
+  host.hidden = false;
+  return { bits, base: next.base, from: next.from, shown };
 }
 
 /* O1 to O5 is a real sequence — an ONU climbs it on every registration — which
@@ -349,6 +436,7 @@ function renderStatus(raw, chip, st) {
   const rx = meter('#rx', OPTICS.rx, dbm('rx-power'));
   const tx = meter('#tx', OPTICS.tx, dbm('tx-power'));
   pathLoss(st, rx.value);
+  eqd(st);
 
   const state = num(s['gpon get onu-state'], /Operation State\((O\d)\)/);
   ladder(state);
@@ -438,4 +526,4 @@ function lineFacts(raw) {
   };
 }
 
-export { renderStatus, lineFacts, ponLoad, pathLoss, OPTICS, STATES, tight };
+export { renderStatus, lineFacts, ponLoad, pathLoss, eqd, OPTICS, STATES, tight };

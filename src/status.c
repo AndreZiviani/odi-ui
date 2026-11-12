@@ -200,6 +200,7 @@ static void emit_overview(int fd)
 	emit_line(fd, "mem_avail", PROC_MEMINFO, "MemAvailable:", buf, sizeof(buf));
 	emit_line(fd, "onu_id", GPON_STATUS, "onu_id ", buf, sizeof(buf));
 	emit_line(fd, "pon_id", GPON_STATUS, "pon_id ", buf, sizeof(buf));
+	emit_line(fd, "ranging", GPON_STATUS, "ranging_time ", buf, sizeof(buf));
 	emit_line(fd, "host_link", HOSTLINK_LINK, "", buf, sizeof(buf));
 	emit_line(fd, "host_mode", SERDES_STATE, "running=", buf, sizeof(buf));
 	emit_pon_load(fd);

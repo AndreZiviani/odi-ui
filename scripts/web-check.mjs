@@ -443,24 +443,89 @@ ok(true, 'renderStatus runs against a diag capture');
   Date.now = realNow;
 }
 
-/* --- the path loss under the receive meter --------------------------------- */
+/* --- the path loss meter, from the PON-ID --------------------------------- */
 {
   const { renderStatus, pathLoss } = await import(join(root, 'web', 'status.js'));
-  const raw = 'RTK.0> pon get transceiver rx-power\n  Rx Power : -17.00 dBm\n'
-    + 'RTK.0> pon get transceiver tx-power\n  Tx Power : 1.87 dBm\n';
-  const notes = () => doc.querySelector('#rx').children.filter((c) => c.className === 'm-note').map(textOf);
-  renderStatus(raw, null, {});
-  ok(notes().length === 1, 'path loss: no line without a PON-ID');
-  renderStatus(raw, null, { pon_id: 'odn_class 2 reach_extender 0 tol 334 id 00112233445566 ms 5' });
-  ok(notes()[1] === 'The OLT sends 3.4 dBm, so the path loses about 20.4 dB (it names its fibre plant class B+)'
-     && !/0011223344/.test(textOf(doc.querySelector('#rx'))),
-     'path loss: launch power less receive level, with the class, and without the identifier');
-  ok(pathLoss({ pon_id: 'odn_class 2 reach_extender 0 tol 65535 id 00 ms 5' }, -17) === null
-     && pathLoss({}, -17) === null && pathLoss({ pon_id: 'odn_class 2 reach_extender 0 tol 334 id 00 ms 5' }, null) === null,
+  const raw = (rx) => `RTK.0> pon get transceiver rx-power\n  Rx Power: ${rx}  dBm\n`
+    + 'RTK.0> pon get transceiver tx-power\n  Tx Power: 1.835830  dBm\n';
+  const loss = () => doc.querySelector('#loss');
+  const part = (cls) => loss().children.find((c) => c.className === cls);
+  const rxNotes = () => doc.querySelector('#rx').children.filter((c) => c.className === 'm-note').map(textOf);
+  const pid = (cls, ext, tol) => ({ pon_id: `odn_class ${cls} reach_extender ${ext} tol ${tol} id 00112233445566 ms 5` });
+
+  renderStatus(raw('-16.252517'), null, {});
+  ok(loss().hidden === true && rxNotes().length === 1, 'path loss: no meter and no line without a PON-ID');
+  renderStatus(raw('-16.252517'), null, pid(2, 0, 334));
+  ok(loss().hidden === false && textOf(part('m-read')) === '19.7dB'
+     && loss().className === 'meter v-ok' && textOf(part('m-note')) === 'Estimate. OLT sends 3.4 dBm, class B+: 13 to 28 dB'
+     && !/0011223344/.test(textOf(loss())) && rxNotes().length === 1,
+     'path loss: a meter with the class range as window, the launch power under it, no identifier');
+  const dims = () => part('instrument').children.find((c) => c.className === 'm-dims').children;
+  ok(dims().length === 2 && textOf(dims()[1]).startsWith('8.3 dB') && dims()[0].className === 'dim',
+     'path loss: the margin to the class limit, and none to the minimum drawn as tight');
+  ok(part('instrument').children[0].children.find((c) => /^win/.test(c.className)).className === 'win upper',
+     'path loss: only the upper end of the window is a margin to watch');
+  renderStatus(raw('-10.00'), null, pid(2, 0, 334));
+  ok(loss().className === 'meter v-ok', 'path loss: near the class minimum is not near the edge');
+  renderStatus(raw('-23.00'), null, pid(2, 0, 334));
+  ok(loss().className === 'meter v-warn', 'path loss: near the class limit is near the edge');
+  renderStatus(raw('-27.00'), null, pid(2, 0, 334));
+  ok(loss().className === 'meter v-bad' && textOf(dims()[0]).startsWith('2.4 dB'),
+     'path loss: over the class limit says by how much');
+  renderStatus(raw('-16.00'), null, pid(2, 1, 300));
+  ok(textOf(part('m-note')) === 'Estimate. Reach extender sends 0.0 dBm, class B+: 13 to 28 dB', 'path loss: a reach extender is named');
+  renderStatus(raw('-17.00'), null, pid(9, 0, 300));
+  ok(loss().hidden === true && rxNotes()[1] === 'Path loss about 17.0 dB (OLT sends 0.0 dBm)',
+     'path loss: an unknown class gives a plain line, no window');
+  ok(pathLoss(pid(2, 0, 65535), -17) === null && pathLoss({}, -17) === null && pathLoss(pid(2, 0, 334), null) === null
+     && loss().hidden === true,
      'path loss: nothing without a launch power, a PON-ID or a receive reading');
-  renderStatus(raw, null, { pon_id: 'odn_class 9 reach_extender 1 tol 300 id 00 ms 5' });
-  ok(notes()[1] === 'The reach extender sends 0.0 dBm, so the path from it loses about 17.0 dB',
-     'path loss: a reach extender is named, an unknown class is left out');
+}
+
+/* --- the equalisation delay under Registration ---------------------------- */
+{
+  const { eqd } = await import(join(root, 'web', 'status.js'));
+  const host = () => doc.querySelector('#ranging');
+  const rows = () => host().children.map(textOf);
+  const line = 'eqd_bits 283548 protection_path 0 min_resp_delay 0x00009132 multframe 2 inframe 9628';
+  const at = (b) => ({ ranging: line.replace('283548', String(b)) });
+  ok(eqd({ ranging: 'none' }) === null && host().hidden === true, 'eqd: hidden on ranging_time none');
+  ok(eqd(at(283548)).bits === 283548 && host().hidden === false
+     && rows().join('|') === 'EqD|283548 bit 227.9 µs',
+     'eqd: the figure in bits and microseconds, also without localStorage');
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)) };
+  const day = Date.UTC(2026, 10, 12);
+  const D = 86400000;
+  ok(eqd(at(283549), day).from === null && rows().length === 2, 'eqd: no change on first sight');
+  let r = eqd(at(283548), day + 1000);
+  ok(r.base === 283549 && r.shown === false && rows().length === 2,
+     'eqd: a bit or two after a reboot is kept quiet and does not move the settled figure');
+  eqd(at(283427), day + D);
+  ok(rows().join('|') === 'EqD|283427 bit 227.8 µs|Changed|−122 bit ≈ +10 m fibre, 2026-11-13',
+     'eqd: a smaller figure equals more fibre, dated by when this browser first saw it');
+  r = eqd(at(283428), day + 2 * D);
+  ok(r.shown === true && r.base === 283427 && rows()[3] === '−122 bit ≈ +10 m fibre, 2026-11-13',
+     'eqd: a bit of jitter after a change keeps the change and its day');
+  store.clear();
+  eqd(at(283548), day);
+  for (const b of [283528, 283508]) eqd(at(b), day + D);
+  ok(rows().length === 4 && rows()[3] === '−40 bit ≈ +3 m fibre, 2026-11-13',
+     'eqd: steps under the threshold that add up to more are shown');
+  eqd(at(283808), day + 3 * D);
+  ok(rows()[3] === '+300 bit ≈ −25 m fibre, 2026-11-15', 'eqd: a larger figure equals less fibre');
+  const before = store.get('odi-ui.eqd');
+  ok(eqd({ ranging: line.replace('283548', '100000').replace('protection_path 0', 'protection_path 1') }, day) === null
+     && host().hidden === true && store.get('odi-ui.eqd') === before,
+     'eqd: a protection path figure is not shown and not kept');
+  for (const bad of ['{"base":"x"}', '{"bits":283548,"prev":283427,"at":5}', '{"base":283548,"from":283427}',
+                     '{"base":283548,"from":283427,"at":1e300}', '{"base":283548,"from":null,"at":5}', 'not json']) {
+    store.set('odi-ui.eqd', bad);
+    ok(eqd(at(283600), day).from === null && JSON.parse(store.get('odi-ui.eqd')).base === 283600,
+       'eqd: a stored value that does not parse as the settled state starts over: ' + bad);
+  }
+  ok(eqd({}, day) === null && eqd({ ranging: 'eqd_bits x' }, day) === null, 'eqd: nothing without a figure');
+  delete globalThis.localStorage;
 }
 
 /* --- the zones of the optics meters --------------------------------------- */
