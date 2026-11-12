@@ -1227,6 +1227,12 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(v.canKeep && v.link === null && /static routes/.test(v.text) && /page stays/.test(v.text),
      'routes trial: the dialog offers Keep on this page, with no new address to open');
   ok(na.redirectTargets({ state: rt({}), via: '192.168.0.1' }).length === 0, 'routes trial: nothing to redirect to');
+  ok(v.title === 'Keep the new static routes?', 'routes trial: the title names the routes');
+  ok(na.dialogView({ state: st({}), via: '10.1.1.1' }).title === 'Keep the new management address?',
+     'address trial: the title is the address one');
+  const both = na.dialogView({ state: st({ old_LAN_ROUTES: '', new_LAN_ROUTES: 'default via 10.1.1.9' }), via: '10.1.1.1' });
+  ok(both.title === 'Keep the new management address and static routes?' && /static routes were tried with it/.test(both.text),
+     'address and routes trial: the title and the text name both');
 
   const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
   for (const id of ['netaddr-dialog', 'netaddr-count', 'netaddr-text', 'netaddr-link', 'netaddr-keep', 'netaddr-revert',

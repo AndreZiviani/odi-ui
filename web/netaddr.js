@@ -168,6 +168,11 @@ function freshAddrs(h) {
  * state without the routes keys (an image that has no routes) is never that.
  * Pure.
  */
+function routesChanged(h) {
+  const st = (h && h.state) || {};
+  if (st.new_LAN_ROUTES === undefined && st.old_LAN_ROUTES === undefined) return false;
+  return (st.new_LAN_ROUTES || '') !== (st.old_LAN_ROUTES || '');
+}
 function routesOnly(h) {
   const st = (h && h.state) || {};
   if (st.new_LAN_ROUTES === undefined && st.old_LAN_ROUTES === undefined) return false;
@@ -180,6 +185,16 @@ function routesOnly(h) {
  * `via` is the address this page was served on, from the socket.
  */
 function dialogView(h, loc) {
+  const v = dialogBody(h, loc);
+  const only = routesOnly(h);
+  v.title = only ? 'Keep the new static routes?'
+    : routesChanged(h) ? 'Keep the new management address and static routes?'
+      : 'Keep the new management address?';
+  if (!only && routesChanged(h)) v.text += ' The static routes were tried with it and are kept or reverted with it.';
+  return v;
+}
+
+function dialogBody(h, loc) {
   const fresh = freshAddrs(h);
   const via = (h && h.via) || '';
   if (routesOnly(h)) {
@@ -317,6 +332,7 @@ function openDialog() {
     const v = dialogView(NA);
     const text = $('#netaddr-text');
     text.textContent = v.text;
+    $('#netaddr-dialog-title strong').textContent = v.title;
     const link = $('#netaddr-link');
     link.hidden = !v.link;
     if (v.link) { link.href = v.link; link.textContent = v.link; }
@@ -381,10 +397,12 @@ async function closeDialog(h) {
     trial_reverted: 'Reverted: back to the address before. Nothing was stored.',
     trial_failed: 'The new address could not be applied: back to the address before. Nothing was stored.',
   }[st.event];
+  const withRoutes = !only && routesChanged(h) && st.event === 'trial_confirmed' ? ' The static routes are stored with it.' : '';
   const box = $('#netaddr-result');
   const link = $('#netaddr-result-link');
   link.textContent = '';
-  $('#netaddr-result-text').textContent = what || st.message || '';
+  const worded = what && !only && routesChanged(h) ? what.replace('back to the address before', 'back to the address and routes before') : what;
+  $('#netaddr-result-text').textContent = worded ? worded + withRoutes : st.message || '';
   box.className = 'callout banner' + (st.event === 'trial_confirmed' ? '' : ' warn');
   box.hidden = false;
   if (st.event === 'trial_confirmed') {
@@ -431,7 +449,7 @@ function wireNetaddr() {
 }
 
 export {
-  NET_KEYS, isNetKey, netaddrActive, trialLeft, freshAddrs, routesOnly, dialogView,
+  NET_KEYS, isNetKey, netaddrActive, trialLeft, freshAddrs, routesOnly, routesChanged, dialogView,
   originOf, probeAddr, firstAnswering, redirectTargets, followLoop, followText, wasFollowed, markFollowed,
   deps, stopFollow, followAddresses,
   refresh as renderNetaddr, startTrial, wireNetaddr,
