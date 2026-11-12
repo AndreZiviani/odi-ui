@@ -457,7 +457,7 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(loss().hidden === true && rxNotes().length === 1, 'path loss: no meter and no line without a PON-ID');
   renderStatus(raw('-16.252517'), null, pid(2, 0, 334));
   ok(loss().hidden === false && textOf(part('m-read')) === '19.7dB'
-     && loss().className === 'meter v-ok' && textOf(part('m-note')) === 'OLT sends 3.4 dBm, class B+: 13 to 28 dB'
+     && loss().className === 'meter v-ok' && textOf(part('m-note')) === 'Estimate. OLT sends 3.4 dBm, class B+: 13 to 28 dB'
      && !/0011223344/.test(textOf(loss())) && rxNotes().length === 1,
      'path loss: a meter with the class range as window, the launch power under it, no identifier');
   const dims = () => part('instrument').children.find((c) => c.className === 'm-dims').children;
@@ -473,7 +473,7 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(loss().className === 'meter v-bad' && textOf(dims()[0]).startsWith('2.4 dB'),
      'path loss: over the class limit says by how much');
   renderStatus(raw('-16.00'), null, pid(2, 1, 300));
-  ok(textOf(part('m-note')) === 'Reach extender sends 0.0 dBm, class B+: 13 to 28 dB', 'path loss: a reach extender is named');
+  ok(textOf(part('m-note')) === 'Estimate. Reach extender sends 0.0 dBm, class B+: 13 to 28 dB', 'path loss: a reach extender is named');
   renderStatus(raw('-17.00'), null, pid(9, 0, 300));
   ok(loss().hidden === true && rxNotes()[1] === 'Path loss about 17.0 dB (OLT sends 0.0 dBm)',
      'path loss: an unknown class gives a plain line, no window');
@@ -496,27 +496,34 @@ ok(true, 'renderStatus runs against a diag capture');
   const store = new Map();
   globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)) };
   const day = Date.UTC(2026, 10, 12);
-  ok(eqd(at(283549), day).prev === null && rows().length === 2, 'eqd: no change on first sight');
-  const r = eqd(at(283548), day + 1000);
-  ok(r.prev === 283549 && r.shown === false && rows().length === 2,
-     'eqd: a bit or two after a reboot is kept quiet');
-  eqd(at(283427), day + 86400000);
-  ok(rows().join('|') === 'EqD|283427 bit 227.8 µs|Changed|−121 bit ≈ 10 m longer, 2026-11-13',
-     'eqd: a smaller figure is a longer path, dated by when this browser first saw it');
-  eqd(at(283727), day + 2 * 86400000);
-  ok(rows()[3] === '+300 bit ≈ 25 m shorter, 2026-11-14', 'eqd: a larger figure is a shorter path');
-  ok(eqd(at(283727), day + 3 * 86400000).shown === true && rows()[3].endsWith('2026-11-14'),
-     'eqd: the same figure on a later poll keeps the change and its day');
+  const D = 86400000;
+  ok(eqd(at(283549), day).from === null && rows().length === 2, 'eqd: no change on first sight');
+  let r = eqd(at(283548), day + 1000);
+  ok(r.base === 283549 && r.shown === false && rows().length === 2,
+     'eqd: a bit or two after a reboot is kept quiet and does not move the settled figure');
+  eqd(at(283427), day + D);
+  ok(rows().join('|') === 'EqD|283427 bit 227.8 µs|Changed|−122 bit ≈ +10 m fibre, 2026-11-13',
+     'eqd: a smaller figure equals more fibre, dated by when this browser first saw it');
+  r = eqd(at(283428), day + 2 * D);
+  ok(r.shown === true && r.base === 283427 && rows()[3] === '−122 bit ≈ +10 m fibre, 2026-11-13',
+     'eqd: a bit of jitter after a change keeps the change and its day');
+  store.clear();
+  eqd(at(283548), day);
+  for (const b of [283528, 283508]) eqd(at(b), day + D);
+  ok(rows().length === 4 && rows()[3] === '−40 bit ≈ +3 m fibre, 2026-11-13',
+     'eqd: steps under the threshold that add up to more are shown');
+  eqd(at(283808), day + 3 * D);
+  ok(rows()[3] === '+300 bit ≈ −25 m fibre, 2026-11-15', 'eqd: a larger figure equals less fibre');
   const before = store.get('odi-ui.eqd');
   ok(eqd({ ranging: line.replace('283548', '100000').replace('protection_path 0', 'protection_path 1') }, day) === null
      && host().hidden === true && store.get('odi-ui.eqd') === before,
      'eqd: a protection path figure is not shown and not kept');
-  store.set('odi-ui.eqd', '{"bits":"x"}');
-  ok(eqd(at(283548), day).prev === null, 'eqd: a stored value that is not a figure starts over');
-  store.set('odi-ui.eqd', '{"bits":283548,"prev":283427}');
-  ok(eqd(at(283548), day).prev === null, 'eqd: a stored value without a time starts over, and throws nothing');
-  store.set('odi-ui.eqd', '{"bits":283548,"prev":283427,"at":1e300}');
-  ok(eqd(at(283548), day).prev === null, 'eqd: a stored time that is no date starts over');
+  for (const bad of ['{"base":"x"}', '{"bits":283548,"prev":283427,"at":5}', '{"base":283548,"from":283427}',
+                     '{"base":283548,"from":283427,"at":1e300}', '{"base":283548,"from":null,"at":5}', 'not json']) {
+    store.set('odi-ui.eqd', bad);
+    ok(eqd(at(283600), day).from === null && JSON.parse(store.get('odi-ui.eqd')).base === 283600,
+       'eqd: a stored value that does not parse as the settled state starts over: ' + bad);
+  }
   ok(eqd({}, day) === null && eqd({ ranging: 'eqd_bits x' }, day) === null, 'eqd: nothing without a figure');
   delete globalThis.localStorage;
 }

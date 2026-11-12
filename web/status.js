@@ -195,7 +195,7 @@ function pathLoss(st, rxv) {
   meter('#loss', {
     name: 'Path loss', unit: 'dB', digits: 1, lo: r[0] - 8, hi: r[1] + 5, winLo: r[0], winHi: r[1],
     loName: 'class minimum', hiName: 'class limit', note: `Class ${cls} loss range`, upperOnly: true,
-    foot: `${who} sends ${signed(tol, 1)} dBm, class ${cls}: ${r[0]} to ${r[1]} dB`,
+    foot: `Estimate. ${who} sends ${signed(tol, 1)} dBm, class ${cls}: ${r[0]} to ${r[1]} dB`,
   }, loss);
   return loss;
 }
@@ -204,22 +204,33 @@ function pathLoss(st, rxv) {
  * The equalisation delay the OLT set in its last Ranging_Time (G.984.3
  * 9.2.3.4), in bits at 1.24416 Gbit/s, as the odi-oss driver decodes it.
  * The OLT sets it to its own reference delay less the round trip it
- * measured, so a longer path gives a smaller figure. That reference is the
- * OLT's own and never sent, so no distance follows from one figure; a
- * change between two rangings is a change of the path, as long as the OLT
- * kept its reference. Half a bit time in fibre (group index 1.468) is
- * about 8.2 cm of one way. A ranging after a reboot moves the figure by a
- * bit or two on a path that did not change, so a change under EQD_NOISE
- * bits is kept quiet. The last figure and the one before it are kept in
- * this browser only (localStorage), dated by when it first saw the new one
- * (the driver keeps no time of the ranging). A Ranging_Time for the
- * protection path is not the path this ONU ranged on, and the driver
- * applies none, so it is not shown and not kept. A row under Registration;
- * hidden on "ranging_time none" or without the line.
+ * measured, so a longer round trip gives a smaller figure. That reference
+ * is the OLT's own and never sent, so no distance follows from one figure.
+ * The round trip is not the fibre alone: the stick's response time is in
+ * it too, so a change is given as the fibre it equals (half a bit time in
+ * fibre, group index 1.468, about 8.2 cm of one way), not as fibre that
+ * was added, and holds only while the OLT keeps its reference.
+ * A ranging after a reboot moves the figure by a bit or two on a path that
+ * did not change. So the page keeps a settled figure, base, and moves it
+ * only when a reading is EQD_NOISE bits or more away from it: small steps
+ * neither clear a change already shown nor hide a drift that adds up. With
+ * a move it keeps the figure it moved from and the day this browser first
+ * saw the new one (the driver keeps no time of the ranging). All of it in
+ * this browser only (localStorage). A Ranging_Time for the protection path
+ * is not the path this ONU ranged on, and the driver applies none, so it is
+ * not shown and not kept. A row under Registration; hidden on
+ * "ranging_time none" or without the line.
  */
 const EQD_KEY = 'odi-ui.eqd';
 const M_PER_BIT = 0.0821;
 const EQD_NOISE = 25;
+function eqdState(v) {
+  const whole = (x) => Number.isSafeInteger(x) && x >= 0;
+  if (!v || !whole(v.base)) return null;
+  if (v.from === null && v.at === null) return v;
+  if (!whole(v.from) || !Number.isFinite(v.at) || Number.isNaN(new Date(v.at).getTime())) return null;
+  return v;
+}
 function eqd(st, now) {
   const host = $('#ranging');
   host.hidden = true;
@@ -227,32 +238,34 @@ function eqd(st, now) {
   const m = /^eqd_bits (\d+) protection_path 0\b/.exec((st && st.ranging) || '');
   if (!m) return null;
   const bits = Number(m[1]);
-  let seen = null;
-  try { seen = JSON.parse(localStorage.getItem(EQD_KEY) || 'null'); } catch (e) { seen = null; }
-  const whole = (v) => Number.isSafeInteger(v) && v >= 0;
-  if (!seen || !whole(seen.bits) || (seen.prev !== null && !whole(seen.prev))
-      || !Number.isFinite(seen.at) || Number.isNaN(new Date(seen.at).getTime())) seen = null;
-  if (!seen || seen.bits !== bits) {
-    seen = { bits, prev: seen ? seen.bits : null, at: now === undefined ? Date.now() : now };
-    try { localStorage.setItem(EQD_KEY, JSON.stringify(seen)); } catch (e) { /* not kept */ }
+  let kept = null;
+  try { kept = eqdState(JSON.parse(localStorage.getItem(EQD_KEY) || 'null')); } catch (e) { kept = null; }
+  let next = kept;
+  if (!kept) next = { base: bits, from: null, at: null };
+  else if (Math.abs(bits - kept.base) >= EQD_NOISE) {
+    next = { base: bits, from: kept.base, at: now === undefined ? Date.now() : now };
+  }
+  if (next !== kept) {
+    try { localStorage.setItem(EQD_KEY, JSON.stringify(next)); } catch (e) { /* not kept */ }
   }
   const dt = el('dt', null, 'EqD');
   dt.title = 'Equalisation delay the OLT set at ranging. It depends on a reference only the OLT knows, '
-    + 'so it gives no distance; a change of 1 bit is about 8 cm of fibre.';
+    + 'so it gives no distance.';
   const dd = el('dd', 'num', `${bits} bit`);
   dd.append(el('em', null, ` ${(bits / 1244.16).toFixed(1)} µs`));
   host.append(dt, dd);
-  const d = seen.prev === null ? 0 : bits - seen.prev;
-  if (Math.abs(d) >= EQD_NOISE) {
-    const metres = (Math.abs(d) * M_PER_BIT).toFixed(0);
+  const shown = next.from !== null;
+  if (shown) {
+    const d = next.base - next.from;
     const since = el('dt', null, 'Changed');
-    since.title = 'Against the figure before it, as this browser saw it. Holds only if the OLT kept its reference.';
+    since.title = 'Against the settled figure before it, as this browser saw it. Given as the fibre it equals: '
+      + 'it also moves when the OLT changes its reference or the stick its response time.';
     host.append(since, el('dd', 'num',
-      `${d < 0 ? '−' : '+'}${Math.abs(d)} bit ≈ ${metres} m ${d < 0 ? 'longer' : 'shorter'}, `
-      + new Date(seen.at).toISOString().slice(0, 10)));
+      `${d < 0 ? '−' : '+'}${Math.abs(d)} bit ≈ ${d < 0 ? '+' : '−'}${(Math.abs(d) * M_PER_BIT).toFixed(0)} m fibre, `
+      + new Date(next.at).toISOString().slice(0, 10)));
   }
   host.hidden = false;
-  return { bits, prev: seen.prev, shown: Math.abs(d) >= EQD_NOISE };
+  return { bits, base: next.base, from: next.from, shown };
 }
 
 /* O1 to O5 is a real sequence — an ONU climbs it on every registration — which
