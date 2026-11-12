@@ -487,13 +487,21 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(eqd({ ranging: line }, day + 1000).prev === null, 'eqd: the same figure again is no change');
   eqd({ ranging: line.replace('283549', '283427') }, day + 86400000);
   ok(textOf(doc.querySelector('#rx').children.at(-1)) === 'The OLT set an equalisation delay of 283427 bits (227.8 \u00b5s), '
-     + '122 bits less than before the ranging of 2026-11-13: about 10 m more fibre, if the OLT kept its reference',
-     'eqd: a smaller figure is a longer path, with the date of that ranging');
+     + '122 bits less than the one before it (this browser first saw it on 2026-11-13): about 10 m more fibre, if the OLT kept its reference',
+     'eqd: a smaller figure is a longer path, dated by when this browser first saw it');
   eqd({ ranging: line.replace('283549', '283430') }, day + 2 * 86400000);
   ok(/3 bits more .*: under a metre less fibre/.test(textOf(doc.querySelector('#rx').children.at(-1))),
      'eqd: a change of a few bits is under a metre');
+  const before = store.get('odi-ui.eqd');
+  ok(eqd({ ranging: line.replace('283549', '100000').replace('protection_path 0', 'protection_path 1') }, day) === null
+     && store.get('odi-ui.eqd') === before,
+     'eqd: a protection path figure is not shown and not kept');
   store.set('odi-ui.eqd', '{"bits":"x"}');
   ok(eqd({ ranging: line }, day).prev === null, 'eqd: a stored value that is not a figure starts over');
+  store.set('odi-ui.eqd', '{"bits":283549,"prev":283427}');
+  ok(eqd({ ranging: line }, day).prev === null, 'eqd: a stored value without a time starts over, and throws nothing');
+  store.set('odi-ui.eqd', '{"bits":283549,"prev":283427,"at":1e300}');
+  ok(eqd({ ranging: line }, day).prev === null, 'eqd: a stored time that is no date starts over');
   ok(eqd({}, day) === null && eqd({ ranging: 'eqd_bits x' }, day) === null, 'eqd: nothing without a figure');
   delete globalThis.localStorage;
 }

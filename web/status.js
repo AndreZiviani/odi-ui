@@ -203,18 +203,23 @@ function pathLoss(st, rxv) {
  * kept its reference. Half a bit time in fibre (group index 1.468) is
  * about 8.2 cm of one way. The last figure and the one before it are kept
  * in this browser only (localStorage), so the change is the one this
- * browser saw. A line under the receive meter; nothing on "ranging_time
- * none" or without the line.
+ * browser saw, dated by when it first saw it (the driver keeps no time of
+ * the ranging). A Ranging_Time for the protection path (G.984.3 9.2.3.4)
+ * is not the path this ONU ranged on, and the driver applies none, so it
+ * is not shown and not kept. A line under the receive meter; nothing on
+ * "ranging_time none" or without the line.
  */
 const EQD_KEY = 'odi-ui.eqd';
 const M_PER_BIT = 0.0821;
 function eqd(st, now) {
-  const m = /^eqd_bits (\d+)/.exec((st && st.ranging) || '');
+  const m = /^eqd_bits (\d+) protection_path 0\b/.exec((st && st.ranging) || '');
   if (!m) return null;
   const bits = Number(m[1]);
   let seen = null;
   try { seen = JSON.parse(localStorage.getItem(EQD_KEY) || 'null'); } catch (e) { seen = null; }
-  if (!seen || typeof seen.bits !== 'number' || (seen.prev !== null && typeof seen.prev !== 'number')) seen = null;
+  const whole = (v) => Number.isSafeInteger(v) && v >= 0;
+  if (!seen || !whole(seen.bits) || (seen.prev !== null && !whole(seen.prev))
+      || !Number.isFinite(seen.at) || Number.isNaN(new Date(seen.at).getTime())) seen = null;
   if (!seen || seen.bits !== bits) {
     seen = { bits, prev: seen ? seen.bits : null, at: now === undefined ? Date.now() : now };
     try { localStorage.setItem(EQD_KEY, JSON.stringify(seen)); } catch (e) { /* not kept */ }
@@ -224,9 +229,9 @@ function eqd(st, now) {
     const d = bits - seen.prev;
     const metres = Math.abs(d) * M_PER_BIT;
     const far = metres < 1 ? 'under a metre' : `about ${metres.toFixed(0)} m`;
-    text += `, ${Math.abs(d)} bits ${d < 0 ? 'less' : 'more'} than before the ranging of `
-      + `${new Date(seen.at).toISOString().slice(0, 10)}: ${far} ${d < 0 ? 'more' : 'less'} fibre,`
-      + ' if the OLT kept its reference';
+    text += `, ${Math.abs(d)} bits ${d < 0 ? 'less' : 'more'} than the one before it `
+      + `(this browser first saw it on ${new Date(seen.at).toISOString().slice(0, 10)}): `
+      + `${far} ${d < 0 ? 'more' : 'less'} fibre, if the OLT kept its reference`;
   }
   $('#rx').append(el('p', 'm-note', text));
   return { bits, prev: seen.prev };
