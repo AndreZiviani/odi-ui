@@ -15,6 +15,7 @@ import {
 } from './state.js';
 import { hexAscii, snFromHex, snToHex, validateInput } from './validate.js';
 import { renderFixedMeEditor } from './expert.js';
+import { renderRoutesEditor } from './lanroutes.js';
 
 /*
  * The subtabs, grouped by what someone changing the line thinks about rather
@@ -34,7 +35,7 @@ const GROUPS = {
      read what a native ONU reports. */
   expert: ['OMCI_UNKNOWN_ME_OK', 'OMCI_FIXED_ME', 'OMCI_VEIP', 'OMCI_VEIP_SLOT_ID', 'OMCI_PRIVATE_ME',
     'OMCI_POTS_PORTS', 'OMCI_POTS_SLOT_ID', 'OMCI_VOIP_LINE_REPORT'],
-  network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'ELAN_MAC_ADDR'],
+  network: ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2', 'LAN_ROUTES', 'ELAN_MAC_ADDR'],
   services: ['SYSLOG_SERVER', 'NTP_SERVER', 'IGMP_SNOOPING', 'IGMP_PON_DROP', 'MLD_SNOOPING'],
 };
 /* Keys with a control of their own on their subtab, not a schema row there:
@@ -193,10 +194,12 @@ function renderValue(row, raw, readonly = false) {
     return box;
   }
 
-  /* OMCI_FIXED_ME is a table, not a string. The editor hands back the key's
-     text after each edit; what a pending edit is stays decided here. */
-  if (row.type === 'fixedme') {
-    const ed = renderFixedMeEditor(shown, (v) => {
+  /* OMCI_FIXED_ME and LAN_ROUTES are tables, not strings. The editor hands
+     back the key's text after each edit; what a pending edit is stays decided
+     here. */
+  if (row.type === 'fixedme' || row.type === 'routes') {
+    const editor = row.type === 'routes' ? renderRoutesEditor : renderFixedMeEditor;
+    const ed = editor(shown, (v) => {
       const same = v === raw || (raw === undefined && v === '');
       if (same) EDITS.delete(row.name); else EDITS.set(row.name, v);
       ed.classList.toggle('changed', !same);
@@ -340,7 +343,7 @@ function renderRow(row, readonly) {
   const meta = S.META[row.name] || {};
   const set = settingOf(row.name);
   const prov = provenance(row, S.VALUES[row.name]);
-  const wrap = el('div', row.type === 'fixedme' ? 'setting wide' : 'setting');
+  const wrap = el('div', row.type === 'fixedme' || row.type === 'routes' ? 'setting wide' : 'setting');
   wrap.dataset.name = row.name;
 
   const left = el('div', 's-label');

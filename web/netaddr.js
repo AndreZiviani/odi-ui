@@ -2,7 +2,8 @@
  * The management address as a trial (odi-oss mgmt-addr.sh).
  *
  * A wrong address takes every way in with it, so Save never stores the five
- * keys while the image has the script: it asks for a trial. The stick applies
+ * keys (nor LAN_ROUTES, the static routes that ride the same trial) while the
+ * image has the script: it asks for a trial. The stick applies
  * the new address a second later, in RAM, keeps the old one up beside it, and
  * goes back by itself after 90 s unless "Keep" arrives. Keep has to arrive
  * over a NEW address, which is the proof that it works, so the dialog on a page
@@ -27,7 +28,9 @@ import { $, el, get } from './dom.js';
 import { S } from './state.js';
 import { renderAll } from './config.js';
 
-const NET_KEYS = ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2'];
+const ADDR_KEYS = ['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2'];
+/* The static routes ride the same trial as the addresses. */
+const NET_KEYS = [...ADDR_KEYS, 'LAN_ROUTES'];
 const POLL_MS = 3000;
 const PROBE_MS = 2000;        /* between rounds of looking for the new address */
 const PROBE_TIMEOUT_MS = 2500; /* one probe: a dead address must not hold the round */
@@ -158,12 +161,35 @@ function freshAddrs(h) {
 }
 
 /*
+ * Whether the trial changes the static routes and nothing else: the address
+ * keys are the same before and after, the routes are not. Then there is no
+ * new address to prove, so the page stays where it is and a Keep from here
+ * is accepted (the script takes a Keep from any client in that case). A
+ * state without the routes keys (an image that has no routes) is never that.
+ * Pure.
+ */
+function routesOnly(h) {
+  const st = (h && h.state) || {};
+  if (st.new_LAN_ROUTES === undefined && st.old_LAN_ROUTES === undefined) return false;
+  if ((st.new_LAN_ROUTES || '') === (st.old_LAN_ROUTES || '')) return false;
+  return ADDR_KEYS.every((k) => (st['new_' + k] || '') === (st['old_' + k] || ''));
+}
+
+/*
  * What the dialog says and offers for an answer: { text, link, canKeep }.
  * `via` is the address this page was served on, from the socket.
  */
 function dialogView(h, loc) {
   const fresh = freshAddrs(h);
   const via = (h && h.via) || '';
+  if (routesOnly(h)) {
+    return {
+      text: 'The static routes are in force now, for this trial only. The addresses did not change, so '
+        + 'this page stays. Check from the other subnet that the stick answers, then press Keep to store '
+        + 'the routes. Revert, or no answer, goes back to the routes before.',
+      link: null, canKeep: true,
+    };
+  }
   if (!fresh.length) {
     return {
       text: 'Only the netmask changes, so there is no new address to open and this page stays. Keep '
@@ -343,7 +369,13 @@ async function closeDialog(h) {
   if (typeof d.close === 'function' && d.open) d.close(); else d.hidden = true;
   const st = (h && h.state) || {};
   const to = st.new_LAN_IP_ADDR || '';
-  const what = {
+  const only = routesOnly(h);
+  const what = only ? {
+    trial_confirmed: 'Kept: the static routes are stored.',
+    trial_expired: 'Not kept in time: back to the routes before. Nothing was stored.',
+    trial_reverted: 'Reverted: back to the routes before. Nothing was stored.',
+    trial_failed: 'The routes could not be applied: back to the routes before. Nothing was stored.',
+  }[st.event] : {
     trial_confirmed: `Kept: the management address is stored. The stick answers at ${originOf(to)} now.`,
     trial_expired: 'Not kept in time: back to the address before. Nothing was stored.',
     trial_reverted: 'Reverted: back to the address before. Nothing was stored.',
@@ -357,7 +389,7 @@ async function closeDialog(h) {
   box.hidden = false;
   if (st.event === 'trial_confirmed') {
     try { S.VALUES = await get('/api/values'); renderAll(); } catch (e) { /* the page reloads on the next visit */ }
-    if (to && h.via && h.via !== to) {
+    if (!only && to && h.via && h.via !== to) {
       const a = el('a', 'fwbtn', `Continue on ${originOf(to)}`);
       a.href = originOf(to);
       link.append(a);
@@ -399,7 +431,7 @@ function wireNetaddr() {
 }
 
 export {
-  NET_KEYS, isNetKey, netaddrActive, trialLeft, freshAddrs, dialogView,
+  NET_KEYS, isNetKey, netaddrActive, trialLeft, freshAddrs, routesOnly, dialogView,
   originOf, probeAddr, firstAnswering, redirectTargets, followLoop, followText, wasFollowed, markFollowed,
   deps, stopFollow, followAddresses,
   refresh as renderNetaddr, startTrial, wireNetaddr,

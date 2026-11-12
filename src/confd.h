@@ -131,7 +131,8 @@
 #define SAFEMODE_SCRIPT   "/etc/scripts/safe-mode.sh"
 
 /*
- * The management addresses (odi-oss mgmt-addr.sh). A change of LAN_IP_ADDR,
+ * The management addresses (odi-oss mgmt-addr.sh; LAN_ROUTES, the static
+ * routes, rides the same trial). A change of LAN_IP_ADDR,
  * LAN_SUBNET, LAN_ENABLE_IP2, LAN_IP_ADDR2 or LAN_SUBNET2 is a trial the
  * script applies in RAM, keeps the old primary beside, and reverts by itself
  * unless confirmed over a new address, so a typo cannot take every way in with

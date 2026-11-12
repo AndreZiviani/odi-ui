@@ -6,6 +6,7 @@ LAN_SUBNET	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 LAN_ENABLE_IP2	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 LAN_IP_ADDR2	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 LAN_SUBNET2	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
+LAN_ROUTES	unknown	
 LAN_RIP	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 LAN_AUTOSEARCH	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig
 DNS_MODE	unknown	bin/configd,bin/led,bin/mib,bin/xmlconfig

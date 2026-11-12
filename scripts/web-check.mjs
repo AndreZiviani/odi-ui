@@ -225,6 +225,12 @@ ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
   const dec = (x) => decodeURIComponent(x.replace(/\+/g, ' '));
   const lines = [];
   let seen = 0;
+  /* The gateway of a route is judged against the management addresses, so the
+     table is run against the stock ones, which scripts/smoke.sh stores before
+     it posts the same rows. */
+  const heldLan = { ...S.VALUES };
+  Object.assign(S.VALUES, { LAN_IP_ADDR: '192.168.1.1', LAN_SUBNET: '255.255.255.0', LAN_ENABLE_IP2: '0',
+    LAN_IP_ADDR2: '', LAN_SUBNET2: '255.255.255.0', LAN_ROUTES: '' });
   for (const [kind, name, value, expect] of rows) {
     const raw = dec(value);
     let bad;
@@ -244,6 +250,7 @@ ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
       ok(false, `vector ${kind} ${name} ${value.slice(0, 50)}: the page says ${bad === null ? 'ok' : bad}, the table says ${expect}`);
     }
   }
+  Object.assign(S.VALUES, heldLan);
   ok(seen > 150, `${seen} validation vectors agree with the page`);
 
   /* Rules that read another key: the page judges them from the pending edits,
@@ -1189,9 +1196,9 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   na.deps.sleep = () => new Promise((r) => setImmediate(r));
   na.deps.navigate = () => {};
 
-  ok(na.NET_KEYS.join() === 'LAN_IP_ADDR,LAN_SUBNET,LAN_ENABLE_IP2,LAN_IP_ADDR2,LAN_SUBNET2'
-     && na.isNetKey('LAN_SUBNET2') && !na.isNetKey('HOST_AUTONEG') && !na.isNetKey('LAN_SDS_MODE'),
-     'address trial: the five keys, and no other');
+  ok(na.NET_KEYS.join() === 'LAN_IP_ADDR,LAN_SUBNET,LAN_ENABLE_IP2,LAN_IP_ADDR2,LAN_SUBNET2,LAN_ROUTES'
+     && na.isNetKey('LAN_SUBNET2') && na.isNetKey('LAN_ROUTES') && !na.isNetKey('HOST_AUTONEG') && !na.isNetKey('LAN_SDS_MODE'),
+     'address trial: the five address keys and the static routes, and no other');
   ok(na.trialLeft({ state: st({}), uptime: '330' }) === 90, 'address trial: the countdown comes from the stick clock');
   ok(na.trialLeft({ state: st({ phase: 'steady' }), uptime: '330' }) === null, 'address trial: no trial, no countdown');
   ok(na.freshAddrs({ state: st({}) }).join() === '10.1.1.1', 'address trial: the new primary is the address to keep on');
@@ -1209,6 +1216,17 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
      'address trial: on the new address Keep is offered');
   v = na.dialogView({ state: st({ new_LAN_IP_ADDR: '192.168.0.1' }), via: '192.168.0.1' });
   ok(v.canKeep && /netmask/.test(v.text), 'address trial: a netmask-only change leaves the decision to the stick');
+
+  /* The static routes ride the same trial: when they are all that changes there is no address to prove. */
+  const rt = (o) => st({ new_LAN_IP_ADDR: '192.168.0.1', old_LAN_IP_ADDR: '192.168.0.1', old_LAN_SUBNET: '255.255.255.0',
+    new_LAN_SUBNET: '255.255.255.0', old_LAN_ROUTES: '', new_LAN_ROUTES: 'default via 192.168.0.254', ...o });
+  ok(na.routesOnly({ state: rt({}) }), 'routes trial: only LAN_ROUTES differs, so it is a routes-only trial');
+  ok(!na.routesOnly({ state: rt({ new_LAN_SUBNET: '255.255.0.0' }) }) && !na.routesOnly({ state: rt({ new_LAN_ROUTES: '' }) })
+     && !na.routesOnly({ state: st({}) }), 'routes trial: an address change, or no change of the routes, is not routes-only');
+  v = na.dialogView({ state: rt({}), via: '192.168.0.1' });
+  ok(v.canKeep && v.link === null && /static routes/.test(v.text) && /page stays/.test(v.text),
+     'routes trial: the dialog offers Keep on this page, with no new address to open');
+  ok(na.redirectTargets({ state: rt({}), via: '192.168.0.1' }).length === 0, 'routes trial: nothing to redirect to');
 
   const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
   for (const id of ['netaddr-dialog', 'netaddr-count', 'netaddr-text', 'netaddr-link', 'netaddr-keep', 'netaddr-revert',
@@ -1664,6 +1682,92 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   ok(fme(seen) && /both forms/.test(fme(seen)), 'a legacy row for a class that has an entity says both forms');
   r1.children[4].children[0].onclick();
   ok(seen === '188:0x8001:1:0011aa', 'removing a row removes its entry');
+}
+
+/* --- LAN_ROUTES: the static routes of the management interface ------------- */
+{
+  const V = await import(join(root, 'web', 'validate.js'));
+  const { renderRoutesEditor } = await import(join(root, 'web', 'lanroutes.js'));
+  const stock = { get: (k) => ({ LAN_IP_ADDR: '192.168.1.1', LAN_SUBNET: '255.255.255.0' })[k] };
+  const rtp = (v, ctx = stock) => V.valueProblem({ name: 'LAN_ROUTES', type: 'routes' }, v, ctx);
+  const two = 'default via 192.168.1.254,10.0.0.0/8 via 192.168.1.3';
+  ok(S.SCHEMA.find((r) => r.name === 'LAN_ROUTES').type === 'routes', 'the schema gives LAN_ROUTES the routes check');
+  /* parse and serialise */
+  ok(JSON.stringify(V.routesParse('  default   via  192.168.1.254 ,  10.0.0.0/8 via 192.168.1.3 '))
+     === JSON.stringify([{ dest: 'default', gw: '192.168.1.254' }, { dest: '10.0.0.0/8', gw: '192.168.1.3' }]),
+     'routes: extra spaces around words and commas are read');
+  ok(V.routesSerialise(V.routesParse('default via 192.168.1.254, 10.0.0.0/8   via 192.168.1.3')) === two,
+     'routes: the serialised form is canonical, DEST via GW joined by a bare comma');
+  ok(V.routesParse('').length === 0 && V.routesSerialise([]) === '' && V.routesSerialise([{ dest: '', gw: '' }]) === '',
+     'routes: empty is no rows and no rows is empty');
+  ok(V.routesSerialise([{ dest: '10.0.0.0/8', gw: '' }]) === '10.0.0.0/8 via ' && rtp('10.0.0.0/8 via '),
+     'routes: an unfinished row goes out as typed and the check refuses it');
+  ok(V.routesParse('10.0.0.0/8')[0].dest === '10.0.0.0/8' && V.routesParse('10.0.0.0/8')[0].gw === '',
+     'routes: an entry that is not DEST via GW keeps its text');
+  /* rows */
+  const rp = V.routeRowProblems;
+  ok(!rp({ dest: 'default', gw: '192.168.1.254' }).dest && !rp({ dest: '0.0.0.0/0', gw: '1.1.1.1' }).dest
+     && !rp({ dest: '10.1.2.3/32', gw: '1.1.1.1' }).dest, 'routes: default, /0 and /32 destinations are fine');
+  ok(/host bits/.test(rp({ dest: '10.0.0.1/8', gw: '1.1.1.1' }).dest) && /10\.0\.0\.0\/8/.test(rp({ dest: '10.0.0.1/8', gw: '1.1.1.1' }).dest),
+     'routes: host bits in the destination say which network it is');
+  ok(['10.0.0.0', '10.0.0.0/33', '10.0.0.0/', '10.0.0.0/08', 'Default', '999.0.0.0/8', ''].every((d) => rp({ dest: d, gw: '1.1.1.1' }).dest),
+     'routes: no prefix, a prefix past 32, a leading zero, other spelling and a bad octet are refused');
+  ok(rp({ dest: 'default', gw: '1.2.3.999' }).gw && rp({ dest: 'default', gw: '' }).gw && !rp({ dest: 'default', gw: '1.2.3.4' }).gw,
+     'routes: a gateway is an IPv4 address');
+  /* sets */
+  ok(V.routesSetProblem([{ dest: 'default' }, { dest: '0.0.0.0/0' }]) && V.routesSetProblem([{ dest: '10.0.0.0/8' }, { dest: '10.0.0.0/8' }])
+     && !V.routesSetProblem([{ dest: '10.0.0.0/8' }, { dest: '10.0.0.0/16' }]),
+     'routes: a destination twice is refused, default and 0.0.0.0/0 being one, but two prefixes of one network are fine');
+  ok(V.routesSetProblem(Array.from({ length: 9 }, (_, i) => ({ dest: `10.${i}.0.0/16` }))) && !V.routesSetProblem(Array.from({ length: 8 }, (_, i) => ({ dest: `10.${i}.0.0/16` }))),
+     'routes: eight at most');
+  /* gateways against the management subnets */
+  ok(/stick itself/.test(rtp('default via 192.168.1.1')) && /network or broadcast/.test(rtp('default via 192.168.1.255'))
+     && /network or broadcast/.test(rtp('default via 192.168.1.0')), 'routes: the address of the stick and the network and broadcast addresses are not gateways');
+  ok(rtp('') === null && rtp(two) === null && rtp('default via 192.168.1.254, 10.0.0.0/8 via 192.168.1.3') === null,
+     'routes: empty, and entries with the gateway on the first subnet, are fine (a space after the comma too)');
+  ok(/not inside 192\.168\.1\.0\/24/.test(rtp('default via 10.9.9.9')), 'routes: a gateway outside the subnet says which subnet');
+  const second = { get: (k) => ({ LAN_IP_ADDR: '192.168.1.1', LAN_SUBNET: '255.255.255.0', LAN_ENABLE_IP2: '1',
+    LAN_IP_ADDR2: '172.20.0.1', LAN_SUBNET2: '255.255.0.0' })[k] };
+  ok(rtp('default via 172.20.9.9', second) === null && rtp('default via 192.168.1.9', second) === null
+     && /or 172\.20\.0\.0\/16/.test(rtp('default via 10.9.9.9', second)),
+     'routes: the second subnet counts while the second address is on');
+  ok(/not inside/.test(rtp('default via 172.20.9.9', { get: (k) => ({ ...Object.fromEntries(['LAN_IP_ADDR', 'LAN_SUBNET'].map((n) => [n, stock.get(n)])),
+    LAN_ENABLE_IP2: '0', LAN_IP_ADDR2: '172.20.0.1' })[k] })), 'routes: the second subnet does not count while the second address is off');
+  ok(rtp('default via 10.9.9.9', { get: () => '1' }) === null, 'routes: while an address is not usable yet the gateway is not judged');
+  /* an address edit that leaves a stored gateway outside */
+  const held = { get: (k) => ({ LAN_IP_ADDR: '192.168.1.1', LAN_SUBNET: '255.255.255.0', LAN_ROUTES: two })[k] };
+  ok(/change the static routes/.test(V.keyRuleProblem('LAN_IP_ADDR', '10.1.1.1', held)) && V.keyRuleProblem('LAN_IP_ADDR', '192.168.1.5', held) === null
+     && /change the static routes/.test(V.keyRuleProblem('LAN_SUBNET', '255.255.255.128', { get: (k) => (k === 'LAN_IP_ADDR' ? '192.168.1.1' : held.get(k)) })),
+     'routes: an address or netmask change that leaves a stored gateway outside is refused until the routes change with it');
+  /* the editor */
+  const ed = renderRoutesEditor(two, () => {});
+  const body = ed.tableLine.children[0].children[1];
+  ok(body.children.length === 2 && body.children[0].inputs.map((i) => i.value).join('|') === 'default|192.168.1.254'
+     && body.children[1].inputs.map((i) => i.value).join('|') === '10.0.0.0/8|192.168.1.3', 'routes editor: one row per route');
+  const none = renderRoutesEditor('', () => {});
+  ok(none.tableLine.children[0].children[1].children.length === 0 && /No static routes/.test(JSON.stringify(none.children[1])),
+     'routes editor: with no value there are no rows, and a line says what routes are for');
+  let seen = null;
+  const ed3 = renderRoutesEditor('', (v) => { seen = v; });
+  ed3.children[2].onclick();
+  const r0 = ed3.tableLine.children[0].children[1].children[0];
+  r0.inputs[0].value = ' 10.0.0.0/8 '; r0.inputs[0].oninput();
+  ok(seen === '10.0.0.0/8 via ' && rtp(seen), 'routes editor: a half-typed row is handed on as typed, so the check holds the save');
+  r0.inputs[1].value = '192.168.1.3'; r0.inputs[1].oninput();
+  ok(seen === '10.0.0.0/8 via 192.168.1.3' && rtp(seen) === null, 'routes editor: a finished row serialises to the entry form');
+  r0.inputs[0].value = '10.0.0.1/8'; r0.inputs[0].oninput();
+  ok(/host bits/.test(JSON.stringify(ed3.children[1])) && r0.inputs[0].classList.contains('invalid'),
+     'routes editor: an error is written under the table and the field is marked');
+  r0.inputs[0].value = 'default'; r0.inputs[0].oninput();
+  ed3.children[2].onclick();
+  const r1b = ed3.tableLine.children[0].children[1].children[1];
+  r1b.inputs[0].value = '0.0.0.0/0'; r1b.inputs[0].oninput();
+  r1b.inputs[1].value = '192.168.1.2'; r1b.inputs[1].oninput();
+  ok(/listed twice/.test(JSON.stringify(ed3.children[1])), 'routes editor: default and 0.0.0.0/0 together say the destination is listed twice');
+  r1b.children[2].children[0].onclick();
+  ok(seen === 'default via 192.168.1.3' && !/listed twice/.test(JSON.stringify(ed3.children[1])), 'routes editor: removing a row removes its route');
+  for (let i = 0; i < 7; i++) ed3.children[2].onclick();
+  ok(ed3.children[2].disabled === true && ed3.tableLine.children[0].children[1].children.length === 8, 'routes editor: Add is off at eight rows');
 }
 {
   const setting = (n) => SETT.find((r) => r.name === n);

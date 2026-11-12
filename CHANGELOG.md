@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: optional static routes for the management interface, under Network, so the stick
+  can be reached from another subnet without NAT (`LAN_ROUTES`, an odi-only key; empty by
+  default, the default route allowed). A list of rows, Destination (`default`, or a network
+  like 10.0.0.0/8 with its host bits zero) and Gateway, up to 8, with the errors written under
+  the table: the gateway has to be a host inside the management subnet (the first address, or the
+  second while it is on, as being edited; not the stick own address, nor a network or
+  broadcast address), a destination cannot be listed twice, and an address
+  change that would leave a stored gateway unusable is refused until the routes change with it,
+  and a Save that changes addresses sends the stored routes in the same trial, as the script asks.
+  Saving goes through the same trial as the management address: applied at once, kept only
+  on Keep within the time. When only the routes change the page stays where it is and Keep
+  works from it. confd checks the value as the firmware does (digits, dots, slashes, commas,
+  spaces and the words default and via, then the grammar and the gateways) and hands it to
+  `mgmt-addr.sh try` as one argument, no shell. Pairs with the firmware change in
+  AndreZiviani/odi-oss#367; refs AndreZiviani/odi-oss#367.
+
 - Status: the path loss is a meter of its own between Receive and Transmit, drawn like them: the loss range of the fibre plant class the OLT names is the window (ITU-T G.984.2: A 5 to 20 dB, B 10 to 25, B+ 13 to 28, C 15 to 30, C+ 17 to 32), the dimension lines give what is left to each end, and only the upper end is drawn as near the edge, since too little loss is the receive meter's overload. Under it: "Estimate. OLT sends 3.4 dBm, class B+: 13 to 28 dB", since the receive reading may be a few dB off and the OLT's launch power too, and so may the loss. When the OLT names no class it stays a plain line under the receive meter.
 - Status: under Registration, the equalisation delay the OLT set in its last Ranging_Time, as "EqD 283548 bit 227.9 µs". The OLT sets it to a reference delay of its own less the round trip it measured, and never sends that reference, so no distance is shown; the tooltip says so. The page keeps a settled figure and moves it only when a reading is 25 bits or more (about 2 m) away from it, so the bit or two a ranging after a reboot moves it neither shows nor clears a change, and small steps that add up are shown. After a move a second row gives the change as the fibre it equals ("−122 bit ≈ +10 m fibre", about 8.2 cm per bit, a smaller figure is more fibre) with the day this browser first saw it; the tooltip says it also moves when the OLT changes its reference or the stick its response time. All of it is kept in this browser only (localStorage). A Ranging_Time for the protection path is not shown and not kept. `/api/status` gains `ranging`, the `ranging_time` line of `/proc/odi_gpon/status` (odi-oss), a plain file read; the row is hidden on `ranging_time none` or without it. `make check` covers both.
 - Status: on the stick diagram the fibre line carries the two rates of the fibre side, down above it and up below, and moves while the ONU is in service (not with `prefers-reduced-motion`). The same figures stay in the Switch part, so the line is hidden from screen readers as before. The Fibre part names both directions, light in and light out. The first figure of each part is larger than what says more about it, and the diagram is a little tighter. Nothing new is read from the stick.

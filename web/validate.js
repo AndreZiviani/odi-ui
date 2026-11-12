@@ -135,6 +135,138 @@ function fwdopProblem(raw) {
   return null;
 }
 
+/*
+ * LAN_ROUTES, the static routes of the management interface (src/mib.c,
+ * lan_routes_parse, is the daemon copy; odi-oss mgmt-addr.sh and network.sh
+ * read it). Up to 8 entries "DEST via GW" separated by commas. DEST is the
+ * word default or a CIDR a.b.c.d/len (len 0 to 32, host bits zero); GW is an
+ * IPv4 address inside a subnet the stick holds on its management device: the
+ * first address and netmask, or the second pair while LAN_ENABLE_IP2 is 1.
+ * The firmware turns the whole key off on anything else, or on a destination
+ * named twice, so the page refuses it before the write. A row is
+ * {dest, gw} as typed.
+ */
+const ROUTES_MAX = 8;
+const ROUTES_FORM = 'each route is DEST via GATEWAY, separated by commas, e.g. default via 192.168.1.254';
+const quadNum = (q) => ((q[0] << 24) | (q[1] << 16) | (q[2] << 8) | q[3]) >>> 0;
+
+/* The string of the key as rows, tolerating extra spaces and a space after the
+   comma. An entry that is not DEST via GW keeps its text in dest, so the
+   editor shows what is wrong rather than dropping it. */
+function routesParse(raw) {
+  if (!raw || !raw.trim()) return [];
+  return raw.split(',').map((e) => {
+    const m = /^\s*(\S+)\s+via\s+(\S+)\s*$/.exec(e);
+    return m ? { dest: m[1], gw: m[2] } : { dest: e.trim(), gw: '' };
+  });
+}
+
+/* Rows back to the string of the key, canonical: DEST via GW joined by a bare
+   comma. A row with both fields empty is dropped; an unfinished row goes out
+   as typed, so the check refuses the string instead of quietly losing it. */
+function routesSerialise(rows) {
+  return rows.filter((r) => !(r.dest === '' && r.gw === ''))
+    .map((r) => `${r.dest} via ${r.gw}`).join(',');
+}
+
+/* What is wrong with each field of a row: {dest, gw} reasons, absent when fine. */
+function routeRowProblems(r) {
+  const p = {};
+  if (r.dest !== 'default') {
+    const m = /^([0-9.]+)\/(0|[1-9]\d?)$/.exec(r.dest);
+    const q = m && quadOf(m[1]);
+    if (!q || Number(m[2]) > 32) {
+      p.dest = 'destination: default, or a network like 10.0.0.0/8 (prefix 0 to 32)';
+    } else {
+      const len = Number(m[2]);
+      const mask = len ? (0xffffffff << (32 - len)) >>> 0 : 0;
+      if ((quadNum(q) & ~mask) >>> 0) {
+        p.dest = `destination: ${r.dest} has host bits set; the network is ${[24, 16, 8, 0].map((s) => (quadNum(q) & mask) >>> s & 255).join('.')}/${len}`;
+      }
+    }
+  }
+  if (!quadOf(r.gw)) p.gw = 'gateway: an IPv4 address like 192.168.1.254';
+  return p;
+}
+
+/* The subnets the stick holds on its management device, as the routes see
+   them: [{net, mask, text}], the second only while it is on. Null when an
+   address or netmask is not usable yet (it has its own message). */
+function mgmtSubnets(ctx = defaultCtx) {
+  const val = (k, d) => {
+    const v = ctx.get(k);
+    return v === undefined || v === '' ? d : v;
+  };
+  const one = (ip, mask) => {
+    const a = quadOf(ip);
+    const m = quadOf(mask);
+    if (!a || !m) return null;
+    const mm = quadNum(m);
+    const net = (quadNum(a) & mm) >>> 0;
+    const bits = mm.toString(2).replace(/0/g, '').length;
+    return { net, mask: mm, ip: quadNum(a), text: `${[24, 16, 8, 0].map((s) => net >>> s & 255).join('.')}/${bits}` };
+  };
+  const out = [];
+  const first = one(val('LAN_IP_ADDR', '192.168.1.1'), val('LAN_SUBNET', '255.255.255.0'));
+  if (!first) return null;
+  out.push(first);
+  if (val('LAN_ENABLE_IP2', '0') === '1' && val('LAN_IP_ADDR2', '') !== '') {
+    const second = one(val('LAN_IP_ADDR2', ''), val('LAN_SUBNET2', '255.255.255.0'));
+    if (!second) return null;
+    out.push(second);
+  }
+  return out;
+}
+
+/* Whether the gateway is inside a management subnet; null when it is, or when
+   it or the subnets are not judgeable yet. */
+function routeGatewayProblem(gw, ctx = defaultCtx) {
+  const q = quadOf(gw);
+  const subs = mgmtSubnets(ctx);
+  if (!q || !subs) return null;
+  const g = quadNum(q);
+  const inside = subs.filter((s) => (g & s.mask) >>> 0 === s.net);
+  if (!inside.length) {
+    return `gateway ${gw} is not inside ${subs.map((s) => s.text).join(' or ')}, `
+      + 'the management subnet' + (subs.length > 1 ? 's' : '') + ': the stick cannot reach it';
+  }
+  if (subs.some((s) => s.ip === g)) return `gateway ${gw} is the address of the stick itself`;
+  if (inside.every((s) => g === s.net || g === ((s.net | ~s.mask) >>> 0))) {
+    return `gateway ${gw} is the network or broadcast address of the subnet, which no host can use`;
+  }
+  return null;
+}
+
+/* What is wrong between rows that are each fine, or null: too many, a
+   destination twice (default and 0.0.0.0/0 are the same one). */
+function routesSetProblem(rows) {
+  if (rows.length > ROUTES_MAX) return `at most ${ROUTES_MAX} routes`;
+  const seen = new Set();
+  for (const r of rows) {
+    const key = r.dest === 'default' ? '0.0.0.0/0' : r.dest;
+    if (seen.has(key)) return `${r.dest} is listed twice`;
+    seen.add(key);
+  }
+  return null;
+}
+
+function routesProblem(raw, ctx = defaultCtx) {
+  if (raw === '') return null;
+  const rows = routesParse(raw);
+  if (!rows.length || routesSerialise(rows) !== raw.replace(/, /g, ',')) return ROUTES_FORM;
+  for (const [n, r] of rows.entries()) {
+    const why = Object.values(routeRowProblems(r))[0];
+    if (why) return `route ${n + 1}: ${why}`;
+  }
+  const set = routesSetProblem(rows);
+  if (set) return set;
+  for (const [n, r] of rows.entries()) {
+    const why = routeGatewayProblem(r.gw, ctx);
+    if (why) return `route ${n + 1}: ${why}`;
+  }
+  return null;
+}
+
 function fixedMeProblem(raw) {
   if (raw === '') return null;
   if (!/^[^ ,]+([ ,]+[^ ,]+)*$/.test(raw)) return 'a separator with no entry beside it; ' + FME_HELP;
@@ -211,14 +343,31 @@ function keyRuleProblem(name, raw, ctx = defaultCtx) {
     return /^\d+$/.test(raw) && Number(raw) === 128
       ? 'slot 128 is not usable: omcid ignores it (2 to 254, not 128)' : null;
   }
-  if (!['LAN_IP_ADDR', 'LAN_IP_ADDR2', 'LAN_ENABLE_IP2'].includes(name)) return null;
+  if (!['LAN_IP_ADDR', 'LAN_SUBNET', 'LAN_ENABLE_IP2', 'LAN_IP_ADDR2', 'LAN_SUBNET2'].includes(name)) return null;
   const val = (k, def) => {
     const v = k === name ? raw : ctx.get(k);
     return v === undefined || v === '' ? def : v;
   };
-  if (val('LAN_ENABLE_IP2', '0') === '1' && val('LAN_IP_ADDR2', '') !== ''
+  if (name !== 'LAN_SUBNET' && name !== 'LAN_SUBNET2'
+      && val('LAN_ENABLE_IP2', '0') === '1' && val('LAN_IP_ADDR2', '') !== ''
       && val('LAN_IP_ADDR', '192.168.1.1') === val('LAN_IP_ADDR2', '')) {
     return 'the same as the other management address: the second address would silently not be added';
+  }
+  /* The static routes keep their gateways inside the management subnets, and
+     the firmware turns the routes off when one is not: so an address change
+     that leaves a stored gateway outside has to change the routes with it. */
+  const routes = ctx.get('LAN_ROUTES');
+  if (routes) {
+    const subs = mgmtSubnets({ get: (k) => (k === name ? raw : ctx.get(k)) });
+    if (subs) {
+      const after = { get: (k) => (k === name ? raw : ctx.get(k)) };
+      for (const r of routesParse(routes)) {
+        if (routeGatewayProblem(r.gw, after)) {
+          return `the static routes use the gateway ${r.gw}, which would no longer be a usable `
+            + 'gateway on the management subnet: change the static routes in the same save';
+        }
+      }
+    }
   }
   return null;
 }
@@ -253,7 +402,7 @@ function valueProblem(row, raw, ctx = defaultCtx) {
   /* hostport keys (SYSLOG_SERVER, NTP_SERVER), ascii14 (ONU_HW_VERSION) and
      fixedme (OMCI_FIXED_ME) are odi-only and empty clears them; fwdop
      (RTK_DEVINFO_SPECVER) is a stock key whose empty value is its off state. */
-  if (['hostport', 'ascii14', 'fixedme', 'fwdop'].includes(row.type) && raw === '') return null;
+  if (['hostport', 'ascii14', 'fixedme', 'fwdop', 'routes'].includes(row.type) && raw === '') return null;
   if (raw === '' || raw === undefined) {
     return 'cannot be empty \u2014 flash set refuses to clear a key';
   }
@@ -295,6 +444,7 @@ function valueProblem(row, raw, ctx = defaultCtx) {
     return 'a quote, < or & cannot be stored';
   }
   if (row.type === 'fixedme') return fixedMeProblem(raw);
+  if (row.type === 'routes') return routesProblem(raw, ctx);
   if (row.type === 'fwdop') return fwdopProblem(raw);
   if (row.type === 'mac' && !/^[0-9a-fA-F]{12}$/.test(raw)) {
     return 'must be 12 hex digits, no separators';
@@ -525,5 +675,6 @@ export {
   rangeBad, valueProblem, hostMaskProblem, keyRuleProblem, hostportProblem, hexAscii, snFromHex, snToHex, validateInput, invalidEdits,
   passwordProblem, sshKeyProblem, pingProblem, meProblem, entityProblem, uploadSizeProblem, tarProblem,
   restoreSizeProblem, UPLOAD_MAX, RESTORE_MAX,
+  routesParse, routesSerialise, routeRowProblems, routesSetProblem, routeGatewayProblem, routesProblem, mgmtSubnets, ROUTES_MAX,
   fwdopProblem, fixedMeRowProblem, fixedMeRowProblems, fixedMeSetProblem, fixedMeParse, fixedMeSerialise, FME_MAX_ENTRIES,
 };
