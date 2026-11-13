@@ -172,9 +172,10 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 ## Status and diagnostics
 
     GET  /api/status                     {"raw": one diag run (rx/tx power,
-                                          temperature, voltage, ONU state, alarms,
-                                          port counters)}; the page splits it on the
-                                          prompt. {"error":"diag failed"} on failure.
+                                          temperature, voltage, bias current, ONU
+                                          state, alarms, port counters)}; the page
+                                          splits it on the prompt.
+                                          {"error":"diag failed"} on failure.
                                           `chip_temp` rides along when the kernel has the
                                           hwmon device `rtl9602c_soc` (found by name in
                                           /sys/class/hwmon/hwmon0..7, file reads only):
@@ -199,7 +200,8 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           odi-oss: "eqd_bits N protection_path N ..." from
                                           the last Ranging_Time, or "none"),
                                           `host_link` (odi_switch host_link, "0" or "1") and
-                                          `host_mode` (/var/run/host-serdes "running=")
+                                          `host_mode` (/var/run/host-serdes "running=").
+                                          `uptime`: the whole seconds of /proc/uptime
                                           For the shared PON section, from one read of
                                           /proc/odi_gpon/counters (odi-oss), so they belong
                                           to one driver sample: `ds_superframe`
