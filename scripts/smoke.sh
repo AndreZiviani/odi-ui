@@ -170,6 +170,7 @@ while read -r l; do
 	*"transceiver tx-power"*)    printf "  Tx Power          : 2.15 dBm\n" ;;
 	*"transceiver temperature"*) printf "  Temperature       : 45.50 C\n" ;;
 	*"transceiver voltage"*)     printf "  Voltage           : 3.28 V\n" ;;
+	*"transceiver bias-current"*) printf "  Bias Current      : 14.05 mA\n" ;;
 	*onu-state*)                 printf "  Operation State(O5)\n" ;;
 	*alarm-status*)              printf "  LOS Alarm         : clear\n" ;;
 	*"counter port all"*)        printf "Port: 0\n  ifInOctets : 1\nPort: 2\n  ifInOctets : 2\n" ;;
@@ -1496,6 +1497,10 @@ check "the status scrape batches its commands" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status")" 'Operation State(O5)')"
 check "and every command in the batch answers" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status")" 'Rx Power')"
+check "the bias current is in the batch" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status")" 'Bias Current')"
+check "and the uptime rides along, in whole seconds" 1 \
+	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status" | grep -cE '"uptime":"[0-9]+"')"
 check "it needs the credential" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/l2")"
 

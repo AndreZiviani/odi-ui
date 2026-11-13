@@ -70,6 +70,7 @@ while read -r l; do
    *"transceiver tx-power"*)    printf "  Tx Power          : 2.15 dBm\n" ;;
    *"transceiver temperature"*) printf "  Temperature       : 45.50 C\n" ;;
    *"transceiver voltage"*)     printf "  Voltage           : 3.28 V\n" ;;
+   *"transceiver bias-current"*) printf "  Bias Current      : 14.05 mA\n" ;;
    *onu-state*)  printf "  Operation State(O5)\n" ;;
    *alarm-status*) printf "  LOS Alarm         : clear\n  LOF Alarm         : clear\n  LCDA Alarm        : clear\n  SF Alarm          : clear\n  SD Alarm          : clear\n  TF Alarm          : clear\n  DACT Alarm        : clear\n" ;;
    # Unindented, as diag prints them, and moving with the clock so the

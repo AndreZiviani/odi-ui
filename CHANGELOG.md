@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the transceiver bias current under Transceiver ("Bias current 14.1 mA", from the same
+  diag run as the other readings, `pon get transceiver bias-current`), and how long the stick has
+  been up under Stick ("Uptime 3 d 4 h 12 min", to the minute). The Stick block now shows on an
+  image without the chip sensor too, with the uptime alone. `/api/status` gains `uptime`, the
+  whole seconds of /proc/uptime, a plain file read. Refs AndreZiviani/odi-oss#384.
+
 ## v1.16.0 (2026-11-12)
 
 - Config: optional static routes for the management interface, under Network, so the stick

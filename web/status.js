@@ -310,6 +310,18 @@ function chipRow(chip) {
     level === 'critical' ? 'bad' : 'warn'];
 }
 
+/*
+ * How long the stick has been up, from /api/status uptime (whole seconds),
+ * to the minute, as days, hours and minutes. Null without the member.
+ */
+function upFor(sec) {
+  if (!/^\d+$/.test(sec || '')) return null;
+  const n = Number(sec);
+  if (n < 60) return 'under a minute';
+  const d = Math.floor(n / 86400), h = Math.floor((n % 86400) / 3600), m = Math.floor((n % 3600) / 60);
+  return d ? `${d} d ${h} h ${m} min` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
 /* The header bar on every view: only the critical alarm raises it. */
 function chipBar(chip) {
   const bar = $('#chipbanner');
@@ -468,20 +480,24 @@ function renderStatus(raw, chip, st) {
   const stat = (k, v, cls) => [el('dt', null, k), el('dd', cls || null, v)];
   const temp = num(s['pon get transceiver temperature'], /:\s*(-?\d+\.\d+)/);
   const volt = num(s['pon get transceiver voltage'], /:\s*(-?\d+\.\d+)/);
+  const bias = num(s['pon get transceiver bias-current'], /:\s*(-?\d+\.\d+)/);
   const env = $('#env');
   env.textContent = '';
   env.append(
     ...stat('Temperature', temp === null ? '\u2014' : signed(Number(temp), 1) + ' \u00b0C', 'num'),
     ...stat('Supply', volt === null ? '\u2014' : Number(volt).toFixed(2) + ' V', 'num'),
+    ...stat('Bias current', bias === null ? '\u2014' : Number(bias).toFixed(1) + ' mA', 'num'),
     ...stat('Alarms',
       !alarms.length ? '\u2014' : asserted.length ? asserted.length + ' asserted' : 'All clear',
       asserted.length ? 'bad' : (alarms.length ? 'ok' : '')),
   );
   /* The SoC is the stick, not the optics module, so it is not in the
      transceiver rows beside its alarms. */
-  $('#stickblock').hidden = !chip;
+  const up = upFor(st && st.uptime);
+  $('#stickblock').hidden = !chip && up === null;
   const stick = $('#stick');
   stick.textContent = '';
+  if (up !== null) stick.append(...stat('Uptime', up, 'num'));
   if (chip) stick.append(...stat('Chip temperature (SoC)', ...chipRow(chip)));
   chipBar(chip);
   if (asserted.length) {
@@ -526,4 +542,4 @@ function lineFacts(raw) {
   };
 }
 
-export { renderStatus, lineFacts, ponLoad, pathLoss, eqd, OPTICS, STATES, tight };
+export { renderStatus, upFor, lineFacts, ponLoad, pathLoss, eqd, OPTICS, STATES, tight };

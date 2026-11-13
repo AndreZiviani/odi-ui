@@ -333,6 +333,26 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(bar.hidden === true, 'chip temp: the bar goes when the alarm clears');
 }
 
+/* --- the bias current and the uptime ------------------------------------- */
+{
+  const { upFor } = await import(join(root, 'web', 'status.js'));
+  ok(upFor(undefined) === null && upFor('') === null && upFor('12.5') === null && upFor('x') === null,
+     'uptime: no member, or not whole seconds, is no row');
+  ok(upFor('42') === 'under a minute' && upFor('600') === '10 min' && upFor('14105') === '3 h 55 min'
+     && upFor('273600') === '3 d 4 h 0 min', 'uptime: days, hours and minutes, to the minute');
+  const env = () => textOf(doc.querySelector('#env'));
+  renderStatus('RTK.0> pon get transceiver bias-current\nBias Current: 14.050000 mA\n');
+  ok(/Bias current14\.1 mA/.test(env()), 'bias: the diag reading, one decimal, among the transceiver rows');
+  renderStatus('RTK.0> gpon get onu-state\n  Operation State(O5)\n');
+  ok(/Bias current\u2014/.test(env()), 'bias: a dash when diag gave none');
+  renderStatus('', null, { uptime: '14105' });
+  ok(textOf(doc.querySelector('#stick')) === 'Uptime3 h 55 min' && doc.querySelector('#stickblock').hidden === false,
+     'uptime: shows the Stick block without the chip sensor');
+  renderStatus('', { celsius: 52.4 }, { uptime: '14105' });
+  ok(textOf(doc.querySelector('#stick')) === 'Uptime3 h 55 minChip temperature (SoC)52.4 \u00b0C',
+     'uptime: first in the Stick block, the chip temperature under it');
+}
+
 /* --- the stick diagram on top of the Status tab (overview.js) ------------ */
 {
   const raw = 'RTK.0> pon get transceiver rx-power\n  Rx Power : -18.42 dBm\n'
