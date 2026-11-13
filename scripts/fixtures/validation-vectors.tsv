@@ -227,3 +227,30 @@ entity		0x	bad	entity: up to 4 hex digits
 entity		zz	bad	entity: up to 4 hex digits
 entity		-1	bad	entity: up to 4 hex digits
 entity		4%204	bad	entity: up to 4 hex digits
+key	LAN_ROUTES	default%20via%20192.168.1.254	ok	the default route through a gateway on the management subnet
+key	LAN_ROUTES	10.0.0.0/8%20via%20192.168.1.3	ok	a network through a gateway
+key	LAN_ROUTES	0.0.0.0/0%20via%20192.168.1.254	ok	prefix 0 is the default route spelt as a network
+key	LAN_ROUTES	192.168.5.7/32%20via%20192.168.1.3	ok	a host route, prefix 32
+key	LAN_ROUTES	10.0.0.0/8%20via%20192.168.1.3,172.16.0.0/12%20via%20192.168.1.2,default%20via%20192.168.1.254	ok	several entries, bare commas
+key	LAN_ROUTES	10.0.0.0/8%20via%20192.168.1.3,%20172.16.0.0/12%20via%20192.168.1.2	ok	one space after a comma
+key	LAN_ROUTES	10.1.0.0/16%20via%20192.168.1.3,10.2.0.0/16%20via%20192.168.1.3,10.3.0.0/16%20via%20192.168.1.3,10.4.0.0/16%20via%20192.168.1.3,10.5.0.0/16%20via%20192.168.1.3,10.6.0.0/16%20via%20192.168.1.3,10.7.0.0/16%20via%20192.168.1.3,10.8.0.0/16%20via%20192.168.1.3	ok	eight entries
+key	LAN_ROUTES	10.1.0.0/16%20via%20192.168.1.3,10.2.0.0/16%20via%20192.168.1.3,10.3.0.0/16%20via%20192.168.1.3,10.4.0.0/16%20via%20192.168.1.3,10.5.0.0/16%20via%20192.168.1.3,10.6.0.0/16%20via%20192.168.1.3,10.7.0.0/16%20via%20192.168.1.3,10.8.0.0/16%20via%20192.168.1.3,10.9.0.0/16%20via%20192.168.1.3	bad	nine entries
+key	LAN_ROUTES		ok	empty clears the key
+key	LAN_ROUTES	10.0.0.1/8%20via%20192.168.1.3	bad	host bits set in the destination
+key	LAN_ROUTES	10.0.0.0/33%20via%20192.168.1.3	bad	prefix past 32
+key	LAN_ROUTES	10.0.0.0/08%20via%20192.168.1.3	bad	a leading zero in the prefix
+key	LAN_ROUTES	10.0.0.0%20via%20192.168.1.3	bad	a destination with no prefix
+key	LAN_ROUTES	010.0.0.0/8%20via%20192.168.1.3	bad	a leading zero in an octet
+key	LAN_ROUTES	default%20192.168.1.254	bad	the word via is missing
+key	LAN_ROUTES	Default%20via%20192.168.1.254	bad	default is lower case
+key	LAN_ROUTES	default%20via%20192.168.1.254,	bad	a comma with no entry after it
+key	LAN_ROUTES	default%20%20via%20192.168.1.254	bad	two spaces inside an entry
+key	LAN_ROUTES	default%20via%20192.168.1.999	bad	a gateway that is not an address
+key	LAN_ROUTES	default%20via%2010.9.9.9	bad	a gateway outside the management subnet
+key	LAN_ROUTES	default%20via%20192.168.1.254,default%20via%20192.168.1.253	bad	a destination twice
+key	LAN_ROUTES	default%20via%20192.168.1.254,0.0.0.0/0%20via%20192.168.1.253	bad	default and 0.0.0.0/0 are one destination
+key	LAN_ROUTES	default%20via%20192.168.1.254;reboot	bad	shell metacharacters
+key	LAN_ROUTES	default%20via%20192.168.1.254%20metric%205	bad	extra words are not part of the format
+key	LAN_ROUTES	default%20via%20192.168.1.1	bad	the gateway is the address of the stick itself
+key	LAN_ROUTES	default%20via%20192.168.1.0	bad	the gateway is the network address
+key	LAN_ROUTES	default%20via%20192.168.1.255	bad	the gateway is the broadcast address

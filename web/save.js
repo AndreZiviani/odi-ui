@@ -125,15 +125,29 @@ async function save() {
      the trial (mgmt-addr.sh): they go to the trial, which stores them only
      when the new address answers. The rest is written as always. */
   const net = netaddrActive() ? pairs.filter(([k]) => isNetKey(k)) : [];
+  /* The script checks the STORED routes against the new addresses and refuses
+     the trial when a gateway would leave the subnets, unless the same trial
+     sets or clears the routes: so an address change with routes stored carries
+     the list as edited (the page already judged it against these addresses). */
+  if (net.length && !net.some(([k]) => k === 'LAN_ROUTES') && S.VALUES.LAN_ROUTES) {
+    net.push(['LAN_ROUTES', S.VALUES.LAN_ROUTES]);
+  }
   const rest = net.length ? pairs.filter(([k]) => !isNetKey(k)) : pairs;
   if (net.length) {
     const ip = (net.find(([k]) => k === 'LAN_IP_ADDR') || [])[1];
-    if (!confirmClass('live', 'The management address is tried now'
+    const routesOnly = net.every(([k]) => k === 'LAN_ROUTES');
+    const text = routesOnly
+      ? 'The static routes are tried now, at once. This page stays: the addresses do not change. '
+        + 'The stick goes back to the routes it has now after 90 seconds unless you press Keep. '
+        + 'Nothing is stored until you do. Continue?'
+      : 'The management address is tried now'
         + (ip ? `: the stick moves to ${ip}` : '')
         + '. The address it has now keeps working beside it, and this page opens the new one by '
         + 'itself when it answers (the browser asks for the password again there). The stick goes '
         + 'back to the old address after 90 seconds unless you press Keep on the new one. '
-        + 'Nothing is stored until you do. Continue?')) {
+        + (net.some(([k]) => k === 'LAN_ROUTES') ? 'The static routes are tried with it. ' : '')
+        + 'Nothing is stored until you do. Continue?';
+    if (!confirmClass('live', text)) {
       out.append(el('div', 'warn', 'Not saved.'));
       return;
     }

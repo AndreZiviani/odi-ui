@@ -295,6 +295,22 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
 
 ## Management address trial (odi-oss)
 
+`LAN_ROUTES`, the optional static routes of the management interface (up to 8
+entries `DEST via GW`, joined by commas; `DEST` is `default` or a CIDR with its
+host bits zero, `GW` an address inside the management subnet), is the sixth key
+of the trial: `try` accepts it alone, or with the address keys, and an empty
+value turns the routes off. It is held to a character set (digits, dots,
+slashes, commas, spaces and the words `default` and `via`), then to the same
+grammar and gateway check as a write to `/api/config`, and goes to the script
+as one `KEY=VALUE` word with no shell. A gateway must be a host of a management
+subnet: not the stick own address, not a network or broadcast address. The script
+also refuses a trial that moves the addresses so that a stored gateway leaves the
+subnets, unless the same trial sets or clears `LAN_ROUTES`; the page therefore
+sends the stored routes with an address change. Where the firmware reports the trial in
+`/api/netaddr`, `old_LAN_ROUTES` and `new_LAN_ROUTES` are in the state; a trial
+that changes only these has no new address, and the page offers Keep on the page
+it is on.
+
     GET  /api/netaddr                     the state the image keeps (`/var/run/mgmt-addr`,
                                           read with no fork: `phase`, `trial_deadline`,
                                           `prev_ip`, `old_<KEY>`/`new_<KEY>` for the five

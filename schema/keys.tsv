@@ -7,6 +7,7 @@ LAN_SUBNET	cs	LAN_SUBNET	lan	netmask	unknown	yes	no
 LAN_ENABLE_IP2	cs	LAN_ENABLE_IP2	lan	int	unknown	yes	no
 LAN_IP_ADDR2	cs	LAN_IP_ADDR2	lan	ipv4host	unknown	yes	no
 LAN_SUBNET2	cs	LAN_SUBNET2	lan	netmask	unknown	yes	no
+LAN_ROUTES	cs	LAN_ROUTES	lan	routes	unknown	yes	no
 LAN_RIP	cs	LAN_RIP	lan	int	unknown	yes	no
 LAN_AUTOSEARCH	cs	LAN_AUTOSEARCH	lan	int	unknown	yes	no
 DNS_MODE	cs	DNS_MODE	lan	int	unknown	yes	no

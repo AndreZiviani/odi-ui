@@ -464,6 +464,9 @@ details.expert[open] > summary { margin-bottom: 8px; }
 .fme-table td:nth-child(3) input { width: 9ch; }
 .fme-table td:nth-child(4) input { width: min(52ch, 100%); }
 .fme-msg { margin: 0; }
+.routes-table td:nth-child(1) input { width: 22ch; }
+.routes-table td:nth-child(2) input { width: 18ch; }
+.routes-msg p { margin: 0 0 4px; }
 .bits div { white-space: pre-wrap; }
 .unknownbit { color: var(--yellow-ink); }
 .s-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -874,6 +877,7 @@ button.mib-row:focus-visible { outline-offset: -2px; }
   .dim em { display: none; }
   .device { font-size: 14px; }
   .fme-table td:nth-child(4) input { width: 100%; }
+  .routes-table td:nth-child(1) input, .routes-table td:nth-child(2) input { width: 100%; }
   .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .subtabs [role=tab] { white-space: nowrap; }
   .savebar-in { padding: 10px 16px; }

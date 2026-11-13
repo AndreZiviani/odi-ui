@@ -1135,6 +1135,26 @@ credential. Use a credential you do not reuse, treat the machine on the other
 end of the cable as the real perimeter, and prefer ssh keys (System > Access)
 for anything you do not need a browser for.
 
+## Static routes of the management interface
+
+`LAN_ROUTES` (odi-oss, odi-only, empty by default) lets the stick be reached from
+another subnet without NAT. The editor is a table of Destination and Gateway
+rows (`web/lanroutes.js`), serialised to `DEST via GW` entries joined by bare
+commas (`routesSerialise` in `web/validate.js`) and read back tolerating extra
+spaces. The page and `lan_routes_parse` (`src/mib.c`) hold one grammar, and the
+rows of `scripts/fixtures/validation-vectors.tsv` run through both. The gateway
+rule needs the management addresses, which are other keys: confd judges it from
+the same request, then the store (`lan_routes_refusal`); the page judges it from
+the pending edits, then the stored values, and also refuses an address or netmask
+edit that would leave a stored gateway outside, because the firmware turns the
+whole key off then. That second rule is the page's only: confd does not look at
+the stored routes when an address is written.
+
+Routes are saved through the address trial (the key is in `NET_KEYS`, and
+`/api/config` refuses it while the script exists). When the trial changes only the
+routes there is no new address to prove, so the dialog stays on the current page
+and offers Keep at once.
+
 ## Moving the management address
 
 On an odi-oss image a change of the management address is a trial (odi-oss

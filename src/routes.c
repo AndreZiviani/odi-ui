@@ -59,6 +59,79 @@ static void effective(const char *body, const char *key, const char *def,
 		str_copy(out, def, cap);
 }
 
+/* A dotted quad as a number. The callers have been through type_ok already,
+ * or fall back to a default that parses. */
+static unsigned long quad_num(const char *v)
+{
+	unsigned long n = 0, part = 0, i;
+
+	for (i = 0;; i++) {
+		if (v[i] >= '0' && v[i] <= '9') {
+			part = part * 10 + (unsigned long)(v[i] - '0');
+		} else {
+			n = (n << 8) | (part & 255);
+			part = 0;
+			if (!v[i])
+				break;
+		}
+	}
+	return n & 0xffffffffUL;
+}
+
+/*
+ * The gateways of LAN_ROUTES must lie inside a subnet the stick holds on its
+ * management device: the primary address and netmask, or the second pair
+ * while LAN_ENABLE_IP2 is 1. Judged from the address keys of this request, else
+ * the store, else network.sh defaults (192.168.1.1, /24). The firmware turns
+ * the whole key off on a gateway outside them, on the address of the stick,
+ * or on a network or broadcast address, so the write is refused here.
+ * NULL when fine.
+ */
+static const char *lan_routes_refusal(const char *value, const char *body)
+{
+	unsigned long gw[LAN_ROUTES_MAX], dest[LAN_ROUTES_MAX], plen[LAN_ROUTES_MAX];
+	char ip1[64], m1[64], en[8], ip2[64], m2[64];
+	unsigned long net1, mask1, net2 = 0, mask2 = 0;
+	int n, i, have2;
+
+	n = lan_routes_parse(value, dest, plen, gw);
+	if (n <= 0)
+		return 0;
+	effective(body, "LAN_IP_ADDR", "192.168.1.1", ip1, sizeof(ip1));
+	effective(body, "LAN_SUBNET", "255.255.255.0", m1, sizeof(m1));
+	effective(body, "LAN_ENABLE_IP2", "0", en, sizeof(en));
+	effective(body, "LAN_IP_ADDR2", "", ip2, sizeof(ip2));
+	effective(body, "LAN_SUBNET2", "255.255.255.0", m2, sizeof(m2));
+	if (!m1[0])
+		str_copy(m1, "255.255.255.0", sizeof(m1));
+	if (!m2[0])
+		str_copy(m2, "255.255.255.0", sizeof(m2));
+	if (!ip1[0])
+		str_copy(ip1, "192.168.1.1", sizeof(ip1));
+	mask1 = quad_num(m1);
+	net1 = quad_num(ip1) & mask1;
+	have2 = seq(en, "1") && ip2[0];
+	if (have2) {
+		mask2 = quad_num(m2);
+		net2 = quad_num(ip2) & mask2;
+	}
+	for (i = 0; i < n; i++) {
+		int ok1 = (gw[i] & mask1) == net1 && gw[i] != net1 &&
+			  gw[i] != ((net1 | ~mask1) & 0xffffffffUL);
+		int ok2 = have2 && (gw[i] & mask2) == net2 && gw[i] != net2 &&
+			  gw[i] != ((net2 | ~mask2) & 0xffffffffUL);
+
+		if (gw[i] == quad_num(ip1) || (have2 && gw[i] == quad_num(ip2)))
+			return "a gateway is the address of the stick itself";
+		if (ok1 || ok2)
+			continue;
+		return "a gateway is outside the management subnets (the first "
+		       "address and netmask, or the second while it is on) or is the "
+		       "network or broadcast address of one: the stick cannot use it";
+	}
+	return 0;
+}
+
 /*
  * Rules that name one key and a fact about another, which a type cannot say.
  * NULL when fine.
@@ -84,6 +157,8 @@ static const char *key_refusal(const char *name, const char *value,
 			return "slot 128 is not usable: omcid ignores it (2 to 254, not 128)";
 		return 0;
 	}
+	if (seq(name, "LAN_ROUTES"))
+		return lan_routes_refusal(value, body);
 	if (!seq(name, "LAN_IP_ADDR") && !seq(name, "LAN_IP_ADDR2") &&
 	    !seq(name, "LAN_ENABLE_IP2"))
 		return 0;
@@ -97,11 +172,13 @@ static const char *key_refusal(const char *name, const char *value,
 }
 
 /*
- * The five keys of the management address (confd.h, NETADDR_*), which a trial
- * writes and /api/config does not.
+ * The six keys of the management interface (confd.h, NETADDR_*), which a trial
+ * writes and /api/config does not: the five of the address, and the static
+ * routes beside them.
  */
 static const char *const netaddr_keys[] = {
-	"LAN_IP_ADDR", "LAN_SUBNET", "LAN_ENABLE_IP2", "LAN_IP_ADDR2", "LAN_SUBNET2", 0
+	"LAN_IP_ADDR", "LAN_SUBNET", "LAN_ENABLE_IP2", "LAN_IP_ADDR2", "LAN_SUBNET2",
+	"LAN_ROUTES", 0
 };
 
 static int netaddr_key(const char *name)
@@ -279,15 +356,17 @@ static void handle_write(int conn, const char *body)
 			err = "a management address is changed through the address trial "
 			      "(POST /api/netaddr), which stores it only when confirmed "
 			      "over the new address";
-		/* Only the odi-only hostport, ascii14, and fixedme keys
-		 * (SYSLOG_SERVER, NTP_SERVER, ONU_HW_VERSION, OMCI_FIXED_ME)
+		/* Only the odi-only hostport, ascii14, fixedme and routes keys
+		 * (SYSLOG_SERVER, NTP_SERVER, ONU_HW_VERSION, OMCI_FIXED_ME,
+		 * LAN_ROUTES)
 		 * can be cleared: odi-oss flash keeps them in a plain file and
 		 * an empty value removes the key. Stock keys live in the vendor
 		 * XML, where an empty value is not a clear. The one exception
 		 * is fwdop (RTK_DEVINFO_SPECVER): empty is its off state, on
 		 * both firmwares, and is what the stock page stores to reset. */
 		else if (!value[0] && !seq(type, "hostport") && !seq(type, "ascii14") &&
-			 !seq(type, "fixedme") && !seq(type, "fwdop"))
+			 !seq(type, "fixedme") && !seq(type, "fwdop") &&
+			 !seq(type, "routes"))
 			err = "cannot be cleared: flash set refuses an empty value";
 		else if (!type_ok(type, value))
 			err = "not valid for its type";
@@ -1921,7 +2000,7 @@ void serve(int conn)
 		}
 		if (seq(method, "POST")) {
 			char action[16], via[16], peer[16];
-			char kv[5][48];
+			char kv[5][48], rkv[VALUE_MAX + 16];
 			char *argv[10];
 			const char *err = 0;
 			unsigned long argc = 0, nk = 0;
@@ -1937,6 +2016,42 @@ void serve(int conn)
 					char val[32];
 					unsigned long j, k = 0;
 
+					if (seq(netaddr_keys[i], "LAN_ROUTES")) {
+						/* The routes: digits, dots, slashes, commas,
+						 * spaces and the words default and via, and
+						 * nothing else. Empty is allowed, it is how
+						 * the routes are turned off. The grammar and
+						 * the gateways are judged as /api/config
+						 * judges them. One argv word, no shell. */
+						char rv[VALUE_MAX + 1];
+
+						if (!form_get(body, "LAN_ROUTES", rv, sizeof(rv)))
+							continue;
+						for (j = 0; rv[j]; j++) {
+							char c = rv[j];
+
+							if (!((c >= '0' && c <= '9') || c == '.' || c == '/' ||
+							      c == ',' || c == ' ' || c == 'd' || c == 'e' ||
+							      c == 'f' || c == 'a' || c == 'u' || c == 'l' ||
+							      c == 't' || c == 'v' || c == 'i'))
+								err = "routes use digits, dots, slashes, commas, "
+								      "spaces and the words default and via";
+						}
+						if (!err && !type_ok("routes", rv))
+							err = "not valid for its type";
+						if (!err)
+							err = key_refusal("LAN_ROUTES", rv, body);
+						if (err)
+							break;
+						for (j = 0; "LAN_ROUTES="[j]; j++)
+							rkv[k++] = "LAN_ROUTES="[j];
+						for (j = 0; rv[j]; j++)
+							rkv[k++] = rv[j];
+						rkv[k] = 0;
+						argv[argc++] = rkv;
+						nk++;
+						continue;
+					}
 					if (!form_get(body, netaddr_keys[i], val, sizeof(val)))
 						continue;
 					/* Digits and dots, or the 0/1 of the switch: nothing

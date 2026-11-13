@@ -99,6 +99,93 @@ static int fwdop_num(const char *v, unsigned long *i, unsigned long maxdig,
 }
 
 /*
+ * LAN_ROUTES, the static routes of the management interface (odi-oss
+ * mgmt-addr.sh and network.sh): up to LAN_ROUTES_MAX entries separated by a
+ * comma (one space may follow it), each "DEST via GW". DEST is the word
+ * default or a CIDR a.b.c.d/len, len 0 to 32, host bits zero; GW is an IPv4
+ * address. The firmware turns the whole key off on anything else or on a
+ * DEST named twice, so it is refused here. The default route and 0.0.0.0/0
+ * are the same DEST and count as a duplicate of each other (stricter than
+ * the firmware needs to be, never looser). Empty means no routes.
+ *
+ * Returns the number of entries, or -1. When the arrays are not NULL they
+ * get the destination, prefix length and gateway of each entry as numbers, so the
+ * caller can judge the gateways against the management subnets.
+ */
+int lan_routes_parse(const char *v, unsigned long *dest, unsigned long *plen,
+		     unsigned long *gw)
+{
+	unsigned long d[LAN_ROUTES_MAX], l[LAN_ROUTES_MAX], g[LAN_ROUTES_MAX];
+	unsigned long n = 0, i = 0, k;
+
+	if (!v[0])
+		return 0;
+	for (;;) {
+		char tok[24];
+		unsigned long o[4], len = 0, t = 0, mask;
+
+		if (n >= LAN_ROUTES_MAX)
+			return -1;
+		/* DEST up to the space before "via". */
+		while (v[i] && v[i] != ' ' && t < sizeof(tok) - 1)
+			tok[t++] = v[i++];
+		tok[t] = 0;
+		if (v[i] != ' ')
+			return -1;
+		if (seq(tok, "default")) {
+			d[n] = 0, l[n] = 0;
+		} else {
+			unsigned long s = 0, digits = 0;
+
+			while (tok[s] && tok[s] != '/')
+				s++;
+			if (tok[s] != '/')
+				return -1;
+			tok[s++] = 0;
+			if (!quad(tok, o))
+				return -1;
+			for (; tok[s]; s++) {
+				if (tok[s] < '0' || tok[s] > '9' || ++digits > 2 ||
+				    (digits > 1 && !len))
+					return -1;
+				len = len * 10 + (unsigned long)(tok[s] - '0');
+			}
+			if (!digits || len > 32)
+				return -1;
+			d[n] = (o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3];
+			mask = len ? (0xffffffffUL << (32 - len)) & 0xffffffffUL : 0;
+			if (d[n] & ~mask & 0xffffffffUL)
+				return -1;          /* host bits set */
+			l[n] = len;
+		}
+		/* " via ", exactly. */
+		if (v[i + 1] != 'v' || v[i + 2] != 'i' || v[i + 3] != 'a' ||
+		    v[i + 4] != ' ')
+			return -1;
+		i += 5;
+		t = 0;
+		while (v[i] && v[i] != ',' && t < sizeof(tok) - 1)
+			tok[t++] = v[i++];
+		tok[t] = 0;
+		if (!quad(tok, o))
+			return -1;
+		g[n] = (o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3];
+		for (k = 0; k < n; k++)
+			if (d[k] == d[n] && l[k] == l[n])
+				return -1;
+		n++;
+		if (!v[i])
+			break;
+		i++;                        /* the comma */
+		if (v[i] == ' ')
+			i++;
+	}
+	for (k = 0; k < n && dest; k++)
+		dest[k] = d[k], plen[k] = l[k], gw[k] = g[k];
+	return (int)n;
+}
+
+/*
  * Type-level validation, server side.
  *
  * The browser also checks ranges and option lists from meta.tsv, but that is a
@@ -312,6 +399,8 @@ int type_ok(const char *type, const char *v)
 		}
 		return 1;
 	}
+	if (seq(type, "routes"))
+		return lan_routes_parse(v, 0, 0, 0) >= 0;
 	if (seq(type, "fixedme")) {
 		/* OMCI_FIXED_ME: up to 16 entries separated by commas or
 		 * spaces, each CLASS:HEX (any instance of the class) or

@@ -13,6 +13,9 @@
 #define CONFD_MIB_H
 
 int type_ok(const char *type, const char *v);
+#define LAN_ROUTES_MAX 8
+int lan_routes_parse(const char *v, unsigned long *dest, unsigned long *plen,
+		     unsigned long *gw);
 int refused_key(const char *k);
 int schema_lookup(const char *buf, const char *name,
 		  char *addr, unsigned long dcap,

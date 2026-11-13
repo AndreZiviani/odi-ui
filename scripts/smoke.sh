@@ -1948,6 +1948,33 @@ check "try with the broadcast address of its mask is refused, as /api/config doe
 check "try with a second address equal to the first is refused" yes \
 	"$(err "$(napost 'action=try&LAN_IP_ADDR=10.1.1.1&LAN_ENABLE_IP2=1&LAN_IP_ADDR2=10.1.1.1')" 'the same as the other management address')"
 check "LAN_ENABLE_IP2 is 0 or 1" yes "$(err "$(napost 'action=try&LAN_ENABLE_IP2=2')" 'LAN_ENABLE_IP2 is 0 or 1')"
+# The static routes ride the same trial: one argv word with its spaces and
+# commas, judged by the same grammar as /api/config.
+R1='default%20via%20192.168.1.254'
+check "try passes LAN_ROUTES as one KEY=VALUE word, spaces and all" yes \
+	"$(err "$(napost "action=try&LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ROUTES=$R1")" 'try LAN_IP_ADDR=192.168.1.1 LAN_SUBNET=255.255.255.0 LAN_ROUTES=default via 192.168.1.254\u000a')"
+check "commas inside the routes reach the script whole" yes \
+	"$(err "$(napost "action=try&LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ROUTES=10.0.0.0/8%20via%20192.168.1.3,172.16.0.0/12%20via%20192.168.1.2")" 'LAN_ROUTES=10.0.0.0/8 via 192.168.1.3,172.16.0.0/12 via 192.168.1.2')"
+check "an empty LAN_ROUTES is tried: it is how the routes are turned off" yes \
+	"$(err "$(napost 'action=try&LAN_ROUTES=')" '"ok":true,"output":"mgmt-addr.sh: try LAN_ROUTES=\u000a')"
+check "all six keys fit one try" yes \
+	"$(err "$(napost "action=try&LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ENABLE_IP2=1&LAN_IP_ADDR2=172.20.0.1&LAN_SUBNET2=255.255.0.0&LAN_ROUTES=default%20via%20172.20.0.9")" 'LAN_SUBNET2=255.255.0.0 LAN_ROUTES=default via 172.20.0.9')"
+check "a route through a gateway outside the management subnets is refused, nothing run" yes \
+	"$(err "$(napost "action=try&LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ROUTES=default%20via%208.8.8.8")" 'outside the management subnets')"
+check "the second subnet is not a gateway subnet while the second address is off" yes \
+	"$(err "$(napost "action=try&LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ENABLE_IP2=0&LAN_IP_ADDR2=172.20.0.1&LAN_ROUTES=default%20via%20172.20.0.9")" 'outside the management subnets')"
+check "a gateway that is the stick own address is refused" yes \
+	"$(err "$(napost "action=try&LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ROUTES=default%20via%20192.168.1.1")" 'address of the stick itself')"
+check "a gateway that is the broadcast address is refused" yes \
+	"$(err "$(napost "action=try&LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ROUTES=default%20via%20192.168.1.255")" 'network or broadcast address')"
+check "malformed routes are refused" yes \
+	"$(err "$(napost 'action=try&LAN_ROUTES=10.0.0.1/8%20via%20192.168.1.3')" 'not valid for its type')"
+check "routes with shell metacharacters are refused before the type" yes \
+	"$(err "$(napost 'action=try&LAN_ROUTES=default%20via%201.2.3.4;reboot')" 'routes use digits, dots, slashes')"
+check "routes with a quote or a newline are refused" yes \
+	"$(err "$(napost 'action=try&LAN_ROUTES=default%20via%201.2.3.4%0Areboot')" 'routes use digits, dots, slashes')"
+check "/api/config refuses LAN_ROUTES while the trial exists" yes \
+	"$(err "$(post "LAN_ROUTES=$R1")" 'through the address trial')"
 check "confirm passes the address and the client of this connection" yes \
 	"$(err "$(napost 'action=confirm')" '"ok":true,"output":"mgmt-addr.sh: confirm 127.0.0.1 127.0.0.1')"
 check "a confirm cannot name its own address in the request" yes \
@@ -1977,8 +2004,17 @@ check "safe-mode boot: the trial is not offered" yes \
 	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/netaddr")" '"supported":false')"
 check "safe-mode boot: /api/config stores the address" yes \
 	"$(err "$(curl -s -u admin:admin -X POST --data-urlencode LAN_IP_ADDR=10.20.30.1 "http://127.0.0.1:$PORT/api/config")" '"ok":true,"value":"10.20.30.1"')"
+check "safe-mode boot: /api/config stores LAN_ROUTES, judged against the same request" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data "LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ROUTES=$R1" "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_ROUTES","ok":true,"value":"default via 192.168.1.254"')"
+check "safe-mode boot: a gateway outside the subnet is refused there too" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data "LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ROUTES=default%20via%208.8.8.8" "http://127.0.0.1:$PORT/api/config")" 'outside the management subnets')"
+check "safe-mode boot: an empty LAN_ROUTES clears the key" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data 'LAN_ROUTES=' "http://127.0.0.1:$PORT/api/config")" '"name":"LAN_ROUTES","ok":true')"
+check "safe-mode boot: LAN_ROUTES asks for the network action" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data "LAN_ROUTES=$R1" "http://127.0.0.1:$PORT/api/config")" '"needs":["network"]')"
 rm -f /var/run/safe-mode
 check "the netaddr page module is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/netaddr.js")"
+check "the static routes editor module is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/lanroutes.js")"
 rm -f /etc/scripts/mgmt-addr.sh /var/run/mgmt-addr
 
 echo "== request deadlines, and a body that is not what it declared"
@@ -2130,6 +2166,10 @@ echo "== validation vectors"
 # page. A row is posted to the route that owns the input, and what comes back
 # must be the table's word: ok accepted, bad refused.
 VEC=scripts/fixtures/validation-vectors.tsv
+# The gateway of a LAN_ROUTES row is judged against the stored management
+# addresses, which the checks above left changed: put the stock ones back.
+curl -s -u "$AUTH" -X POST --data 'LAN_IP_ADDR=192.168.1.1&LAN_SUBNET=255.255.255.0&LAN_ENABLE_IP2=0' \
+	"http://127.0.0.1:$PORT/api/config" > /dev/null
 cp /etc/config/confd.auth /etc/config/confd.auth.vec
 rm -f /etc/config/dropbear.d/authorized_keys
 vec_n=0

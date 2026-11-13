@@ -37,6 +37,7 @@ LAN_SUBNET	live	network		network.sh	Applied at once, with the address; a trial w
 LAN_ENABLE_IP2	live	network		network.sh	1 adds the second address beside the first, 0 removes it. Applied at once, as a trial; the first address is not touched.	0
 LAN_IP_ADDR2	live	network		network.sh	A fixed rescue address, as br0:2. Applied at once; a trial.	
 LAN_SUBNET2	live	network		network.sh	Applied at once, with the second address; a trial.	
+LAN_ROUTES	live	network		network.sh (mgmt-addr.sh try)	An odi-only key, kept in odi.conf: empty removes it. Applied at once, as a trial with the addresses: kept only when confirmed. When only the routes change, a Keep from any client is accepted.	
 VLAN_CFG_TYPE	live	omci		omcid, on SIGHUP	omcid tags only with type 1 and manual mode 1, as the stock firmware does. Applying makes omcid rebuild the bridge connections in place from the MIB it holds: the ONU stays in O5 and the fibre service is not dropped.	0
 VLAN_MANU_MODE	live	omci		omcid, on SIGHUP	See VLAN config mode. Switching between stick tags and router tags (transparent) is rebuilt in place, without re-ranging the ONU.	0
 VLAN_MANU_TAG_VID	live	omci		omcid, on SIGHUP	Applying rebuilds the connections in place with the new tag; the ONU is not re-ranged.	
