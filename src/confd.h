@@ -109,6 +109,9 @@
 #define GPON_COUNTERS     "/proc/odi_gpon/counters"
 #define UPTIME_FILE       "/proc/uptime"
 #define NTP_STATUS_FILE   "/tmp/ntp-status"
+/* The minute history the odi-oss image keeps (history.sh): one key=value
+ * line a sample, 120 at most, replaced by rename. GET /api/history. */
+#define HISTORY_FILE      "/var/run/history"
 /*
  * What the router says its SIP client is doing, per phone port, for omcid to
  * show the OLT (OMCI_VOIP_LINE_REPORT in odi-oss). One `LINE<port>=<state>

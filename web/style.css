@@ -684,6 +684,27 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 
 /* The shared PON section: the figure as the meters show theirs, a bar from
    an empty to a full PON. */
+/* The minute history (history.js): small charts, one under the other. */
+.history { max-width: 760px; display: grid; gap: 10px; }
+.h-head { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.h-name { color: var(--ink-2); }
+.h-now { font-variant-numeric: tabular-nums; }
+.h-svg { display: block; width: 100%; height: 56px; background: var(--well); border-radius: var(--r); }
+.h-strip { display: block; width: 100%; height: 8px; background: var(--well); border-radius: 2px; }
+.h-line { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.h-line0 { stroke: var(--blue-ink); }
+.h-line1 { stroke: var(--yellow-ink); }
+.h-c0 { color: var(--blue-ink); }
+.h-c1 { color: var(--yellow-ink); }
+.h-mark { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.h-mark.bad { stroke: var(--red-ink); }
+.h-ok { fill: var(--green); }
+.h-bad { fill: var(--red); }
+.h-unk { fill: var(--line); }
+.h-range, .h-none { margin: 2px 0 0; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.h-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-2); }
+.h-marks { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
+.h-marks .bad { color: var(--red-ink); }
 .pon { max-width: 760px; }
 .pon .m-read { margin-bottom: 2px; flex-wrap: wrap; }
 .pon-wait { font-size: 16px; font-weight: 600; color: var(--ink-2); }

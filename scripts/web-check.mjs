@@ -65,6 +65,7 @@ class El {
 const byId = new Map();
 const doc = {
   createElement: (t) => new El(t),
+  createElementNS: (ns, t) => new El(t),
   createTextNode: (t) => ({ nodeType: 3, textContent: String(t), children: [] }),
   querySelector: (sel) => {
     if (!byId.has(sel)) byId.set(sel, new El('div'));
@@ -110,6 +111,7 @@ const API = {
                      safemode: null, link: '1', uptime: '300' },
   '/api/netaddr': { supported: false, state: {}, via: '192.168.0.1', peer: '192.168.0.50', uptime: '300' },
   '/api/ntp': { now: 1760773930, ntp: null },
+  '/api/history': { up: 300, raw: null },
   '/api/status': { raw: 'RTK.0> gpon get onu-state\n  Operation State(O5)\n' },
   '/api/firmware': {
     running: 'ODI-260910-6861b53', confd: 'test', mem: '26 MB', build: {},
@@ -284,6 +286,46 @@ ok(valueProblem(ip, '1.2.3.999') !== null, 'a bad octet is rejected');
 
 renderStatus(API['/api/status'].raw);
 ok(true, 'renderStatus runs against a diag capture');
+
+/* The minute history (history.js): what the odi-oss ring holds, parsed in
+   the page. Only known keys and plain numbers; totals become rates; a gap
+   or a total that went down breaks the line; marks at state changes and at
+   drops the transition counter saw between two O5 samples. */
+{
+  const H = await import(join(root, 'web', 'history.js'));
+  const line = (up, extra) => `t=${1763150000 + up} up=${up} st=5 rx=-22.50 di=${up * 1000000} do=${up * 125000} `
+    + `bip=${up} fecu=0 cb=${up * 10} ct=${up * 100} ma=31000 los=0 lof=0 o5i=1 o5o=0 ${extra || ''}`;
+  const s = H.parseHistory([line(60), line(120), 'garbage', line(180, 'zz=1 al=LOS,LOF').replace('rx=-22.50', 'rx=<b>'), ''].join('\n'));
+  ok(s.length === 3, 'history: lines without up are dropped');
+  ok(s[2].rx === undefined && s[2].zz === undefined && s[2].al.join() === 'LOS,LOF',
+    'history: a value that is not a number is dropped, an unknown key ignored, alarms split');
+  const { pts, marks } = H.series(s);
+  ok(pts[0].down === null && Math.abs(pts[1].down - 8 / 60 * 60) < 1e-9,
+    'history: the first sample has no rate; octets become Mbit/s');
+  ok(Math.abs(pts[1].cpu - 10) < 1e-9 && pts[1].bip === 60 && pts[1].mem > 30,
+    'history: CPU percent, BIP per minute, memory in MB');
+  ok(marks.length === 0, 'history: no marks on a steady line');
+  const g = H.series(H.parseHistory([line(60), line(400)].join('\n')));
+  ok(g.pts[1].down === null, 'history: no rate across a gap');
+  const r = H.series(H.parseHistory([line(60), line(120).replace(/di=\d+/, 'di=5')].join('\n')));
+  ok(r.pts[1].down === null, 'history: a total that went down gives no rate');
+  const drop = H.series(H.parseHistory([line(60), line(120).replace('o5o=0', 'o5o=1').replace('o5i=1', 'o5i=2')
+    .replace('los=0', 'los=1')].join('\n')));
+  ok(drop.marks.length === 1 && /left O5 1/.test(drop.marks[0].text) && /LOS 1/.test(drop.marks[0].text)
+    && !drop.marks[0].bad, 'history: a drop between two O5 samples is marked');
+  const down = H.series(H.parseHistory([line(60), line(120).replace('st=5', 'st=1').replace('o5o=0', 'o5o=1')].join('\n')));
+  ok(down.marks.length === 1 && down.marks[0].text === 'O5 → O1' && down.marks[0].bad,
+    'history: a state change is marked once, red when not O5');
+  const hb = document.querySelector('#histblock');
+  H.renderHistory({ up: 300, raw: null });
+  ok(hb.hidden === true, 'history: no ring, no section');
+  H.renderHistory({ up: 200, raw: [line(60), line(120), line(180)].join('\n') });
+  ok(hb.hidden === false && document.querySelector('#history').children.length >= 7,
+    'history: the state strip, five charts and the axis');
+  H.renderHistory({ up: 200, raw: '' });
+  ok(hb.hidden === false, 'history: an empty ring shows the section with a hint');
+  ok(readFileSync(join(root, 'web', 'index.html'), 'utf8').includes('id="histblock"'), 'history: index.html has #histblock');
+}
 
 /* The near-edge band scales with the window. A fixed 3 dB was more than half
    the 4.5 dB launch window and flagged a healthy +2.15 dBm transmitter. */

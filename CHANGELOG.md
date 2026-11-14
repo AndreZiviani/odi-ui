@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: *Last two hours*, a minute history without Prometheus (#98). A strip of the ONU state
+  and small charts of receive power, traffic down and up, BIP errors and uncorrectable FEC per
+  minute, CPU and available memory, with a dashed mark at every minute the state changed, the
+  driver counted a drop out of O5 (also between two samples that both read O5) or a LOS or LOF
+  came and went, and those minutes listed with their time. The odi-oss image keeps the samples
+  (`history.sh`, a two-hour RAM ring in `/var/run/history`); confd does not sample and only
+  hands the file over in the new `GET /api/history` (`{"up","raw","truncated"}`, raw null
+  without the file), and the page parses it. Without the ring (stock slot, older odi-oss,
+  history stopped) the section is not shown. Fetched once a minute, not on the status poll.
+
 - Status: the transceiver bias current under Transceiver ("Bias current 14.1 mA", from the same
   diag run as the other readings, `pon get transceiver bias-current`), and how long the stick has
   been up under Stick ("Uptime 3 d 4 h 12 min", to the minute). The Stick block now shows on an

@@ -1721,6 +1721,21 @@ check "an unknown event is not a status" yes \
 	"$(err "$(ntpj)" ',"ntp":null}')"
 rm -f /tmp/ntp-status
 
+echo "== the minute history"
+# GET /api/history hands over /var/run/history (odi-oss history.sh) as text,
+# JSON-escaped, with the uptime; null without the file. The page parses it.
+histj() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/history"; }
+mkdir -p /var/run
+rm -f /var/run/history
+check "no ring: raw is null" yes \
+	"$(err "$(histj)" ',"raw":null}')"
+check "the uptime rides along" yes \
+	"$(err "$(histj)" '{"up":')"
+printf 'up=60 st=5 rx=-22.50\nup=120 st=5 al=LOS "x"\n' > /var/run/history
+check "the ring is passed on, escaped, not truncated" yes \
+	"$(err "$(histj)" '"raw":"up=60 st=5 rx=-22.50\u000aup=120 st=5 al=LOS \"x\"\u000a","truncated":false}')"
+rm -f /var/run/history
+
 echo "== the chip temperature sensor"
 # /api/status adds chip_temp from the hwmon device named rtl9602c_soc, by plain
 # file reads: members only for files that exist, nothing at all without the

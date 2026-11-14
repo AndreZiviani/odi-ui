@@ -140,13 +140,20 @@
         <p>The figure is the average between two refreshes, about 15 seconds: a
            burst shorter than that, a speed test for one, shows at a fraction of
            its rate. The colour of the bar is a guide, blue under 50 %, yellow
-           from 50 %, red from 80 %. The page keeps no history; that is the
-           metrics exporter's job.</p>
+           from 50 %, red from 80 %. The page keeps no history of it; the
+           metrics exporter does.</p>
         <p>Frame headers and management traffic count as in use, so a PON with no
            traffic at all reads a little above zero. An OLT may send dummy frames
            in place of idle ones, which would read as load. It says nothing about
            the upstream, and nothing about who the traffic belongs to.</p>
       </details>
+    </section>
+
+    <!-- The last two hours, one sample a minute, from the ring the odi-oss image keeps (history.js); hidden without it. -->
+    <section class="block" id="histblock" hidden>
+      <h2>Last two hours</h2>
+      <div class="history" id="history"></div>
+      <p class="help">One sample a minute, kept by the stick in memory and lost at a reboot. A dashed line marks every minute the ONU state changed, the line dropped out of O5 or a loss of signal or frame came and went; red where the line was down.</p>
     </section>
 
     <div class="block-row">

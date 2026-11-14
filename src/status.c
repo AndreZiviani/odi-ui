@@ -403,3 +403,44 @@ void emit_diag_bundle(int fd)
 	syscall3(__NR_close, in, 0, 0);
 	syscall3(__NR_unlink, (long)DIAG_BUNDLE_OUT, 0, 0);
 }
+
+/*
+ * GET /api/history: the minute history the image keeps, handed over raw.
+ *
+ * The image samples and keeps the ring (odi-oss history.sh); confd neither
+ * samples nor parses, as with the diag scrape: the page splits the lines,
+ * takes the keys it knows and works out the rates. One read of a file the
+ * image replaces by rename, no fork. `up` is the uptime now, so the page
+ * can place the samples (which carry theirs) against the moment of the
+ * request. Without the file (a stock slot, an older odi-oss, history
+ * stopped) raw is null and the page leaves the section out. The ring is
+ * about 20 KB; filebuf holds 64 KB, and truncated says when it did not.
+ */
+void emit_history_json(int fd)
+{
+	char up[32];
+	unsigned long k = 0;
+	long got;
+
+	put_fd(fd, "{\"up\":");
+	if (read_file(UPTIME_FILE, up, sizeof(up)) > 0)
+		while (up[k] >= '0' && up[k] <= '9')
+			k++;
+	if (k) {
+		up[k] = 0;
+		put_fd(fd, up);
+	} else {
+		put_fd(fd, "null");
+	}
+	got = read_file(HISTORY_FILE, filebuf, sizeof(filebuf));
+	put_fd(fd, ",\"raw\":");
+	if (got < 0) {
+		put_fd(fd, "null}");
+		return;
+	}
+	put_fd(fd, "\"");
+	put_json_cstr(fd, filebuf);
+	put_fd(fd, "\",\"truncated\":");
+	put_fd(fd, ((unsigned long)got + 1 >= sizeof(filebuf)) ? "true" : "false");
+	put_fd(fd, "}");
+}

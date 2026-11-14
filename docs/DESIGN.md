@@ -747,6 +747,28 @@ route to a resolver: it would hang rather than fail, taking the whole UI with
 it. In bridge mode it reaches the management LAN and not much else, so what it
 actually answers is whether the management path works in both directions.
 
+## The minute history
+
+The Status tab shows the last two hours, one sample a minute: receive power,
+traffic, BIP and FEC errors, CPU and memory, under a strip of the ONU state,
+with a mark at every minute the state changed, the driver counted a drop out
+of O5 (also one between two samples that both read O5) or a LOS or LOF came
+and went. It is for the look back after a failure on a stick that no
+Prometheus scrapes; the exporter stays the place for anything longer.
+
+confd does not sample. It is serial and blocks in `accept`, and it parses
+nothing it does not have to, so a sampler inside it would have meant a
+timer in the main loop and diag parsing in C. The image does it instead
+(odi-oss `history.sh`, a respawn entry): one diag run and one awk a minute,
+into a 120-line ring in `/var/run/history`, replaced by rename, about 20 KB
+of RAM and gone at reboot. That also puts the history in the diagnostics
+bundle and keeps it across a confd restart. `GET /api/history` reads the
+file and hands it over raw, like the diag scrape; `web/history.js` takes the
+keys it knows (plain numbers only), turns totals into rates between two
+samples, and breaks a line at a gap of more than two missed samples or a
+total that went down. Without the file the section is hidden. It is fetched
+once when the page opens and then every minute, not on the 15 s status poll.
+
 ## Learned addresses
 
 Both firmwares answer it. The stock diag prints three stanzas per entry;

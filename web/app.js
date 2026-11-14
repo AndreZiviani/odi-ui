@@ -9,6 +9,7 @@
 import { $, el, fail, get, wireTheme, wireHelp } from './dom.js';
 import { S, EDITS } from './state.js';
 import { renderStatus, lineFacts } from './status.js';
+import { renderHistory } from './history.js';
 import { renderAll } from './config.js';
 import { save, refreshSaveBar, renderIdentitySwitch } from './save.js';
 import { renderFirmware, wireFirmware, renderTrial } from './firmware.js';
@@ -352,6 +353,14 @@ async function refresh() {
   } catch (e) { fail(e); }
 }
 
+/* The minute history: a file read on the stick, once a minute, since the
+   image samples once a minute. A failure hides the section rather than
+   raising the page error: the live status above is what matters. */
+async function refreshHistory() {
+  if (S.REBOOTING) return;
+  try { renderHistory(await get('/api/history')); } catch (e) { renderHistory(null); }
+}
+
 /*
  * A 401 from the stick means this browser's session ended: signed out in
  * another tab, confd restarted, or the session ran out. Every fetch the page
@@ -415,4 +424,6 @@ let INIT_HOSTLINK = null;
   /* A scrape is three forks of ~35 ms each on a ~300 BogoMIPS core, so this is
      deliberately unhurried. */
   setInterval(refresh, 15000);
+  await refreshHistory();
+  setInterval(refreshHistory, 60000);
 })();

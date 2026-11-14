@@ -2384,6 +2384,13 @@ void serve(int conn)
 		return;
 	}
 
+	/* The minute history the image keeps; see status.c. */
+	if (seq(path, "/api/history")) {
+		respond(conn, "200 OK", "application/json", 0);
+		emit_history_json(conn);
+		return;
+	}
+
 	/* The diagnostics bundle, redacted by the image script; see status.c. */
 	if (seq(path, "/api/diag")) {
 		emit_diag_bundle(conn);
