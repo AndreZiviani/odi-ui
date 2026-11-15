@@ -616,7 +616,9 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .meter.v-warn { --state: var(--yellow-ink); }
 .meter.v-bad { --state: var(--red-ink); }
 .m-head { display: flex; align-items: baseline; gap: 12px; }
-.m-name { margin: 0; font-size: 14px; color: var(--ink-2); font-weight: 600; }
+/* Set as every other h2 on the page, so Receive, Transmit and Registration read
+   as one row of headings. */
+.m-name { margin: 0; }
 .m-verdict { font-size: 13px; font-weight: 600; color: var(--state); }
 .m-verdict::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; }
 .m-read { display: flex; align-items: baseline; gap: 10px; margin: 2px 0 12px; }
@@ -674,6 +676,8 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
   font-size: 12px; color: var(--ink-2); background: var(--bg); padding: 0 4px;
 }
 .dim em { font-style: normal; }
+/* Set by status.js when the line is narrower than its whole label. */
+.dim.short em { display: none; }
 .dim.tight, .dim.tight span { color: var(--yellow-ink); border-color: var(--yellow); }
 .dim.tight { background-image: linear-gradient(var(--yellow), var(--yellow)); }
 .dim.over, .dim.over span { color: var(--red-ink); border-color: var(--red); }

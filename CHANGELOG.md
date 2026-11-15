@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the Receive and Transmit headings are set as Registration's
+  beside them, so the three read as one row. Two dimension lines under a
+  meter that are too short for their labels keep the figures and drop the
+  edge names, instead of running into each other ("1.6 dB to min 2.9 dB to
+  maximum"). While the link check is shown, the note under the ladder is
+  hidden: the check's finding covers it, and in O5 the note said "carrying
+  traffic" before the traffic stage had measured any (#383).
 - API: a write that `flash set` fails, or that prints no read-back, answers
   `"error":"flash set gave no read-back"`. Before, it reported "did not
   stick" and quoted a buffer that held nothing yet, or in a batch the value
