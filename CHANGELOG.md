@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- API: a write that `flash set` fails, or that prints no read-back, answers
+  `"error":"flash set gave no read-back"`. Before, it reported "did not
+  stick" and quoted a buffer that held nothing yet, or in a batch the value
+  of the key before it.
 - Status: a link check under the registration ladder, stage by stage: light,
   registered, OMCI with the OLT, services set up, traffic. Each stage shows
   its evidence, and the first that fails gives one finding: no light; an OLT

@@ -818,6 +818,10 @@ int host_in_mask_ok(const char *ip, const char *mask)
  * The read-back is the point. `flash set` cannot clear a key at all — its set
  * branch is guarded by [ "$3" != "" ], so an empty value falls through to the
  * usage text and exits 1 while looking like it worked.
+ *
+ * Returns 1 when the read-back matches, 0 when it holds another value (in
+ * out), and -1 when flash gave no read-back at all. out is a string on every
+ * path, empty when there was nothing to read back.
  */
 int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 {
@@ -825,6 +829,8 @@ int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 	char buf[VALUE_MAX + 256];
 	unsigned long i = 0, vs;
 
+	if (cap)
+		out[0] = 0;
 	argv[0] = "flash";
 	argv[1] = "set";
 	argv[2] = (char *)addr;
@@ -832,13 +838,13 @@ int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 	argv[4] = 0;
 
 	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf), FLASH_TIMEOUT_MS) <= 0)
-		return 0;
+		return -1;
 
 	/* flash echoes "KEY=value" from its own xmlconfig -g when it is done. */
 	while (buf[i] && buf[i] != '=')
 		i++;
 	if (!buf[i])
-		return 0;
+		return -1;
 	vs = ++i;
 	while (buf[i] && buf[i] != '\n' && buf[i] != '\r')
 		i++;

@@ -242,7 +242,7 @@ static void handle_write(int conn, const char *body)
 	char name[128], value[VALUE_MAX + 1], got[VALUE_MAX + 1], addr[160];
 	char type[32], writable[32], apply[32];
 	unsigned long i = 0;
-	int first = 1, confirm = 0;
+	int first = 1, confirm = 0, wrote;
 	int any_omci = 0, any_reboot = 0, any_untraced = 0, omci_interrupts = 0;
 	int need_net = 0, any_stock = 0, need_syslog = 0, need_ntp = 0, need_igmp = 0, need_sfp = 0;
 
@@ -391,7 +391,8 @@ static void handle_write(int conn, const char *body)
 			goto next;
 		}
 
-		if (write_key(addr, value, got, sizeof(got))) {
+		wrote = write_key(addr, value, got, sizeof(got));
+		if (wrote > 0) {
 			put_fd(conn, "\"ok\":true,\"value\":\"");
 			put_json_cstr(conn, got);
 			put_fd(conn, "\"}");
@@ -461,6 +462,10 @@ static void handle_write(int conn, const char *body)
 						any_untraced = 1;
 				}
 			}
+		} else if (wrote < 0) {
+			/* flash failed or printed no KEY=value line: there is
+			 * no read-back to quote. */
+			put_fd(conn, "\"ok\":false,\"error\":\"flash set gave no read-back\"}");
 		} else {
 			/* The write reported success and the value did not
 			 * change. This is why every write is read back. */
