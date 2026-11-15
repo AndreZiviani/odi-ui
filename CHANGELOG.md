@@ -28,6 +28,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   been up under Stick ("Uptime 3 d 4 h 12 min", to the minute). The Stick block now shows on an
   image without the chip sensor too, with the uptime alone. `/api/status` gains `uptime`, the
   whole seconds of /proc/uptime, a plain file read. Refs AndreZiviani/odi-oss#384.
+- Logs: every kernel log line has its time. On the odi-oss kernel confd reads `/dev/kmsg`
+  instead of `klogctl`, which carries each record's time since boot although the kernel prints
+  none (`CONFIG_PRINTK_TIME` is off). The page shows it as UTC once ntpd has set the clock, and as
+  seconds since boot before that, with the other in the tooltip. `/api/log` keeps `raw` and adds
+  `lines`, `synced`, `uptime_us` and `now_us`; on the stock kernel the route and the page are
+  unchanged. Refs AndreZiviani/odi-oss#389.
 
 ## v1.16.0 (2026-11-12)
 

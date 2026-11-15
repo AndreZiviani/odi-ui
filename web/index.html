@@ -644,7 +644,9 @@
         <div id="log-out"></div>
         <details class="more">
           <summary>How it is read</summary>
-          <p>With <code>klogctl</code>, which reads the buffer without consuming it
+          <p>From <code>/dev/kmsg</code> on the odi-oss kernel, which gives every
+             record its time since boot, and with <code>klogctl</code> on the stock
+             one; both read the buffer without consuming it
              &mdash; <code>cat /proc/kmsg</code> would eat the history and then
              block. The daemons also log to <code>/var/log/omcid.log</code> and
              <code>/var/log/services.log</code>, in RAM, over SSH, and to the

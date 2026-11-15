@@ -1099,6 +1099,39 @@ const oss2 = doc.createElement('div');
 renderLogLines('<12>rcS: alive 517.79 s\n', oss2, { heartbeats: true });
 ok(oss2.children.length === 1 && oss2.children[0].classList.contains('warn'), 'and shown on request, <12> as a warning');
 
+/* --- the kernel log, from /dev/kmsg, with times ------------------------- */
+{
+  const { logTime } = await import(join(root, 'web', 'tools.js'));
+  /* The stick booted at 2026-11-15 07:00:00 UTC; it is 600 s later. */
+  const boot = Date.UTC(2026, 10, 15, 7, 0, 0) * 1000;
+  const clock = { synced: true, uptime_us: 600e6, now_us: boot + 600e6 };
+  ok(logTime(12345678, clock).text === '07:00:12', 'log time: a record is dated now - (uptime - us), in UTC');
+  ok(logTime(12345678, clock).title === '12.346 s after boot', 'log time: the time since boot is in the tooltip');
+  ok(logTime(12345678, { ...clock, synced: false }).text === '12.346',
+     'log time: before NTP has set the clock, seconds since boot');
+  const late = { synced: true, uptime_us: 86400e6 + 600e6, now_us: boot + 86400e6 + 600e6 };
+  ok(logTime(5e6, late).text === '2026-11-15 07:00:05', 'log time: a record from another day carries its date');
+  ok(logTime(null, clock) === null, 'log time: a continuation row has none');
+  ok(logTime(5e6, { synced: true }).text === '5.000', 'log time: no clocks in the answer, seconds since boot');
+
+  const box = doc.createElement('div');
+  const lines = [
+    { p: 4, us: 1000000, msg: 'create ani vlan for mbcast fail, ret = 65672\n[WARNING] Return Error (0x10088)' },
+    { p: 12, us: 2000000, msg: 'rcS: alive 517.79 s' },
+    { p: 6, us: 3000000, msg: 'eth0: link up' },
+  ];
+  const r = renderLogLines('ignored when lines are there', box, { lines, clock });
+  ok(box.children.length === 3 && r.hidden === 1, 'kmsg records: drawn from lines, heartbeats still hidden');
+  ok(box.children[0].classList.contains('timed') && textOf(box.children[0].children[0]) === '07:00:01',
+     'kmsg records: each row starts with its time');
+  ok(box.children[1].classList.contains('warn') && textOf(box.children[1].children[0]) === '',
+     'kmsg records: a newline in a record is a continuation row, with its level and no time');
+  ok(!box.children[2].classList.contains('warn'), 'kmsg records: the next record sets its own level');
+  const old = doc.createElement('div');
+  renderLogLines('<6>eth0: link up\n', old, {});
+  ok(!old.children[0].classList.contains('timed'), 'without lines (stock kernel, older confd) no time column');
+}
+
 /* --- what each firmware slot holds ---------------------------------------- */
 const { slotKind } = await import(join(root, 'web', 'firmware.js'));
 const fwStock = { slots: { 0: { kernel: 'Linux Kernel Image 6.18', built: 1759028976 },
