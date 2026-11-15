@@ -405,15 +405,16 @@ void emit_diag_bundle(int fd)
 }
 
 /*
- * GET /api/history: the minute history the image keeps, handed over raw.
+ * GET /api/history: the minute history the exporter keeps, handed over raw.
  *
- * The image samples and keeps the ring (odi-oss history.sh); confd neither
+ * metricsd samples and keeps the ring (odi-sfp-exporter); confd neither
  * samples nor parses, as with the diag scrape: the page splits the lines,
  * takes the keys it knows and works out the rates. One read of a file the
- * image replaces by rename, no fork. `up` is the uptime now, so the page
+ * exporter replaces by rename, no fork. `up` is the uptime now, so the page
  * can place the samples (which carry theirs) against the moment of the
- * request. Without the file (a stock slot, an older odi-oss, history
- * stopped) raw is null and the page leaves the section out. The ring is
+ * request. Without the file (no exporter, or one without the history) raw
+ * is null and the page leaves the section out; a stopped metricsd leaves
+ * the file, and its last samples, in place. The ring is
  * about 20 KB; filebuf holds 64 KB, and truncated says when it did not.
  */
 void emit_history_json(int fd)

@@ -1,15 +1,15 @@
 /*
  * The Status tab: the last two hours, one sample a minute.
  *
- * The image keeps the samples (odi-oss history.sh, a RAM ring at
+ * The exporter keeps the samples (metricsd, a RAM ring at
  * /var/run/history); confd only hands the file over, as GET /api/history
  * does, and everything here is worked out in the browser, as for /api/status.
- * A stick without the ring (a stock slot, an older odi-oss, history turned
- * off) answers raw: null and the section stays hidden.
+ * A stick without the ring (no exporter, or one without the history)
+ * answers raw: null and the section stays hidden.
  *
  * One line a sample, space-separated key=value, oldest first. Only the keys
  * below are read, and only plain numbers; anything else is dropped, so a key
- * the image adds later breaks nothing. Totals (octets, errors, CPU jiffies,
+ * the exporter adds later breaks nothing. Totals (octets, errors, CPU jiffies,
  * events) are turned into rates between two samples; a gap of more than
  * GAP_S between them, or a total that went down, breaks the line instead.
  */
@@ -190,7 +190,7 @@ function renderHistory(h) {
   box.textContent = '';
   const samples = parseHistory(h.raw);
   if (!samples.length) {
-    box.append(el('p', 'hint', 'No samples yet: the first comes a minute after boot.'));
+    box.append(el('p', 'hint', 'No samples yet.'));
     return;
   }
   const nowUp = Number.isFinite(h.up) ? h.up : samples[samples.length - 1].up;

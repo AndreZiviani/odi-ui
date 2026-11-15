@@ -1722,7 +1722,7 @@ check "an unknown event is not a status" yes \
 rm -f /tmp/ntp-status
 
 echo "== the minute history"
-# GET /api/history hands over /var/run/history (odi-oss history.sh) as text,
+# GET /api/history hands over /var/run/history (written by metricsd) as text,
 # JSON-escaped, with the uptime; null without the file. The page parses it.
 histj() { curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/history"; }
 mkdir -p /var/run

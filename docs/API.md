@@ -219,12 +219,12 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `.` and `-`)}
     GET  /api/history                    {"up": uptime now, whole seconds, or null,
                                           "raw": /var/run/history as text, or null when
-                                          absent (stock slot, older odi-oss, history
-                                          stopped), "truncated": over 64 KB}. The minute
-                                          history odi-oss history.sh keeps: one line a
-                                          sample, oldest first, space-separated key=value
-                                          (keys in odi-oss docs/TOOLS.md, "The minute
-                                          history"); the page parses it. File read, no fork
+                                          absent (no exporter, or one without the
+                                          history), "truncated": over 64 KB}. The minute
+                                          history metricsd keeps: one line a sample,
+                                          oldest first, space-separated key=value (keys
+                                          in odi-sfp-exporter docs/METRICS.md, "The
+                                          minute history"); the page parses it. File read, no fork
     GET  /api/log                        kernel ring buffer, via klogctl
     POST /api/ping       host=<IPv4>      a literal a host can have (first number
                                           1-223, not 127, no leading zeros), no DNS

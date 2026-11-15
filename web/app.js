@@ -353,8 +353,8 @@ async function refresh() {
   } catch (e) { fail(e); }
 }
 
-/* The minute history: a file read on the stick, once a minute, since the
-   image samples once a minute. A failure hides the section rather than
+/* The minute history: a file read on the stick, once a minute, since
+   metricsd samples once a minute. A failure hides the section rather than
    raising the page error: the live status above is what matters. */
 async function refreshHistory() {
   if (S.REBOOTING) return;

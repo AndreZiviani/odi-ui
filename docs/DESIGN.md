@@ -758,11 +758,12 @@ Prometheus scrapes; the exporter stays the place for anything longer.
 
 confd does not sample. It is serial and blocks in `accept`, and it parses
 nothing it does not have to, so a sampler inside it would have meant a
-timer in the main loop and diag parsing in C. The image does it instead
-(odi-oss `history.sh`, a respawn entry): one diag run and one awk a minute,
-into a 120-line ring in `/var/run/history`, replaced by rename, about 20 KB
-of RAM and gone at reboot. That also puts the history in the diagnostics
-bundle and keeps it across a confd restart. `GET /api/history` reads the
+timer in the main loop and diag parsing in C. The exporter does it instead:
+metricsd already asks diag the same questions for a scrape, and between
+scrapes it takes one sample a minute into a 120-line ring in
+`/var/run/history`, replaced by rename, about 20 KB of RAM and gone at
+reboot. That also puts the history in the odi-oss diagnostics bundle and
+keeps it across a confd restart. `GET /api/history` reads the
 file and hands it over raw, like the diag scrape; `web/history.js` takes the
 keys it knows (plain numbers only), turns totals into rates between two
 samples, and breaks a line at a gap of more than two missed samples or a

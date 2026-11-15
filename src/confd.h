@@ -109,8 +109,8 @@
 #define GPON_COUNTERS     "/proc/odi_gpon/counters"
 #define UPTIME_FILE       "/proc/uptime"
 #define NTP_STATUS_FILE   "/tmp/ntp-status"
-/* The minute history the odi-oss image keeps (history.sh): one key=value
- * line a sample, 120 at most, replaced by rename. GET /api/history. */
+/* The minute history the exporter keeps (odi-sfp-exporter metricsd): one
+ * key=value line a sample, 120 at most, replaced by rename. GET /api/history. */
 #define HISTORY_FILE      "/var/run/history"
 /*
  * What the router says its SIP client is doing, per phone port, for omcid to

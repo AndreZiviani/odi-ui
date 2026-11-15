@@ -2384,7 +2384,7 @@ void serve(int conn)
 		return;
 	}
 
-	/* The minute history the image keeps; see status.c. */
+	/* The minute history metricsd keeps; see status.c. */
 	if (seq(path, "/api/history")) {
 		respond(conn, "200 OK", "application/json", 0);
 		emit_history_json(conn);
