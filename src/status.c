@@ -308,21 +308,287 @@ void emit_l2_json(int fd)
 /*
  * The kernel ring buffer.
  *
- * This device keeps no other log: there is no syslogd in the image and no
- * dmesg applet in its busybox, so the only record of what the switch and the
- * OMCI stack complained about is in here until it scrolls away. It is where
- * `create ani vlan for mbcast fail` and `RT_ERR_RG_VLAN_USED_BY_SYSTEM` show
- * up -- the symptoms of an OMCI_OLT_MODE nobody should be using -- and nothing
- * in this UI looked at it before.
+ * The kernel log is where `create ani vlan for mbcast fail` and
+ * `RT_ERR_RG_VLAN_USED_BY_SYSTEM` show up -- the symptoms of an OMCI_OLT_MODE
+ * nobody should be using -- along with the rcS and respawn lines odi-oss
+ * writes to /dev/kmsg. The stock image has no syslogd and no dmesg applet, so
+ * there it is the only log at all.
  *
- * klogctl rather than /proc/kmsg: reading that file consumes the buffer and
- * then blocks waiting for more, so a page refresh would both eat the history
- * and hang the server, which is single-threaded.
+ * Two ways in. On a kernel that has it (3.5 and later, so the odi-oss 6.18
+ * one), /dev/kmsg hands over one record per read(), each with its time in
+ * microseconds since boot, whether or not CONFIG_PRINTK_TIME put a time in the
+ * text (the odi-oss kernel does not). Every opener gets its own position, so
+ * reading it consumes nothing, and O_NONBLOCK ends the walk with EAGAIN at the
+ * newest record instead of waiting for the next one. On the stock 2.6.30
+ * kernel /dev/kmsg is write-only, and klogctl(READ_ALL) is the way, as before.
+ * Never /proc/kmsg: reading that file consumes the buffer and then blocks
+ * waiting for more, so a page refresh would both eat the history and hang the
+ * server, which is single-threaded.
+ *
+ * `raw` is the same text either way, `<prio>` and the message on each line;
+ * the /dev/kmsg path adds `lines`, one {p, us, msg} per record, and the two
+ * clocks the page needs to turn `us` into a time of day.
  */
+#define KMSG_PATH        "/dev/kmsg"
+#define O_NONBLOCK_MIPS  0x80
+#define EPIPE_ERR        32
+/* A bound on the walk: a stick's 16 KB buffer is a few hundred records, a
+ * development host's can be far more, and the store below keeps the newest. */
+#define KMSG_MAX_READS   65536
+
+/* Digits only, at least one, at most `max`. */
+static int all_digits(const char *s, unsigned long n, unsigned long max)
+{
+	unsigned long i;
+
+	if (n == 0 || n > max)
+		return 0;
+	for (i = 0; i < n; i++)
+		if (s[i] < '0' || s[i] > '9')
+			return 0;
+	return 1;
+}
+
+/*
+ * One /dev/kmsg record, "prio,seq,usec,flags[,...];text\n" with dictionary
+ * lines (" KEY=value\n") after it, stored as "prio,usec;text\0". The kernel
+ * escapes every byte below a space, at or above 127, and the backslash as
+ * \xNN; those come back as the byte (a NUL is dropped), so a message that
+ * held a newline reads as it did through klogctl. Returns the stored length,
+ * 0 when `rec` is not a record (the caller then knows this is not a kernel
+ * that speaks the format), or -1 when it would not fit in `cap`.
+ */
+static long kmsg_store(const char *rec, unsigned long n, char *out, unsigned long cap)
+{
+	unsigned long f[4], i = 0, k = 0, o = 0, semi;
+
+	f[0] = 0;
+	while (i < n && rec[i] != ';' && rec[i] != '\n') {
+		if (rec[i] == ',' && k < 3)
+			f[++k] = i + 1;
+		i++;
+	}
+	if (i >= n || rec[i] != ';' || k < 2)
+		return 0;
+	semi = i;
+	/* prio and usec, the first and third fields */
+	if (!all_digits(rec, f[1] - 1, 4))
+		return 0;
+	{
+		unsigned long ue = f[2];
+
+		while (ue < semi && rec[ue] != ',')
+			ue++;
+		if (!all_digits(rec + f[2], ue - f[2], 20))
+			return 0;
+		if (f[1] - 1 + 1 + (ue - f[2]) + 1 + 1 > cap)
+			return -1;
+		for (i = 0; i < f[1] - 1; i++)
+			out[o++] = rec[i];
+		out[o++] = ',';
+		for (i = f[2]; i < ue; i++)
+			out[o++] = rec[i];
+		out[o++] = ';';
+	}
+	for (i = semi + 1; i < n && rec[i] != '\n'; i++) {
+		char c = rec[i];
+
+		if (c == '\\' && i + 3 < n && rec[i + 1] == 'x'
+		    && hexval(rec[i + 2]) >= 0 && hexval(rec[i + 3]) >= 0) {
+			c = (char)(hexval(rec[i + 2]) * 16 + hexval(rec[i + 3]));
+			i += 3;
+			if (!c)
+				continue;
+		}
+		if (o + 2 > cap)
+			return -1;
+		out[o++] = c;
+	}
+	out[o++] = 0;
+	return (long)o;
+}
+
+/*
+ * Every record /dev/kmsg holds, oldest first, into `omci`. Returns the bytes
+ * stored, or -1 when this kernel does not offer the record format (the caller
+ * falls back to klogctl). *dropped is set when the store filled and the oldest
+ * records were let go to keep the newest.
+ */
+static long read_kmsg(int *dropped)
+{
+	char *rec = status;	/* one record at a time; nothing else is using it */
+	unsigned long len = 0, cap = sizeof(omci), reads = 0;
+	long fd = syscall3(__NR_open, (long)KMSG_PATH, O_RDONLY | O_NONBLOCK_MIPS, 0);
+	int any = 0;
+
+	*dropped = 0;
+	if (fd < 0)
+		return -1;
+	while (reads++ < KMSG_MAX_READS) {
+		long n = syscall3(__NR_read, fd, (long)rec, sizeof(status) - 1);
+		long got;
+
+		if (n == -EPIPE_ERR) {
+			/* Records were overwritten under us; the next read
+			 * starts at the oldest one still there. */
+			*dropped = 1;
+			continue;
+		}
+		if (n == -EAGAIN_MIPS || n == 0)
+			break;
+		if (n < 0) {
+			/* EINVAL from a kernel whose /dev/kmsg cannot be read */
+			if (!any) {
+				syscall3(__NR_close, fd, 0, 0);
+				return -1;
+			}
+			break;
+		}
+		got = kmsg_store(rec, (unsigned long)n, omci + len, cap - len);
+		if (got == 0) {
+			if (!any) {
+				syscall3(__NR_close, fd, 0, 0);
+				return -1;
+			}
+			continue;
+		}
+		any = 1;
+		if (got < 0) {
+			/* Full: let go of the oldest half and store this one
+			 * again. A record never comes near half of the store. */
+			unsigned long cut = len / 2, j;
+
+			while (cut < len && omci[cut])
+				cut++;
+			if (cut < len)
+				cut++;
+			for (j = cut; j < len; j++)
+				omci[j - cut] = omci[j];
+			len -= cut;
+			*dropped = 1;
+			got = kmsg_store(rec, (unsigned long)n, omci + len, cap - len);
+			if (got <= 0)
+				continue;
+		}
+		len += (unsigned long)got;
+	}
+	syscall3(__NR_close, fd, 0, 0);
+	return any ? (long)len : (reads > 1 ? 0 : -1);
+}
+
+/* sec.nsec as whole microseconds, written as digits: no 64-bit arithmetic,
+ * which this freestanding build has no helpers for. */
+static void put_us_fd(int fd, long sec, long nsec)
+{
+	unsigned long us = (unsigned long)nsec / 1000UL, div;
+
+	if (sec <= 0) {
+		put_u32_fd(fd, us);
+		return;
+	}
+	put_u32_fd(fd, (unsigned long)sec);
+	for (div = 100000UL; div; div /= 10) {
+		char d = (char)('0' + (us / div) % 10);
+
+		write_all(fd, &d, 1);
+	}
+}
+
+/*
+ * Whether ntpd has set the clock since it started: /tmp/ntp-status (written
+ * by the odi-oss ntpd hook, removed whenever ntpd is not running) names the
+ * time of the last sync in last_sync, empty until the first one. An unsync
+ * event keeps it, and a clock once set stays close enough for a log.
+ */
+static int clock_synced(void)
+{
+	char buf[256];
+	long got = read_file(NTP_STATUS_FILE, buf, sizeof(buf));
+	unsigned long i = 0;
+
+	if (got <= 0)
+		return 0;
+	while (buf[i]) {
+		unsigned long le = i, k = 0;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		while (k < 10 && i + k < le && buf[i + k] == "last_sync="[k])
+			k++;
+		if (k == 10)
+			return all_digits(buf + i + 10, le - i - 10, 20);
+		i = buf[le] ? le + 1 : le;
+	}
+	return 0;
+}
+
+/* The fields of the stored record at omci[i]: prio is omci[i..*c), usec
+ * (*c..*semi), the text (*semi..*e); the next record starts at *e + 1. */
+static void kmsg_fields(unsigned long i, unsigned long *c, unsigned long *semi,
+			unsigned long *e)
+{
+	*c = i;
+	while (omci[*c] != ',')
+		(*c)++;
+	*semi = *c;
+	while (omci[*semi] != ';')
+		(*semi)++;
+	*e = *semi + 1;
+	while (omci[*e])
+		(*e)++;
+}
+
+static void emit_kmsg_json(int fd, unsigned long len, int dropped)
+{
+	long mono[2], wall[2];
+	unsigned long i, c, semi, e;
+
+	put_fd(fd, "{\"raw\":\"");
+	for (i = 0; i < len; i = e + 1) {
+		kmsg_fields(i, &c, &semi, &e);
+		put_fd(fd, "<");
+		write_all(fd, omci + i, c - i);
+		put_fd(fd, ">");
+		put_json_str(fd, omci + semi + 1, e - semi - 1);
+		put_fd(fd, "\\n");
+	}
+	put_fd(fd, "\",\"truncated\":");
+	put_fd(fd, dropped ? "true" : "false");
+	put_fd(fd, ",\"lines\":[");
+	for (i = 0; i < len; i = e + 1) {
+		kmsg_fields(i, &c, &semi, &e);
+		put_fd(fd, i ? ",{\"p\":" : "{\"p\":");
+		write_all(fd, omci + i, c - i);
+		put_fd(fd, ",\"us\":");
+		write_all(fd, omci + c + 1, semi - c - 1);
+		put_fd(fd, ",\"msg\":\"");
+		put_json_str(fd, omci + semi + 1, e - semi - 1);
+		put_fd(fd, "\"}");
+	}
+	put_fd(fd, "],\"synced\":");
+	put_fd(fd, clock_synced() ? "true" : "false");
+	/* The two clocks, read back to back, last in the object: the page
+	 * dates a record as now - (uptime - us). */
+	if (syscall3(__NR_clock_gettime, CLOCK_MONOTONIC, (long)mono, 0) >= 0
+	    && syscall3(__NR_clock_gettime, CLOCK_REALTIME, (long)wall, 0) >= 0) {
+		put_fd(fd, ",\"uptime_us\":");
+		put_us_fd(fd, mono[0], mono[1]);
+		put_fd(fd, ",\"now_us\":");
+		put_us_fd(fd, wall[0], wall[1]);
+	}
+	put_fd(fd, "}");
+}
+
 void emit_log_json(int fd)
 {
-	long got = read_klog(omci, sizeof(omci));
+	int dropped;
+	long got = read_kmsg(&dropped);
 
+	if (got >= 0) {
+		emit_kmsg_json(fd, (unsigned long)got, dropped);
+		return;
+	}
+	got = read_klog(omci, sizeof(omci));
 	if (got < 0) {
 		put_fd(fd, "{\"error\":\"the kernel would not hand over its log buffer\"}");
 		return;

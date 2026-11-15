@@ -217,7 +217,15 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           "stratum","last_sync"} from /tmp/ntp-status
                                           (odi-oss; known events only, values digits,
                                           `.` and `-`)}
-    GET  /api/log                        kernel ring buffer, via klogctl
+    GET  /api/log                        the kernel ring buffer: {"raw": one <prio>message
+                                          per line, "truncated"}. From /dev/kmsg where the
+                                          kernel offers its records (odi-oss), which adds
+                                          "lines" ([{"p","us","msg"}], `us` the record time
+                                          in microseconds since boot), "synced" (ntpd has
+                                          set the clock: last_sync in /tmp/ntp-status) and
+                                          "uptime_us"/"now_us", the monotonic and wall
+                                          clocks read together; via klogctl otherwise
+                                          (stock), raw and truncated only
     POST /api/ping       host=<IPv4>      a literal a host can have (first number
                                           1-223, not 127, no leading zeros), no DNS
     GET  /api/l2                         `diag l2-table get entry address valid`

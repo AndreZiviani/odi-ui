@@ -839,7 +839,9 @@ button.mib-row:focus-visible { outline-offset: -2px; }
   max-height: 460px; overflow: auto; padding: 8px 0; font-family: var(--mono); font-size: 12.5px;
 }
 .logline { display: grid; grid-template-columns: 4.2em minmax(0, 1fr); gap: 8px; padding: 1px 12px; }
-.logline .lvl { color: var(--ink-3); }
+.logline.timed { grid-template-columns: max-content 4.2em minmax(0, 1fr); }
+.logline .ts, .logline .lvl { color: var(--ink-3); }
+.logline .ts { font-variant-numeric: tabular-nums; text-align: right; min-width: 8ch; }
 .logline .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
 .logline.warn .lvl, .logline.warn .msg { color: var(--yellow-ink); }
 .logline.bad .lvl, .logline.bad .msg { color: var(--red-ink); }
@@ -907,7 +909,10 @@ button.mib-row:focus-visible { outline-offset: -2px; }
   .formrow > label, .formrow > label.grow { flex: 1 1 100%; }
   .formrow input:not([type=checkbox]), .formrow select { width: 100%; }
   .logline { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 3px 12px; }
-  .logline .lvl { font-size: 11px; }
+  .logline.timed { grid-template-columns: max-content minmax(0, 1fr); column-gap: 8px; }
+  .logline.timed .msg { grid-column: 1 / -1; }
+  .logline .lvl, .logline .ts { font-size: 11px; }
+  .logline .ts { text-align: left; min-width: 0; }
   .top-end { gap: 8px; }
   .helptoggle span { display: none; }
   .linepill .num { display: none; }

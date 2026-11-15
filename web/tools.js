@@ -21,17 +21,59 @@ const LEVELS = ['emerg', 'alert', 'crit', 'err', 'warn', 'notice', 'info', 'debu
    something. Hidden by default, counted, one tick away. */
 const HEARTBEAT = /^(rcS|odi_wdt): alive\b/;
 
+/*
+ * When each entry happened. /dev/kmsg gives every record its microseconds
+ * since boot (`us`), and the answer carries the stick's two clocks read
+ * together, so a record is dated now - (uptime - us): right even for a line
+ * logged before NTP stepped the clock off 1970. Until ntpd has set the clock
+ * (`synced`) the wall time means nothing, and the column shows seconds since
+ * boot instead, as dmesg does. Times are UTC, like the other dates the page
+ * prints, because the stick has no time zone. `clock` is the /api/log answer;
+ * returns { text, title } for one entry, or null when there is no time.
+ */
+function logTime(us, clock) {
+  if (us === null || us === undefined || !Number.isFinite(us)) return null;
+  const boot = (us / 1e6).toFixed(3) + ' s after boot';
+  const up = Number(clock && clock.uptime_us);
+  const now = Number(clock && clock.now_us);
+  if (!(clock && clock.synced) || !Number.isFinite(up) || !Number.isFinite(now) || up <= 0)
+    return { text: (us / 1e6).toFixed(3), title: boot };
+  const at = new Date((now - (up - us)) / 1000).toISOString();
+  const today = new Date(now / 1000).toISOString().slice(0, 10);
+  const day = at.slice(0, 10);
+  return { text: (day === today ? '' : day + ' ') + at.slice(11, 19), title: boot };
+}
+
+/*
+ * `text` is the raw buffer, one `<prio>message` per line. With opts.lines (the
+ * /dev/kmsg records of /api/log) those are drawn instead, each with its time
+ * from logTime(us, opts.clock); a record that holds a newline becomes
+ * continuation rows, the way klogctl showed it. Without them -- an older
+ * confd, or a stock kernel -- the rows have no time column, as before.
+ */
 function renderLogLines(text, host, opts = {}) {
   let level = null;
   let hidden = 0;
+  const timed = Array.isArray(opts.lines);
+  const entries = [];
 
-  for (const raw of String(text || '').split('\n')) {
-    const line = raw.replace(/\r$/, '');
-    if (!line.trim()) continue;
+  if (timed) {
+    for (const r of opts.lines) {
+      String(r.msg || '').split('\n').forEach((msg, i) => {
+        entries.push({ p: i ? null : Number(r.p), us: i ? null : Number(r.us), msg });
+      });
+    }
+  } else {
+    for (const raw of String(text || '').split('\n')) {
+      const line = raw.replace(/\r$/, '');
+      const m = /^<(\d{1,3})>(.*)$/.exec(line);
+      entries.push(m ? { p: Number(m[1]), us: null, msg: m[2] } : { p: null, us: null, msg: line });
+    }
+  }
 
-    const m = /^<(\d{1,3})>(.*)$/.exec(line);
-    let body = line;
-    if (m) { level = Number(m[1]) & 7; body = m[2]; }
+  for (const e of entries) {
+    if (e.p !== null && Number.isFinite(e.p)) level = e.p & 7;
+    const body = e.msg;
     /* A bare `<4>` with nothing after it is real -- the kernel emits them --
        and rendering it as an empty row is noise. Take the level from it and
        drop the row. */
@@ -39,7 +81,13 @@ function renderLogLines(text, host, opts = {}) {
     if (!opts.heartbeats && HEARTBEAT.test(body)) { hidden++; continue; }
 
     const cls = level === null ? '' : level <= 3 ? 'bad' : level === 4 ? 'warn' : '';
-    const row = el('div', 'logline ' + cls);
+    const row = el('div', 'logline ' + (timed ? 'timed ' : '') + cls);
+    if (timed) {
+      const t = logTime(e.us, opts.clock);
+      const ts = el('span', 'ts', t ? t.text : '');
+      if (t) ts.title = t.title;
+      row.append(ts);
+    }
     row.append(el('span', 'lvl', level === null ? '' : LEVELS[level]), el('span', 'msg', body));
     host.append(row);
   }
@@ -69,7 +117,10 @@ async function renderLog() {
   const box = el('div', 'log');
   box.tabIndex = 0;
   box.setAttribute('aria-label', 'Kernel log');
-  const r = renderLogLines(d.raw, box, { heartbeats: $('#log-heartbeat').checked });
+  const r = renderLogLines(d.raw, box, { heartbeats: $('#log-heartbeat').checked, lines: d.lines, clock: d });
+  if (Array.isArray(d.lines))
+    host.append(el('p', 'hint', d.synced ? 'Times are UTC; hover one for the time since boot.'
+      : 'Times are seconds since boot; they turn into UTC once NTP has set the clock.'));
   host.append(box);
   if (r.hidden) host.append(el('p', 'hint', r.hidden + ' heartbeat line' + (r.hidden === 1 ? '' : 's') + ' hidden.'));
   /* Newest last, like a terminal. Scroll there so a refresh lands on what just
@@ -122,4 +173,4 @@ function renderTools() {
   renderLog();
 }
 
-export { renderLogLines, renderTools };
+export { logTime, renderLogLines, renderTools };
