@@ -233,8 +233,15 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `onu_state` (/proc/odi_gpon/status "state ",
                                           e.g. "5 (O5)"). File reads only, no diag, so the
                                           page asks every second while Status is shown;
-                                          the driver samples once a second. Only
-                                          {"ok":true} without the driver's counters.
+                                          the driver samples once a second. Also
+                                          `pon_in_octets` and `pon_out_octets`, the PON
+                                          port (2) ifInOctets and ifOutOctets as decimal
+                                          strings of the 64-bit counters, read with
+                                          ioctl MIB_GET on /dev/odi_sw (no diag, no fork),
+                                          for the rates on the fibre line; neither when
+                                          the device is missing or a read fails. Each
+                                          group is absent without its source; only
+                                          {"ok":true} with neither.
     GET  /api/ntp                        {"now": the stick's clock, epoch seconds,
                                           "ntp": null, or {"event","time","offset",
                                           "stratum","last_sync"} from /tmp/ntp-status

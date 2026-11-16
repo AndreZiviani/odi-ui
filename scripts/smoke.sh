@@ -1548,6 +1548,8 @@ check "it needs the credential" 401 \
 # nothing else, which tells the page to stop asking.
 check "ponload without the driver answers ok and no counters" '{"ok":true}' \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/ponload")"
+check "ponload without /dev/odi_sw has no octet members" 0 \
+	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/ponload" | grep -c 'pon_in_octets\|pon_out_octets')"
 check "ponload needs the credential" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/ponload")"
 

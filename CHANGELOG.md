@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the down and up rates on the fibre line refresh every second, with
+  the PON figure, instead of every 15 s. `/api/ponload` adds
+  `pon_in_octets` and `pon_out_octets`, the PON port byte counters read from
+  the switch driver with two ioctls on `/dev/odi_sw` (no `diag`, no fork); the
+  page takes the rate between two reads. A counter that went backwards, a gap
+  of more than five seconds or an image without the device gives no
+  one-second figure and the 15 s one stays. While a one-second figure is under
+  three seconds old it is the one shown, so the number does not jump back to
+  the 15 s average. The tick no longer stops for good when one answer lacks the
+  PON counters: either figure is used when present, and after three misses it
+  asks once a minute. `make check` and `make smoke` cover it.
 - Status: the shared PON figure refreshes every second while the Status
   view is on screen, instead of with the 15 s status poll. It comes from a
   new route, `/api/ponload`, which reads the driver's counters and state
