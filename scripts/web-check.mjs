@@ -1697,6 +1697,16 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(rebootBtn().disabled === false && /ended without recording a result/.test(textOf(doc.querySelector('#parts'))),
      'reboot: an unknown write result leaves Reboot on and says the writer is gone');
 
+  /* The write log keeps only the last redraw of a \r progress line, so the
+     erase progress is one short line and not thousands run together. */
+  const erase = 'fwu: erasing /dev/mtd7\n\rErasing 4 Kibyte @ 0 -  0% complete.'
+    + '\rErasing 4 Kibyte @ 23c000 - 91% complete.\rErasing 4 Kibyte @ 23d000 - 91% complete.\r\n'
+    + 'fwu: writing rootfs to /dev/mtd7\r\n';
+  ok(fwm.writeLogText(erase) === 'fwu: erasing /dev/mtd7\nErasing 4 Kibyte @ 23d000 - 91% complete.\n'
+     + 'fwu: writing rootfs to /dev/mtd7', 'write log: a \\r progress line shows only its last state');
+  ok(fwm.writeLogText('a\nb\n') === 'a\nb' && fwm.writeLogText(undefined) === '',
+     'write log: plain lines are kept, and no log is an empty one');
+
   const keepSleep = fwm.followDeps.sleep;
   fwm.followDeps.sleep = () => new Promise(() => {});
   await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'running', pid: '4242', slot: '0', rc: '', log: '' } });

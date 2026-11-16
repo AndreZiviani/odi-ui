@@ -187,6 +187,17 @@ async function followWrite(part) {
   renderFirmware();
 }
 
+/* The write log as a terminal would show it. flash_eraseall redraws its
+   progress with a carriage return before each update, thousands of them per
+   partition. No browser treats a lone \r in a <pre> as a line break, so they
+   all run into one line wider than the box. Of each line keep only what was
+   drawn last. Pure. */
+function writeLogText(log) {
+  return String(log || '').split('\n')
+    .map((line) => line.split('\r').filter((seg) => seg !== '').pop() || '')
+    .join('\n').trim();
+}
+
 /* Consecutive failed polls before the page stops asking: 40 x 3 s, two
    minutes. The stick is busy erasing flash, so a poll can fail for a while. */
 const WRITE_LOST_POLLS = 40;
@@ -225,7 +236,7 @@ async function followLoop(part, deps = followDeps) {
         + 'trial boots once, and reverts by itself if the image does not come up.'));
       break;
     }
-    log.textContent = String(w.log || '').trim();
+    log.textContent = writeLogText(w.log);
     if (w.state === 'ok') {
       out.append(el('div', 'good', `Partition ${w.slot} written and read back. Press Try `
         + 'on it — a trial boots once, and reverts by itself if the image does not '
@@ -670,5 +681,5 @@ async function commitRunning() {
 export {
   renderFirmware, wireFirmware, slotKind, renderTrial, devNotes,
   followReboot, rebootView, rebootLoop, rebootDeps, REBOOT_EXPECTED_S,
-  followLoop, followDeps, WRITE_LOST_POLLS, writeImage,
+  followLoop, followDeps, WRITE_LOST_POLLS, writeImage, writeLogText,
 };
