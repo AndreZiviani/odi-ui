@@ -60,6 +60,23 @@ const tight = (spec) => (spec.winHi - spec.winLo) * TIGHT_SHARE;
 /* A real minus sign, not a hyphen: the readout face draws the two differently. */
 const signed = (v, d) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
 
+/* Two dimension lines side by side: one too short for its whole label keeps
+   the figure and drops the edge name, or the two labels run into each other
+   ("1.6 dB to min 2.9 dB to maximum"). It needs the drawn widths, so it runs
+   again whenever the meter changes size: a window resize, or the Status tab
+   shown again after the meter was drawn while it was hidden (width 0). */
+function fitDims(host) {
+  const dims = host.querySelector('.m-dims');
+  if (!dims || dims.children.length < 2) return;
+  for (const d of dims.children) {
+    d.classList.remove('short');
+    d.classList.toggle('short', d.children[0].offsetWidth > d.offsetWidth);
+  }
+}
+const fitObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver((entries) => { for (const e of entries) fitDims(e.target); })
+  : null;
+
 function meter(hostSel, spec, value) {
   const host = $(hostSel);
   const unit = spec.unit || 'dBm';
@@ -152,6 +169,8 @@ function meter(hostSel, spec, value) {
     + signed(spec.winLo, 1) + ' to ' + signed(spec.winHi, 1) + ' ' + unit + '.');
   inst.append(scale, lab, dims);
   host.append(inst);
+  fitDims(host);
+  if (fitObserver && !host.dataset.fit) { host.dataset.fit = '1'; fitObserver.observe(host); }
   const foot = el('p', 'm-note');
   foot.textContent = spec.foot || `${spec.note}, ${signed(spec.winLo, 1)} to ${signed(spec.winHi, 1)} ${unit}`;
   host.append(foot);
@@ -552,6 +571,10 @@ function renderLinkCheck(r) {
   const box = $('#linkcheck');
   if (!box) return;
   box.hidden = !r;
+  /* The finding says the same as the note under the ladder, and more exactly
+     (O5 is not yet "carrying traffic" while the traffic stage still measures):
+     show one of the two. */
+  $('#statenote').hidden = !!r;
   if (!r) return;
   const ol = $('#lc-stages');
   ol.textContent = '';
