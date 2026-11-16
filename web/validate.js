@@ -398,13 +398,18 @@ function textProblem(raw, max) {
   return null;
 }
 
+/* Stock keys whose empty value is their default: no LOID, no PLOAM password.
+   GPON_SN stays required. src/routes.c (empty_ok_key) keeps the same list. */
+const EMPTY_OK_KEYS = ['LOID', 'LOID_PASSWD', 'LOID_OLD', 'LOID_PASSWD_OLD', 'GPON_PLOAM_PASSWD'];
+
 function valueProblem(row, raw, ctx = defaultCtx) {
   /* hostport keys (SYSLOG_SERVER, NTP_SERVER), ascii14 (ONU_HW_VERSION) and
      fixedme (OMCI_FIXED_ME) are odi-only and empty clears them; fwdop
      (RTK_DEVINFO_SPECVER) is a stock key whose empty value is its off state. */
   if (['hostport', 'ascii14', 'fixedme', 'fwdop', 'routes'].includes(row.type) && raw === '') return null;
+  if (EMPTY_OK_KEYS.includes(row.name) && raw === '') return null;
   if (raw === '' || raw === undefined) {
-    return 'cannot be empty \u2014 flash set refuses to clear a key';
+    return 'cannot be empty \u2014 this key needs a value';
   }
   if (row.type === 'int') {
     if (!/^\d+$/.test(raw)) return 'must be a whole number';

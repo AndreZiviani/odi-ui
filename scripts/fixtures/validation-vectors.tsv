@@ -28,6 +28,12 @@ key	WAN_MODE	-1	bad	int: digits, at most 10, at most 4294967295
 key	WAN_MODE	1%200	bad	int: digits, at most 10, at most 4294967295
 key	WAN_MODE	1.5	bad	int: digits, at most 10, at most 4294967295
 key	WAN_MODE		bad	a stock key cannot be cleared
+key	LOID		ok	empty is the default: no LOID, no PLOAM password
+key	LOID_PASSWD		ok	empty is the default: no LOID, no PLOAM password
+key	LOID_OLD		ok	empty is the default: no LOID, no PLOAM password
+key	LOID_PASSWD_OLD		ok	empty is the default: no LOID, no PLOAM password
+key	GPON_PLOAM_PASSWD		ok	empty is the default: no LOID, no PLOAM password
+key	GPON_SN		bad	a stick without a serial does not range
 key	VLAN_MANU_TAG_VID	1	ok	range 1-4094, and the digit cap
 key	VLAN_MANU_TAG_VID	4094	ok	range 1-4094, and the digit cap
 key	VLAN_MANU_TAG_VID	0	bad	range 1-4094, and the digit cap

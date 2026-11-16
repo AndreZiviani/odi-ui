@@ -931,9 +931,16 @@ Refused regardless of what the schema says: `LAN_SDS_MODE`, `LAN_SPEED_MODE`,
 are validated server-side against their type, not only in the browser, since a
 request need not come from the page.
 
-Clearing a key is rejected with a message saying why, except the `hostport` keys (`SYSLOG_SERVER`, `NTP_SERVER`), which odi-oss `flash` keeps in its own file and removes on an empty value. For the rest: `flash set` guards its set
-branch with `[ "$3" != "" ]`, so an empty value falls through to its usage text
-and exits 1 while looking like it worked.
+Clearing a key is rejected with a message saying why, except two groups. The
+odi-only keys of types `hostport`, `ascii14`, `fixedme` and `routes`
+(`SYSLOG_SERVER`, `NTP_SERVER`, `ONU_HW_VERSION`, `OMCI_FIXED_ME`,
+`LAN_ROUTES`), which odi-oss `flash` keeps in its own file and removes on an
+empty value; and the stock keys whose empty value is their default or off
+state: `RTK_DEVINFO_SPECVER`, `LOID`, `LOID_PASSWD`, `LOID_OLD`,
+`LOID_PASSWD_OLD` and `GPON_PLOAM_PASSWD`. odi-oss `flash` stores an empty
+value for a stock key. The stock `flash set` guards its set branch with
+`[ "$3" != "" ]`, so there an empty value falls through to its usage text and
+exits 1, and the write is reported as failed.
 
 ## Authentication
 
