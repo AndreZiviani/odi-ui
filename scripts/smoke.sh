@@ -1879,6 +1879,37 @@ check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
 
+# A config store odi-oss recreated at boot (config-reseed.sh): the record in
+# /etc/config/config-reseeded rides on GET /api/hostlink as `reseed`, read
+# with no fork like the safe-mode record, and reseed-ack runs
+# config-reseed.sh ack. The stub echoes it and removes the record, as the
+# real one does.
+rm -f /etc/scripts/config-reseed.sh /etc/config/config-reseeded
+check "no record: reseed is null" yes "$(err "$(hl)" '"safemode":null,"reseed":null,"link"')"
+check "without config-reseed.sh: reseed-ack is refused" yes \
+	"$(err "$(hlpost 'action=reseed-ack')" 'this image has no /etc/scripts/config-reseed.sh')"
+cat > /etc/scripts/config-reseed.sh <<'RESEED'
+#!/bin/sh
+echo "config-reseed.sh: $*"
+[ "$1" = ack ] && rm -f /etc/config/config-reseeded
+exit 0
+RESEED
+chmod +x /etc/scripts/config-reseed.sh
+printf '%s\n' 'files=lastgood.xml lastgood_hs.xml' build=v1.17.0 uptime=9 > /etc/config/config-reseeded
+check "the record of a recreated store reaches the page" yes \
+	"$(err "$(hl)" '"reseed":{"files":"lastgood.xml lastgood_hs.xml","build":"v1.17.0","uptime":"9"}')"
+check "  and /api/init carries it too" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/init")" '"reseed":{"files":"lastgood.xml lastgood_hs.xml"')"
+check "a cross-site reseed-ack is refused" 403 \
+	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'action=reseed-ack' "http://127.0.0.1:$PORT/api/hostlink")"
+check "the record is still there after the refused one" yes "$(err "$(hl)" '"reseed":{"files"')"
+check "reseed-ack runs config-reseed.sh ack" yes \
+	"$(err "$(hlpost 'action=reseed-ack')" '"ok":true,"output":"config-reseed.sh: ack')"
+check "after the acknowledgement the page sees no record" yes "$(err "$(hl)" '"reseed":null')"
+: > /etc/config/config-reseeded
+check "an empty record is still a record" yes "$(err "$(hl)" '"reseed":{}')"
+rm -f /etc/scripts/config-reseed.sh /etc/config/config-reseeded
+
 # The SerDes mode of the same port (HOST_SERDES, host-serdes.sh): its state in
 # /var/run/host-serdes rides on GET /api/hostlink, and four fixed verbs run
 # the script (serdes-try with a validated mode, serdes-confirm, serdes-revert,

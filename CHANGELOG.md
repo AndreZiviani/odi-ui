@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- A bar on every view when the odi-oss image recreated the config store at
+  boot (an erased config partition, odi-oss `config-reseed.sh`): "Settings
+  recreated. The config store was missing at boot and was rebuilt from the
+  image defaults (lastgood_hs.xml). The serial number is empty, so the stick
+  stays off the fibre (PON) until you set it or restore a backup." It has
+  buttons to Config > Line and to System > Backup & reset, and Acknowledge removes
+  it. `/api/hostlink` (and `/api/init`) add `reseed`, the record
+  `/etc/config/config-reseeded` read with no fork (`files`, `build`,
+  `uptime`, or null); POST `action=reseed-ack` runs `config-reseed.sh ack`,
+  bounded like the safe-mode ack. An image without the script never shows
+  the bar. Refs AndreZiviani/odi-oss#438.
+
 - Status: the Receive and Transmit headings are set as Registration's
   beside them, so the three read as one row. Two dimension lines under a
   meter that are too short for their labels keep the figures and drop the
