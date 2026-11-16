@@ -815,9 +815,11 @@ int host_in_mask_ok(const char *ip, const char *mask)
  * one argv element with no shell in between, so a space or a quote in a value
  * is data rather than syntax.
  *
- * The read-back is the point. `flash set` cannot clear a key at all — its set
- * branch is guarded by [ "$3" != "" ], so an empty value falls through to the
- * usage text and exits 1 while looking like it worked.
+ * The read-back is the point. The stock `flash set` cannot clear a key at all
+ * — its set branch is guarded by [ "$3" != "" ], so an empty value falls
+ * through to the usage text and exits 1 while looking like it worked. The
+ * odi-oss flash stores an empty value for a stock key, and removes an
+ * odi-only one.
  *
  * Returns 1 when the read-back matches, 0 when it holds another value (in
  * out), and -1 when there is no read-back. In that case out holds the reason:

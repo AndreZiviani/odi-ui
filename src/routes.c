@@ -172,6 +172,21 @@ static const char *key_refusal(const char *name, const char *value,
 }
 
 /*
+ * Stock keys that can be emptied. Empty is their default in the store
+ * template: no LOID for an OLT that asks for none, no PLOAM password for one
+ * that authenticates on the serial number alone. The odi-oss flash stores an
+ * empty value for a stock key; the stock flash refuses it, and the failed
+ * write says so. GPON_SN is not here: a stick without a serial does not
+ * range. web/validate.js keeps the same list.
+ */
+static int empty_ok_key(const char *name)
+{
+	return seq(name, "LOID") || seq(name, "LOID_PASSWD") ||
+	       seq(name, "LOID_OLD") || seq(name, "LOID_PASSWD_OLD") ||
+	       seq(name, "GPON_PLOAM_PASSWD");
+}
+
+/*
  * The six keys of the management interface (confd.h, NETADDR_*), which a trial
  * writes and /api/config does not: the five of the address, and the static
  * routes beside them.
@@ -363,12 +378,14 @@ static void handle_write(int conn, const char *body)
 		 * an empty value removes the key. Stock keys live in the vendor
 		 * XML, where an empty value is not a clear. The one exception
 		 * is fwdop (RTK_DEVINFO_SPECVER): empty is its off state, on
-		 * both firmwares, and is what the stock page stores to reset. */
+		 * both firmwares, and is what the stock page stores to reset.
+		 * The LOID and PLOAM password keys (empty_ok_key) are stock
+		 * keys whose empty value is their stock default. */
 		else if (!value[0] && !seq(type, "hostport") && !seq(type, "ascii14") &&
 			 !seq(type, "fixedme") && !seq(type, "fwdop") &&
-			 !seq(type, "routes"))
-			err = "cannot be cleared: flash set refuses an empty value";
-		else if (!type_ok(type, value))
+			 !seq(type, "routes") && !empty_ok_key(name))
+			err = "cannot be cleared: this key needs a value";
+		else if (!(empty_ok_key(name) && !value[0]) && !type_ok(type, value))
 			err = "not valid for its type";
 		else if ((err = lan_pair_refusal(name, value, body)))
 			;

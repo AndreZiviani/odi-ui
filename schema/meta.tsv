@@ -54,7 +54,7 @@ RTK_DEVINFO_SPECVER	VLAN forward operation override	Replaces the forward operati
 GPON_SN	ONU serial number	What the OLT authenticates; a serial number the OLT does not know keeps the ONU off the line, with no service, until it is set back. Four-character vendor prefix followed by eight hex digits.			
 GPON_PLOAM_PASSWD	PLOAM password	An OLT that checks the PLOAM password refuses the ONU with a wrong one, and the service stays down until it is set back. Stored as the hex of an ASCII string, shown decoded under the field. Many OLTs authenticate on the serial number alone and leave this empty; others require it.			
 ELAN_MAC_ADDR	UNI MAC address	The MAC of eth0, its host port and br0.			
-LOID	LOID	The logical ONU id a CTC-profile OLT asks for; such an OLT refuses the ONU with a wrong one, and the service stays down until it is set back. Left unset when the OLT does not require one. Cannot be cleared from here: the store refuses an empty value.			
+LOID	LOID	The logical ONU id a CTC-profile OLT asks for; such an OLT refuses the ONU with a wrong one, and the service stays down until it is set back. Left empty when the OLT does not require one.			
 LOID_PASSWD	LOID password	The password that goes with the LOID; a wrong one keeps the ONU off a CTC-profile OLT that checks it.			
 LOID_OLD	LOID (in force)	The value omcid actually answers when it differs from LOID. Saving LOID writes this too.			
 LOID_PASSWD_OLD	LOID password (in force)	As above, for the password.			
