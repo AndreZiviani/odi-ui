@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- OMCI: a Topology subtab draws the path the OLT provisioned, from T-CONT
+  through GEM port, interworking TP, 802.1p mapper and bridge ports to the
+  UNI or VEIP, as columns joined by their MIB pointers. Click a box to follow
+  its path. Each box is tinted by who created it, blue for the OLT and green
+  for the ONU. It marks what the OLT created but no GEM-to-UNI path uses, and
+  lists any pointer that names a missing entity. A bridge port of TP type 3
+  that names a GEM IW TP is read the way odi-oss omcid reads it, and the page
+  says so. Read-only: twelve `omcicli mib get` runs through the existing
+  `/api/omci` route, only when the tab is opened or *Read again* is pressed.
+  `make check` covers it with omcid's answers for two recorded OLT sessions
+  (`scripts/fixtures/omci/topology-isp1`, `-isp2`). `scripts/preview.sh`
+  takes `PREVIEW_MIB=dir` to serve a captured MIB, one file per class.
+
 ## v1.18.1 (2026-11-18)
 
 - Config: a PLOAM password shorter than 10 characters, stored with zero

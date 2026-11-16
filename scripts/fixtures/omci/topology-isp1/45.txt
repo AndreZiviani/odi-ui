@@ -1,0 +1,12 @@
+45 MacBriServProf 1
+    SpanTreeInd              01
+    LearningInd              01
+    AtmBriInd                00
+    Priority                 0000
+    MaxAge                   2800
+    HelloTime                0800
+    ForwardDelay             1e00
+    DiscardUnknow            00
+    MacLearningDepth         00
+    DynamicFilteringAgeingTime 00000000
+1 row

@@ -1,0 +1,10 @@
+266 GemIwTp 4097
+    GemCtpPtr                0002
+    IwOpt                    05
+    ServProPtr               1002
+    IwTpPtr                  0000
+    PptpCounter              00
+    OpState                  00
+    GalProfPtr               0002
+    GalLoopbackCfg           00
+1 row

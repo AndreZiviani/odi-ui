@@ -1,0 +1,15 @@
+130 Map8021pServProf 4098
+    TPPtr                    ffff
+    IwTpPtrPbit0             1001
+    IwTpPtrPbit1             1001
+    IwTpPtrPbit2             1001
+    IwTpPtrPbit3             1001
+    IwTpPtrPbit4             1001
+    IwTpPtrPbit5             1001
+    IwTpPtrPbit6             1001
+    IwTpPtrPbit7             1001
+    UnmarkFrmOpt             00
+    DscpMap2Pbit             000000000000000000000000000000000000000000000000
+    DefPbitMark              00
+    TPType                   00
+1 row
