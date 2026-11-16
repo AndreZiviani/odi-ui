@@ -820,14 +820,43 @@ int host_in_mask_ok(const char *ip, const char *mask)
  * usage text and exits 1 while looking like it worked.
  *
  * Returns 1 when the read-back matches, 0 when it holds another value (in
- * out), and -1 when flash gave no read-back at all. out is a string on every
- * path, empty when there was nothing to read back.
+ * out), and -1 when there is no read-back. In that case out holds the reason:
+ * the first line flash printed when it failed (stdout and stderr share the
+ * buffer, so "flash: no such key: GPON_SN" arrives here), or a short sentence
+ * when flash timed out, could not be started or said nothing usable. out is a
+ * string on every path.
  */
+static void copy_line(char *out, unsigned long cap, const char *s)
+{
+	unsigned long n = 0;
+
+	if (!cap)
+		return;
+	while (*s == '\n' || *s == '\r')
+		s++;
+	while (s[n] && s[n] != '\n' && s[n] != '\r' && n + 1 < cap) {
+		out[n] = s[n];
+		n++;
+	}
+	out[n] = 0;
+}
+
+/* Whether the first line of s starts with "key=". */
+static int key_line(const char *s, const char *key)
+{
+	while (*s == '\n' || *s == '\r')
+		s++;
+	while (*key && *s == *key)
+		s++, key++;
+	return !*key && *s == '=';
+}
+
 int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 {
 	char *argv[5];
 	char buf[VALUE_MAX + 256];
 	unsigned long i = 0, vs;
+	long got, code;
 
 	if (cap)
 		out[0] = 0;
@@ -837,14 +866,34 @@ int write_key(const char *addr, const char *value, char *out, unsigned long cap)
 	argv[3] = (char *)value;
 	argv[4] = 0;
 
-	if (run_to_buf(FLASH_PATH, argv, buf, sizeof(buf), FLASH_TIMEOUT_MS) <= 0)
+	got = run_to_buf_ex(FLASH_PATH, argv, buf, sizeof(buf), &code, FLASH_TIMEOUT_MS);
+	if (got == -2) {
+		copy_line(out, cap, "flash set timed out");
 		return -1;
+	}
+	if (got < 0 || code == 127) {
+		/* 127 is run_to_buf_ex's own "execve failed". */
+		copy_line(out, cap, "flash set could not be started");
+		return -1;
+	}
+
+	/* A failed set says why on its first line, and that line can hold an
+	 * = of its own. It is passed on as the reason unless it really is
+	 * KEY=value for this key. */
+	if (code != 0 && !key_line(buf, addr)) {
+		copy_line(out, cap, buf);
+		if (!out[0])
+			copy_line(out, cap, "flash set failed and printed nothing");
+		return -1;
+	}
 
 	/* flash echoes "KEY=value" from its own xmlconfig -g when it is done. */
 	while (buf[i] && buf[i] != '=')
 		i++;
-	if (!buf[i])
+	if (!buf[i]) {
+		copy_line(out, cap, "flash set gave no read-back");
 		return -1;
+	}
 	vs = ++i;
 	while (buf[i] && buf[i] != '\n' && buf[i] != '\r')
 		i++;

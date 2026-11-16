@@ -464,8 +464,10 @@ static void handle_write(int conn, const char *body)
 			}
 		} else if (wrote < 0) {
 			/* flash failed or printed no KEY=value line: there is
-			 * no read-back to quote. */
-			put_fd(conn, "\"ok\":false,\"error\":\"flash set gave no read-back\"}");
+			 * no read-back to quote, and got holds why instead. */
+			put_fd(conn, "\"ok\":false,\"error\":\"");
+			put_json_cstr(conn, got);
+			put_fd(conn, "\"}");
 		} else {
 			/* The write reported success and the value did not
 			 * change. This is why every write is read back. */

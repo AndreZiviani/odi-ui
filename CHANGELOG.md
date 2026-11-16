@@ -13,10 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   maximum"). While the link check is shown, the note under the ladder is
   hidden: the check's finding covers it, and in O5 the note said "carrying
   traffic" before the traffic stage had measured any (#383).
-- API: a write that `flash set` fails, or that prints no read-back, answers
-  `"error":"flash set gave no read-back"`. Before, it reported "did not
-  stick" and quoted a buffer that held nothing yet, or in a batch the value
-  of the key before it.
+- API: a write that `flash set` fails answers with the first line flash
+  printed, such as `"error":"flash: no such key: GPON_SN"`; a write that
+  times out, cannot start flash or prints no read-back says that instead.
+  Before, it reported "did not stick" and quoted a buffer that held nothing
+  yet, or in a batch the value of the key before it (#103).
 - Status: a link check under the registration ladder, stage by stage: light,
   registered, OMCI with the OLT, services set up, traffic. Each stage shows
   its evidence, and the first that fails gives one finding: no light; an OLT
