@@ -297,14 +297,18 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           trial (`serdes`: `supported` and `state`, from
                                           `/var/run/host-serdes`), the safe-mode
                                           flag for this boot and the record of an
-                                          unacknowledged one, the host link;
+                                          unacknowledged one, `reseed` (the record of
+                                          a config store recreated at boot,
+                                          `/etc/config/config-reseeded`: `files`,
+                                          `build`, `uptime`, or null), the host link;
                                           `supported` is false on an image without it
     POST /api/hostlink  action=try&mode=on|off
-                        action=confirm | revert | ack
+                        action=confirm | revert | ack | reseed-ack
                         action=serdes-try&mode=fiber1g|2500basex|hisgmii
                         action=serdes-confirm | serdes-revert | serdes-status
                                           fixed verbs: try, confirm and revert run
                                           `host-autoneg.sh`, ack runs `safe-mode.sh ack`,
+                                          reseed-ack runs `config-reseed.sh ack`,
                                           the serdes-* ones run `host-serdes.sh try MODE`,
                                           `confirm`, `revert` and `status` (the mode is
                                           checked against the three names, nothing else

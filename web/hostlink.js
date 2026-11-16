@@ -32,7 +32,11 @@
  *     this boot a recovery boot, with the PON off, the host port on
  *     auto-negotiation and the default password, for this boot only;
  *   - a safe-mode record: a safe-mode boot happened and nobody acknowledged
- *     it yet. It stays until acknowledged, from the banner.
+ *     it yet. It stays until acknowledged, from the banner;
+ *   - a recreated config store (odi-oss config-reseed.sh): the config
+ *     partition was erased, and the boot rebuilt the store from the image
+ *     defaults with the serial number empty, so the stick stays off the PON
+ *     until it is set. It stays until acknowledged, from its own bar.
  */
 
 import { $, el, get } from './dom.js';
@@ -74,14 +78,15 @@ function trialOf(h) {
 
 /*
  * What the bars say for a /api/hostlink answer:
- *   { show, safe, fallback, ack }
+ *   { show, safe, fallback, ack, reseed }
  * safe is the text of the safe-mode bar (or null), fallback that of the boot
- * fallback bar (or null), ack whether the safe bar offers Acknowledge. One
- * short line each: the long explanation is under System, Access. Pure, so
- * make check can drive it with fixtures.
+ * fallback bar (or null), ack whether the safe bar offers Acknowledge, reseed
+ * the text of the recreated-store bar (or null; it always offers
+ * Acknowledge). One short line each: the long explanation of the safe mode
+ * is under System, Access. Pure, so make check can drive it with fixtures.
  */
 function bannerText(h) {
-  const out = { show: false, safe: null, fallback: null, ack: false };
+  const out = { show: false, safe: null, fallback: null, ack: false, reseed: null };
   if (!h) return out;
   const st = h.state || {};
   const now = h.safemode_now;
@@ -114,8 +119,30 @@ function bannerText(h) {
     out.fallback = 'Host link fallback. The host port is set to auto-negotiation off, but this boot the link '
       + 'did not come up that way, so the stick runs auto-negotiation on to stay reachable. The setting is kept.';
   }
-  out.show = !!(out.safe || out.fallback);
+  out.reseed = reseedText(h.reseed);
+  out.show = !!(out.safe || out.fallback || out.reseed);
   return out;
+}
+
+/*
+ * The recreated-store bar, from the record config-reseed.sh keeps (null when
+ * there is none). `files` names what was recreated: lastgood_hs.xml holds
+ * the serial number, so with it the PON stays down; lastgood.xml alone holds
+ * the PLOAM password and the other line settings. A record that names
+ * neither is read as the worse case.
+ */
+function reseedText(rec) {
+  if (!rec) return null;
+  const l = String(rec.files || '').split(/\s+/);
+  const cs = l.includes('lastgood.xml'), hs = l.includes('lastgood_hs.xml');
+  const which = cs && hs ? ' (lastgood.xml and lastgood_hs.xml)' : hs ? ' (lastgood_hs.xml)' : cs ? ' (lastgood.xml)' : '';
+  const head = `Settings recreated. The config store was missing at boot and was rebuilt from the image defaults${which}.`;
+  if (cs && !hs) {
+    return head + ' The PLOAM password and other line settings are back to their defaults: set them again or '
+      + 'restore a backup.';
+  }
+  return head + ' The serial number is empty, so the stick stays off the fibre (PON) until you set it or restore '
+    + 'a backup.';
 }
 
 function renderBanner() {
@@ -126,10 +153,11 @@ function renderBanner() {
     p.textContent = '';
     if (!text) return;
     const i = text.indexOf('. ');
-    const head = /^(Safe mode|Host link fallback|Host mode fallback)\./.test(text) ? text.slice(0, i + 1) : '';
+    const head = /^(Safe mode|Settings recreated|Host link fallback|Host mode fallback)\./.test(text) ? text.slice(0, i + 1) : '';
     if (head) { p.append(el('strong', null, head), document.createTextNode(' ' + text.slice(i + 2))); } else p.append(document.createTextNode(text));
   };
   bar('#safebanner', '#safe-text', b.safe);
+  bar('#reseedbanner', '#reseed-text', b.reseed);
   bar('#fallbackbanner', '#fallback-text', b.fallback);
   $('#hostlink-ack').hidden = !b.ack;
 }
@@ -357,6 +385,17 @@ async function ack() {
   await refresh();
 }
 
+/* The recreated-store bar answers in itself: it shows on every view, and
+   the Host port block may not be on screen. */
+async function ackReseed() {
+  say('#reseed-out', null, '');
+  try {
+    const res = await post('action=reseed-ack');
+    if (!res.ok) { say('#reseed-out', 'bad', res.error || res.output || 'not acknowledged'); return; }
+  } catch (e) { say('#reseed-out', 'bad', String(e.message || e)); return; }
+  await refresh();
+}
+
 function wireHostlink() {
   $('#hostlink-try').onclick = () => tryMode($('#hostlink-try').dataset.mode || 'off');
   $('#hostlink-keep-on').onclick = () => tryMode('on');
@@ -364,6 +403,7 @@ function wireHostlink() {
   $('#hostlink-keep').onclick = () => finish('confirm');
   $('#hostlink-revert').onclick = () => finish('revert');
   $('#hostlink-ack').onclick = ack;
+  $('#reseed-ack').onclick = ackReseed;
   /* Details: the bar links to System, Access; open the explanation there. */
   $('#safe-details').onclick = () => {
     $('#safemode-help').open = true;

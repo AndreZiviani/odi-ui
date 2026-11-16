@@ -73,6 +73,16 @@
     <a id="safe-details" href="#system/access">Details</a>
     <button id="hostlink-ack" type="button" hidden>Acknowledge</button>
   </div>
+  <!-- The config store was recreated from the image defaults at boot (odi-oss
+       config-reseed.sh): the serial number is empty and the PON stays down
+       until it is set. Stays until acknowledged. -->
+  <div id="reseedbanner" class="trial" role="status" hidden>
+    <p id="reseed-text"></p>
+    <a href="#config/line">Line settings</a>
+    <a href="#system/backup">Backup &amp; reset</a>
+    <button id="reseed-ack" type="button">Acknowledge</button>
+    <div id="reseed-out"></div>
+  </div>
   <div id="fallbackbanner" class="trial" role="status" hidden>
     <p id="fallback-text"></p>
     <a href="#config/network">Host port settings</a>

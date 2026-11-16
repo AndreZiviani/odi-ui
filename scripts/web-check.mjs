@@ -576,8 +576,8 @@ ok(true, 'renderStatus runs against a diag capture');
   const head = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
   const bars = [...head.matchAll(/<div id="(\w+)" class="trial([^"]*)"/g)]
     .map((m) => ({ id: m[1], rank: /\bhot\b/.test(m[2]) ? 0 : /\bupdate\b/.test(m[2]) ? 2 : 1 }));
-  ok(bars.map((b) => b.id).join() === 'chipbanner,trialbanner,safebanner,fallbackbanner,updatebanner',
-     'bars: critical chip bar, then trial boot, safe mode, fallback, then the release notice');
+  ok(bars.map((b) => b.id).join() === 'chipbanner,trialbanner,safebanner,reseedbanner,fallbackbanner,updatebanner',
+     'bars: critical chip bar, then trial boot, safe mode, recreated settings, fallback, then the release notice');
   ok(bars.every((b, i) => i === 0 || bars[i - 1].rank <= b.rank),
      'bars: red first, then the yellow stripes, then the blue notice, never the other way round');
   ok((head.match(/class="trial/g) || []).length === bars.length, 'bars: every header bar is in that list');
@@ -1195,7 +1195,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
 
 /* --- the host-link banner and the Host port control ------------------------- */
 {
-  const { bannerText, trialLeft, renderHostlink } = await import(join(root, 'web', 'hostlink.js'));
+  const { bannerText, trialLeft, renderHostlink, wireHostlink } = await import(join(root, 'web', 'hostlink.js'));
   const keep = API['/api/hostlink'];
   const st = (o) => ({ setting: 'on', running: 'on', phase: 'steady', fallback: '0', ...o });
 
@@ -1238,6 +1238,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(banner.hidden === false && doc.querySelector('#hostlink-ack').hidden === false,
      'host link: the safe-mode bar renders, with its Acknowledge button');
   ok(textOf(doc.querySelector('#safe-text')).includes('safe-mode boot happened'), 'host link: and its text');
+  ok(doc.querySelector('#reseedbanner').hidden === true, 'recreated store: no record, the bar stays down');
   ok(doc.querySelector('#fallbackbanner').hidden === false
      && doc.querySelector('#safebanner').className === doc.querySelector('#trialbanner').className,
      'host link: the bars are the trial-boot band, and the fallback bar shows beside it');
@@ -1258,6 +1259,41 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   API['/api/hostlink'] = { supported: false, state: {}, safemode: null, link: '', uptime: '1' };
   await renderHostlink();
   ok(doc.querySelector('#hostlink').hidden === true, 'host link: no block on an image without host-autoneg.sh');
+
+  /* The recreated-store bar: shown from the record, on an image without the
+     Host port block too; Acknowledge posts reseed-ack, a refusal is said in
+     the bar, and the bar goes once the record is gone. */
+  API['/api/hostlink'] = { supported: false, state: {}, safemode: null,
+                           reseed: { files: 'lastgood_hs.xml', build: 'v1.17.0', uptime: '9' }, link: '', uptime: '30' };
+  await renderHostlink();
+  const rb = doc.querySelector('#reseedbanner');
+  ok(rb.hidden === false && rb.className === doc.querySelector('#trialbanner').className,
+     'recreated store: the bar renders, the same band as the trial boot');
+  ok(/^Settings recreated\. The config store/.test(textOf(doc.querySelector('#reseed-text')))
+     && doc.querySelector('#reseed-text').children[0].tagName === 'strong'
+     && textOf(doc.querySelector('#reseed-text').children[0]) === 'Settings recreated.',
+     'recreated store: one line with a bold head');
+  ok(/href="#config\/line"[^>]*>Line settings<\/a>\s*<a href="#system\/backup"/.test(html)
+     && /data-sub="line"/.test(html) && /data-sub="backup"/.test(html),
+     'recreated store: the bar links to the Line settings and to Backup & reset, which exist');
+  wireHostlink();
+  const posted = [];
+  const keepFetchR = globalThis.fetch;
+  let answer = { ok: false, output: '', error: 'this image has no /etc/scripts/config-reseed.sh' };
+  globalThis.fetch = async (path, opts) => {
+    if (opts && opts.method === 'POST') { posted.push(String(opts.body)); return { ok: true, json: async () => answer }; }
+    return keepFetchR(path, opts);
+  };
+  await doc.querySelector('#reseed-ack').onclick();
+  ok(posted.join() === 'action=reseed-ack', 'recreated store: Acknowledge posts reseed-ack, nothing else');
+  ok(rb.hidden === false && /config-reseed\.sh/.test(textOf(doc.querySelector('#reseed-out'))),
+     'recreated store: a refused acknowledgement is said in the bar, which stays');
+  answer = { ok: true, output: '' };
+  API['/api/hostlink'] = { supported: false, state: {}, safemode: null, reseed: null, link: '', uptime: '31' };
+  await doc.querySelector('#reseed-ack').onclick();
+  globalThis.fetch = keepFetchR;
+  ok(rb.hidden === true && textOf(doc.querySelector('#reseed-out')) === '',
+     'recreated store: acknowledged, the record is gone and so is the bar');
   API['/api/hostlink'] = keep;
 
   /* The SerDes mode (odi-oss HOST_SERDES, host-serdes.sh). */
@@ -1277,6 +1313,27 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
     b = bannerText({ supported: true, state: st({}), safemode_now: { short_boots: '3', cleared: c }, safemode: null });
     ok(!/cleared the host port|turned off/.test(b.safe), `safe mode: cleared=${c || '(empty)'} claims nothing was cleared`);
   }
+  /* A config store recreated at boot (config-reseed.sh): its own bar, on any image. */
+  b = bannerText({ supported: false, state: {}, safemode: null, reseed: null });
+  ok(!b.show && b.reseed === null, 'recreated store: no record, no bar');
+  b = bannerText({ supported: false, state: {}, safemode: null,
+                   reseed: { files: 'lastgood_hs.xml', build: 'v1.17.0', uptime: '9' } });
+  ok(b.show && !b.safe && !b.ack && /^Settings recreated\./.test(b.reseed) && /\(lastgood_hs\.xml\)/.test(b.reseed)
+     && /serial number is empty/.test(b.reseed) && /off the fibre \(PON\)/.test(b.reseed)
+     && /restore a backup/.test(b.reseed) && b.reseed.length < 240,
+     'recreated store: the HS file says the serial is empty and the PON stays down, in one short line');
+  b = bannerText({ supported: true, state: st({}), safemode: null, reseed: { files: 'lastgood.xml lastgood_hs.xml' } });
+  ok(/\(lastgood\.xml and lastgood_hs\.xml\)/.test(b.reseed) && /serial number is empty/.test(b.reseed),
+     'recreated store: both files are named, and the serial still decides the text');
+  b = bannerText({ supported: true, state: st({}), safemode: null, reseed: { files: 'lastgood.xml' } });
+  ok(/\(lastgood\.xml\)/.test(b.reseed) && /PLOAM password/.test(b.reseed) && !/serial number/.test(b.reseed),
+     'recreated store: the CS file alone does not claim the serial is empty');
+  b = bannerText({ supported: true, state: st({}), safemode: null, reseed: {} });
+  ok(b.show && /^Settings recreated\./.test(b.reseed) && !/lastgood/.test(b.reseed) && /serial number is empty/.test(b.reseed),
+     'recreated store: a record that names no file still shows, as the worse case');
+  b = bannerText({ supported: true, state: st({}), safemode_now: null, safemode: { short_boots: '3' },
+                   reseed: { files: 'lastgood_hs.xml' } });
+  ok(b.safe && b.ack && b.reseed, 'recreated store: beside a safe-mode record, two bars');
   b = bannerText({ supported: false, state: {}, serdes: sd({ setting: '2500basex', running: 'fiber1g', fallback: '1' }), safemode: null });
   ok(b.show && !b.safe && /^Host mode fallback\./.test(b.fallback) && /set to 2\.5G/.test(b.fallback) && /Fiber 1G/.test(b.fallback),
      'host mode: the boot fallback of 2.5G raises its bar, even on an image without host-autoneg.sh');

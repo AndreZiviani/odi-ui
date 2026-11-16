@@ -950,6 +950,25 @@ static long load_defaults(void)
 }
 
 /*
+ * A record of key=value lines as a JSON object, or null when the file is not
+ * there: the safe-mode flag and record, and the record of a recreated config
+ * store. An empty file is an empty object, which is still a record.
+ */
+static void emit_record(int conn, const char *file, char *buf, unsigned long cap)
+{
+	long got = read_file(file, buf, cap);
+
+	if (got < 0) {
+		put_fd(conn, "null");
+		return;
+	}
+	put_fd(conn, "{");
+	if (got > 0)
+		put_kv_members(conn, buf);
+	put_fd(conn, "}");
+}
+
+/*
  * GET /api/hostlink without its response head: /api/init carries it too.
  */
 static void emit_hostlink_body(int conn)
@@ -970,25 +989,11 @@ static void emit_hostlink_body(int conn)
 	if (got > 0)
 		put_kv_members(conn, buf);
 	put_fd(conn, "}},\"safemode_now\":");
-	got = read_file(SAFEMODE_FLAG, buf, sizeof(buf));
-	if (got >= 0) {
-		put_fd(conn, "{");
-		if (got > 0)
-			put_kv_members(conn, buf);
-		put_fd(conn, "}");
-	} else {
-		put_fd(conn, "null");
-	}
+	emit_record(conn, SAFEMODE_FLAG, buf, sizeof(buf));
 	put_fd(conn, ",\"safemode\":");
-	got = read_file(HOSTLINK_SAFEMODE, buf, sizeof(buf));
-	if (got >= 0) {
-		put_fd(conn, "{");
-		if (got > 0)
-			put_kv_members(conn, buf);
-		put_fd(conn, "}");
-	} else {
-		put_fd(conn, "null");
-	}
+	emit_record(conn, HOSTLINK_SAFEMODE, buf, sizeof(buf));
+	put_fd(conn, ",\"reseed\":");
+	emit_record(conn, RESEED_RECORD, buf, sizeof(buf));
 	put_fd(conn, ",\"link\":\"");
 	got = read_file(HOSTLINK_LINK, buf, sizeof(buf));
 	if (got > 0 && (buf[0] == '0' || buf[0] == '1'))
@@ -1870,11 +1875,12 @@ void serve(int conn)
 
 	/*
 	 * The host-port auto-negotiation. GET reads the state the image keeps
-	 * (confd.h, HOSTLINK_*, SAFEMODE_FLAG): no fork, so the page can poll
-	 * it through a trial. POST runs host-autoneg.sh with try, confirm or
-	 * revert, or safe-mode.sh with ack; the scripts own the trial, the
-	 * revert timer, the stored key and the safe-mode record, and the page
-	 * only relays what they said. try answers before the link changes
+	 * (confd.h, HOSTLINK_*, SAFEMODE_FLAG, RESEED_RECORD): no fork, so the
+	 * page can poll it through a trial. POST runs host-autoneg.sh with try,
+	 * confirm or revert, safe-mode.sh with ack, or config-reseed.sh with
+	 * ack (reseed-ack); the scripts own the trial, the revert timer, the
+	 * stored key and the two records, and the page only relays what they
+	 * said. try answers before the link changes
 	 * (the script applies the mode a second later), so this answer always
 	 * leaves.
 	 *
@@ -1929,9 +1935,14 @@ void serve(int conn)
 				script = SAFEMODE_SCRIPT;
 				argv[0] = "safe-mode.sh";
 				argv[1] = action;
+			} else if (seq(action, "reseed-ack")) {
+				/* The record of a recreated config store belongs to config-reseed.sh. */
+				script = RESEED_SCRIPT;
+				argv[0] = "config-reseed.sh";
+				argv[1] = "ack";
 			} else {
 				respond(conn, "400 Bad Request", "application/json", 0);
-				put_fd(conn, "{\"ok\":false,\"error\":\"action must be try (mode on or off), confirm, revert, ack, serdes-try (mode fiber1g, 2500basex or hisgmii), serdes-confirm, serdes-revert or serdes-status\"}");
+				put_fd(conn, "{\"ok\":false,\"error\":\"action must be try (mode on or off), confirm, revert, ack, reseed-ack, serdes-try (mode fiber1g, 2500basex or hisgmii), serdes-confirm, serdes-revert or serdes-status\"}");
 				return;
 			}
 			if (!file_exists(script)) {

@@ -129,6 +129,17 @@
  */
 #define SAFEMODE_FLAG     "/var/run/safe-mode"
 #define SAFEMODE_SCRIPT   "/etc/scripts/safe-mode.sh"
+/*
+ * A config store the odi-oss image recreated at boot (config-reseed.sh): when
+ * the config partition was erased, rcS installs a missing lastgood.xml or
+ * lastgood_hs.xml from the defaults in the image, with the serial number and
+ * the PLOAM password empty, so the PON stays down until they are set. The
+ * record (key=value lines: files, build, uptime) stays on the config
+ * partition until acknowledged with the script; the page reads it as it reads
+ * the safe-mode record, with no fork.
+ */
+#define RESEED_RECORD     "/etc/config/config-reseeded"
+#define RESEED_SCRIPT     "/etc/scripts/config-reseed.sh"
 
 /*
  * The management addresses (odi-oss mgmt-addr.sh; LAN_ROUTES, the static
