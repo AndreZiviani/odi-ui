@@ -380,11 +380,19 @@ function chipBar(chip) {
  * idle count went backwards (a reboot), the driver read the idle register
  * full meanwhile, the frame count moved more than the time between the
  * polls allows (the line re-locked), or the result is outside 0 to 100 %.
+ *
+ * The page asks /api/ponload every second besides the status poll, and the
+ * driver samples once a second too, so two reads can land on the same
+ * sample: no frames between them. That read keeps the earlier one as the
+ * start and gives the last figure again. For the same reason a window can
+ * hold one sample more than the clock between the reads, which the re-lock
+ * bound allows for.
  */
 const PON_FRAME = 38880;        /* bytes in 125 us at 2.488 Gbit/s */
 const PON_FEC_PARITY = 153 * 16;
 const GEM_IDLE = 5;
 let PREV_PON = null;
+let LAST_PON = null;
 function ponLoad(st) {
   const sf = Number(st && st.ds_superframe);
   const fec = st && typeof st.ds_fec === 'string' ? st.ds_fec.trim() : '';
@@ -394,19 +402,24 @@ function ponLoad(st) {
   if (!st || typeof st.ds_superframe !== 'string' || !Number.isFinite(sf) || !Number.isFinite(sat)
       || idle === null) {
     PREV_PON = null;
+    LAST_PON = null;
     return null;
   }
   const now = Date.now();
   const prev = PREV_PON;
+  /* The same driver sample as the last read: nothing new to work out. */
+  if (prev && sf === prev.sf && idle === prev.idle && fec === prev.fec && sat === prev.sat) return LAST_PON;
   PREV_PON = { at: now, sf, idle, fec, sat };
+  LAST_PON = null;
   if (!prev || idle < prev.idle || fec !== prev.fec || sat !== prev.sat) return null;
   const frames = (sf - prev.sf + 0x40000000) % 0x40000000;
-  if (frames <= 0 || frames > (now - prev.at) * 8 * 1.1 + 16) return null;
+  if (frames <= 0 || frames > (now - prev.at + 1000) * 8 * 1.1 + 16) return null;
   const payload = PON_FRAME - (fec === '1' ? PON_FEC_PARITY : 0);
   const used = payload - Number(idle - prev.idle) * GEM_IDLE / frames;
   const pct = 100 * used / payload;
   if (pct < 0 || pct > 100) return null;
-  return { pct, mbps: used * 8 * 8000 / 1e6, of: payload * 8 * 8000 / 1e6 };
+  LAST_PON = { pct, mbps: used * 8 * 8000 / 1e6, of: payload * 8 * 8000 / 1e6 };
+  return LAST_PON;
 }
 
 const ponPct = (v) => (v < 10 ? v.toFixed(1) : v.toFixed(0));
@@ -589,4 +602,4 @@ function renderLinkCheck(r) {
   p.textContent = r.finding.text;
 }
 
-export { renderStatus, renderLinkCheck, sections, upFor, lineFacts, ponLoad, pathLoss, eqd, OPTICS, STATES, tight };
+export { renderStatus, renderLinkCheck, renderPon, sections, upFor, lineFacts, ponLoad, pathLoss, eqd, OPTICS, STATES, tight };

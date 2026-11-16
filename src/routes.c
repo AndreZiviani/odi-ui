@@ -2400,6 +2400,13 @@ void serve(int conn)
 		return;
 	}
 
+	/* The PON load figure alone, between status polls; see status.c. */
+	if (seq(path, "/api/ponload")) {
+		respond(conn, "200 OK", "application/json", 0);
+		emit_ponload_json(conn);
+		return;
+	}
+
 	/* The diagnostics bundle, redacted by the image script; see status.c. */
 	if (seq(path, "/api/diag")) {
 		emit_diag_bundle(conn);
