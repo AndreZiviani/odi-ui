@@ -202,7 +202,7 @@ The safe bars link to *Details* (System > Access) and offer *Acknowledge*
 (`safe-mode.sh ack`); the fallback bar links to the Host port settings and has
 no button: it goes by itself at the next boot that brings the forced link up. The
 recreated-store bar names the recreated files, says the serial number is empty when
-`lastgood_hs.xml` (which holds it) is among them, links to Config > Line and to System >
+`lastgood_hs.xml` (which holds it) is among them, has buttons to Config > Line and to System >
 Backup & reset, and offers *Acknowledge* (`reseed-ack`, which runs `config-reseed.sh ack`);
 an image without the script never writes the record, so never shows the bar. The safe-mode record's `cleared=` is a
 comma-separated list (`HOST_AUTONEG`, `HOST_SERDES`, both, `none` or `failed`) and the bar

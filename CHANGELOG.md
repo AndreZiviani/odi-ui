@@ -10,8 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   boot (an erased config partition, odi-oss `config-reseed.sh`): "Settings
   recreated. The config store was missing at boot and was rebuilt from the
   image defaults (lastgood_hs.xml). The serial number is empty, so the stick
-  stays off the fibre (PON) until you set it or restore a backup." It links
-  to Config > Line and to System > Backup & reset, and Acknowledge removes
+  stays off the fibre (PON) until you set it or restore a backup." It has
+  buttons to Config > Line and to System > Backup & reset, and Acknowledge removes
   it. `/api/hostlink` (and `/api/init`) add `reseed`, the record
   `/etc/config/config-reseeded` read with no fork (`files`, `build`,
   `uptime`, or null); POST `action=reseed-ack` runs `config-reseed.sh ack`,

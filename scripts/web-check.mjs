@@ -1273,9 +1273,9 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
      && doc.querySelector('#reseed-text').children[0].tagName === 'strong'
      && textOf(doc.querySelector('#reseed-text').children[0]) === 'Settings recreated.',
      'recreated store: one line with a bold head');
-  ok(/href="#config\/line"[^>]*>Line settings<\/a>\s*<a href="#system\/backup"/.test(html)
+  ok(/<a class="button" href="#config\/line">Line settings<\/a>\s*<a class="button" href="#system\/backup">/.test(html)
      && /data-sub="line"/.test(html) && /data-sub="backup"/.test(html),
-     'recreated store: the bar links to the Line settings and to Backup & reset, which exist');
+     'recreated store: the bar has buttons to the Line settings and to Backup & reset, which exist');
   wireHostlink();
   const posted = [];
   const keepFetchR = globalThis.fetch;
