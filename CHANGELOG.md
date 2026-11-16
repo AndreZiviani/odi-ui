@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the help for "802.1X EAPOL without the service tag" says it has
+  run on one line that uses EAP, and that the VLAN forward operation
+  override stays empty beside it: the key needs no override and does not
+  set one. Refs AndreZiviani/odi-oss#301.
 - Firmware: the write log under a running flash shows the erase progress as
   one line that updates, instead of thousands of updates run into one line
   wider than the box. `flash_eraseall` redraws its progress with a carriage
