@@ -466,6 +466,25 @@ ok(true, 'renderStatus runs against a diag capture');
     ok(ponLoad({ ds_superframe: '5', ds_gem_idle: 'x' }) === null && ponLoad(s(80005, half)) === null,
        'pon load: a member that is not a number starts over');
     ponLoad(null);
+    /* The one-second refresh: reads a second apart against a driver that
+       samples once a second. */
+    const q = 8000 * 36432 / 5 / 2;   /* idle frames of one second at 50 % */
+    ok(ponLoad(s(500000, 1000)) === null, 'pon load (1 s): the first read gives no figure');
+    t += 1000;
+    ok(Math.abs(ponLoad(s(508000, 1000 + q)).pct - 50) < 1e-9, 'pon load (1 s): one sample later, a figure');
+    t += 1000;
+    ok(Math.abs(ponLoad(s(508000, 1000 + q)).pct - 50) < 1e-9,
+       'pon load (1 s): the same driver sample again keeps the last figure');
+    t += 1000;
+    ok(Math.abs(ponLoad(s(524000, 1000 + 3 * q)).pct - 50) < 1e-9,
+       'pon load (1 s): two samples in a window measured from the read before still count');
+    t += 1000;
+    ok(Math.abs(ponLoad(s(540000, 1000 + 5 * q)).pct - 50) < 1e-9,
+       'pon load (1 s): two driver samples between reads a second apart are not a re-lock');
+    t += 1000;
+    ok(ponLoad(s(540000 + 40000, 1000 + 10 * q)) === null,
+       'pon load (1 s): five samples in a second (a re-lock) give no figure');
+    ponLoad(null);
   }
   Date.now = realNow;
 }

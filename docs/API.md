@@ -227,6 +227,14 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           there when a sample ever read the idle register
                                           full), each absent when its line is. A driver
                                           without ctr_ds_superframe sends none of them
+    GET  /api/ponload                    {"ok":true} with the shared PON members of
+                                          /api/status (`ds_superframe`, `ds_gem_idle`,
+                                          `ds_fec`, `ds_gem_idle_sat`, same rules) and
+                                          `onu_state` (/proc/odi_gpon/status "state ",
+                                          e.g. "5 (O5)"). File reads only, no diag, so the
+                                          page asks every second while Status is shown;
+                                          the driver samples once a second. Only
+                                          {"ok":true} without the driver's counters.
     GET  /api/ntp                        {"now": the stick's clock, epoch seconds,
                                           "ntp": null, or {"event","time","offset",
                                           "stratum","last_sync"} from /tmp/ntp-status

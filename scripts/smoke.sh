@@ -1543,6 +1543,13 @@ check "and the uptime rides along, in whole seconds" 1 \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status" | grep -cE '"uptime":"[0-9]+"')"
 check "it needs the credential" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/l2")"
+# The PON load alone, for the page's one-second refresh: file reads, no diag.
+# Here there is no /proc/odi_gpon, as on a stock slot, so it answers ok and
+# nothing else, which tells the page to stop asking.
+check "ponload without the driver answers ok and no counters" '{"ok":true}' \
+	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/ponload")"
+check "ponload needs the credential" 401 \
+	"$(code "http://127.0.0.1:$PORT/api/ponload")"
 
 echo "== resetting the service config"
 # flash default cs, not flash_eraseall: the hs store holds GPON_SN, MAC_KEY and

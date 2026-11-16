@@ -191,6 +191,26 @@ static void emit_pon_load(int fd)
 		emit_member(fd, "ds_gem_idle_sat", v, n);
 }
 
+/*
+ * GET /api/ponload: the PON load members of /api/status and nothing else,
+ * for the page to refresh that one figure between status polls. Two file
+ * reads and no fork, so it is cheap enough to ask for every second; the
+ * driver takes a new sample once a second, so asking more often gains
+ * nothing. `onu_state` is the driver's "state" line ("5 (O5)"), so the page
+ * can stop showing a figure as soon as the line leaves O5 rather than at the
+ * next status poll. Without the counters it answers {"ok":true} alone and
+ * the page stops asking.
+ */
+void emit_ponload_json(int fd)
+{
+	char buf[2048];
+
+	put_fd(fd, "{\"ok\":true");
+	emit_line(fd, "onu_state", GPON_STATUS, "state ", buf, sizeof(buf));
+	emit_pon_load(fd);
+	put_fd(fd, "}");
+}
+
 /* How long the stick has been up, the whole seconds of /proc/uptime. */
 static void emit_uptime(int fd, char *buf, unsigned long cap)
 {

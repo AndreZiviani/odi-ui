@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the shared PON figure refreshes every second while the Status
+  view is on screen, instead of with the 15 s status poll. It comes from a
+  new route, `/api/ponload`, which reads the driver's counters and state
+  files and starts no `diag`, so the rest of the page (optics, rates, link
+  check) stays at 15 s. Two reads that land on the same driver sample keep
+  the last figure, and a window may hold one sample more than the clock
+  between the reads. A one-second figure follows bursts more closely than
+  the 15 s average did. `make check` and `make smoke` cover it.
 - Config: LOID, LOID password, their two in-force copies and the PLOAM
   password can be emptied again, on the page and through `/api/config`.
   Empty is their default, and the odi-oss `flash` stores it; the stock

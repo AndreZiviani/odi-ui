@@ -13,6 +13,7 @@
 extern const char *hwmon_root;
 
 void emit_status_json(int fd);
+void emit_ponload_json(int fd);
 void emit_l2_json(int fd);
 void emit_log_json(int fd);
 void emit_diag_bundle(int fd);
