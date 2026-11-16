@@ -192,14 +192,99 @@ static void emit_pon_load(int fd)
 }
 
 /*
+ * The fibre port octet counters, straight from the switch driver: ioctl
+ * MIB_GET on /dev/odi_sw, the call our own diag makes, so no fork. Port 2 is
+ * the PON port, counter is the diag index 0 (ifInOctets) or 5 (ifOutOctets).
+ * The request is _IOWR('S', 4, struct odi_sw_mib): MIPS builds the direction
+ * bits as read 2 and write 4, which for read plus write gives the same number
+ * as the generic header, 0xC0105304 (odi-oss odi_reg.h has the same value).
+ * The struct is 16 bytes with the 64-bit value at offset 8; the kernel reads
+ * the counter consistently. A plain open and MIB_GET take no lease.
+ */
+#define ODI_SW_IOC_MIB_GET 0xC0105304UL
+#define ODI_PON_PORT       2
+#define ODI_MIB_IN_OCTETS  0
+#define ODI_MIB_OUT_OCTETS 5
+
+struct odi_sw_mib {
+	unsigned int port;
+	unsigned int counter;
+	unsigned long long value;
+};
+
+/* The 64-bit value as decimal text, without a 64-bit division (the build
+ * has no libgcc helper for it): four 16-bit limbs, divided by ten per digit. */
+static unsigned long u64_dec(char *out, unsigned long long v)
+{
+	unsigned long limb[4], i, n = 0, k;
+	char tmp[21];
+
+	for (i = 0; i < 4; i++)
+		limb[i] = (unsigned long)((v >> (16 * (3 - i))) & 0xffff);
+	do {
+		unsigned long rem = 0;
+
+		for (i = 0; i < 4; i++) {
+			unsigned long cur = (rem << 16) | limb[i];
+
+			limb[i] = cur / 10;
+			rem = cur % 10;
+		}
+		tmp[n++] = (char)('0' + rem);
+	} while ((limb[0] | limb[1] | limb[2] | limb[3]) && n < sizeof(tmp));
+	for (k = 0; k < n; k++)
+		out[k] = tmp[n - 1 - k];
+	out[n] = 0;
+	return n;
+}
+
+/* One counter, or 0 when the ioctl failed. */
+static int sw_mib_get(long dev, unsigned int counter, unsigned long long *v)
+{
+	struct odi_sw_mib m;
+
+	m.port = ODI_PON_PORT;
+	m.counter = counter;
+	m.value = 0;
+	if (syscall3(__NR_ioctl, dev, (long)ODI_SW_IOC_MIB_GET, (long)&m) != 0)
+		return 0;
+	*v = m.value;
+	return 1;
+}
+
+/* pon_in_octets and pon_out_octets, both or neither: a stock slot has no
+ * /dev/odi_sw, and a failed read leaves the page on the 15 s figure. */
+static void emit_pon_octets(int fd)
+{
+	unsigned long long in = 0, out = 0;
+	char num[21];
+	long dev;
+	int good;
+
+	dev = syscall3(__NR_open, (long)ODI_SW_DEV, O_RDONLY, 0);
+	if (dev < 0)
+		return;
+	good = sw_mib_get(dev, ODI_MIB_IN_OCTETS, &in)
+	       && sw_mib_get(dev, ODI_MIB_OUT_OCTETS, &out);
+	syscall3(__NR_close, dev, 0, 0);
+	if (!good)
+		return;
+	emit_member(fd, "pon_in_octets", num, u64_dec(num, in));
+	emit_member(fd, "pon_out_octets", num, u64_dec(num, out));
+}
+
+/*
  * GET /api/ponload: the PON load members of /api/status and nothing else,
  * for the page to refresh that one figure between status polls. Two file
  * reads and no fork, so it is cheap enough to ask for every second; the
  * driver takes a new sample once a second, so asking more often gains
  * nothing. `onu_state` is the driver's "state" line ("5 (O5)"), so the page
  * can stop showing a figure as soon as the line leaves O5 rather than at the
- * next status poll. Without the counters it answers {"ok":true} alone and
- * the page stops asking.
+ * next status poll. `pon_in_octets` and `pon_out_octets` are the PON port
+ * byte counters from the switch driver (two ioctls, no fork), for the rates
+ * on the fibre line. The two groups are independent: a stick with one and
+ * not the other answers with the one it has, and with neither it answers
+ * {"ok":true} alone.
  */
 void emit_ponload_json(int fd)
 {
@@ -208,6 +293,7 @@ void emit_ponload_json(int fd)
 	put_fd(fd, "{\"ok\":true");
 	emit_line(fd, "onu_state", GPON_STATUS, "state ", buf, sizeof(buf));
 	emit_pon_load(fd);
+	emit_pon_octets(fd);
 	put_fd(fd, "}");
 }
 

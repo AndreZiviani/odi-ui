@@ -35,6 +35,7 @@
 #define __NR_rename 4038
 #define __NR_fsync  4118
 #define __NR_close 4006
+#define __NR_ioctl 4054
 
 #define __NR_fork       4002
 #define __NR_waitpid    4007

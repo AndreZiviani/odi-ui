@@ -486,6 +486,39 @@ ok(true, 'renderStatus runs against a diag capture');
        'pon load (1 s): five samples in a second (a re-lock) give no figure');
     ponLoad(null);
   }
+  /* The one-second fibre rates from /api/ponload's octet counters. */
+  {
+    const { liveFibreRates } = await import(join(root, 'web', 'overview.js'));
+    const o = (a, b) => ({ pon_in_octets: String(a), pon_out_octets: String(b) });
+    liveFibreRates({});
+    t += 20000;
+    ok(liveFibreRates(o(1000000, 500000)) === null, 'live rates: the first read gives no figure');
+    t += 1000;
+    let r = liveFibreRates(o(1500000, 530000));
+    ok(r && r.down === 500000 && r.up === 30000, 'live rates: a second later, bytes per second down and up');
+    ok(textOf(doc.querySelector('#overview .ov-glass')) === '\u2193 500.0 kB/s\u2191 30.0 kB/s',
+       'live rates: the fibre line is drawn from it');
+    t += 2000;
+    r = liveFibreRates(o(2500000, 590000));
+    ok(r && r.down === 500000 && r.up === 30000, 'live rates: a two second gap is divided by its length');
+    t += 1000;
+    ok(liveFibreRates(o(100, 590000)) === null, 'live rates: a counter that went backwards gives no figure');
+    t += 1000;
+    r = liveFibreRates(o(1100, 591000));
+    ok(r && r.down === 1000 && r.up === 1000, 'live rates: and the next read measures from the backwards one');
+    t += 30000;
+    ok(liveFibreRates(o(5000, 595000)) === null, 'live rates: a gap of 30 s (tab in the background) gives no figure');
+    t += 1000;
+    ok(liveFibreRates({ ok: true }) === null, 'live rates: members absent give no figure');
+    t += 1000;
+    ok(liveFibreRates(o(6000, 596000)) === null, 'live rates: and the read after absent members starts over');
+    t += 1000;
+    liveFibreRates(o('18446744073709550615', 0));
+    t += 1000;
+    r = liveFibreRates(o('18446744073709551615', 0));
+    ok(r && r.down === 1000, 'live rates: a counter above 2^53 is read whole');
+    liveFibreRates({});
+  }
   Date.now = realNow;
 }
 

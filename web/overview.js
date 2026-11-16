@@ -64,6 +64,70 @@ function fibreRates(counterText) {
   return { down: rate('ifInOctets'), up: rate('ifOutOctets') };
 }
 
+/*
+ * The one-second rates. /api/ponload (every second while Status is shown)
+ * carries the PON port byte counters as decimal strings; two reads give a
+ * rate over a second instead of the 15 s average. Its own state, apart from
+ * PREV_PORTS, so the two cadences never read each other. No figure on the
+ * first read, when a counter went backwards (a reboot), when the members are
+ * absent (a stock slot, an older image) and when the gap since the last read
+ * is outside half a second to five seconds (the tab was in the background).
+ */
+let PREV_LIVE = null;
+let LIVE = null;
+const LIVE_FRESH_MS = 3000;
+function liveRates(p) {
+  let a = null, b = null;
+  try {
+    if (p && typeof p.pon_in_octets === 'string' && typeof p.pon_out_octets === 'string') {
+      a = BigInt(p.pon_in_octets.trim());
+      b = BigInt(p.pon_out_octets.trim());
+    }
+  } catch (e) { a = b = null; }
+  if (a === null || b === null) { PREV_LIVE = null; LIVE = null; return null; }
+  const now = Date.now();
+  const prev = PREV_LIVE;
+  PREV_LIVE = { at: now, a, b };
+  LIVE = null;
+  if (!prev) return null;
+  const dt = (now - prev.at) / 1000;
+  if (dt < 0.5 || dt > 5 || a < prev.a || b < prev.b) return null;
+  LIVE = { at: now, r: { down: Number(a - prev.a) / dt, up: Number(b - prev.b) / dt } };
+  return LIVE.r;
+}
+
+/* Which figure the fibre line shows. A one-second figure younger than three
+   seconds wins over the 15 s average of the status poll, so the number does
+   not jump back to an average between two ticks; with none (no members, a
+   failed read, or the tick stopped) the 15 s figure stands, as it always did. */
+const pickRates = (r15) => (LIVE && Date.now() - LIVE.at < LIVE_FRESH_MS ? LIVE.r : r15);
+
+/* The two rates on the fibre line, and the Switch part: every second from
+   the tick, so the figures are set where they stand rather than redrawn. */
+function paintRates(r) {
+  const rateText = (v) => (v === null || v === undefined ? 'measuring' : bytes(v) + '/s');
+  const line = $('#overview .ov-glass');
+  if (line) {
+    line.textContent = '';
+    if (r && r.down !== null && r.up !== null) {
+      line.append(el('span', 'ov-rate down', '\u2193 ' + bytes(r.down) + '/s'),
+        el('span', 'ov-rate up', '\u2191 ' + bytes(r.up) + '/s'));
+    }
+  }
+  const vals = document.querySelectorAll('#overview .ov-switch .ov-val');
+  if (vals.length >= 2 && r) {
+    vals[0].textContent = '\u2193 ' + rateText(r.down);
+    vals[1].textContent = '\u2191 ' + rateText(r.up);
+  }
+}
+
+/* The tick: what /api/ponload said, drawn now. A first read draws nothing. */
+function liveFibreRates(p) {
+  const r = liveRates(p);
+  if (r) paintRates(r);
+  return r;
+}
+
 /* One part: a button, so the keyboard reaches it, with a name, up to two
    figure lines and a status dot. `go` is where a click takes you. */
 function part(cls, name, lines, verdict, go) {
@@ -141,7 +205,7 @@ function renderOverview(f) {
     [onuId ? 'ONU-ID ' + onuId[1] : 'ONU-ID —', 'ov-sub'],
   ], !f.state ? 'none' : f.state === 'O5' ? 'ok' : 'bad', scrollTo('#ladder'));
 
-  const r = fibreRates(f.st.raw_counters);
+  const r = pickRates(fibreRates(f.st.raw_counters));
   const rateText = (v) => (v === null || v === undefined ? 'measuring' : bytes(v) + '/s');
   const sw = part('ov-switch', 'Switch', [
     ['↓ ' + rateText(r && r.down)],
@@ -182,4 +246,4 @@ function renderOverview(f) {
   host.append(fibre, fibreLine, stick, pins, router);
 }
 
-export { renderOverview, cpuBusy };
+export { renderOverview, cpuBusy, liveFibreRates };
