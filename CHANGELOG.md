@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the 15 s average. The tick no longer stops for good when one answer lacks the
   PON counters: either figure is used when present, and after three misses it
   asks once a minute. `make check` and `make smoke` cover it.
+
+## v1.17.0 (2026-11-16)
+
 - Status: the shared PON figure refreshes every second while the Status
   view is on screen, instead of with the 15 s status poll. It comes from a
   new route, `/api/ponload`, which reads the driver's counters and state
