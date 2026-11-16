@@ -101,8 +101,12 @@ get)
 	"$0" all cs | sed -n "s/.*Name=\"$2\" Value=\"\([^\"]*\)\".*/$2=\1/p" | head -n 1
 	;;
 set)
-	# /etc/config/setfail names a key whose write fails with no read-back.
-	[ "$(cat /etc/config/setfail 2>/dev/null)" = "$2" ] && exit 1
+	# /etc/config/setfail names a key whose write fails, as the real flash
+	# fails a key its store does not have.
+	if [ "$(cat /etc/config/setfail 2>/dev/null)" = "$2" ]; then
+		echo "flash: no such key: $2" >&2
+		exit 1
+	fi
 	echo "$2=$3"
 	;;
 default)
@@ -675,13 +679,13 @@ check "a bad octet is refused" yes \
 	"$(err "$(post 'LAN_IP_ADDR=1.2.3.999')" 'not valid for its type')"
 check "a good address is written" yes \
 	"$(err "$(post 'LAN_IP_ADDR=192.168.1.1')" '"ok":true,"value":"192.168.1.1"')"
-# A write that flash fails says so, and does not quote the value the key
-# before it in the same batch read back.
+# A write that flash fails answers with what flash said, and does not quote
+# the value the key before it in the same batch read back.
 echo VLAN_MANU_TAG_PRI > /etc/config/setfail
 batch=$(post 'VLAN_CFG_TYPE=1&VLAN_MANU_TAG_PRI=3')
 rm -f /etc/config/setfail
-check "a write flash fails reports no read-back" yes \
-	"$(err "$batch" '"name":"VLAN_MANU_TAG_PRI","ok":false,"error":"flash set gave no read-back"}')"
+check "a write flash fails passes on flash's own reason" yes \
+	"$(err "$batch" '"name":"VLAN_MANU_TAG_PRI","ok":false,"error":"flash: no such key: VLAN_MANU_TAG_PRI"}')"
 check "and quotes nothing from the key before it" yes \
 	"$(case "$batch" in *"holds '1'"*) echo "no: $batch" ;; *) echo yes ;; esac)"
 
