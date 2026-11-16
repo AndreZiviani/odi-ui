@@ -23,9 +23,9 @@ OMCI_FAKE_OK	Acknowledge unsupported OMCI	Answers OK to OMCI operations the stac
 OMCI_OLT_MODE	OLT vendor profile	Read by boa, configd, led, mib and xmlconfig — and NOT by omci_app or checkomci. It does not affect provisioning, which was confirmed from the binaries rather than assumed.			
 OMCI_VEIP_SLOT_ID	VEIP slot	The slot the virtual Ethernet interface point is created in, 2 to 254 (not 128); empty keeps slot 6, the stock default. The VEIP, its UNI-G, the TR-069 server, the cardholder and the circuit pack then have the entity ids of that slot (slot 14: 0x0e01 and 0x010e), so the ids the OLT addresses must match. As on the stock firmware it works only while bit 0x100 of OMCI_CUSTOM_ME is set, and the stock default of that key does not have it; OMCI_CUSTOM_ME is read-only on the Stock keys tab, so set it over ssh with flash set. Without that bit the VEIP stays in slot 6. The stock key, read as a single byte (the MSB of the entity id). Applying re-registers the ONU.			2-254
 PON_MODE	PON type	Handed to the europa driver at boot by insert_europa.sh, and read by runsdk.sh to choose which stack starts. This key is not only yours: with PON detection on, pondetect rewrites it and reboots after about 24 seconds of light without PON sync, so a value that changed on its own came from there.	1=1 — GPON|2=2 — EPON		
-PON_VENDOR_ID	Vendor prefix	The first four characters of the serial number, and must match it.			
-MAC_KEY	MAC key	32 hex characters.			
-GPON_PLOAM_FORMAT	PLOAM format	1 is the shipped value.			
+PON_VENDOR_ID	Vendor prefix	The first four characters of the serial number, and must match it. Read by the stock firmware only: this image takes the prefix from the serial number.			
+MAC_KEY	MAC key	32 hex characters. Read by the stock firmware only: this image ignores it, and changing the UNI MAC address does not need a new one. Keep the original in backups for the stock slot.			
+GPON_PLOAM_FORMAT	PLOAM format	1 is the shipped value. Read by the stock firmware only: this image ignores it.			
 SUSER_NAME	Admin username	The device login for SSH and telnet. Not this UI's password, which lives in /etc/config/confd.auth.			
 SUSER_PASSWORD	Admin password	The device login for SSH and telnet.			
 SW_PORT_TBL[0].PVID	Port 0 default VLAN	The VLAN untagged frames are placed in on the host-side switch port. Upstream issue #475 reports setting this to 0 as the fix for an ONU that registers but forwards nothing; the shipped values are confirmed to forward correctly on their own, so this is recorded as untried rather than recommended.			
