@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the help for `MAC_KEY`, `PON_VENDOR_ID` and `GPON_PLOAM_FORMAT`
+  says the stock firmware alone reads them, and that a new UNI MAC address
+  needs no new `MAC_KEY`. Refs AndreZiviani/odi-oss#455.
 - Config: the help for "802.1X EAPOL without the service tag" says it has
   run on one line that uses EAP, and that the VLAN forward operation
   override stays empty beside it: the key needs no override and does not
