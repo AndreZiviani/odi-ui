@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   run on one line that uses EAP, and that the VLAN forward operation
   override stays empty beside it: the key needs no override and does not
   set one. Refs AndreZiviani/odi-oss#301.
+- Firmware: the write log under a running flash shows the erase progress as
+  one line that updates, instead of thousands of updates run into one line
+  wider than the box. `flash_eraseall` redraws its progress with a carriage
+  return, which no browser breaks a line on; the page now keeps only the last
+  redraw of each line. `make check` covers it.
 - Status: the down and up rates on the fibre line refresh every second, with
   the PON figure, instead of every 15 s. `/api/ponload` adds
   `pon_in_octets` and `pon_out_octets`, the PON port byte counters read from
