@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.17.0 (2026-11-16)
+
 - Status: the shared PON figure refreshes every second while the Status
   view is on screen, instead of with the 15 s status poll. It comes from a
   new route, `/api/ponload`, which reads the driver's counters and state
