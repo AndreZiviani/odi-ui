@@ -351,6 +351,17 @@ ok(true, 'renderStatus runs against a diag capture');
   renderStatus('', { celsius: 52.4 }, { uptime: '14105' });
   ok(textOf(doc.querySelector('#stick')) === 'Uptime3 h 55 minChip temperature (SoC)52.4 \u00b0C',
      'uptime: first in the Stick block, the chip temperature under it');
+  const lineup = () => doc.querySelector('#lineup');
+  const o5 = 'RTK.0> gpon get onu-state\n  Operation State(O5)\n';
+  renderStatus(o5, null, { in_state_s: '11520' });
+  ok(textOf(lineup()) === 'Line up3 h 12 min' && lineup().hidden === false,
+     'line up: in O5, the time since the line last came up');
+  renderStatus('RTK.0> gpon get onu-state\n  Operation State(O2)\n', null, { in_state_s: '75' });
+  ok(textOf(lineup()) === 'In O21 min', 'line up: outside O5, named by the state it times');
+  renderStatus(o5, null, { uptime: '14105' });
+  ok(lineup().hidden === true && textOf(lineup()) === '', 'line up: no member, no row');
+  renderStatus('', null, { in_state_s: '600' });
+  ok(lineup().hidden === true, 'line up: no state from diag, no row');
 }
 
 /* --- the stick diagram on top of the Status tab (overview.js) ------------ */
