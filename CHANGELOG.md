@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.18.0 (2026-11-17)
+
 - Firmware: a write flashes the image this page uploaded and nothing else.
   The write names the md5 the upload answered, and confd refuses it when
   the file has changed since (a second tab, a change by hand, a restart).
