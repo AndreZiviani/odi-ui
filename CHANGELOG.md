@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: a PLOAM password shorter than 10 characters, stored with zero
+  bytes after it the way the setup wizard writes it, reads as its text
+  under the field ("Reads as “DEFAULT”, padded with zero bytes") instead
+  of "Not printable ASCII".
+
 - confd: a save reads meta.tsv and consumers.tsv into the buffer static
   files are served from, instead of two arrays of their own, and reads
   consumers.tsv only when the image has no settings.tsv. The daemon has

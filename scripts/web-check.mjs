@@ -2194,6 +2194,32 @@ EDITS.clear();
       return f;
     };
     const vidRow = () => rowsOf('#set-vlan').find((r) => r.dataset.name === 'VLAN_MANU_TAG_VID');
+    {
+      /* A PLOAM password shorter than 10 octets is zero-padded, the way the wizard stores it. */
+      const ploamAside = () => {
+        let t = null;
+        walk(doc.querySelector('#set-line'), (x) => {
+          if (x.dataset && x.dataset.name === 'GPON_PLOAM_PASSWD') {
+            walk(x, (y) => { if (y.className === 's-aside') t = textOf(y); });
+          }
+        });
+        return t;
+      };
+      const was = S.VALUES.GPON_PLOAM_PASSWD;
+      S.VALUES.GPON_PLOAM_PASSWD = '44454641554c54000000';
+      renderAll();
+      ok(ploamAside() === 'Reads as “DEFAULT”, padded with zero bytes', 'PLOAM aside: zero padding is read past');
+      S.VALUES.GPON_PLOAM_PASSWD = '31323334353637383930';
+      renderAll();
+      ok(ploamAside() === 'Reads as “1234567890”', 'PLOAM aside: a full 10 characters read as they are');
+      S.VALUES.GPON_PLOAM_PASSWD = '00000000000000000000';
+      renderAll();
+      ok(ploamAside() === 'Not printable ASCII', 'PLOAM aside: all zero bytes are not text');
+      S.VALUES.GPON_PLOAM_PASSWD = '01000000000000000000';
+      renderAll();
+      ok(ploamAside() === 'Not printable ASCII', 'PLOAM aside: a control byte before the padding is not text');
+      S.VALUES.GPON_PLOAM_PASSWD = was;
+    }
     renderAll();
     {
       /* The serial number field takes a modem ID and shows the stored form. */
