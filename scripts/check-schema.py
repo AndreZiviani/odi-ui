@@ -190,17 +190,21 @@ if len(sett_names) != len(set(sett_names)):
 # read_file() stops, without an error, one byte short of it. A table that
 # outgrows its buffer loses its last rows on the device only: their options,
 # ranges and help vanish, and the checks above, which read the file, still
-# pass. Each file must fit every buffer it is read into (src/routes.c).
+# pass. Each file must fit every buffer it is read into (src/routes.c). The
+# write path's two tables share filebuf at the sizes buffers.h gives them.
 READS_INTO = {
     "keys.tsv": ["schema"],
-    "meta.tsv": ["meta", "schema"],
-    "consumers.tsv": ["cons", "schema"],
+    "meta.tsv": ["META_CAP", "schema"],
+    "consumers.tsv": ["CONS_CAP", "schema"],
     "settings.tsv": ["sett"],
     "features.tsv": ["schema"],
 }
 bufsrc = os.path.join(HERE, "src", "buffers.c")
 sizes = {m.group(1): int(m.group(2))
          for m in re.finditer(r"^char (\w+)\[(\d+)\];", open(bufsrc).read(), re.M)}
+sizes.update({m.group(1): int(m.group(2))
+              for m in re.finditer(r"^#define (\w+_CAP)\s+(\d+)\s*$",
+                                   open(os.path.join(HERE, "src", "buffers.h")).read(), re.M)})
 for fname, bufs in READS_INTO.items():
     path = os.path.join(HERE, "schema", fname)
     if not os.path.exists(path):
@@ -208,7 +212,7 @@ for fname, bufs in READS_INTO.items():
     size = os.path.getsize(path)
     for b in bufs:
         if b not in sizes:
-            note(fname, f"buffer {b!r} is not in src/buffers.c")
+            note(fname, f"buffer {b!r} is not in src/buffers.c or src/buffers.h")
         elif size >= sizes[b]:
             note(fname, f"{size} bytes does not fit {b}[{sizes[b]}]: confd would drop its tail")
 

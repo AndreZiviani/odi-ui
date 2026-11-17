@@ -3,7 +3,7 @@
  *
  * Static, not stack: this is a single-threaded serial server and these would
  * otherwise be tens of kilobytes of stack in one frame. Keeping them together
- * is what makes the RAM budget legible -- roughly 300 KB of BSS, on a device
+ * is what makes the RAM budget legible -- roughly 260 KB of BSS, on a device
  * with about 1.5 MB free -- rather than something you have to add up across
  * six files.
  *
@@ -25,8 +25,6 @@
  */
 extern char req[16384];
 extern char schema[40960];
-extern char meta[32768];
-extern char cons[16384];
 extern char sett[16384];
 /*
  * values holds `flash all cs` and `flash all hs` together. 24576 was enough for
@@ -50,5 +48,16 @@ extern char authbuf[256];
 extern char hdrbuf[512];
 extern char credbuf[256];
 extern char filebuf[65536];
+/*
+ * The write path's two optional tables live in filebuf. Its other users are
+ * the static-file route, the firmware upload and page, and the diag bundle,
+ * and none of them runs while handle_write() does, so the tables need no RAM
+ * of their own. Their own arrays were 48 KB of BSS. meta.tsv is about 29 KB and
+ * consumers.tsv about 15 KB; each keeps its old size limit.
+ */
+#define META_BUF  filebuf
+#define META_CAP  32768
+#define CONS_BUF  (filebuf + META_CAP)
+#define CONS_CAP  16384
 
 #endif /* CONFD_BUFFERS_H */

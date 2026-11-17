@@ -271,19 +271,23 @@ static void handle_write(int conn, const char *body)
 	/* meta.tsv carries the ranges and option lists; consumers.tsv carries
 	 * the apply class derived from which binaries read the key. Both are
 	 * optional -- a device without them validates by type alone and reports
-	 * every write as untraced, which is the honest degraded answer. */
-	if (read_file(META_PATH_OVR, meta, sizeof(meta)) <= 0 &&
-	    read_file(META_PATH, meta, sizeof(meta)) <= 0)
-		meta[0] = 0;
-	if (read_file(CONS_PATH_OVR, cons, sizeof(cons)) <= 0 &&
-	    read_file(CONS_PATH, cons, sizeof(cons)) <= 0)
-		cons[0] = 0;
+	 * every write as untraced, which is the honest degraded answer. Both
+	 * live in filebuf (buffers.h). */
+	if (read_file(META_PATH_OVR, META_BUF, META_CAP) <= 0 &&
+	    read_file(META_PATH, META_BUF, META_CAP) <= 0)
+		META_BUF[0] = 0;
 	/* settings.tsv, when the image has one, is the authority on what a
 	 * write costs HERE: consumers.tsv was derived from the stock firmware,
-	 * whose readers this image does not run. */
+	 * whose readers this image does not run. So consumers.tsv is only read
+	 * without it. */
 	if (read_file(SETT_PATH_OVR, sett, sizeof(sett)) <= 0 &&
 	    read_file(SETT_PATH, sett, sizeof(sett)) <= 0)
 		sett[0] = 0;
+	CONS_BUF[0] = 0;
+	if (!sett[0] &&
+	    read_file(CONS_PATH_OVR, CONS_BUF, CONS_CAP) <= 0 &&
+	    read_file(CONS_PATH, CONS_BUF, CONS_CAP) <= 0)
+		CONS_BUF[0] = 0;
 
 	/* Identity keys need saying so explicitly. Losing GPON_SN or MAC_KEY
 	 * means the OLT stops authenticating the ONU, which is not something to
@@ -465,7 +469,7 @@ static void handle_write(int conn, const char *body)
 					else if (seq(derived, "reboot"))
 						any_reboot = 1;
 				} else {
-					if (tsv_field(cons, name, 1, derived, sizeof(derived)) &&
+					if (tsv_field(CONS_BUF, name, 1, derived, sizeof(derived)) &&
 					    derived[0] && !seq(derived, "unknown"))
 						a = derived;
 

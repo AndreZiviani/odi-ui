@@ -690,7 +690,7 @@ int meta_ok(const char *name, const char *v, const char **why)
 
 	*why = 0;
 
-	if (tsv_field(meta, name, 3, field, sizeof(field)) && field[0]) {
+	if (tsv_field(META_BUF, name, 3, field, sizeof(field)) && field[0]) {
 		unsigned long i = 0;
 		int found = 0;
 
@@ -718,7 +718,7 @@ int meta_ok(const char *name, const char *v, const char **why)
 		}
 	}
 
-	if (tsv_field(meta, name, 5, field, sizeof(field)) && field[0]) {
+	if (tsv_field(META_BUF, name, 5, field, sizeof(field)) && field[0]) {
 		unsigned long i = 0, lo = 0, hi = 0, n = 0;
 
 		while (field[i] >= '0' && field[i] <= '9')

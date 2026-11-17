@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- confd: a save reads meta.tsv and consumers.tsv into the buffer static
+  files are served from, instead of two arrays of their own, and reads
+  consumers.tsv only when the image has no settings.tsv. The daemon has
+  48 KB less BSS.
+
 - Status: under Registration a "Line up" row says how long the line has
   been in O5, apart from the uptime of the stick, so a pulled fibre or any
   other drop starts it over. Outside O5 the row gives the time in the
