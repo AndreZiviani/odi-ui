@@ -946,6 +946,9 @@ check "and no actions are listed" yes \
 	"$(err "$(post 'LAN_IP_ADDR=192.168.1.1')" '"needs":[]')"
 check "and /api/settings answers an empty list" '[]' \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/settings")"
+# consumers.tsv is only read without settings.tsv, and then it still decides.
+check "and consumers.tsv says what a write costs" yes \
+	"$(err "$(post 'PON_DETECT_ENABLE=1')" '"apply":"reboot","untraced":false')"
 mv /tmp/settings.tsv.kept /etc/confd/settings.tsv
 check "an identity key needs confirmation" yes \
 	"$(err "$(post 'GPON_SN=ODI012345678')" '_confirm=identity')"
