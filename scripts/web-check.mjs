@@ -1780,7 +1780,8 @@ const common = '#common';
 ok(rowsOf(common).length === SETT.length,
    `Config shows exactly the ${SETT.length} keys this image reads`);
 const classTags = tagsOf(common).filter((t) => Object.values(state.CLASS_LABEL).includes(t));
-ok(classTags.length === SETT.length, 'and every one of them carries its apply class');
+ok(classTags.length === SETT.filter((r) => !r.pair).length,
+   'and every one of them carries its apply class, but a key written with its pair');
 ok(tagsOf(common).includes('Interrupts internet') && tagsOf(common).includes('Live')
    && tagsOf(common).includes('Reboot'), 'the classes are the ones SETTINGS.md names');
 const pairs = SETT.filter((r) => r.pair).length;

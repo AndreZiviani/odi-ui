@@ -44,8 +44,8 @@ const CLASS_RANK = { live: 1, restart: 2, internet: 3, reboot: 4 };
 /* What each one means, in the words the legend and the tooltips use. */
 const CLASS_MEANS = {
   live: 'takes effect at once',
-  restart: 'a daemon restarts, the fibre service stays up',
-  internet: 'the fibre service drops while the ONU ranges again',
+  restart: 'a daemon restarts, internet stays up',
+  internet: 'internet drops while the ONU ranges again',
   reboot: 'read only at boot',
 };
 /* The ones that ask before they act. */
