@@ -313,6 +313,27 @@ function ladder(state) {
     : (STATES[state] || state) + ': not yet operational.';
 }
 /*
+ * How long the line has been in its state, from /api/status in_state_s
+ * (odi-oss: whole seconds since the last ONU state change, on the monotonic
+ * clock). In O5 that is the time since the line last came up, apart from
+ * the stick uptime: a pulled fibre restarts it. Outside O5 it is the time in
+ * that one state, not since the line went down, so it is named by state.
+ * Hidden without the member (an older image or the stock firmware).
+ */
+function lineUp(state, sec) {
+  const host = $('#lineup');
+  host.textContent = '';
+  const t = state ? upFor(sec) : null;
+  host.hidden = t === null;
+  if (t === null) return;
+  const dt = el('dt', null, state === 'O5' ? 'Line up' : 'In ' + state);
+  dt.title = state === 'O5'
+    ? 'Since the ONU last reached O5. Any drop, a pulled fibre included, starts it over; a reboot of the stick does too.'
+    : 'Time in this state alone, not since the line went down.';
+  host.append(dt, el('dd', 'num', t));
+}
+
+/*
  * The SoC temperature, from /api/status chip_temp (the kernel hwmon sensor,
  * read by confd; absent on an image without it). Only the alarms the kernel
  * raised decide anything: this page holds no limit of its own, and the limits
@@ -484,6 +505,7 @@ function renderStatus(raw, chip, st) {
 
   const state = num(s['gpon get onu-state'], /Operation State\((O\d)\)/);
   ladder(state);
+  lineUp(state, st && st.in_state_s);
 
   const alarms = (s['gpon get alarm-status'] || '').split('\n').filter((l) => /Alarm /.test(l));
   const asserted = alarms.filter((l) => !/clear/i.test(l));
