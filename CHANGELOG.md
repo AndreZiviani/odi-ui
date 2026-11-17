@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: the tags beside a setting (Identity, Default, Changed) and its
+  cost bars are small labels again rather than field-height boxes, so they
+  no longer read as buttons. The Identity tag is neutral instead of
+  warning yellow, a Default tag says on hover that the value is the image
+  default, and the legend opens with "If changed:", since the bars give
+  what saving costs and not whether the OLT took the value. The legend
+  says "internet" where it said "the fibre service", so it stays on one
+  line down to a 1366px wide window. A key written with its pair, such as
+  "LOID (in force)", shows no cost bars, since it has no save of its own.
+
 - Config: the help for `MAC_KEY`, `PON_VENDOR_ID` and `GPON_PLOAM_FORMAT`
   says the stock firmware alone reads them, and that a new UNI MAC address
   needs no new `MAC_KEY`. Refs AndreZiviani/odi-oss#455.

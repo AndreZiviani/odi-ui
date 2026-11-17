@@ -401,11 +401,12 @@ button.apply .cost { padding: 1px 6px; }
   border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap;
 }
 .tag.live { color: var(--green-ink); border-color: color-mix(in srgb, var(--green) 60%, transparent); }
-.tag.warn, .tag.identity { color: var(--yellow-ink); border-color: color-mix(in srgb, var(--yellow) 55%, transparent); }
+.tag.warn { color: var(--yellow-ink); border-color: color-mix(in srgb, var(--yellow) 55%, transparent); }
 .tag.changed { color: var(--blue-ink); border-color: color-mix(in srgb, var(--blue) 60%, transparent); }
 
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-3); margin: 0 0 18px; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-lead { color: var(--ink-2); }
 
 /* -------------------------------------------------------------- subtabs */
 .subtabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--line); }
@@ -489,18 +490,6 @@ most a row carries (cost, Identity, Not reported: 205px at desktop height), a fo
 With no room left (a phone) they wrap under the table. */
 .fme-tableline { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; max-width: 100%; }
 .fme-tableline > .s-tags { margin-top: 23.5px; }
-/* Beside the field, on a desktop, the tags are as tall as it is the height of a select, so never taller than either.
-The `cost` icon becomes a square. A phone keeps them small, under the field. */
-@media (min-width: 721px) and (hover: hover) {
-  .s-fieldline > .s-tags .tag,
-  .s-fieldline > .s-tags .cost.icon-only,
-  .fme-tableline > .s-tags .tag,
-  .fme-tableline > .s-tags .cost.icon-only {
-    box-sizing: border-box; height: 34px; display: inline-flex; align-items: center;
-  }
-  .s-fieldline > .s-tags .tag, .fme-tableline > .s-tags .tag { padding: 0 10px; }
-  .s-fieldline > .s-tags .cost.icon-only, .fme-tableline > .s-tags .cost.icon-only { padding: 0 10px; }
-}
 .settings.compact .setting { padding: 8px 0; gap: 2px 32px; }
 .settings.compact .s-help { font-size: 13px; margin-top: 2px; }
 .settings.compact .s-ro { padding: 0; }
