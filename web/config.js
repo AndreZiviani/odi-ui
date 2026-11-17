@@ -327,7 +327,12 @@ function renderValue(row, raw, readonly = false) {
      beside the field it is stored in. */
   if (row.type === 'hexascii' || row.type === 'hex20') {
     const txt = hexAscii(raw);
-    box.append(el('div', 's-aside', txt === null ? 'Not printable ASCII' : 'Reads as “' + txt + '”'));
+    /* A PLOAM password shorter than 10 octets is padded with zero bytes, as in
+       44454641554c54000000: read the text before the padding. */
+    const unpadded = txt === null && raw ? String(raw).replace(/(00)+$/, '') : '';
+    const padTxt = unpadded && unpadded.length < String(raw).length ? hexAscii(unpadded) : null;
+    box.append(el('div', 's-aside', txt !== null ? 'Reads as “' + txt + '”'
+      : padTxt !== null ? 'Reads as “' + padTxt + '”, padded with zero bytes' : 'Not printable ASCII'));
   }
 
   /* The clock line is filled in from /api/ntp once the row is on the page. */

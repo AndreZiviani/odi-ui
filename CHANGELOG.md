@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: a PLOAM password shorter than 10 characters, stored with zero
+  bytes after it the way the setup wizard writes it, reads as its text
+  under the field ("Reads as “DEFAULT”, padded with zero bytes") instead
+  of "Not printable ASCII".
+
 ## v1.18.0 (2026-11-17)
 
 - Firmware: a write flashes the image this page uploaded and nothing else.
