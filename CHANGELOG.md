@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Logs: the diagnostics bundle text says that the serial number, the MACs
+  and the LOID are masked, as the image script has done all along, rather
+  than that they are kept. A "What to write with it" section lists the five
+  facts the bundle cannot tell, ready to copy into a report.
+- Status: when the link check finds a failing stage, a line under the
+  finding links the diagnostics bundle and the Logs page.
+
 ## v1.17.1 (2026-11-17)
 
 - Config: the tags beside a setting (Identity, Default, Changed) and its

@@ -128,6 +128,9 @@
           <div id="linkcheck" hidden>
             <ol class="stages" id="lc-stages" aria-label="Link check"></ol>
             <p class="state-note" id="lc-finding"></p>
+            <p class="help" id="lc-help" hidden>Asking for help with this?
+               <a href="/api/diag" download>Download the diagnostics bundle</a> and attach it;
+               <a href="#system/logs">System &rsaquo; Logs</a> says what to write with it.</p>
           </div>
           <dl class="env" id="ranging" hidden></dl>
           <p class="callout bad" id="losnote" hidden></p>
@@ -667,9 +670,19 @@
       <section class="block">
         <h2>Diagnostics bundle</h2>
         <p class="help">Logs, the previous boot&rsquo;s kernel log, slot state and the config with every
-           password redacted, as one <code>.tar.gz</code> to attach to a bug report. The serial number
-           and MAC are kept. Takes a few seconds.</p>
+           password redacted, as one <code>.tar.gz</code> to attach to a bug report. The serial number,
+           the MACs and the LOID are masked to their last four characters, so the bundle can go in a
+           public issue. <code>SUMMARY.txt</code> inside is one screen of the main facts. Takes a few seconds.</p>
         <p><a class="button" href="/api/diag" download>Download diagnostics</a></p>
+        <details class="more">
+          <summary>What to write with it</summary>
+          <p>The bundle cannot tell these. Copy the lines into the report and fill them in:</p>
+          <pre>ISP and line type (GPON, the OLT vendor if known):
+Router behind the stick, and how it connects (VLAN, PPPoE or DHCP):
+What was changed, and when:
+What was seen (no sync, drops, slow), and since when:
+Does the stock firmware work on the same line:</pre>
+        </details>
       </section>
 
       <section class="block">
