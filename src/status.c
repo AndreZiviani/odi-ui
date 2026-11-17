@@ -320,6 +320,9 @@ static void emit_overview(int fd)
 	emit_line(fd, "onu_id", GPON_STATUS, "onu_id ", buf, sizeof(buf));
 	emit_line(fd, "alloc_ids", GPON_STATUS, "alloc_ids ", buf, sizeof(buf));
 	emit_line(fd, "o7_hold", GPON_STATUS, "o7_hold ", buf, sizeof(buf));
+	/* Whole seconds in the current ONU state, on the monotonic clock: in
+	 * O5, how long the line has been up, which a pulled fibre restarts. */
+	emit_line(fd, "in_state_s", GPON_STATUS, "in_state_s ", buf, sizeof(buf));
 	/* How often the ONU entered ranging (O3 to O4) since boot: the link
 	 * check tells an OLT that never answers the serial from one that ranges
 	 * the ONU and drops it, which a poll every 15 s would mostly miss. */

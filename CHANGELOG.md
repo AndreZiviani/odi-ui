@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   facts the bundle cannot tell, ready to copy into a report.
 - Status: when the link check finds a failing stage, a line under the
   finding links the diagnostics bundle and the Logs page.
+- Status: under Registration a "Line up" row says how long the line has
+  been in O5, apart from the uptime of the stick, so a pulled fibre or any
+  other drop starts it over. Outside O5 the row gives the time in the
+  current state. It reads `in_state_s` from /proc/odi_gpon/status, one line
+  of a file `/api/status` already reads, so it costs no fork; on an image
+  without the line the row stays hidden.
 
 ## v1.17.1 (2026-11-17)
 

@@ -214,6 +214,10 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `ranging` (/proc/odi_gpon/status "ranging_time ",
                                           odi-oss: "eqd_bits N protection_path N ..." from
                                           the last Ranging_Time, or "none"),
+                                          `in_state_s` (/proc/odi_gpon/status "in_state_s ",
+                                          odi-oss: whole seconds in the current ONU state on
+                                          the monotonic clock; in O5, how long the line has
+                                          been up),
                                           `host_link` (odi_switch host_link, "0" or "1") and
                                           `host_mode` (/var/run/host-serdes "running=").
                                           `uptime`: the whole seconds of /proc/uptime
