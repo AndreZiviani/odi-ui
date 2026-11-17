@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.17.1 (2026-11-17)
+
 - Config: the tags beside a setting (Identity, Default, Changed) and its
   cost bars are small labels again rather than field-height boxes, so they
   no longer read as buttons. The Identity tag is neutral instead of
