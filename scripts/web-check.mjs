@@ -1250,9 +1250,13 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   renderTrial();
   ok(/breadcrumbs\.on is present: temporary debug logging/.test(textOf(dev)) && !dev.children[0].classList.contains('warn'),
      'breadcrumbs.on is a quiet note, not a warning');
+  /* Half committed: fwu.sh refuses every write until both copies agree, and
+     nv commit is what makes them agree, so the banner offers it here too. */
   st.S.FW = { env: { sw_active: '0', sw_commit: '0' }, fallback: { sw_commit: '1' }, dev_confirm_arp: '10.0.0.1' };
   renderTrial();
-  ok(dev.children.length === 0, 'without a Commit action the banner carries no development note');
+  ok(doc.querySelector('#trial-commit').hidden === false,
+     'a half commit offers Commit too, so both copies can be made to agree');
+  ok(/confirm-arp is set/.test(textOf(dev)), 'with the development note beside it');
   st.S.FW = keepFW;
 }
 
@@ -1642,6 +1646,17 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(!/Try partition/.test(t), 'mid-trial, neither slot offers Try: one is running, the other is what the next boot is anyway');
   ok(/Commit to partition 1/.test(t) && !/Keep/.test(t), 'the running, uncommitted slot offers Commit to partition 1');
   ok(/Committed/.test(t) && !/Kept/.test(t), 'and the committed slot is badged Committed');
+  /* An armed trial that has not booted can be taken back, and its slot is
+     not offered for a write (the daemon refuses one until it is cancelled). */
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '1' }, fallback: {},
+                     slots: { 1: { kernel: 'Linux-6.18.63', built: 1794000000 } }, exe: '/bin/confd' });
+  ok(/Trial pending/.test(t) && /Cancel the trial/.test(t) && !/Try partition 1/.test(t),
+     'a pending trial offers Cancel instead of Try');
+  ok(/Cancel it to write here/.test(t) && !/Write the uploaded image here/.test(t),
+     'and its partition is not offered for a write');
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '1' }, fallback: {},
+                     slots: {}, exe: '/bin/confd' });
+  ok(/Cancel the trial/.test(t), 'a pending trial of a slot whose kernel cannot be read can still be cancelled');
   t = await fwText({ ...trialFW, exe: '/etc/config/confd/confd' });
   ok(/override in \/etc\/config is in use/.test(t), 'a confd run from /etc/config is an override');
   t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd',
@@ -1679,9 +1694,11 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   };
   globalThis.confirm = () => true;
   let atPost = null;
+  let postBody = '';
   globalThis.fetch = async (path, opts) => {
     if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
     atPost = { disabled: btn0.disabled, title: btn0.title };
+    postBody = String(opts.body || '');
     return { ok: true, status: 200, json: async () => ({ ok: true }) };
   };
   await fwm.writeImage('0', idleFW);
@@ -1692,6 +1709,8 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(rebootBtn() !== btn0 && !rebootBtn().disabled, 'reboot: and the render after the write turns it on');
   ok(atPost && atPost.disabled === true && /being written/.test(atPost.title),
      'reboot: the button is already off while the write request is pending');
+  ok(/(^|&)action=write(&|$)/.test(postBody) && /(^|&)md5=/.test(postBody),
+     'write: the request names the md5 of the upload it means');
   /* A request that fails or is refused gives the button back. */
   for (const post of [async () => ({ ok: true, json: async () => ({ ok: false, error: 'refused' }) }),
                       async () => { throw new Error('network'); }]) {

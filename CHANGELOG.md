@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: a write flashes the image this page uploaded and nothing else.
+  The write names the md5 the upload answered, and confd refuses it when
+  the file has changed since (a second tab, a change by hand, a restart).
+  The upload now has a name of its own, `/tmp/img.upload.tar`, so an image
+  copied to `/tmp/img.tar` over ssh never changes it. A second Write and a
+  Try wait until a running write has finished, a partition with a pending
+  trial is not written, an unreadable or failed `sw_active` or
+  `sw_tryactive` read refuses the write, and a pending trial can be cancelled from its card.
+  With the fallback U-Boot copy naming another slot the trial banner offers
+  Commit, which makes both copies agree; before, the page had no way out and
+  every write was refused. confd gives `fwu_starter.sh` 20 s instead of 5 s
+  of silence: killing it while it waited for its job reported a failure for
+  a write that then ran. `nv setenv` gets 12 s instead of 2 s, so a slow
+  environment write is not cut off in its erase.
 - Logs: the diagnostics bundle text says that the serial number, the MACs
   and the LOID are masked, as the image script has done all along, rather
   than that they are kept. A "What to write with it" section lists the five
