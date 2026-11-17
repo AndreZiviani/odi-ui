@@ -678,6 +678,15 @@ static const char *sshkey_refusal(const char *key, const char *existing)
  * Write failed with "is it an image tarball?" a click later. This proves the
  * format, not the contents: fwu.sh checks those before it erases anything.
  */
+/*
+ * The md5 of the image the last upload left in UPLOAD_PATH, as /api/upload
+ * answered it, or "" when there is none this daemon vouches for: cleared when
+ * an upload starts, set only when one completes. A write names the md5 it
+ * means, so a tab cannot flash what another tab, or an scp, put in the file
+ * after it uploaded. One file, one md5: a second upload replaces both.
+ */
+static char upload_md5[33];
+
 static int upload_is_tar(void)
 {
 	char head[520];
@@ -1195,6 +1204,8 @@ void serve(int conn)
 		 * with O_EXCL (which does not follow a link) makes the name this
 		 * daemon's own or the open fails.
 		 */
+		upload_md5[0] = 0;
+		syscall3(__NR_unlink, (long)SSH_IMG_PATH, 0, 0);
 		syscall3(__NR_unlink, (long)UPLOAD_PATH, 0, 0);
 		fd = syscall3(__NR_open, (long)UPLOAD_PATH,
 			      O_WRONLY | O_CREAT | O_EXCL, 0600);
@@ -1271,6 +1282,16 @@ void serve(int conn)
 				while (out[i] && out[i] != ' ' && out[i] != '\n')
 					i++;
 				put_json_str(conn, out, i);
+				/* Only a whole md5 binds a write: a hash that
+				 * could not be taken leaves nothing to match,
+				 * and Write then asks for the upload again. */
+				if (i == 32) {
+					unsigned long k;
+
+					for (k = 0; k < 32; k++)
+						upload_md5[k] = out[k];
+					upload_md5[32] = 0;
+				}
 			}
 			put_fd(conn, "\"}");
 		}
@@ -1662,7 +1683,7 @@ void serve(int conn)
 			 * which rejects it, but an argument this daemon has not
 			 * checked is one it is trusting the next program to. */
 			if ((seq(action, "try") || seq(action, "commit") ||
-			     seq(action, "write")) &&
+			     seq(action, "write") || seq(action, "cancel")) &&
 			    !(seq(part, "0") || seq(part, "1"))) {
 				respond(conn, "400 Bad Request", "application/json", 0);
 				put_fd(conn, "{\"error\":\"partition must be 0 or 1\"}");
@@ -1670,6 +1691,16 @@ void serve(int conn)
 			}
 
 			if (seq(action, "try")) {
+				/* A write that has not reached the erase yet
+				 * (sizes and md5s come first) still leaves the
+				 * old kernel in place, and that is what a trial
+				 * armed now would boot. */
+				if (fwu_running()) {
+					respond(conn, "409 Conflict", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"a firmware write is running; "
+						     "try the partition once it has finished\"}");
+					return;
+				}
 				respond(conn, "200 OK", "application/json", 0);
 				/*
 				 * Arm a slot only if its kernel is one U-Boot
@@ -1688,6 +1719,29 @@ void serve(int conn)
 				}
 				put_fd(conn, nv_set("sw_tryactive", part)
 					? "{\"ok\":true,\"note\":\"armed\"}"
+					: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
+				return;
+			}
+			/*
+			 * Cancel a trial armed with try and not yet booted:
+			 * sw_tryactive back to 2, U-Boot's "no trial pending".
+			 * Without it an armed trial ran at the next reset of
+			 * any kind, a power cut or the watchdog included, and
+			 * the page could only say it was pending.
+			 */
+			if (seq(action, "cancel")) {
+				char pend[8];
+
+				if (!nv_get("sw_tryactive", pend, sizeof(pend)) || !seq(pend, part)) {
+					respond(conn, "409 Conflict", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"no trial of partition ");
+					put_json_cstr(conn, part);
+					put_fd(conn, " is pending; nothing was changed\"}");
+					return;
+				}
+				respond(conn, "200 OK", "application/json", 0);
+				put_fd(conn, nv_set("sw_tryactive", "2")
+					? "{\"ok\":true,\"note\":\"cancelled\"}"
 					: "{\"ok\":false,\"error\":\"nv setenv failed\"}");
 				return;
 			}
@@ -1775,6 +1829,17 @@ void serve(int conn)
 				argv[2] = UPLOAD_PATH;
 				argv[3] = 0;
 
+				/* A running job reopens its archive after the
+				 * erase, so a second write must not get as far
+				 * as hashing or replacing anything. The starter
+				 * would refuse too, but only after that. */
+				if (fwu_running()) {
+					respond(conn, "409 Conflict", "application/json", 0);
+					put_fd(conn, "{\"ok\":false,\"error\":\"a firmware write is running; "
+						     "wait for it to finish\"}");
+					return;
+				}
+
 				/* Refuse to write the partition that is
 				 * running. fwu.sh would too, but finding that
 				 * out after the erase has started is not the
@@ -1782,10 +1847,74 @@ void serve(int conn)
 				{
 					char act[8];
 
-					if (nv_get("sw_active", act, sizeof(act)) &&
-					    seq(act, part)) {
+					/* Unknown is not "the other one", as for
+					 * commit: without a confirmed sw_active this
+					 * route does not decide what may be erased. */
+					if (!nv_get("sw_active", act, sizeof(act)) ||
+					    !(seq(act, "0") || seq(act, "1"))) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"cannot tell which partition this stick is running (sw_active unreadable); nothing was written\"}");
+						return;
+					}
+					if (seq(act, part)) {
 						respond(conn, "400 Bad Request", "application/json", 0);
 						put_fd(conn, "{\"ok\":false,\"error\":\"that is the partition this stick is running\"}");
+						return;
+					}
+				}
+
+				/* The image this write means, by the md5 its
+				 * upload answered. Only this daemon creates
+				 * UPLOAD_PATH, so a second tab's upload is the
+				 * one way the file changes under the page, and
+				 * the md5s inside the tar cannot tell: they only
+				 * prove it is whole. The file is hashed again
+				 * here, right before the starter gets it. */
+				{
+					static char *const margv[] = { "md5sum", UPLOAD_PATH, 0 };
+					char want[40], now[128];
+					long n;
+
+					form_get(body, "md5", want, sizeof(want));
+					if (!upload_md5[0] || !seq(want, upload_md5)) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, upload_md5[0]
+							? "{\"ok\":false,\"error\":\"the uploaded image has changed since this page uploaded it; upload it again\"}"
+							: "{\"ok\":false,\"error\":\"no upload this daemon received is waiting to be written; upload the image again\"}");
+						return;
+					}
+					n = run_to_buf(MD5SUM_PATH, margv, now, sizeof(now), MD5SUM_TIMEOUT_MS);
+					if (n < 32 || (now[32] != ' ' && now[32] != '\n')) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"the uploaded image could not be hashed again; upload it again\"}");
+						return;
+					}
+					now[32] = 0;
+					if (!seq(now, upload_md5)) {
+						upload_md5[0] = 0;
+						syscall3(__NR_unlink, (long)UPLOAD_PATH, 0, 0);
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"the file on the stick is no longer the image this page uploaded; upload it again\"}");
+						return;
+					}
+				}
+
+				/* A trial armed on this partition would boot the
+				 * write at its first reset, half written if the
+				 * write is cut short. A value that cannot be read,
+				 * or is none of 0, 1 and 2, is not "no trial". */
+				{
+					char pend[8];
+
+					if (!nv_get("sw_tryactive", pend, sizeof(pend)) ||
+					    !(seq(pend, "0") || seq(pend, "1") || seq(pend, "2"))) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"cannot tell whether a trial is pending (sw_tryactive unreadable); nothing was written\"}");
+						return;
+					}
+					if (seq(pend, part)) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"a trial of this partition is pending; cancel it before writing\"}");
 						return;
 					}
 				}

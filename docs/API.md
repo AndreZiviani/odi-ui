@@ -278,7 +278,15 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           1 byte to 6 MiB, and it must start like a
                                           tar archive (`ustar` at offset 257), else
                                           400 and nothing is kept
-    POST /api/firmware   action=write&partition=N
+    POST /api/firmware   action=write&partition=N&md5=<md5 the upload answered>
+                                          409 when md5 is not that of the last upload
+                                          this confd received (another upload since,
+                                          the file changed by hand, a confd restart),
+                                          when a write is running, when sw_active or
+                                          sw_tryactive cannot be read, or when a trial of
+                                          partition N is pending. The upload lives in
+                                          /tmp/img.upload.tar; an upload removes
+                                          /tmp/img.tar, the ssh path
     GET  /api/firmware                    partitions, versions, build manifest,
                                           `defaultauth`, `switches`, write progress;
                                           `env` (the sw_* of `nv getenv`),
@@ -295,8 +303,11 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           address); `dev_breadcrumbs`, true only
                                           while `/etc/config/breadcrumbs.on` exists.
                                           Plain file reads; the UI never writes them
-    POST /api/firmware   action=try|commit|reboot&partition=N
-                                          reboot answers 409 while a write is running
+    POST /api/firmware   action=try|commit|cancel|reboot&partition=N
+                                          reboot and try answer 409 while a write is
+                                          running; cancel sets sw_tryactive to 2 and
+                                          answers 409 unless a trial of partition N is
+                                          pending
                                           a refused commit answers
                                           {"ok":false,"error":"commit N: <nv reason>"},
                                           e.g. while confirm-arp exists; there is no

@@ -531,8 +531,13 @@ static int reap_bounded(long pid, long ms, long *status)
 
 		if (r == pid)
 			return 1;
-		if (r < 0)
-			return 1;	/* already reaped, or not ours: nothing to wait for */
+		if (r < 0) {
+			/* Already reaped, or not ours: nothing to wait for, and
+			 * no status either. Say "killed" rather than leave the
+			 * caller's zero, which reads as a clean exit 0. */
+			*status = 0x7f;
+			return 1;
+		}
 		if (waited >= ms)
 			break;
 		ts[0] = 0;

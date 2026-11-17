@@ -610,6 +610,9 @@ function renderLinkCheck(r) {
      (O5 is not yet "carrying traffic" while the traffic stage still measures):
      show one of the two. */
   $('#statenote').hidden = !!r;
+  /* A failing stage is when someone asks for help: point at the bundle there. */
+  const help = $('#lc-help');
+  if (help) help.hidden = !r || r.finding.cls !== 'bad';
   if (!r) return;
   const ol = $('#lc-stages');
   ol.textContent = '';

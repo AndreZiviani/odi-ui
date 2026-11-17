@@ -11,6 +11,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   consumers.tsv only when the image has no settings.tsv. The daemon has
   48 KB less BSS.
 
+## v1.18.0 (2026-11-17)
+
+- Firmware: a write flashes the image this page uploaded and nothing else.
+  The write names the md5 the upload answered, and confd refuses it when
+  the file has changed since (a second tab, a change by hand, a restart).
+  The upload now has a name of its own, `/tmp/img.upload.tar`, so an image
+  copied to `/tmp/img.tar` over ssh never changes it. A second Write and a
+  Try wait until a running write has finished, a partition with a pending
+  trial is not written, an unreadable or failed `sw_active` or
+  `sw_tryactive` read refuses the write, and a pending trial can be cancelled from its card.
+  With the fallback U-Boot copy naming another slot the trial banner offers
+  Commit, which makes both copies agree; before, the page had no way out and
+  every write was refused. confd gives `fwu_starter.sh` 20 s instead of 5 s
+  of silence: killing it while it waited for its job reported a failure for
+  a write that then ran. `nv setenv` gets 12 s instead of 2 s, so a slow
+  environment write is not cut off in its erase.
+- Logs: the diagnostics bundle text says that the serial number, the MACs
+  and the LOID are masked, as the image script has done all along, rather
+  than that they are kept. A "What to write with it" section lists the five
+  facts the bundle cannot tell, ready to copy into a report.
+- Status: when the link check finds a failing stage, a line under the
+  finding links the diagnostics bundle and the Logs page.
 - Status: under Registration a "Line up" row says how long the line has
   been in O5, apart from the uptime of the stick, so a pulled fibre or any
   other drop starts it over. Outside O5 the row gives the time in the
