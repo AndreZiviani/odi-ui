@@ -199,12 +199,21 @@
 #define HOSTLINK_TIMEOUT_MS 20000 /* host-autoneg.sh, host-serdes.sh: up to 10 s for its lock,
 				   * then a flash set and its read-back, 5 s
 				   * each at worst; try returns at once */
-#define FWU_TIMEOUT_MS     5000   /* fwu_starter.sh backgrounds the flasher
-				   * and returns almost at once */
+#define FWU_TIMEOUT_MS    20000   /* fwu_starter.sh backgrounds the flasher and
+				   * returns in about a second, but may be silent
+				   * for longer: two nv reads of up to 5 s each,
+				   * then up to FWU_START_S (10 s) waiting for its
+				   * job to start. Killing it in that wait reported
+				   * a failure while the job went on to flash */
 #define REBOOT_TIMEOUT_MS  3000   /* backgrounds the actual reboot and returns */
 #define MD5SUM_TIMEOUT_MS  3000   /* hashing the uploaded image */
 #define MKDIR_TIMEOUT_MS   2000   /* mkdir -p SSHKEYS_DIR */
-#define NV_TIMEOUT_MS      2000   /* /bin/nv getenv/setenv (firmware.c) */
+#define NV_TIMEOUT_MS      2000   /* /bin/nv getenv/fallback (firmware.c) */
+#define NV_SET_TIMEOUT_MS 12000   /* nv setenv: its lock waits up to 10 s, then
+				   * one erase-and-write of an 8 KB environment
+				   * partition. A kill in the erase leaves that
+				   * copy invalid, so the budget is the writer's,
+				   * not a reader's */
 #define NV_COMMIT_TIMEOUT_MS 10000 /* nv commit: two erase-and-write cycles of an
 				   * 8 KB environment partition, each read back */
 #define SLOT_STATE_TIMEOUT_MS 12000 /* slot-state.sh: two nv reads, 10 s each at
@@ -276,7 +285,13 @@
  */
 #define REQUEST_DEADLINE_MS 10000
 #define UPLOAD_DEADLINE_MS  120000
-#define UPLOAD_PATH  "/tmp/img.tar"
+/* Where /api/upload puts the image: a name only this daemon creates (unlink,
+ * then O_EXCL), so a copy to the ssh path below, even one still running, never
+ * touches the bytes a write hashes and hands to the starter. */
+#define UPLOAD_PATH  "/tmp/img.upload.tar"
+/* Where the ssh instructions on the Firmware page copy an image. An upload
+ * removes it, as it always replaced it: /tmp is RAM, two images may not fit. */
+#define SSH_IMG_PATH "/tmp/img.tar"
 #define UPLOAD_MAX   (6u * 1024u * 1024u)
 
 /* The image ships these; /etc/config wins so the UI can be iterated without a

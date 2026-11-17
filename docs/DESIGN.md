@@ -696,7 +696,9 @@ would overwrite anything written by hand.
 The Firmware tab used to hand out an `scp` command, on the grounds that a 3 MB
 image could not be held in the memory this device has. That was true of holding
 it; it was never true of moving it. The body is streamed straight to
-`/tmp/img.tar` in 64 KB pieces and is never in memory whole.
+`/tmp/img.upload.tar` in 64 KB pieces and is never in memory whole. That
+name is confd's own; the ssh instructions use `/tmp/img.tar`, which an upload
+removes, so a copy over ssh never changes the bytes a Write hashes.
 
 **Raw bytes, not multipart.** `fetch(url, {body: file})` sends the file as the
 body with no boundary to find, so there is no parser here to get wrong.

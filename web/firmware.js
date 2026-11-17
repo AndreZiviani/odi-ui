@@ -135,7 +135,9 @@ async function writeImage(part, fw) {
     const r = await fetch('/api/firmware', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ action: 'write', partition: part }).toString(),
+      /* The md5 the upload answered names the image this page showed:
+         the daemon refuses the write if the file has changed since. */
+      body: new URLSearchParams({ action: 'write', partition: part, md5: (UPLOADED && UPLOADED.md5) || '' }).toString(),
     });
     const j = await r.json();
     if (j.output) out.append(el('pre', null, String(j.output).trim()));
@@ -313,7 +315,16 @@ async function renderFirmware() {
     /* Try only the slot you are NOT running: a trial of the running one
        boots what is already up. Committing the running slot is the same act
        as the trial banner Commit to this image, and goes through the same code. */
-    if (p !== committed && p !== booted && k.kind === 'unknown') {
+    if (p === pending) {
+      /* Armed and not yet booted: any reset runs it, a power cut or the
+         watchdog included, so it can be taken back. */
+      const b = el('button', null, 'Cancel the trial');
+      b.type = 'button';
+      b.onclick = () => fwAction('cancel', p,
+        `Partition ${p} will no longer boot at the next reboot; the stick keeps booting `
+        + `partition ${committed}.`);
+      acts.append(b);
+    } else if (p !== committed && p !== booted && k.kind === 'unknown') {
       /* No uImage magic in the kernel partition: erased, or cut short by an
          interrupted write. The bootloader would refuse it, and the daemon
          refuses to arm it, so the button would only fail. */
@@ -342,7 +353,9 @@ async function renderFirmware() {
        offered to write BOTH partitions, including the running one.
     */
     if (booted !== undefined && p !== booted && !writing) {
-      if (UPLOADED) {
+      if (p === pending) {
+        acts.append(el('span', 'hint', 'A trial of this partition is pending. Cancel it to write here.'));
+      } else if (UPLOADED) {
         const b = el('button', 'danger', 'Write the uploaded image here');
         b.type = 'button';
         b.onclick = () => writeImage(p, fw);
@@ -459,6 +472,8 @@ async function fwAction(action, partition, warning) {
         `does not come up the stick returns here on its own.`));
     } else if (action === 'commit') {
       out.append(el('div', 'good', `Committed: partition ${partition} is now the one it boots.`));
+    } else if (action === 'cancel') {
+      out.append(el('div', 'good', `The trial of partition ${partition} is cancelled.`));
     } else {
       followReboot();
       return;
@@ -630,8 +645,11 @@ function renderTrial() {
     : `Partition ${run} is committed in the active U-Boot copy, but the fallback copy still names `
       + `partition ${back}. If the active copy is ever lost, the stick boots that.`;
 
+  /* Offered for either copy: with the active one committed and the fallback
+     naming another slot, fwu.sh refuses every write until they agree, and
+     nv commit writes the copy that differs. */
   const commit = $('#trial-commit');
-  commit.hidden = main === run;
+  commit.hidden = main === run && (alt === undefined || alt === run);
   const dev = $('#trial-dev');
   dev.textContent = '';
   if (!commit.hidden) dev.append(...devNotes(fw));

@@ -572,7 +572,7 @@ int nv_set(const char *key, const char *value)
 	 * came up on the old image, and the natural conclusion was that the new
 	 * image had failed its trial.
 	 */
-	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code, NV_TIMEOUT_MS) < 0)
+	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code, NV_SET_TIMEOUT_MS) < 0)
 		return 0;
 	return code == 0;
 }
@@ -651,12 +651,24 @@ int slot_state_refresh(void)
  */
 int nv_get(const char *key, char *out, unsigned long cap)
 {
-	static char *const argv[] = { "nv", "getenv", 0 };
-	char buf[4096];
+	/* `nv getenv <key>`, not the whole environment: a dump longer than
+	 * buf was cut, and a value cut after its first digit read as complete.
+	 * Only a line that ends in a newline is taken, and a value that does
+	 * not fit `out` is not taken at all. */
+	char *argv[4];
+	char buf[1024];
 	unsigned long i = 0;
+	long code = -1;
 
+	argv[0] = "nv";
+	argv[1] = "getenv";
+	argv[2] = (char *)key;
+	argv[3] = 0;
 	out[0] = 0;
-	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf), NV_TIMEOUT_MS) <= 0)
+	/* And only from an nv that exited 0: a complete line from one that
+	 * then failed is not a value to decide on. */
+	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code,
+			  NV_TIMEOUT_MS) <= 0 || code != 0)
 		return 0;
 
 	while (buf[i]) {
@@ -668,7 +680,11 @@ int nv_get(const char *key, char *out, unsigned long cap)
 		while (eq < le && buf[eq] != '=')
 			eq++;
 		if (eq < le && spre(buf + ls, key) && (ls + str_len(key)) == eq) {
-			for (k = 0; eq + 1 + k < le && k + 1 < cap; k++)
+			if (buf[le] != '\n' || le - eq > cap) {
+				out[0] = 0;
+				return 0;
+			}
+			for (k = 0; eq + 1 + k < le; k++)
 				out[k] = buf[eq + 1 + k];
 			out[k] = 0;
 			return 1;

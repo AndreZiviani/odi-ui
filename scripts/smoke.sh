@@ -205,15 +205,25 @@ if [ "$1" = commit ]; then
 fi
 # The running partition: 0, or what /tmp/nv.active holds; /tmp/nv.noactive
 # leaves sw_active out of the environment altogether.
+# /tmp/nv.tryactive holds a pending trial's slot (2, none, by default).
 act=0
 [ -f /tmp/nv.active ] && act=$(cat /tmp/nv.active)
+try=2
+[ -f /tmp/nv.tryactive ] && try=$(cat /tmp/nv.tryactive)
 sw=""
 [ -f /tmp/nv.noactive ] || sw="sw_active=$act\n"
+dump() { printf "${sw}sw_commit=0\nsw_tryactive=$try\nsw_version0=a\nsw_version1=b\n"; }
 case "$1 $2" in
-"getenv sw_active") echo "sw_active=$act" ;;
-"getenv ") printf "${sw}sw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
-"getenv")  printf "${sw}sw_commit=0\nsw_tryactive=2\nsw_version0=a\nsw_version1=b\n" ;;
+"getenv ") dump ;;
+"getenv")  dump ;;
+getenv\ *) dump | grep "^$2=" ;;
 esac
+# /tmp/nv.getfail: the value is printed, then nv fails anyway; for every
+# getenv when the file holds 1, else only for the key it names.
+if [ -f /tmp/nv.getfail ]; then
+	k=$(cat /tmp/nv.getfail)
+	[ "$k" = 1 ] || [ "$k" = "$2" ] && exit 1
+fi
 exit 0
 NV
 chmod +x /bin/nv
@@ -1096,7 +1106,7 @@ UP=$(curl -s -u "$AUTH" -X POST --data-binary @/tmp/fake.tar \
 check "a 3 MB image uploads" yes "$(err "$UP" '"ok":true')"
 check "every byte arrives" yes "$(err "$UP" "\"bytes\":$FAKE_BYTES")"
 check "and the file on disk is byte-identical" "$LOCAL_MD5" \
-	"$(md5sum /tmp/img.tar 2>/dev/null | cut -d' ' -f1)"
+	"$(md5sum /tmp/img.upload.tar 2>/dev/null | cut -d' ' -f1)"
 check "the daemon reports that same md5" yes "$(err "$UP" "$LOCAL_MD5")"
 
 # The guard is on the DECLARED length, tested before the file is opened and
@@ -1114,7 +1124,7 @@ check "an upload declaring more than the limit is refused" 413 \
 	   -H 'Content-Length: 20000000' -H 'Content-Type: application/octet-stream' \
 	   --data-binary @/tmp/lie.bin "http://127.0.0.1:$PORT/api/upload")"
 check "and it wrote nothing" no \
-	"$([ -f /tmp/img.tar ] && [ "$(wc -c < /tmp/img.tar)" -lt "$FAKE_BYTES" ] && echo yes || echo no)"
+	"$([ -f /tmp/img.upload.tar ] && [ "$(wc -c < /tmp/img.upload.tar)" -lt "$FAKE_BYTES" ] && echo yes || echo no)"
 rm -f /tmp/lie.bin
 check "an empty upload is refused" 413 \
 	"$(code -u "$AUTH" -X POST -H 'Content-Type: application/octet-stream' \
@@ -1150,6 +1160,60 @@ check "writing the running partition is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'action=write&partition=0' "http://127.0.0.1:$PORT/api/firmware")" 'that is the partition this stick is running')"
 check "a bad partition is still refused" 400 \
 	"$(code -u "$AUTH" -X POST -d 'action=write&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
+
+# A write names the image it means by the md5 its upload answered. The 3 MB
+# upload above is the one waiting; a write without its md5, or with another,
+# is not what that page showed.
+wr() { curl -s -u "$AUTH" -X POST -d "$1" "http://127.0.0.1:$PORT/api/firmware"; }
+check "a write without the md5 of the upload is refused" yes \
+	"$(err "$(wr 'action=write&partition=1')" 'has changed since this page uploaded it')"
+check "so is one with another md5" yes \
+	"$(err "$(wr 'action=write&partition=1&md5=00000000000000000000000000000000')" 'has changed since this page uploaded it')"
+# Past every check, a write reaches the starter (absent here), and only then
+# does the answer carry its output.
+gate() { case "$1" in '{"ok":'*',"output":"'*) echo passed ;; *) echo "refused: $1" ;; esac; }
+check "the md5 of the upload passes that check" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+echo 1 > /tmp/nv.tryactive
+check "a partition with a pending trial is not written" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'a trial of this partition is pending')"
+echo x > /tmp/nv.tryactive
+check "an unreadable sw_tryactive is not taken for no trial" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell whether a trial is pending')"
+rm -f /tmp/nv.tryactive
+touch /tmp/nv.noactive
+check "an unreadable running partition refuses the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
+rm -f /tmp/nv.noactive
+echo 1 > /tmp/nv.getfail
+check "so does a sw_active from an nv that then fails" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
+echo sw_tryactive > /tmp/nv.getfail
+check "a sw_tryactive from an nv that then fails is not taken" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell whether a trial is pending')"
+rm -f /tmp/nv.getfail
+# The upload has a name only confd creates. An image copied over ssh goes to
+# /tmp/img.tar and does not touch it, even while that copy is still running.
+printf 'something else' > /tmp/img.tar
+check "an ssh copy does not change the image a write hashes" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+check "and the upload is still the uploaded bytes" "$LOCAL_MD5" \
+	"$(md5sum /tmp/img.upload.tar | cut -d' ' -f1)"
+# Changed in place anyway (root can), the file is hashed again and refused.
+printf 'something else' > /tmp/img.upload.tar
+check "a file changed after the upload is not written" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'no longer the image this page uploaded')"
+check "and the old md5 no longer passes" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'upload the image again')"
+# A new upload replaces the md5 the write must name.
+UP2=$(curl -s -u "$AUTH" -X POST --data-binary @/tmp/small.tar \
+	-H 'Content-Type: application/octet-stream' "http://127.0.0.1:$PORT/api/upload")
+check "after a second upload the first md5 is refused" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'has changed since this page uploaded it')"
+check "and the second one's md5 is accepted" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$(md5sum /tmp/small.tar | cut -d' ' -f1)")")"
+check "the second upload answered that md5" yes "$(err "$UP2" "$(md5sum /tmp/small.tar | cut -d' ' -f1)")"
+check "and an upload removes an ssh copy, as /tmp is RAM" no "$([ -e /tmp/img.tar ] && echo yes || echo no)"
 
 # Commit. It is `nv commit <slot>` (both environment copies, read back, refused
 # for a slot that is not running), never a plain setenv of sw_commit, and the
@@ -1216,6 +1280,21 @@ check "and nv was not asked to arm it" no "$(test -e /tmp/nv.calls && grep -q 's
 check "a bad partition is refused before anything is read" 400 \
 	"$(code -u "$AUTH" -X POST -d 'action=try&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
 rm -f /tmp/nv.calls
+
+# Cancel. Only a trial that is pending, and only by setting sw_tryactive back
+# to 2, U-Boot's "no trial".
+echo "== cancel"
+r=$(fw 'action=cancel&partition=1')
+check "cancelling with no trial pending is refused" yes "$(err "$r" 'no trial of partition 1 is pending')"
+check "and nv was not asked to write" no "$(test -e /tmp/nv.calls && grep -q setenv /tmp/nv.calls && echo yes || echo no)"
+echo 1 > /tmp/nv.tryactive
+check "a trial of the other partition is not this one" yes "$(err "$(fw 'action=cancel&partition=0')" 'no trial of partition 0 is pending')"
+r=$(fw 'action=cancel&partition=1')
+check "a pending trial is cancelled" yes "$(err "$r" '"ok":true,"note":"cancelled"')"
+check "with nv setenv sw_tryactive 2" yes "$(grep -qx 'setenv sw_tryactive 2' /tmp/nv.calls && echo yes || echo no)"
+check "a bad partition is refused" 400 \
+	"$(code -u "$AUTH" -X POST -d 'action=cancel&partition=9' "http://127.0.0.1:$PORT/api/firmware")"
+rm -f /tmp/nv.tryactive /tmp/nv.calls
 
 # A background write, as odi-oss fwu_starter.sh leaves it: the state and the
 # log are reported so the page can follow it.
@@ -1284,6 +1363,7 @@ r=$(fwget)
 check "dead pid, lock held: still reported as running" yes "$(err "$r" '"state":"running"')"
 check "a reboot is refused" 409 "$(code -u "$AUTH" -X POST -d 'action=reboot&partition=' "$U/api/firmware")"
 check "and an upload is refused" 409 "$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
+check "and so is a try, which would arm the old kernel" 409 "$(code -u "$AUTH" -X POST -d 'action=try&partition=1' "$U/api/firmware")"
 freelock
 check "the lock freed, the same state is unknown" yes "$(err "$(fwget)" '"state":"unknown"')"
 check "and the lock probe took nothing: it can be taken again" yes \
@@ -2166,7 +2246,7 @@ print(out.decode("utf-8", "replace").split("\r\n\r\n", 1)[-1])
 PY
 )
 check "bytes past the declared length are not part of the upload" yes "$(err "$over" "\"ok\":true,\"bytes\":$SMALL_BYTES")"
-check "and the file is exactly the declared length" "$SMALL_BYTES" "$(wc -c < /tmp/img.tar | tr -d ' ')"
+check "and the file is exactly the declared length" "$SMALL_BYTES" "$(wc -c < /tmp/img.upload.tar | tr -d ' ')"
 
 # A write in progress reads that file. The state file is the script's own
 # (fwu_starter.sh): running, a live pid.
@@ -2175,7 +2255,13 @@ LIVE=$!
 printf 'running %s 1\n' "$LIVE" > /tmp/fwu.state
 check "an upload is refused while a firmware write is running" 409 \
 	"$(code -u "$AUTH" -X POST --data-binary 'x' "$U/api/upload")"
-check "and the image it was reading is untouched" "$SMALL_BYTES" "$(wc -c < /tmp/img.tar | tr -d ' ')"
+check "and the image it was reading is untouched" "$SMALL_BYTES" "$(wc -c < /tmp/img.upload.tar | tr -d ' ')"
+# Nor does a second write get as far as the file the job reopens after the
+# erase: it is refused before anything is hashed, moved or removed.
+r=$(curl -s -w ' %{http_code}' -u "$AUTH" -X POST -d "action=write&partition=1&md5=$(md5sum /tmp/small.tar | cut -d' ' -f1)" "$U/api/firmware")
+check "a write is refused while a firmware write is running" 409 "${r##* }"
+check "and says why" yes "$(err "$r" 'a firmware write is running; wait for it to finish')"
+check "and the image the job reads is still there" "$SMALL_BYTES" "$(wc -c < /tmp/img.upload.tar | tr -d ' ')"
 # The same state refuses a reboot: nothing is rebooted under a running write.
 r=$(curl -s -u "$AUTH" -X POST -d 'action=reboot&partition=' "$U/api/firmware")
 check "a reboot is refused while a firmware write is running" 409 \
@@ -2189,13 +2275,13 @@ rm -f /tmp/fwu.state
 
 # The upload name is made fresh, not opened through whatever is there.
 echo keep > /tmp/target.keep
-rm -f /tmp/img.tar
-ln -s /tmp/target.keep /tmp/img.tar
+rm -f /tmp/img.upload.tar
+ln -s /tmp/target.keep /tmp/img.upload.tar
 check "an upload through a planted link still succeeds" 200 \
 	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "$U/api/upload")"
 check "but does not write through the link" keep "$(cat /tmp/target.keep)"
-check "and the image is a regular file" yes "$([ -f /tmp/img.tar ] && [ ! -L /tmp/img.tar ] && echo yes || echo no)"
-rm -f /tmp/target.keep /tmp/img.tar
+check "and the image is a regular file" yes "$([ -f /tmp/img.upload.tar ] && [ ! -L /tmp/img.upload.tar ] && echo yes || echo no)"
+rm -f /tmp/target.keep /tmp/img.upload.tar
 
 # A field that does not fit its buffer is an error, not a prefix: cut at the
 # buffer (1279 bytes, VALUE_MAX) it was validated, written and read back against itself, and reported
@@ -2324,13 +2410,13 @@ check "a value of five hundred characters in a string key says what is allowed" 
 head -c 4096 /dev/zero > /tmp/notatar.bin
 check "an upload that is not a tar archive is refused" 400 \
 	"$(code -u "$AUTH" -X POST --data-binary @/tmp/notatar.bin "http://127.0.0.1:$PORT/api/upload")"
-check "and it is not kept" no "$([ -e /tmp/img.tar ] && echo yes || echo no)"
+check "and it is not kept" no "$([ -e /tmp/img.upload.tar ] && echo yes || echo no)"
 head -c 600 /dev/urandom > /tmp/notatar.bin
 check "random bytes are not a tar archive either" 400 \
 	"$(code -u "$AUTH" -X POST --data-binary @/tmp/notatar.bin "http://127.0.0.1:$PORT/api/upload")"
 check "a tar archive is accepted" 200 \
 	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "http://127.0.0.1:$PORT/api/upload")"
-rm -f /tmp/notatar.bin /tmp/img.tar
+rm -f /tmp/notatar.bin /tmp/img.upload.tar
 
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to
