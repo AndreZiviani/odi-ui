@@ -223,16 +223,28 @@ done:
 	put_fd(fd, "}");
 }
 
-/* Whether nv's output says a copy of the environment could not be read in
- * full (odi-oss nv, src/nv/main.c): it then gives no value and exits 1. */
-static int nv_said_unread(const char *buf)
-{
-	static const char m[] = "could not be read in full";
+/* The exit status of odi-oss nv getenv and fallback when a copy of the
+ * environment could not be read in full (src/nv/main.c): no value, and no
+ * knowing what that copy says. */
+#define NV_EXIT_UNREAD 3
 
-	for (; *buf; buf++)
-		if (spre(buf, m))
-			return 1;
-	return 0;
+/*
+ * Whether an `nv fallback` answer is one to go by: odi-oss nv exiting 0 (a
+ * value, a dump, or the key not set in that copy), its exact line for no
+ * valid second copy, or the usage text of the stock nv, which has no
+ * fallback verb. The last two say there is no second copy U-Boot could
+ * fall back to by this answer. Anything else (no answer in time, an
+ * incomplete read, a crash, another error) is no knowing, not "no fallback
+ * copy".
+ */
+static int nv_fallback_known(long got, long code, const char *buf)
+{
+	if (got < 0 || code == NV_EXIT_UNREAD)
+		return 0;
+	if (code == 0)
+		return 1;
+	return seq(buf, "nv: no valid second copy of the environment\n") ||
+	       spre(buf, "Usage: nv getenv ");
 }
 
 /* The sw_* lines of an `nv getenv` / `nv fallback` dump, as JSON members. */
@@ -410,15 +422,18 @@ void emit_firmware_body(int fd)
 	put_fd(fd, "},\"fallback\":{");
 	{
 		static char *const fargv[] = { "nv", "fallback", 0 };
-		long got = run_to_buf("/bin/nv", fargv, buf, sizeof(buf), NV_TIMEOUT_MS);
+		long code = -1;
+		long got = run_to_buf_ex("/bin/nv", fargv, buf, sizeof(buf), &code,
+					 NV_TIMEOUT_MS);
 
-		if (got > 0)
+		if (got > 0 && code == 0)
 			emit_sw_pairs(fd, buf);
-		/* No knowing what that copy says (no answer in time, or a copy
-		 * odi-oss nv could not read in full): the page then offers no
-		 * write, as the write route refuses one. */
+		/* No knowing what that copy says (no answer in time, a copy
+		 * odi-oss nv could not read in full, any answer that is not
+		 * one of the known ones): the page then offers no write, as
+		 * the write route refuses one. */
 		put_fd(fd, "},\"fallback_unsure\":");
-		put_fd(fd, got < 0 || (got > 0 && nv_said_unread(buf)) ? "true" : "false");
+		put_fd(fd, nv_fallback_known(got, code, buf) ? "false" : "true");
 	}
 	put_fd(fd, ",\"slots\":{");
 	{
@@ -666,10 +681,11 @@ int slot_state_refresh(void)
  *
  * Only a line that ends in a newline is taken, and a value that does not fit
  * `out` is not taken at all: a value cut after its first digit is not one to
- * decide on.
+ * decide on. `known`, for fallback, says whether the answer is one to go by
+ * (nv_fallback_known); a cut value is not.
  */
 static int nv_read(const char *verb, const char *key, char *out, unsigned long cap,
-		   int *unsure)
+		   int *known)
 {
 	char *argv[4];
 	char buf[1024];
@@ -681,14 +697,10 @@ static int nv_read(const char *verb, const char *key, char *out, unsigned long c
 	argv[2] = (char *)key;
 	argv[3] = 0;
 	out[0] = 0;
-	if (unsure)
-		*unsure = 0;
 	got = run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code,
 			    NV_TIMEOUT_MS);
-	/* No answer at all (a timeout, no fork), or odi-oss nv saying a copy
-	 * could not be read in full: not "no value", but no knowing. */
-	if (unsure && (got < 0 || (got > 0 && nv_said_unread(buf))))
-		*unsure = 1;
+	if (known)
+		*known = nv_fallback_known(got, code, buf);
 	/* And only from an nv that exited 0: a complete line from one that
 	 * then failed is not a value to decide on. */
 	if (got <= 0 || code != 0)
@@ -705,6 +717,8 @@ static int nv_read(const char *verb, const char *key, char *out, unsigned long c
 		if (eq < le && spre(buf + ls, key) && (ls + str_len(key)) == eq) {
 			if (buf[le] != '\n' || le - eq > cap) {
 				out[0] = 0;
+				if (known)
+					*known = 0;
 				return 0;
 			}
 			for (k = 0; eq + 1 + k < le; k++)
@@ -734,14 +748,15 @@ int nv_get(const char *key, char *out, unsigned long cap)
  * The same variable in the OTHER copy of the redundant environment, the one
  * U-Boot boots by if the winning copy is ever left invalid. Only the odi-oss
  * nv has the verb; the stock one prints its usage and no key, and an odi-oss
- * nv with no valid second copy exits 1. Both answer 0 here, and there is then
- * no second copy U-Boot could fall back to by this answer. -1 when there is
- * no knowing: nv did not answer in time, or said that a copy could not be
- * read in full.
+ * nv with no valid second copy says so and exits 1. Both answer 0 here, and
+ * there is then no second copy U-Boot could fall back to by this answer. -1
+ * for any other answer, which is no knowing: nv did not answer in time, said
+ * that a copy could not be read in full (exit 3), or failed in a way it has
+ * no known words for.
  */
 int nv_fallback_get(const char *key, char *out, unsigned long cap)
 {
-	int unsure, r = nv_read("fallback", key, out, cap, &unsure);
+	int known, r = nv_read("fallback", key, out, cap, &known);
 
-	return unsure ? -1 : r;
+	return known ? r : -1;
 }

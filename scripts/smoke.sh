@@ -206,11 +206,13 @@ fi
 # `nv fallback`, the other environment copy: /tmp/nv.fbcommit holds its
 # sw_commit; without the file there is no valid second copy (exit 1, as the
 # odi-oss nv says it), and /tmp/nv.vendor is the stock nv, which has no verb.
-# /tmp/nv.fbunread is a copy the odi-oss nv could not read in full, and
+# /tmp/nv.fbunread is a copy the odi-oss nv could not read in full (exit 3),
+# /tmp/nv.fbcrash an nv that fails with words it has for nothing else, and
 # /tmp/nv.fbhang an nv that does not answer in time.
 if [ "$1" = fallback ]; then
 	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
-	[ -f /tmp/nv.fbunread ] && { echo "nv: fallback: a copy of the environment could not be read in full, so which one U-Boot uses is not known; run it again"; exit 1; }
+	[ -f /tmp/nv.fbunread ] && { echo "nv: fallback: a copy of the environment could not be read in full, so which one U-Boot uses is not known; run it again"; exit 3; }
+	[ -f /tmp/nv.fbcrash ] && { echo "nv: fallback: something else went wrong"; exit 1; }
 	[ -f /tmp/nv.fbhang ] && exec sleep 5
 	[ -f /tmp/nv.fbcommit ] || { echo "nv: no valid second copy of the environment"; exit 1; }
 	fb="sw_commit=$(cat /tmp/nv.fbcommit)"
@@ -1222,8 +1224,8 @@ check "an unreadable running partition refuses the write" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
 rm -f /tmp/nv.noactive
 # A trial runs partition 1, partition 0 is committed: that is the image a
-# failed trial goes back to, and it is not written, whatever the upload's
-# fwu.sh would say.
+# failed trial goes back to, and it is not written, whatever the fwu.sh of
+# the upload would say.
 echo 1 > /tmp/nv.active
 check "during a trial the committed partition is not written" yes \
 	"$(err "$(wr "action=write&partition=0&md5=$LOCAL_MD5")" 'that is the committed partition')"
@@ -1249,6 +1251,14 @@ check "  a fallback copy that could not be read stops the write" yes \
 check "  and the page is told so" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
 rm -f /tmp/nv.fbunread
+# Only the known answers say there is no second copy: any other failure is
+# no knowing too, not a write let through.
+touch /tmp/nv.fbcrash
+check "  so does an nv failure with words of its own" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbcrash
 touch /tmp/nv.fbhang
 check "  so does an nv that does not answer for it in time" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"

@@ -261,12 +261,14 @@ async function followLoop(part, deps = followDeps) {
 
 /*
  * Why partition p is not to be written now, or null when it may be. One rule
- * for the button on its card and the command under the upload, and the same
- * one confd applies to the write: not the running partition, not one with a
- * trial pending, and not the committed one in either environment copy, which
- * is the image a failed trial goes back to. Unknown is not "the other one":
- * a trial state other than 0, 1 or 2, or a fallback copy nv could not read,
- * refuses as well.
+ * for the button on its card and the command under the upload: not the
+ * running partition, not one with a trial pending, and not the committed one
+ * in either environment copy, which is the image a failed trial goes back to.
+ * Unknown is not "the other one": a trial state other than 0, 1 or 2, or a
+ * fallback copy nv could not read, refuses as well. confd checks the same
+ * before a write from the button. The command goes past confd to
+ * fwu_starter.sh, and neither it nor the fwu.sh of the upload looks at
+ * sw_tryactive: for the command, that check is this page alone.
  */
 function writeRefusal(fw, p) {
   const env = fw.env || {};
