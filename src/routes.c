@@ -1890,15 +1890,17 @@ void serve(int conn)
 					 * fallback verb and answers nothing here; an
 					 * nv that did not answer in time, or could
 					 * not read that copy in full, is no knowing. */
-					switch (nv_fallback_get("sw_commit", com, sizeof(com))) {
-					case -1:
-						respond(conn, "409 Conflict", "application/json", 0);
-						put_fd(conn, "{\"ok\":false,\"error\":\"the fallback copy of the U-Boot environment could not be read; nothing was written\"}");
-						return;
-					case 0:
-						break;
-					default:
-						if (seq(com, part)) {
+					{
+						/* A sw_commit there that names no
+						 * slot is no knowing either. */
+						int fb = nv_fallback_get("sw_commit", com, sizeof(com));
+
+						if (fb < 0 || (fb > 0 && !seq(com, "0") && !seq(com, "1"))) {
+							respond(conn, "409 Conflict", "application/json", 0);
+							put_fd(conn, "{\"ok\":false,\"error\":\"the fallback copy of the U-Boot environment could not be read; nothing was written\"}");
+							return;
+						}
+						if (fb > 0 && seq(com, part)) {
 							respond(conn, "409 Conflict", "application/json", 0);
 							put_fd(conn, "{\"ok\":false,\"error\":\"the fallback copy of the U-Boot environment still commits to that partition; commit the running image first\"}");
 							return;

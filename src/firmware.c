@@ -253,6 +253,36 @@ static int nv_fallback_known(long got, long code, const char *buf, unsigned long
 	       spre(buf, "Usage: nv getenv [parameter_name]\n");
 }
 
+/*
+ * Whether a full `nv fallback` dump that exited 0 is one: odi-oss nv's header
+ * line for the copy, no NUL in it, and at most one sw_commit, a whole line
+ * that names slot 0 or 1. Anything else is no knowing what that copy says,
+ * as on the write route, which asks for sw_commit alone (nv_read).
+ */
+static int nv_fallback_dump_ok(const char *buf, long got)
+{
+	unsigned long i = 0;
+	int commits = 0;
+
+	if (got < 0 || (unsigned long)got != str_len(buf))
+		return 0;
+	if (!spre(buf, "Fallback environment: 1\n") && !spre(buf, "Fallback environment: 2\n"))
+		return 0;
+	while (buf[i]) {
+		unsigned long le = i;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		if (spre(buf + i, "sw_commit=")) {
+			if (++commits > 1 || buf[le] != '\n' || le != i + 11 ||
+			    (buf[i + 10] != '0' && buf[i + 10] != '1'))
+				return 0;
+		}
+		i = (buf[le] == '\n') ? le + 1 : le;
+	}
+	return 1;
+}
+
 /* The sw_* lines of an `nv getenv` / `nv fallback` dump, as JSON members. */
 static void emit_sw_pairs(int fd, const char *buf)
 {
@@ -414,8 +444,15 @@ void emit_firmware_body(int fd)
 		}
 	}
 	put_fd(fd, " MB\",\"env\":{");
-	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0)
-		emit_sw_pairs(fd, buf);
+	{
+		/* Only from an nv that exited 0: what one that then failed
+		 * printed, exit 3 included, is not the environment. */
+		long code = -1;
+
+		if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code, NV_TIMEOUT_MS) > 0 &&
+		    code == 0)
+			emit_sw_pairs(fd, buf);
+	}
 	/*
 	 * The OTHER copy of the redundant environment: what U-Boot uses if the
 	 * winning copy is ever left invalid, which an interrupted setenv is how
@@ -431,15 +468,18 @@ void emit_firmware_body(int fd)
 		long code = -1;
 		long got = run_to_buf_ex("/bin/nv", fargv, buf, sizeof(buf), &code,
 					 NV_TIMEOUT_MS);
+		int known = nv_fallback_known(got, code, buf, sizeof(buf)) &&
+			    (code != 0 || nv_fallback_dump_ok(buf, got));
 
-		if (got > 0 && code == 0)
+		if (known && got > 0 && code == 0)
 			emit_sw_pairs(fd, buf);
 		/* No knowing what that copy says (no answer in time, a copy
 		 * odi-oss nv could not read in full, a dump that filled the
-		 * buffer, any answer that is not one of the known ones): the
-		 * page then offers no write, as the write route refuses one. */
+		 * buffer or is not one, any answer that is not one of the
+		 * known ones): the page then offers no write, as the write
+		 * route refuses one. */
 		put_fd(fd, "},\"fallback_unsure\":");
-		put_fd(fd, nv_fallback_known(got, code, buf, sizeof(buf)) ? "false" : "true");
+		put_fd(fd, known ? "false" : "true");
 	}
 	put_fd(fd, ",\"slots\":{");
 	{
@@ -710,9 +750,15 @@ static int nv_read(const char *verb, const char *key, char *out, unsigned long c
 	if (known)
 		*known = nv_fallback_known(got, code, buf, sizeof(buf));
 	/* And only from an nv that exited 0: a complete line from one that
-	 * then failed is not a value to decide on. */
+	 * then failed is not a value to decide on. For fallback the answer is
+	 * the key's line alone or nothing: a NUL, more lines, or the line
+	 * after others is no knowing. */
 	if (got <= 0 || code != 0)
 		return 0;
+	if (known && (unsigned long)got != str_len(buf)) {
+		*known = 0;
+		return 0;
+	}
 
 	while (buf[i]) {
 		unsigned long ls = i, le = i, eq, k = 0;
@@ -723,7 +769,8 @@ static int nv_read(const char *verb, const char *key, char *out, unsigned long c
 		while (eq < le && buf[eq] != '=')
 			eq++;
 		if (eq < le && spre(buf + ls, key) && (ls + str_len(key)) == eq) {
-			if (buf[le] != '\n' || le - eq > cap) {
+			if (buf[le] != '\n' || le - eq > cap ||
+			    (known && (ls != 0 || buf[le + 1]))) {
 				out[0] = 0;
 				if (known)
 					*known = 0;

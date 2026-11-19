@@ -213,6 +213,7 @@ fi
 # exit 1 makes a known answer; /tmp/nv.fbkill is an nv killed by a signal
 # after that line; /tmp/nv.fbbig a dump that fills the buffer of confd before
 # sw_commit, and /tmp/nv.fbjunk an exit 0 with words that are not the key.
+# /tmp/nv.fbraw holds the exact answer of an exit 0, keyed or not.
 if [ "$1" = fallback ]; then
 	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
 	[ -f /tmp/nv.fbunread ] && { echo "nv: fallback: a copy of the environment could not be read in full, so which one U-Boot uses is not known; run it again"; exit 3; }
@@ -220,6 +221,7 @@ if [ "$1" = fallback ]; then
 	[ -f /tmp/nv.fbline ] && { echo "nv: no valid second copy of the environment"; exit "$(cat /tmp/nv.fbline)"; }
 	[ -f /tmp/nv.fbkill ] && { echo "nv: no valid second copy of the environment"; kill -9 $$; }
 	[ -f /tmp/nv.fbhang ] && exec sleep 5
+	[ -f /tmp/nv.fbraw ] && { cat /tmp/nv.fbraw; exit 0; }
 	if [ -f /tmp/nv.fbbig ]; then
 		[ -n "${2:-}" ] && exit 0
 		echo "Fallback environment: 2"
@@ -1295,7 +1297,39 @@ rm -f /tmp/nv.fbkill
 touch /tmp/nv.fbjunk
 check "  an exit 0 with words that are not the key stops the write" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
 rm -f /tmp/nv.fbjunk
+# The key's line must name slot 0 or 1 and be all there is: an empty or
+# other value, a second line, or a NUL in the answer is no knowing either.
+for fbv in x ''; do
+	printf '%s\n' "$fbv" > /tmp/nv.fbcommit
+	check "  a fallback sw_commit of '$fbv' stops the write" yes \
+		"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+	check "  and the page is told so" yes \
+		"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+done
+echo 0 > /tmp/nv.fbcommit
+printf 'sw_commit=0\nsw_commit=0\n' > /tmp/nv.fbraw
+check "  two sw_commit lines stop the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+printf 'sw_commit=0\n\000\n' > /tmp/nv.fbraw
+check "  so does a NUL after the line" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+printf 'Fallback environment: 2\nsw_commit=0\nsw_commit=1\n\n' > /tmp/nv.fbraw
+check "  a dump with two sw_commit lines is unsure" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+printf 'sw_commit=0\n' > /tmp/nv.fbraw
+check "  so is a dump without the header line" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+# A copy that does not set sw_commit: odi-oss nv prints nothing and exits 0.
+: > /tmp/nv.fbraw
+check "  a fallback copy without sw_commit does not stop the write" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+printf 'Fallback environment: 2\nsw_active=0\n\n' > /tmp/nv.fbraw
+check "  nor flag the page" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{"sw_active":"0"},"fallback_unsure":false,"slots":')"
+rm -f /tmp/nv.fbraw
 # A dump that fills the buffer may have lost sw_commit: the page offers no
 # write on it.
 touch /tmp/nv.fbbig
@@ -1320,6 +1354,8 @@ rm -f /tmp/nv.getfail
 echo 1 > /tmp/nv.getfail
 check "so does a sw_active from an nv that then fails" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
+check "and the page shows no environment from it" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"env":{},"fallback":')"
 echo sw_tryactive > /tmp/nv.getfail
 check "a sw_tryactive from an nv that then fails is not taken" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell whether a trial is pending')"

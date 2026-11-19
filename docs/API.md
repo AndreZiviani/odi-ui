@@ -313,21 +313,28 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           back to, or when `nv fallback` gives no
                                           answer to go by: none in time, killed,
                                           exit 3 (a copy not read in full), or any
-                                          answer but its value, exit 1 with its line
-                                          for no valid second copy, or exit 1 with
-                                          the usage text of an nv without the verb.
+                                          answer but these: exit 0 with nothing
+                                          (that copy does not set sw_commit), exit 0
+                                          with `sw_commit=0` or `sw_commit=1` as the
+                                          one line, exit 1 with its line for no
+                                          valid second copy, or exit 1 with the
+                                          usage text of an nv without the verb.
                                           The upload lives in
                                           /tmp/img.upload.tar; an upload removes
                                           /tmp/img.tar, the ssh path
     GET  /api/firmware                    partitions, versions, build manifest,
                                           `defaultauth`, `switches`, write progress;
-                                          `env` (the sw_* of `nv getenv`),
+                                          `env` (the sw_* of `nv getenv`, empty
+                                          unless that nv exited 0),
                                           `fallback` (the sw_* of `nv fallback`, the
                                           other environment copy; empty on stock nv),
                                           `fallback_unsure` (true when that nv gave no
                                           answer to go by, as above, or a dump that
-                                          filled the buffer: no knowing, so no write
-                                          is offered),
+                                          filled the buffer or is not one: no
+                                          `Fallback environment: N` line first, or
+                                          a sw_commit that is not one line naming 0
+                                          or 1; no knowing, so no write is offered,
+                                          and `fallback` stays empty),
                                           `slots` ({"0":{"kernel":..., "built":<unix>}},
                                           from each kernel partition's uImage header;
                                           {} when it cannot be read);
