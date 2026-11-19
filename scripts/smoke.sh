@@ -308,6 +308,22 @@ check "cache: meta has its own tag" no \
 	"$([ "$(curl -s -i -u "$AUTH" "$U/api/meta" | tr -d '\r' | sed -n 's/^ETag: //p')" = "$tag" ] && echo yes || echo no)"
 atag=$(curl -s -i -u "$AUTH" "$U/app.js" | tr -d '\r' | sed -n 's/^ETag: //p')
 check "cache: an asset answers 304 to its tag" 304 "$(code -u "$AUTH" -H "If-None-Match: $atag" "$U/app.js")"
+# An asset that does not fit the file buffer is refused, not served cut with
+# a 200 and a tag the browser would keep: an override of 70000 bytes here.
+# The edge, filebuf[65536]: 65,534 bytes are served whole; 65,535 fill what
+# read_file reads and cannot be told from a longer file, so they are refused.
+mkdir -p /etc/config/confd
+head -c 70000 /dev/zero | tr '\0' 'a' > /etc/config/confd/style.css
+check "an asset larger than the file buffer is a 500, not a cut 200" 500 "$(code -u "$AUTH" "$U/style.css")"
+head -c 65534 /dev/zero | tr '\0' 'a' > /etc/config/confd/style.css
+check "  one of 65,534 bytes is served" 200 "$(code -u "$AUTH" "$U/style.css")"
+check "  whole" 65534 "$(curl -s -u "$AUTH" "$U/style.css" | wc -c | tr -d ' ')"
+head -c 65535 /dev/zero | tr '\0' 'a' > /etc/config/confd/style.css
+check "  one of 65,535 bytes is refused" 500 "$(code -u "$AUTH" "$U/style.css")"
+check "  and the answer says what is served" yes \
+	"$(err "$(curl -s -u "$AUTH" "$U/style.css")" 'confd serves files of at most 65,534 bytes')"
+rm -f /etc/config/confd/style.css
+check "  and the stylesheet is served again without it" 200 "$(code -u "$AUTH" "$U/style.css")"
 check "cache: values stay no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/values")" 'Cache-Control: no-store')"
 check "cache: status stays no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/status")" 'Cache-Control: no-store')"
 # The start-up bundles: /api/static is every image file the single routes

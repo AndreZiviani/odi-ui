@@ -20,6 +20,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the refusal of the committed slot was in the `fwu.sh` inside the
   upload, which an older or a vendor tarball does not have.
 
+- confd: a web asset of more than 65,534 bytes, which the 64 KB file
+  buffer cannot tell from a cut one, is answered 500 with that limit
+  instead of a cut 200 with an ETag the browser keeps.
+  `scripts/check-assets.py` fails for such a file in `web/` and prints the
+  largest one; style.css is 56,944 of at most 65,534 bytes.
+
 ## v1.18.1 (2026-11-18)
 
 - Config: a PLOAM password shorter than 10 characters, stored with zero

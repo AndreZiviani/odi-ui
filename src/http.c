@@ -1105,6 +1105,18 @@ void serve_static(int fd, const char *name, const char *ctype)
 		put_fd(fd, "not found\n");
 		return;
 	}
+	/* read_file stops one byte short of the buffer without an error, so a
+	 * file that filled it may have been cut. Served, it would be a 200 with
+	 * a valid ETag for a stylesheet that ends mid-rule or a module that does
+	 * not parse. A file of 65,535 bytes fits the buffer but cannot be told
+	 * from a cut one, so 65,534 is the most served. scripts/check-assets.py
+	 * keeps web/ to that. */
+	_Static_assert(sizeof(filebuf) == 65536, "the 500 below names the limit");
+	if ((unsigned long)got + 1 >= sizeof(filebuf)) {
+		respond(fd, "500 Internal Server Error", "text/plain", 0);
+		put_fd(fd, "asset not served: confd serves files of at most 65,534 bytes\n");
+		return;
+	}
 	if (respond_cached(fd, ctype, filebuf, (unsigned long)got))
 		return;
 	write_all(fd, filebuf, (unsigned long)got);
