@@ -17,50 +17,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   text of an nv without the verb, lets it through. confd goes by the exit
   status there, not by the text alone. A fallback dump that fills its
   buffer, and an exit 0 with words that are not the key, are no answer
-  either, nor is a `sw_commit` there that is not the one line and names
-  no slot 0 or 1, or a dump not in the shape nv prints (its `Fallback
-  environment: N` line, whole name=value lines, one empty line to end
-  it); the page then shows no fallback values. An answer with a NUL in it
-  is none either, the line for no second copy included. An exit 0 with nothing, a copy
-  that does not set `sw_commit`, lets the write through. The page shows
-  the environment of `nv getenv` only from an nv that exited 0. The card and the
-  ssh command under the upload follow one rule, so neither offers a
-  partition confd refuses, nor one while `sw_tryactive` is none of 0, 1
-  and 2. While a write runs, from the request on, the commands under the
-  upload neither copy nor write an image. `fwu_starter.sh` refused only an unreadable value;
-  the refusal of the committed slot was in the `fwu.sh` inside the
-  upload, which an older or a vendor tarball does not have.
+  either, nor is a `sw_commit` there that is not the one line and names no
+  slot 0 or 1, or a dump not in the shape nv prints (its `Fallback
+  environment: N` line, whole name=value lines, one empty line to end it);
+  the page then shows no fallback values. An answer with a NUL in it is
+  none either, the line for no second copy included. An exit 0 with
+  nothing, a copy that does not set `sw_commit`, lets the write through.
+  The page shows the environment of `nv getenv` only from an nv that
+  exited 0. The card and the ssh command under the upload follow one rule,
+  so neither offers a partition confd refuses, nor one while
+  `sw_tryactive` is none of 0, 1 and 2. While a write runs, from the
+  request on, the commands under the upload neither copy nor write an
+  image. `fwu_starter.sh` refused only an unreadable value; the refusal of
+  the committed slot was in the `fwu.sh` inside the upload, which an older
+  or a vendor tarball does not have.
 
 - confd: a web asset of more than 65,534 bytes, which the 64 KB file
   buffer cannot tell from a cut one, is answered 500 with that limit
   instead of a cut 200 with an ETag the browser keeps.
   `scripts/check-assets.py` fails for such a file in `web/`, naming it,
-  and otherwise prints the largest one; style.css is 56,944 of at most 65,534 bytes.
+  and otherwise prints the largest one; style.css is 56,944 of at most
+  65,534 bytes.
 
 - Config: a save of VLAN keys alone no longer takes along an identity
   change saved earlier and not applied. The page applied it at once with
   `apply.sh omci`, omcid reread the whole store, and a pending serial
   number re-registered the ONU while the page said it stayed in O5. The
-  page and the setup wizard now send that apply as `what=omci-live`,
-  which confd runs as `apply.sh omci-live` (odi-oss with that verb):
-  omcid applies nothing that re-registers, and with such a change waiting
-  it applies nothing (apply.sh exit 3), and the page says why and offers
-  Apply now for all pending OMCI changes. An apply.sh without the verb, an image without
-  apply.sh, or a confd older than the page (which refuses the action with
-  400) applies nothing either, and the page offers the same. `/api/apply`
-  answers 400 for a `what` or a field name that does not decode, instead
-  of running the full apply. The setup wizard stays on "Saved, not
-  applied" until that Apply now worked, offers a failed apply again, and
-  enables the button only once it is done writing; after a live apply its
-  view is headed "Line status". When the apply before left the ONU off the
-  line (a failed activation), the live apply re-registers it all the same:
-  `apply.sh omci-live` says so with exit 4 (odi-oss), confd answers
-  `reregistered: true`, and the page says the ONU re-registers instead of
-  "Applied without a re-registration". The wizard heads its live view
-  "Registering with the OLT" then too. While the page waits for the
-  answer it says "Applying OMCI changes…" instead of that the connections
-  are rebuilt in place, and the warning before a VLAN change no longer
-  says the ONU stays in O5.
+  page and the setup wizard now send that apply as `what=omci-live`, which
+  confd runs as `apply.sh omci-live` (odi-oss with that verb): omcid
+  applies nothing that re-registers, and with such a change waiting it
+  applies nothing (apply.sh exit 3), and the page says why and offers
+  Apply now for all pending OMCI changes; while a reload still runs,
+  apply.sh exits 1 and the page reports a failed apply. An apply.sh
+  without the verb, an image without apply.sh, or a confd older than the
+  page (which refuses the action with 400) applies nothing either, and the
+  page offers the same. `/api/apply` answers 400 for a `what` or a field
+  name that does not decode, instead of running the full apply. The setup
+  wizard stays on "Saved, not applied" until that Apply now worked, offers
+  a failed apply again, and enables the button only once it is done
+  writing; after a live apply its view is headed "Line status". When the
+  apply before left the ONU off the line (a failed activation), the live
+  apply re-registers it all the same: `apply.sh omci-live` says so with
+  exit 4 (odi-oss), confd answers `reregistered: true`, and the page says
+  the ONU re-registers instead of "Applied without a re-registration". The
+  wizard heads its live view "Registering with the OLT" then too. While
+  the page waits for the answer it says "Applying OMCI changes…" instead
+  of that the connections are rebuilt in place, and the warning before a
+  VLAN change no longer says the ONU stays in O5.
 
 ## v1.18.1 (2026-11-18)
 
