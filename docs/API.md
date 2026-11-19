@@ -282,9 +282,15 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           409 when md5 is not that of the last upload
                                           this confd received (another upload since,
                                           the file changed by hand, a confd restart),
-                                          when a write is running, when sw_active or
-                                          sw_tryactive cannot be read, or when a trial of
-                                          partition N is pending. The upload lives in
+                                          when a write is running, when sw_active,
+                                          sw_tryactive or sw_commit cannot be read,
+                                          when a trial of partition N is pending,
+                                          when N is committed in either environment
+                                          copy (`nv getenv`, or `nv fallback` on an nv
+                                          that has it): the image a failed trial goes
+                                          back to, or when `nv fallback` does not
+                                          answer in time or says a copy could not be
+                                          read in full. The upload lives in
                                           /tmp/img.upload.tar; an upload removes
                                           /tmp/img.tar, the ssh path
     GET  /api/firmware                    partitions, versions, build manifest,
@@ -292,6 +298,9 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `env` (the sw_* of `nv getenv`),
                                           `fallback` (the sw_* of `nv fallback`, the
                                           other environment copy; empty on stock nv),
+                                          `fallback_unsure` (true when that nv did not
+                                          answer in time or could not read a copy in
+                                          full: no knowing, so no write is offered),
                                           `slots` ({"0":{"kernel":..., "built":<unix>}},
                                           from each kernel partition's uImage header;
                                           {} when it cannot be read);

@@ -203,16 +203,33 @@ if [ "$1" = commit ]; then
 	echo "nv: commit $2: committed in both copies, read back"
 	exit 0
 fi
+# `nv fallback`, the other environment copy: /tmp/nv.fbcommit holds its
+# sw_commit; without the file there is no valid second copy (exit 1, as the
+# odi-oss nv says it), and /tmp/nv.vendor is the stock nv, which has no verb.
+# /tmp/nv.fbunread is a copy the odi-oss nv could not read in full, and
+# /tmp/nv.fbhang an nv that does not answer in time.
+if [ "$1" = fallback ]; then
+	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
+	[ -f /tmp/nv.fbunread ] && { echo "nv: fallback: a copy of the environment could not be read in full, so which one U-Boot uses is not known; run it again"; exit 1; }
+	[ -f /tmp/nv.fbhang ] && exec sleep 5
+	[ -f /tmp/nv.fbcommit ] || { echo "nv: no valid second copy of the environment"; exit 1; }
+	fb="sw_commit=$(cat /tmp/nv.fbcommit)"
+	if [ -n "${2:-}" ]; then echo "$fb" | grep "^$2="; else printf 'Fallback environment: 2\n%s\n\n' "$fb"; fi
+	exit 0
+fi
 # The running partition: 0, or what /tmp/nv.active holds; /tmp/nv.noactive
 # leaves sw_active out of the environment altogether.
 # /tmp/nv.tryactive holds a pending trial's slot (2, none, by default).
+# /tmp/nv.commit holds sw_commit (0 by default).
 act=0
 [ -f /tmp/nv.active ] && act=$(cat /tmp/nv.active)
 try=2
 [ -f /tmp/nv.tryactive ] && try=$(cat /tmp/nv.tryactive)
+com=0
+[ -f /tmp/nv.commit ] && com=$(cat /tmp/nv.commit)
 sw=""
 [ -f /tmp/nv.noactive ] || sw="sw_active=$act\n"
-dump() { printf "${sw}sw_commit=0\nsw_tryactive=$try\nsw_version0=a\nsw_version1=b\n"; }
+dump() { printf "${sw}sw_commit=$com\nsw_tryactive=$try\nsw_version0=a\nsw_version1=b\n"; }
 case "$1 $2" in
 "getenv ") dump ;;
 "getenv")  dump ;;
@@ -1188,6 +1205,49 @@ touch /tmp/nv.noactive
 check "an unreadable running partition refuses the write" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
 rm -f /tmp/nv.noactive
+# A trial runs partition 1, partition 0 is committed: that is the image a
+# failed trial goes back to, and it is not written, whatever the upload's
+# fwu.sh would say.
+echo 1 > /tmp/nv.active
+check "during a trial the committed partition is not written" yes \
+	"$(err "$(wr "action=write&partition=0&md5=$LOCAL_MD5")" 'that is the committed partition')"
+rm -f /tmp/nv.active
+# Committed in the copy U-Boot uses, while the fallback copy still names
+# partition 1: U-Boot boots that one if the winning copy is ever lost, and
+# the trial banner says so. It is not written either.
+echo 1 > /tmp/nv.fbcommit
+check "a partition the fallback copy still commits to is not written" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment still commits to that partition')"
+touch /tmp/nv.vendor
+check "  a stock nv, without the fallback verb, does not stop the write" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+rm -f /tmp/nv.vendor
+echo 0 > /tmp/nv.fbcommit
+check "  nor does a fallback copy that agrees" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+# A fallback copy nv could not read in full, or an nv that does not answer in
+# time, is no knowing what that copy commits to: not "no second copy".
+touch /tmp/nv.fbunread
+check "  a fallback copy that could not be read stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbunread
+touch /tmp/nv.fbhang
+check "  so does an nv that does not answer for it in time" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+rm -f /tmp/nv.fbhang
+check "  and a readable one is not flagged" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{"sw_commit":"0"},"fallback_unsure":false,"slots":')"
+rm -f /tmp/nv.fbcommit
+echo x > /tmp/nv.commit
+check "an unreadable sw_commit refuses the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition is committed')"
+rm -f /tmp/nv.commit
+echo sw_commit > /tmp/nv.getfail
+check "so does a sw_commit from an nv that then fails" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition is committed')"
+rm -f /tmp/nv.getfail
 echo 1 > /tmp/nv.getfail
 check "so does a sw_active from an nv that then fails" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"

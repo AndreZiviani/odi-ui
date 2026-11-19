@@ -1863,6 +1863,49 @@ void serve(int conn)
 					}
 				}
 
+				/* And the committed one while a trial runs: it
+				 * is the image a failed trial goes back to.
+				 * fwu_starter.sh only refuses an unreadable
+				 * value; the refusal of this slot is in the
+				 * fwu.sh inside the upload, which an older or a
+				 * vendor tarball does not carry. */
+				{
+					char com[8];
+
+					if (!nv_get("sw_commit", com, sizeof(com)) ||
+					    !(seq(com, "0") || seq(com, "1"))) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"cannot tell which partition is committed (sw_commit unreadable); nothing was written\"}");
+						return;
+					}
+					if (seq(com, part)) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"that is the committed partition, the image a failed trial goes back to; commit the running image first\"}");
+						return;
+					}
+					/* And the slot the other environment copy
+					 * still commits to: U-Boot boots that one if
+					 * the winning copy is ever left invalid, and
+					 * the trial banner says so. A stock nv has no
+					 * fallback verb and answers nothing here; an
+					 * nv that did not answer in time, or could
+					 * not read that copy in full, is no knowing. */
+					switch (nv_fallback_get("sw_commit", com, sizeof(com))) {
+					case -1:
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"the fallback copy of the U-Boot environment could not be read; nothing was written\"}");
+						return;
+					case 0:
+						break;
+					default:
+						if (seq(com, part)) {
+							respond(conn, "409 Conflict", "application/json", 0);
+							put_fd(conn, "{\"ok\":false,\"error\":\"the fallback copy of the U-Boot environment still commits to that partition; commit the running image first\"}");
+							return;
+						}
+					}
+				}
+
 				/* The image this write means, by the md5 its
 				 * upload answered. Only this daemon creates
 				 * UPLOAD_PATH, so a second tab's upload is the

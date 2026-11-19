@@ -1657,6 +1657,37 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '1' }, fallback: {},
                      slots: {}, exe: '/bin/confd' });
   ok(/Cancel the trial/.test(t), 'a pending trial of a slot whose kernel cannot be read can still be cancelled');
+  /* One rule for the card and the command under the upload, the one confd
+     applies (writeRefusal): the command goes to the starter past confd. */
+  const upload = () => textOf(doc.querySelector('#upload'));
+  const offered = /Write the uploaded image here|Upload an image below/;
+  t = await fwText({ ...trialFW, exe: '/bin/confd' });
+  ok(/This is the committed partition/.test(t) && !offered.test(t) && !/fwu_starter/.test(upload())
+     && /no write command now for partition 0/.test(upload()),
+     'during a trial the committed partition offers no write, on its card or as a command');
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: { sw_commit: '1' },
+                     slots: {}, exe: '/bin/confd' });
+  ok(/fallback copy of the U-Boot environment still commits to this partition/.test(t) && !offered.test(t)
+     && !/fwu_starter/.test(upload()), 'a partition the fallback copy still commits to offers no write either');
+  t = await fwText({ env: { sw_active: '0', sw_tryactive: '2' }, fallback: {}, slots: {}, exe: '/bin/confd' });
+  ok(/cannot tell which partition is committed/.test(t) && !offered.test(t) && !/fwu_starter/.test(upload()),
+     'an unreadable sw_commit offers no write');
+  t = await fwText({ env: { sw_commit: '0', sw_tryactive: '2' }, fallback: {}, slots: {}, exe: '/bin/confd' });
+  ok(!/fwu_starter/.test(upload()) && /no write command now:/.test(upload()),
+     'an unreadable sw_active gives no command, not one for partition 0');
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: { sw_commit: '0' },
+                     slots: {}, exe: '/bin/confd' });
+  ok(offered.test(t) && /fwu_starter\.sh --foreground 1 /.test(upload()),
+     'committed, both copies agreeing: partition 1 is offered, on its card and as a command');
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: {}, fallback_unsure: true,
+                     slots: {}, exe: '/bin/confd' });
+  ok(/fallback copy of the U-Boot environment could not be read/.test(t) && !offered.test(t)
+     && !/fwu_starter/.test(upload()), 'a fallback copy nv could not read offers no write');
+  for (const pend of [undefined, 'x']) {
+    t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: pend }, fallback: {}, slots: {}, exe: '/bin/confd' });
+    ok(/cannot tell whether a trial is pending/.test(t) && !offered.test(t) && !/fwu_starter/.test(upload()),
+       `a trial state of ${pend === undefined ? 'none at all' : `'${pend}'`} offers no write, on its card or as a command`);
+  }
   t = await fwText({ ...trialFW, exe: '/etc/config/confd/confd' });
   ok(/override in \/etc\/config is in use/.test(t), 'a confd run from /etc/config is an override');
   t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd',
@@ -1742,6 +1773,10 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'running', pid: '4242', slot: '0', rc: '', log: '' } });
   ok(rebootBtn() && rebootBtn().disabled === true && /being written/.test(rebootBtn().title),
      'reboot: the button is off while a write runs, and says why');
+  await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: {}, slots: {}, exe: '/bin/confd',
+                 write: { state: 'running', pid: '4242', slot: '1', rc: '', log: '' } });
+  ok(!/fwu_starter|cat > \/tmp\/img\.tar/.test(upload()) && /Partition 1 is being written/.test(upload()),
+     'while a write runs the commands under the upload neither copy nor write an image');
   await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'ok', pid: '4242', slot: '0', rc: '', log: '' } });
   ok(rebootBtn() && !rebootBtn().disabled, 'reboot: and on again once the write is no longer running');
   await fwText({ ...trialFW, exe: '/bin/confd' });

@@ -223,6 +223,18 @@ done:
 	put_fd(fd, "}");
 }
 
+/* Whether nv's output says a copy of the environment could not be read in
+ * full (odi-oss nv, src/nv/main.c): it then gives no value and exits 1. */
+static int nv_said_unread(const char *buf)
+{
+	static const char m[] = "could not be read in full";
+
+	for (; *buf; buf++)
+		if (spre(buf, m))
+			return 1;
+	return 0;
+}
+
 /* The sw_* lines of an `nv getenv` / `nv fallback` dump, as JSON members. */
 static void emit_sw_pairs(int fd, const char *buf)
 {
@@ -398,11 +410,17 @@ void emit_firmware_body(int fd)
 	put_fd(fd, "},\"fallback\":{");
 	{
 		static char *const fargv[] = { "nv", "fallback", 0 };
+		long got = run_to_buf("/bin/nv", fargv, buf, sizeof(buf), NV_TIMEOUT_MS);
 
-		if (run_to_buf("/bin/nv", fargv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0)
+		if (got > 0)
 			emit_sw_pairs(fd, buf);
+		/* No knowing what that copy says (no answer in time, or a copy
+		 * odi-oss nv could not read in full): the page then offers no
+		 * write, as the write route refuses one. */
+		put_fd(fd, "},\"fallback_unsure\":");
+		put_fd(fd, got < 0 || (got > 0 && nv_said_unread(buf)) ? "true" : "false");
 	}
-	put_fd(fd, "},\"slots\":{");
+	put_fd(fd, ",\"slots\":{");
 	{
 		char mtds[1024];
 
@@ -643,32 +661,37 @@ int slot_state_refresh(void)
 }
 
 /*
- * Read one U-Boot variable.
+ * One U-Boot variable, from `nv <verb> <key>`: getenv for the copy U-Boot
+ * uses, fallback for the other one.
  *
- * /api/firmware already emits every sw_* for the page, but a route that has to
- * DECIDE on one needs it in C -- and asking the page to send back what it was
- * told would let a caller choose its own answer.
+ * Only a line that ends in a newline is taken, and a value that does not fit
+ * `out` is not taken at all: a value cut after its first digit is not one to
+ * decide on.
  */
-int nv_get(const char *key, char *out, unsigned long cap)
+static int nv_read(const char *verb, const char *key, char *out, unsigned long cap,
+		   int *unsure)
 {
-	/* `nv getenv <key>`, not the whole environment: a dump longer than
-	 * buf was cut, and a value cut after its first digit read as complete.
-	 * Only a line that ends in a newline is taken, and a value that does
-	 * not fit `out` is not taken at all. */
 	char *argv[4];
 	char buf[1024];
 	unsigned long i = 0;
-	long code = -1;
+	long code = -1, got;
 
 	argv[0] = "nv";
-	argv[1] = "getenv";
+	argv[1] = (char *)verb;
 	argv[2] = (char *)key;
 	argv[3] = 0;
 	out[0] = 0;
+	if (unsure)
+		*unsure = 0;
+	got = run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code,
+			    NV_TIMEOUT_MS);
+	/* No answer at all (a timeout, no fork), or odi-oss nv saying a copy
+	 * could not be read in full: not "no value", but no knowing. */
+	if (unsure && (got < 0 || (got > 0 && nv_said_unread(buf))))
+		*unsure = 1;
 	/* And only from an nv that exited 0: a complete line from one that
 	 * then failed is not a value to decide on. */
-	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code,
-			  NV_TIMEOUT_MS) <= 0 || code != 0)
+	if (got <= 0 || code != 0)
 		return 0;
 
 	while (buf[i]) {
@@ -692,4 +715,33 @@ int nv_get(const char *key, char *out, unsigned long cap)
 		i = (buf[le] == '\n') ? le + 1 : le;
 	}
 	return 0;
+}
+
+/*
+ * Read one U-Boot variable.
+ *
+ * /api/firmware already emits every sw_* for the page, but a route that has to
+ * DECIDE on one needs it in C -- and asking the page to send back what it was
+ * told would let a caller choose its own answer. `nv getenv <key>`, not the
+ * whole environment: a dump longer than the buffer was cut.
+ */
+int nv_get(const char *key, char *out, unsigned long cap)
+{
+	return nv_read("getenv", key, out, cap, 0);
+}
+
+/*
+ * The same variable in the OTHER copy of the redundant environment, the one
+ * U-Boot boots by if the winning copy is ever left invalid. Only the odi-oss
+ * nv has the verb; the stock one prints its usage and no key, and an odi-oss
+ * nv with no valid second copy exits 1. Both answer 0 here, and there is then
+ * no second copy U-Boot could fall back to by this answer. -1 when there is
+ * no knowing: nv did not answer in time, or said that a copy could not be
+ * read in full.
+ */
+int nv_fallback_get(const char *key, char *out, unsigned long cap)
+{
+	int unsure, r = nv_read("fallback", key, out, cap, &unsure);
+
+	return unsure ? -1 : r;
 }

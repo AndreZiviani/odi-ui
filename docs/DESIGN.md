@@ -593,7 +593,13 @@ written by the flash itself, so it cannot drift from the image, where
 `sw_version<p>` is only what the last updater chose to record: on a live stick
 it named an odi-oss build for the slot that held the stock firmware.
 
-Writing the other slot stays available whatever it holds. When it holds the
+Writing the other slot stays available whatever it holds, as long as it is not
+the image the stick goes back to: during a trial, or while the fallback copy
+of the environment still commits to it, the slot says so in place of the
+button, the command under the upload is left out, and confd refuses the write
+(409), as it does when sw_commit, sw_tryactive or the fallback copy cannot be
+read. While a write runs, the commands under the upload neither copy nor
+write an image: the copy could overwrite the archive that write reads. When the slot holds the
 stock firmware (or anything that is not odi-oss) the slot says so beside the
 action -- "Partition 1 holds the stock firmware. Writing replaces it, and you
 lose it as a fallback." -- and the write asks a second time, naming what gets

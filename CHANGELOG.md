@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: during a trial the page no longer offers to write the
+  committed partition, the image a failed trial goes back to, and confd
+  refuses that write, as well as one where `sw_commit` cannot be read, and
+  one to the partition the fallback copy of the environment still commits
+  to (on an nv with `nv fallback`). An `nv fallback` that does not answer
+  in time, or says a copy could not be read in full, refuses the write
+  too; only a stock nv without the verb lets it through. The card and the
+  ssh command under the upload follow one rule, so neither offers a
+  partition confd refuses, nor one while `sw_tryactive` is none of 0, 1
+  and 2. While a write runs, the commands under the upload neither copy
+  nor write an image. `fwu_starter.sh` refused only an unreadable value;
+  the refusal of the committed slot was in the `fwu.sh` inside the
+  upload, which an older or a vendor tarball does not have.
+
 ## v1.18.1 (2026-11-18)
 
 - Config: a PLOAM password shorter than 10 characters, stored with zero
