@@ -84,6 +84,11 @@ every session but the one that made it.
                                           re-registers; with an identity change
                                           waiting in the store nothing is applied
                                           and the answer carries `deferred: true`.
+                                          After an apply that left the ONU off the
+                                          line (a failed activation), omcid
+                                          re-registers it all the same: apply.sh
+                                          exits 4 and the answer carries
+                                          `ok: true` and `reregistered: true`.
                                           An apply.sh without that verb stops at its
                                           usage line, and an image without apply.sh
                                           would only restart omci_app: both answer

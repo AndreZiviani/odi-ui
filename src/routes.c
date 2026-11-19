@@ -2028,7 +2028,10 @@ void serve(int conn)
 	 * omci-live, what the page sends after a save of VLAN keys alone, runs
 	 * apply.sh omci-live: omcid applies nothing that re-registers the ONU,
 	 * and with an identity change waiting in the store it applies nothing
-	 * at all, which apply.sh says with exit 3 (deferred). An apply.sh
+	 * at all, which apply.sh says with exit 3 (deferred). After a reload
+	 * that left the ONU off the line (a failed activation, no_serial), the
+	 * next one re-registers it, VLAN keys alone too, and apply.sh says so
+	 * with exit 4: applied, with a re-registration. An apply.sh
 	 * without that verb stops at its usage line before it does anything,
 	 * and the answer says unsupported; so does an image without apply.sh,
 	 * whose only apply restarts omci_app. Either way the change stays
@@ -2065,14 +2068,15 @@ void serve(int conn)
 		want_live = seq(what, "omci-live");
 		if (file_exists(APPLY_PATH)) {
 			char *argv[3];
-			int ok, unsupported;
+			int ok, rereg, unsupported;
 
 			argv[0] = "apply.sh";
 			argv[1] = what;
 			argv[2] = 0;
 			got = run_to_buf_ex(APPLY_PATH, argv, status, sizeof(status), &code,
 					   APPLY_TIMEOUT_MS);
-			ok = got >= 0 && code == 0;
+			rereg = want_live && got >= 0 && code == 4;
+			ok = got >= 0 && (code == 0 || rereg);
 			unsupported = want_live && got > 0 && code == 1 && spre(status, "usage:");
 			respond(conn, "200 OK", "application/json", 0);
 			put_fd(conn, "{\"ok\":");
@@ -2081,6 +2085,8 @@ void serve(int conn)
 			put_fd(conn, ok ? "true" : "false");
 			if (want_live && got >= 0 && code == 3)
 				put_fd(conn, ",\"deferred\":true");
+			if (rereg)
+				put_fd(conn, ",\"reregistered\":true");
 			if (unsupported)
 				put_fd(conn, ",\"unsupported\":true");
 			put_fd(conn, ",\"output\":\"");

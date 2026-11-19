@@ -44,7 +44,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   of running the full apply. The setup wizard stays on "Saved, not
   applied" until that Apply now worked, offers a failed apply again, and
   enables the button only once it is done writing; after a live apply its
-  view is headed "Line status".
+  view is headed "Line status". When the apply before left the ONU off the
+  line (a failed activation), the live apply re-registers it all the same:
+  `apply.sh omci-live` says so with exit 4 (odi-oss), confd answers
+  `reregistered: true`, and the page says it applied with a
+  re-registration instead of without one.
 
 ## v1.18.1 (2026-11-18)
 

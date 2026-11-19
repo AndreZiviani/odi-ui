@@ -368,7 +368,9 @@ async function applySfp(out) {
    also waiting in the store it applies nothing (deferred), an image or a
    confd that cannot apply that way applies nothing either (unsupported; an
    older confd refuses the action with 400), and the page offers the apply
-   that does. Answers 'ok', 'deferred', 'unsupported' or 'failed', for the
+   that does. A live apply after one that left the ONU off the line (a
+   failed activation) re-registers it all the same, and the answer says so
+   (reregistered). Answers 'ok', 'deferred', 'unsupported' or 'failed', for the
    wizard. `opts.raw` false leaves the script output out (the wizard shows
    the status lines only); `opts.then` runs once an offered apply worked,
    with true when that was the full one. With `opts.retry`, a failed apply
@@ -404,10 +406,14 @@ async function applyOmci(out, interrupts, live, opts = {}) {
       offer(true);
       return res.deferred ? 'deferred' : 'unsupported';
     }
+    const done = 'The Status tab shows O5 and the Services tab the '
+      + 'provisioned services once the OLT is done.';
     out.append(el('div', res.ok ? 'good' : 'bad', res.ok
-      ? (interrupts ? 'Applied. The Status tab shows O5 and the Services tab the '
-        + 'provisioned services once the OLT is done.'
-        : 'Applied without a re-registration.')
+      ? (interrupts ? 'Applied. ' + done
+        : res.reregistered
+          ? 'Applied with a re-registration: the last apply left the ONU off the line, '
+            + 'so this one registered it again. ' + done
+          : 'Applied without a re-registration.')
       : 'Apply failed: ' + (res.error || (raw ? 'see above' : 'apply.sh reported an error'))));
     if (!res.ok && opts.retry) offer(!live);
     return res.ok ? 'ok' : 'failed';

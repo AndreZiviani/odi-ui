@@ -1482,6 +1482,7 @@ fi
 echo "apply.sh: $*"
 case "$1" in omci|omci-live) [ -f /tmp/apply-fail ] && exit 1 ;; esac
 [ "$1" = omci-live ] && [ -f /tmp/apply-defer ] && exit 3
+[ "$1" = omci-live ] && [ -f /tmp/apply-rereg ] && exit 4
 exit 0
 APPLY
 chmod +x /etc/scripts/apply.sh
@@ -1520,6 +1521,14 @@ check "a deferred live apply says so" yes \
 check "  and a plain apply is not deferred" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: omci\u000a"')"
 rm -f /tmp/apply-defer
+# After a reload that left the ONU off the line, omci-live re-registers it
+# all the same, and apply.sh says so with exit 4: applied, not a failure.
+touch /tmp/apply-rereg
+check "a live apply that re-registered says so" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"reregistered":true,')"
+check "  and a plain apply carries no such flag" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: omci\u000a"')"
+rm -f /tmp/apply-rereg
 touch /tmp/apply-old
 check "an apply.sh without omci-live is unsupported, nothing applied" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"unsupported":true,"output":"usage: ')"
