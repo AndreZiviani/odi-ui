@@ -374,7 +374,8 @@ async function applySfp(out) {
    Answers 'ok', 'reregistered' (a live apply that re-registers), 'deferred',
    'unsupported' or 'failed', for the wizard. `opts.raw` false leaves the script output out (the wizard shows
    the status lines only); `opts.then` runs once an offered apply worked,
-   with true when that was the full one. With `opts.retry`, a failed apply
+   with true when the ONU re-registers: the full one, or a live retry that
+   re-registered all the same. With `opts.retry`, a failed apply
    offers itself again, and `opts.hold` gets every button offered, before
    it is shown. */
 async function applyOmci(out, interrupts, live, opts = {}) {
@@ -394,8 +395,10 @@ async function applyOmci(out, interrupts, live, opts = {}) {
     if (opts.hold) opts.hold(b);
     out.append(b);
   };
+  /* Not "in place" while waiting: a live apply may also be held for an
+     identity change, or re-register the ONU (reregistered). */
   out.append(el('div', 'warn', interrupts ? 'Re-registering the ONU…'
-    : 'Rebuilding the connections in place…'));
+    : 'Applying OMCI changes…'));
   try {
     const r = await fetch('/api/apply', form({ what: live ? 'omci-live' : 'omci' }));
     const res = await r.json();

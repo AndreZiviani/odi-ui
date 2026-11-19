@@ -2397,8 +2397,9 @@ EDITS.clear();
     answer = { ok: true, applied: true, reregistered: true, output: 'the last reload left the ONU off the line: this one re-registers it' };
     const out4b = new El('div');
     await followUp({ needs: ['omci'], interrupts: false }, ['VLAN_MANU_TAG_VID'], out4b);
-    ok(/Applied, and the ONU re-registers/.test(textOf(out4b)) && !/without a re-registration/.test(textOf(out4b)),
-       'followUp: a live apply that re-registered says so, not "without"');
+    ok(/Applied, and the ONU re-registers/.test(textOf(out4b)) && !/without a re-registration/.test(textOf(out4b))
+       && !/in place/.test(textOf(out4b)),
+       'followUp: a live apply that re-registered says so, not "without", nor "in place" while it waited');
     sent.pop(); /* the counts below are of the other answers */
     answer = { ok: false, applied: false, deferred: true, output: 'identity changed (GPON_SN) and NOT applied' };
     const out5 = new El('div');

@@ -1356,7 +1356,10 @@ page says so and offers the Apply now that applies all pending OMCI changes;
 the setup wizard stays on "Saved, not applied" until that worked, offers a
 failed apply again, and holds its button until the key, the password and
 the marker are written. After a live apply its view is headed *Line status*,
-not *Registering with the OLT*.
+or *Registering with the OLT* when that apply re-registered the ONU after
+all (`reregistered`, apply.sh exit 4). While the page waits for the answer
+it says *Applying OMCI changes*, not that the connections are rebuilt in
+place.
 odi-oss `docs/SETTINGS.md` has the details and the measurements. The rest of
 this section is the stock firmware.
 

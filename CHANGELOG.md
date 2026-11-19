@@ -32,8 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - confd: a web asset of more than 65,534 bytes, which the 64 KB file
   buffer cannot tell from a cut one, is answered 500 with that limit
   instead of a cut 200 with an ETag the browser keeps.
-  `scripts/check-assets.py` fails for such a file in `web/` and prints the
-  largest one; style.css is 56,944 of at most 65,534 bytes.
+  `scripts/check-assets.py` fails for such a file in `web/`, naming it,
+  and otherwise prints the largest one; style.css is 56,944 of at most 65,534 bytes.
 
 - Config: a save of VLAN keys alone no longer takes along an identity
   change saved earlier and not applied. The page applied it at once with
@@ -42,8 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   page and the setup wizard now send that apply as `what=omci-live`,
   which confd runs as `apply.sh omci-live` (odi-oss with that verb):
   omcid applies nothing that re-registers, and with such a change waiting
-  it applies nothing, and the page says why and offers Apply now for all
-  pending OMCI changes. An apply.sh without the verb, an image without
+  it applies nothing (apply.sh exit 3), and the page says why and offers
+  Apply now for all pending OMCI changes. An apply.sh without the verb, an image without
   apply.sh, or a confd older than the page (which refuses the action with
   400) applies nothing either, and the page offers the same. `/api/apply`
   answers 400 for a `what` or a field name that does not decode, instead
@@ -55,7 +55,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `apply.sh omci-live` says so with exit 4 (odi-oss), confd answers
   `reregistered: true`, and the page says the ONU re-registers instead of
   "Applied without a re-registration". The wizard heads its live view
-  "Registering with the OLT" then too.
+  "Registering with the OLT" then too. While the page waits for the
+  answer it says "Applying OMCI changes…" instead of that the connections
+  are rebuilt in place, and the warning before a VLAN change no longer
+  says the ONU stays in O5.
 
 ## v1.18.1 (2026-11-18)
 
