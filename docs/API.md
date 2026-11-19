@@ -87,8 +87,11 @@ every session but the one that made it.
                                           After an apply that left the ONU off the
                                           line (a failed activation), omcid
                                           re-registers it all the same: apply.sh
-                                          exits 4 and the answer carries
-                                          `ok: true` and `reregistered: true`.
+                                          exits 4 once that worked or still runs
+                                          at its bound, and the answer carries
+                                          `ok: true` and `reregistered: true`:
+                                          the re-registration has started. A
+                                          plain `omci` that exits 4 is a failure.
                                           An apply.sh without that verb stops at its
                                           usage line, and an image without apply.sh
                                           would only restart omci_app: both answer

@@ -622,8 +622,10 @@ async function apply(pairs) {
           hold: (b) => { if (W.phase !== 'pending') { b.disabled = true; W.held.push(b); } },
           then: (full) => { if (W.open && W.phase === 'pending') { W.rereg = full; startLive(); } },
         });
-        pending = done !== 'ok';
-        W.rereg = res.interrupts !== false;
+        pending = done !== 'ok' && done !== 'reregistered';
+        /* The live view's title: the ONU registers again after a full
+           apply, and after a live one that re-registered all the same. */
+        W.rereg = res.interrupts !== false || done === 'reregistered';
       }
     }
     if (W.key) await addKey(out);

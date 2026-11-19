@@ -2397,7 +2397,7 @@ EDITS.clear();
     answer = { ok: true, applied: true, reregistered: true, output: 'the last reload left the ONU off the line: this one re-registers it' };
     const out4b = new El('div');
     await followUp({ needs: ['omci'], interrupts: false }, ['VLAN_MANU_TAG_VID'], out4b);
-    ok(/Applied with a re-registration/.test(textOf(out4b)) && !/without a re-registration/.test(textOf(out4b)),
+    ok(/Applied, and the ONU re-registers/.test(textOf(out4b)) && !/without a re-registration/.test(textOf(out4b)),
        'followUp: a live apply that re-registered says so, not "without"');
     sent.pop(); /* the counts below are of the other answers */
     answer = { ok: false, applied: false, deferred: true, output: 'identity changed (GPON_SN) and NOT applied' };
@@ -2891,6 +2891,23 @@ ok(inputsOf('#sections') > 100,
   ok(posts('/api/apply').length === 2 && posts('/api/apply')[1].body === 'what=omci-live'
      && W.phase === 'live' && title() === 'Line status',
      'failed: Try again is the live apply, and once it worked the live view follows');
+  await wz.exitWizard();
+  /* A live apply that re-registered all the same (the one before left the
+     ONU off the line): the live view is headed as a registration, from the
+     first answer and from a Try again. */
+  reset();
+  APPLY.live = { ok: true, applied: true, reregistered: true, output: '' };
+  await vlanToReview();
+  ok(W.phase === 'live' && title() === 'Registering with the OLT' && /the ONU re-registers/.test(body()),
+     'reregistered: the live view says the ONU registers: ' + title());
+  await wz.exitWizard();
+  reset();
+  APPLY.live = { ok: false, applied: false, error: 'omcid did not answer' };
+  await vlanToReview();
+  APPLY.live = { ok: true, applied: true, reregistered: true, output: '' };
+  await wizButton(/Try again/).onclick();
+  ok(W.phase === 'live' && title() === 'Registering with the OLT',
+     'reregistered: and so does a Try again that re-registered: ' + title());
   await wz.exitWizard();
   /* A confd older than the page refuses omci-live: the wizard offers the full apply. */
   reset();

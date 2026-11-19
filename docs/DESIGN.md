@@ -321,7 +321,9 @@ live (the page applies it at once, nothing drops) and true otherwise (the page
 offers *Apply now* behind the confirmation). The first runs `apply.sh
 omci-live`, the second `apply.sh omci`: both signal omcid, which compares the
 store with what it runs and rebuilds in place or re-registers, and omci-live
-does not re-register.
+does not re-register for a changed identity. It does re-register an ONU the
+apply before left off the line (a failed activation), and says so
+(`reregistered`).
 
 The class is what APPLYING costs. What a VALUE does to the service is a second
 question, and a live key is where it bites: a VLAN save applies at once, the

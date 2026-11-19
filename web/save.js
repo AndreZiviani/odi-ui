@@ -370,8 +370,9 @@ async function applySfp(out) {
    older confd refuses the action with 400), and the page offers the apply
    that does. A live apply after one that left the ONU off the line (a
    failed activation) re-registers it all the same, and the answer says so
-   (reregistered). Answers 'ok', 'deferred', 'unsupported' or 'failed', for the
-   wizard. `opts.raw` false leaves the script output out (the wizard shows
+   (reregistered): the re-registration has started, it may still run.
+   Answers 'ok', 'reregistered' (a live apply that re-registers), 'deferred',
+   'unsupported' or 'failed', for the wizard. `opts.raw` false leaves the script output out (the wizard shows
    the status lines only); `opts.then` runs once an offered apply worked,
    with true when that was the full one. With `opts.retry`, a failed apply
    offers itself again, and `opts.hold` gets every button offered, before
@@ -379,13 +380,16 @@ async function applySfp(out) {
 async function applyOmci(out, interrupts, live, opts = {}) {
   const raw = opts.raw !== false;
   /* The full apply behind its confirmation, or the live one again. */
+  /* opts.then gets whether the ONU re-registers: the full apply, or a
+     live one that re-registered all the same. */
   const offer = (full) => {
     const b = full
       ? applyButton('internet', 'Apply now', async () => {
         if (await applyOmci(out, true, false, opts) === 'ok' && opts.then) opts.then(true);
       })
       : applyButton('live', 'Try again', async () => {
-        if (await applyOmci(out, false, true, opts) === 'ok' && opts.then) opts.then(false);
+        const got = await applyOmci(out, false, true, opts);
+        if ((got === 'ok' || got === 'reregistered') && opts.then) opts.then(got === 'reregistered');
       });
     if (opts.hold) opts.hold(b);
     out.append(b);
@@ -411,12 +415,13 @@ async function applyOmci(out, interrupts, live, opts = {}) {
     out.append(el('div', res.ok ? 'good' : 'bad', res.ok
       ? (interrupts ? 'Applied. ' + done
         : res.reregistered
-          ? 'Applied with a re-registration: the last apply left the ONU off the line, '
-            + 'so this one registered it again. ' + done
+          ? 'Applied, and the ONU re-registers: the last apply left it off the line, '
+            + 'so this one registers it again. ' + done
           : 'Applied without a re-registration.')
       : 'Apply failed: ' + (res.error || (raw ? 'see above' : 'apply.sh reported an error'))));
     if (!res.ok && opts.retry) offer(!live);
-    return res.ok ? 'ok' : 'failed';
+    if (!res.ok) return 'failed';
+    return live && res.reregistered ? 'reregistered' : 'ok';
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
     if (opts.retry) offer(!live);
