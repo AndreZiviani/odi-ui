@@ -243,7 +243,8 @@ done:
  */
 static int nv_fallback_known(long got, long code, const char *buf, unsigned long cap)
 {
-	if (got < 0)
+	/* A NUL in the answer hides what follows it from every test below. */
+	if (got < 0 || (unsigned long)got != str_len(buf))
 		return 0;
 	if (code == 0)
 		return (unsigned long)got + 1 < cap;
@@ -254,33 +255,39 @@ static int nv_fallback_known(long got, long code, const char *buf, unsigned long
 }
 
 /*
- * Whether a full `nv fallback` dump that exited 0 is one: odi-oss nv's header
- * line for the copy, no NUL in it, and at most one sw_commit, a whole line
- * that names slot 0 or 1. Anything else is no knowing what that copy says,
- * as on the write route, which asks for sw_commit alone (nv_read).
+ * Whether a full `nv fallback` dump that exited 0 is one, in the shape odi-oss
+ * nv prints it: its header line for the copy, then whole name=value lines, then
+ * one empty line and nothing after it, with no NUL anywhere; and at most one
+ * sw_commit, which names slot 0 or 1. Anything else is no knowing what that
+ * copy says, as on the write route, which asks for sw_commit alone (nv_read).
  */
 static int nv_fallback_dump_ok(const char *buf, long got)
 {
-	unsigned long i = 0;
+	unsigned long i = 24;            /* past "Fallback environment: N\n" */
 	int commits = 0;
 
 	if (got < 0 || (unsigned long)got != str_len(buf))
 		return 0;
 	if (!spre(buf, "Fallback environment: 1\n") && !spre(buf, "Fallback environment: 2\n"))
 		return 0;
-	while (buf[i]) {
-		unsigned long le = i;
+	for (;;) {
+		unsigned long le = i, eq = i;
 
 		while (buf[le] && buf[le] != '\n')
 			le++;
-		if (spre(buf + i, "sw_commit=")) {
-			if (++commits > 1 || buf[le] != '\n' || le != i + 11 ||
-			    (buf[i + 10] != '0' && buf[i + 10] != '1'))
-				return 0;
-		}
-		i = (buf[le] == '\n') ? le + 1 : le;
+		if (buf[le] != '\n')
+			return 0;                /* a last line without its end */
+		if (le == i)
+			return buf[le + 1] == 0;     /* the empty line ends it */
+		while (eq < le && buf[eq] != '=')
+			eq++;
+		if (eq == i || eq == le)
+			return 0;                /* not name=value */
+		if (spre(buf + i, "sw_commit=") &&
+		    (++commits > 1 || le != i + 11 || (buf[i + 10] != '0' && buf[i + 10] != '1')))
+			return 0;
+		i = le + 1;
 	}
-	return 1;
 }
 
 /* The sw_* lines of an `nv getenv` / `nv fallback` dump, as JSON members. */

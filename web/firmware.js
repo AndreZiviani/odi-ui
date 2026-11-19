@@ -131,6 +131,14 @@ async function writeImage(part, fw) {
   /* Held before the request: with a starter that blocks, or a slow answer,
      the button would be on for the whole of it. */
   if (RB) holdReboot(RB, part);
+  /* And the commands under the upload, as a render during the write would
+     give them, until the answer: the page was rendered before the write and
+     would offer the copy and the write meanwhile. A refusal puts them back;
+     a write that starts is followed, and the render after it redraws them. */
+  const up = $('#upload');
+  const upBefore = up ? up.textContent : '';
+  if (up) up.textContent = uploadCommands(location.hostname, part, `Partition ${part} is being written. Wait for that write to end.`, true);
+  const giveBack = () => { if (up) up.textContent = upBefore; releaseReboot(); };
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -143,7 +151,7 @@ async function writeImage(part, fw) {
     if (j.output) out.append(el('pre', null, String(j.output).trim()));
     if (!j.ok) {
       out.append(el('div', 'bad', j.error || 'the updater refused'));
-      releaseReboot();
+      giveBack();
       return;
     }
     /* An image whose starter writes in the background leaves a state in
@@ -152,8 +160,30 @@ async function writeImage(part, fw) {
     await followWrite(part);
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
-    releaseReboot();
+    giveBack();
   }
+}
+
+/* The ssh commands under the upload. `other` is the partition this stick is
+   not running, `noWrite` why no write command is given now (or null), and
+   `writing` leaves the copy out: it could overwrite the archive a running
+   write reads. Pure. */
+function uploadCommands(host, other, noWrite, writing) {
+  return [
+    '# on your machine, in the odi-oss checkout',
+    'make image                     # -> out/image/<version>.tar',
+    '',
+    ...(writing ? [] : [
+      'IMG=out/image/<version>.tar',
+      `cat "$IMG" | ssh root@${host} 'cat > /tmp/img.tar'`,
+      `md5 -q "$IMG"; ssh root@${host} 'md5sum /tmp/img.tar'`,
+      '',
+    ]),
+    ...(noWrite
+      ? [`# no write command now${other === undefined ? '' : ` for partition ${other}`}:`, `# ${noWrite}`]
+      : [`# writes partition ${other}, the one this stick is not running, and waits`,
+        `ssh root@${host} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`]),
+  ].join('\n');
 }
 
 /* The Reboot button of the current render, for followWrite to hold. */
@@ -423,21 +453,7 @@ async function renderFirmware() {
   const noWrite = writing
     ? `Partition ${fw.write.slot} is being written. Wait for that write to end.`
     : other === undefined ? writeRefusal(fw, '0') : writeRefusal(fw, other);
-  $('#upload').textContent = [
-    '# on your machine, in the odi-oss checkout',
-    'make image                     # -> out/image/<version>.tar',
-    '',
-    ...(writing ? [] : [
-      'IMG=out/image/<version>.tar',
-      `cat "$IMG" | ssh root@${location.hostname} 'cat > /tmp/img.tar'`,
-      `md5 -q "$IMG"; ssh root@${location.hostname} 'md5sum /tmp/img.tar'`,
-      '',
-    ]),
-    ...(noWrite
-      ? [`# no write command now${other === undefined ? '' : ` for partition ${other}`}:`, `# ${noWrite}`]
-      : [`# writes partition ${other}, the one this stick is not running, and waits`,
-        `ssh root@${location.hostname} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`]),
-  ].join('\n');
+  $('#upload').textContent = uploadCommands(location.hostname, other, noWrite, writing);
 
   /* What this image was built from, and which confd is answering: a binary
      at /etc/config/confd/confd overrides the image copy and survives

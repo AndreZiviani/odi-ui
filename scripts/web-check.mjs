@@ -1736,7 +1736,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   let postBody = '';
   globalThis.fetch = async (path, opts) => {
     if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
-    atPost = { disabled: btn0.disabled, title: btn0.title };
+    atPost = { disabled: btn0.disabled, title: btn0.title, upload: upload() };
     postBody = String(opts.body || '');
     return { ok: true, status: 200, json: async () => ({ ok: true }) };
   };
@@ -1748,6 +1748,8 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(rebootBtn() !== btn0 && !rebootBtn().disabled, 'reboot: and the render after the write turns it on');
   ok(atPost && atPost.disabled === true && /being written/.test(atPost.title),
      'reboot: the button is already off while the write request is pending');
+  ok(atPost && !/fwu_starter|cat > \/tmp\/img\.tar/.test(atPost.upload) && /Partition 0 is being written/.test(atPost.upload),
+     'write: the commands under the upload neither copy nor write while the request is pending');
   ok(/(^|&)action=write(&|$)/.test(postBody) && /(^|&)md5=/.test(postBody),
      'write: the request names the md5 of the upload it means');
   /* A request that fails or is refused gives the button back. */
@@ -1755,11 +1757,13 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
                       async () => { throw new Error('network'); }]) {
     await fwText(idleFW);
     const b1 = rebootBtn();
+    const up1 = upload();
     globalThis.confirm = () => true;
     globalThis.fetch = async (path, opts) => (opts && opts.method === 'POST' ? post() : keepFetch(path, opts));
     await fwm.writeImage('0', idleFW);
     globalThis.fetch = keepFetch; globalThis.confirm = keepConfirm;
     ok(b1.disabled === false, 'reboot: a write request that is refused or fails leaves the button on');
+    ok(upload() === up1 && /cat > \/tmp\/img\.tar/.test(up1), 'write: and puts the commands under the upload back');
   }
   /* A writer that is gone with no recorded result: the page says so, and Reboot is not held. */
   await fwText({ ...idleFW, write: { state: 'unknown', pid: '4242', slot: '0', rc: '', log: '' } });

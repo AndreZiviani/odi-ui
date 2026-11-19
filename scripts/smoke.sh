@@ -213,7 +213,8 @@ fi
 # exit 1 makes a known answer; /tmp/nv.fbkill is an nv killed by a signal
 # after that line; /tmp/nv.fbbig a dump that fills the buffer of confd before
 # sw_commit, and /tmp/nv.fbjunk an exit 0 with words that are not the key.
-# /tmp/nv.fbraw holds the exact answer of an exit 0, keyed or not.
+# /tmp/nv.fbraw holds the exact answer of an exit 0, keyed or not, or of
+# the exit status /tmp/nv.fbrawrc holds.
 if [ "$1" = fallback ]; then
 	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
 	[ -f /tmp/nv.fbunread ] && { echo "nv: fallback: a copy of the environment could not be read in full, so which one U-Boot uses is not known; run it again"; exit 3; }
@@ -221,7 +222,7 @@ if [ "$1" = fallback ]; then
 	[ -f /tmp/nv.fbline ] && { echo "nv: no valid second copy of the environment"; exit "$(cat /tmp/nv.fbline)"; }
 	[ -f /tmp/nv.fbkill ] && { echo "nv: no valid second copy of the environment"; kill -9 $$; }
 	[ -f /tmp/nv.fbhang ] && exec sleep 5
-	[ -f /tmp/nv.fbraw ] && { cat /tmp/nv.fbraw; exit 0; }
+	[ -f /tmp/nv.fbraw ] && { cat /tmp/nv.fbraw; exit "$(cat /tmp/nv.fbrawrc 2>/dev/null || echo 0)"; }
 	if [ -f /tmp/nv.fbbig ]; then
 		[ -n "${2:-}" ] && exit 0
 		echo "Fallback environment: 2"
@@ -1322,6 +1323,24 @@ check "  a dump with two sw_commit lines is unsure" yes \
 printf 'sw_commit=0\n' > /tmp/nv.fbraw
 check "  so is a dump without the header line" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+# The whole shape odi-oss nv prints: the header, name=value lines, one empty
+# line to end it. A header alone, a line that is no pair or a dump without
+# the empty line is not that.
+for fbd in 'Fallback environment: 2\n' 'Fallback environment: 2\nsw_commit=0\njunk\n\n' \
+	   'Fallback environment: 2\nsw_commit=0\n' 'Fallback environment: 2\nsw_commit=0\n\nmore\n'; do
+	printf "$fbd" > /tmp/nv.fbraw
+	check "  so is the dump '$fbd'" yes \
+		"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+done
+# The line for no valid second copy is exact: bytes after a NUL behind it
+# make it another answer.
+printf 'nv: no valid second copy of the environment\n\000x' > /tmp/nv.fbraw
+echo 1 > /tmp/nv.fbrawrc
+check "  the no-copy line with bytes after a NUL stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbrawrc
 # A copy that does not set sw_commit: odi-oss nv prints nothing and exits 0.
 : > /tmp/nv.fbraw
 check "  a fallback copy without sw_commit does not stop the write" passed \

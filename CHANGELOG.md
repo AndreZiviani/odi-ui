@@ -18,14 +18,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   status there, not by the text alone. A fallback dump that fills its
   buffer, and an exit 0 with words that are not the key, are no answer
   either, nor is a `sw_commit` there that is not the one line and names
-  no slot 0 or 1, or a dump without its `Fallback environment: N` line;
-  the page then shows no fallback values. An exit 0 with nothing, a copy
+  no slot 0 or 1, or a dump not in the shape nv prints (its `Fallback
+  environment: N` line, whole name=value lines, one empty line to end
+  it); the page then shows no fallback values. An answer with a NUL in it
+  is none either, the line for no second copy included. An exit 0 with nothing, a copy
   that does not set `sw_commit`, lets the write through. The page shows
   the environment of `nv getenv` only from an nv that exited 0. The card and the
   ssh command under the upload follow one rule, so neither offers a
   partition confd refuses, nor one while `sw_tryactive` is none of 0, 1
-  and 2. While a write runs, the commands under the upload neither copy
-  nor write an image. `fwu_starter.sh` refused only an unreadable value;
+  and 2. While a write runs, from the request on, the commands under the
+  upload neither copy nor write an image. `fwu_starter.sh` refused only an unreadable value;
   the refusal of the committed slot was in the `fwu.sh` inside the
   upload, which an older or a vendor tarball does not have.
 
