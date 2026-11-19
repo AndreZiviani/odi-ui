@@ -1464,8 +1464,14 @@ echo "== applying"
 # asked, so the argv the route builds is what is checked.
 cat > /etc/scripts/apply.sh <<'APPLY'
 #!/bin/sh
-echo "apply.sh: $1"
-[ "$1" = omci ] && [ -f /tmp/apply-fail ] && exit 1
+# An apply.sh older than omci-live stops at its usage line, doing nothing.
+if [ "$1" = omci-live ] && [ -f /tmp/apply-old ]; then
+	echo "usage: $0 network|omci [--confirm|--revert] [seconds]|syslog|ntp|igmp|sfp" >&2
+	exit 1
+fi
+echo "apply.sh: $*"
+case "$1" in omci|omci-live) [ -f /tmp/apply-fail ] && exit 1 ;; esac
+[ "$1" = omci-live ] && [ -f /tmp/apply-defer ] && exit 3
 exit 0
 APPLY
 chmod +x /etc/scripts/apply.sh
@@ -1481,9 +1487,38 @@ check "apply igmp runs apply.sh igmp" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=igmp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: igmp')"
 check "apply sfp runs apply.sh sfp" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=sfp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: sfp')"
+# omci-live, what the page sends after a save of VLAN keys alone: apply.sh
+# omci-live, and exit 3 (an identity change waiting, nothing applied) is
+# deferred, not a plain failure. It is an action of its own, so a confd
+# older than the page refuses it instead of running the full apply.
+check "apply omci-live runs apply.sh omci-live" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: omci-live\u000a"')"
+check "no what is still the full apply" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'x=1' "http://127.0.0.1:$PORT/api/apply")" '"output":"apply.sh: omci\u000a"')"
+check "  and so is an empty one" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=' "http://127.0.0.1:$PORT/api/apply")" '"output":"apply.sh: omci\u000a"')"
+# A what that does not decode, or a field name before it that does not, is
+# not "no what": that would be the full apply.
+long=$(printf '%070d' 0)
+for bad in 'what=%zz' "what=$(printf '%020d' 0)" "$long=1&what=omci-live" '%zz=1&what=omci-live'; do
+	check "an apply with $(printf '%.24s' "$bad") is refused" 400 \
+		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/apply")"
+done
+touch /tmp/apply-defer
+check "a deferred live apply says so" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"deferred":true,')"
+check "  and a plain apply is not deferred" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: omci\u000a"')"
+rm -f /tmp/apply-defer
+touch /tmp/apply-old
+check "an apply.sh without omci-live is unsupported, nothing applied" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"unsupported":true,"output":"usage: ')"
+rm -f /tmp/apply-old
 touch /tmp/apply-fail
 check "a failing apply is reported as not applied" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":false')"
+check "  and a failing live apply is a failure, not unsupported" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"output":"apply.sh: omci-live')"
 rm -f /tmp/apply-fail
 check "an unknown action is refused" 400 \
 	"$(code -u "$AUTH" -X POST -d 'what=reboot' "http://127.0.0.1:$PORT/api/apply")"
@@ -1492,6 +1527,15 @@ check "applying needs the credential" 401 \
 check "a cross-origin apply is refused" 403 \
 	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")"
 rm -f /etc/scripts/apply.sh
+# Without apply.sh, omci restarts omci_app through /etc/runomci.sh: a live
+# apply must not get there.
+printf '#!/bin/sh\ntouch /tmp/runomci-ran\n' > /etc/runomci.sh
+chmod +x /etc/runomci.sh
+rm -f /tmp/runomci-ran
+check "without apply.sh a live apply is unsupported" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"unsupported":true,')"
+check "  and omci_app was not restarted" no "$([ -e /tmp/runomci-ran ] && echo yes || echo no)"
+rm -f /etc/runomci.sh /tmp/runomci-ran
 check "without apply.sh the network action is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=network' "http://127.0.0.1:$PORT/api/apply")" 'reboot to apply')"
 

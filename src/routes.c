@@ -2024,33 +2024,65 @@ void serve(int conn)
 	 * The image's apply.sh does the work and says what it did. Without
 	 * one, omci falls back to restarting the stock omci_app, the only apply
 	 * a stock-based image has, and network is refused.
+	 *
+	 * omci-live, what the page sends after a save of VLAN keys alone, runs
+	 * apply.sh omci-live: omcid applies nothing that re-registers the ONU,
+	 * and with an identity change waiting in the store it applies nothing
+	 * at all, which apply.sh says with exit 3 (deferred). An apply.sh
+	 * without that verb stops at its usage line before it does anything,
+	 * and the answer says unsupported; so does an image without apply.sh,
+	 * whose only apply restarts omci_app. Either way the change stays
+	 * saved, and the page offers the full apply. It is an action of its
+	 * own and not a flag on omci, so that a confd older than the page
+	 * refuses it (400) instead of running the full apply: an update puts
+	 * the web files in place before the confd that reads them.
 	 */
 	if (seq(path, "/api/apply") && seq(method, "POST")) {
-		char what[16];   /* "network", "omci", "syslog", "ntp", "igmp" or "sfp" */
+		char what[16];   /* "network", "omci", "omci-live", "syslog", "ntp", "igmp" or "sfp" */
 		long code = -1, got;
+		int want_live;
 
-		if (!form_get(body, "what", what, sizeof(what)) || !what[0])
+		/* No what is omci, as it always was; a what that does not
+		 * decode, or a body whose field names do not, is not "no what". */
+		if (!form_valid(body)) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"the form could not be read\"}");
+			return;
+		}
+		if (!form_has(body, "what"))
 			str_copy(what, "omci", sizeof(what));
-		if (!seq(what, "omci") && !seq(what, "network") &&
+		else if (!form_get(body, "what", what, sizeof(what)))
+			str_copy(what, "?", sizeof(what));
+		else if (!what[0])
+			str_copy(what, "omci", sizeof(what));
+		if (!seq(what, "omci") && !seq(what, "omci-live") && !seq(what, "network") &&
 		    !seq(what, "syslog") && !seq(what, "ntp") && !seq(what, "igmp") &&
 		    !seq(what, "sfp")) {
 			respond(conn, "400 Bad Request", "application/json", 0);
-			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network, omci, syslog, ntp, igmp or sfp\"}");
+			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network, omci, omci-live, syslog, ntp, igmp or sfp\"}");
 			return;
 		}
+		want_live = seq(what, "omci-live");
 		if (file_exists(APPLY_PATH)) {
 			char *argv[3];
+			int ok, unsupported;
 
 			argv[0] = "apply.sh";
 			argv[1] = what;
 			argv[2] = 0;
 			got = run_to_buf_ex(APPLY_PATH, argv, status, sizeof(status), &code,
 					   APPLY_TIMEOUT_MS);
+			ok = got >= 0 && code == 0;
+			unsupported = want_live && got > 0 && code == 1 && spre(status, "usage:");
 			respond(conn, "200 OK", "application/json", 0);
 			put_fd(conn, "{\"ok\":");
-			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ok ? "true" : "false");
 			put_fd(conn, ",\"applied\":");
-			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ok ? "true" : "false");
+			if (want_live && got >= 0 && code == 3)
+				put_fd(conn, ",\"deferred\":true");
+			if (unsupported)
+				put_fd(conn, ",\"unsupported\":true");
 			put_fd(conn, ",\"output\":\"");
 			if (got > 0)
 				put_json_cstr(conn, status);
@@ -2058,6 +2090,11 @@ void serve(int conn)
 			return;
 		}
 		respond(conn, "200 OK", "application/json", 0);
+		if (want_live) {
+			put_fd(conn, "{\"ok\":false,\"applied\":false,\"unsupported\":true,"
+				     "\"error\":\"this image has no " APPLY_PATH "; only the full apply restarts omci_app\"}");
+			return;
+		}
 		if (!seq(what, "omci")) {
 			put_fd(conn, "{\"ok\":false,\"applied\":false,"
 				     "\"error\":\"this image has no " APPLY_PATH "; reboot to apply\"}");

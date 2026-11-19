@@ -73,12 +73,26 @@ every session but the one that made it.
                                           On odi-oss also `needs` (the actions),
                                           `stock` and `interrupts` (whether the
                                           omci action drops the fibre service)
-    POST /api/apply     what=network|omci|syslog|ntp|igmp|sfp
+    POST /api/apply     what=network|omci|omci-live|syslog|ntp|igmp|sfp
                                           apply.sh on odi-oss (`omci` signals the
                                           running omcid to reload: a VLAN change is
                                           rebuilt in place, an identity change
                                           re-registers the ONU); without it, `omci`
-                                          restarts omci_app
+                                          restarts omci_app. No `what`, or an empty
+                                          one, is `omci`. `omci-live` runs
+                                          `apply.sh omci-live`: nothing that
+                                          re-registers; with an identity change
+                                          waiting in the store nothing is applied
+                                          and the answer carries `deferred: true`.
+                                          An apply.sh without that verb stops at its
+                                          usage line, and an image without apply.sh
+                                          would only restart omci_app: both answer
+                                          `unsupported: true` and apply nothing. A
+                                          confd older than `omci-live` answers it
+                                          400, as any unknown `what`. 400 as well
+                                          for a `what` that does not decode, or a
+                                          body with a field name that does not
+                                          decode: neither is read as no `what`
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file:
                                           `omci-identity.on`; `confd.setup`, the setup
                                           wizard marker below; and `update-check.off`

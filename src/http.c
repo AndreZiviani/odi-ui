@@ -1077,6 +1077,27 @@ int form_has(const char *body, const char *want)
 	return 0;
 }
 
+/* Whether every field name of a urlencoded body decodes. form_get and
+ * form_has stop at a name that does not (too long, a bad escape) and answer
+ * "absent" for every field after it, which is not the same: a route whose
+ * default acts on its own checks this first. */
+int form_valid(const char *body)
+{
+	char name[64];
+	unsigned long i = 0;
+
+	while (body[i]) {
+		unsigned long k = url_decode(body, i, '=', name, sizeof(name));
+
+		if (!k)
+			return 0;
+		i = url_skip(body, k);
+		if (body[i] == '&')
+			i++;
+	}
+	return 1;
+}
+
 /* Serve a static file, preferring the /etc/config override. */
 void serve_static(int fd, const char *name, const char *ctype)
 {

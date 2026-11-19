@@ -26,6 +26,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `scripts/check-assets.py` fails for such a file in `web/` and prints the
   largest one; style.css is 56,944 of at most 65,534 bytes.
 
+- Config: a save of VLAN keys alone no longer takes along an identity
+  change saved earlier and not applied. The page applied it at once with
+  `apply.sh omci`, omcid reread the whole store, and a pending serial
+  number re-registered the ONU while the page said it stayed in O5. The
+  page and the setup wizard now send that apply as `what=omci-live`,
+  which confd runs as `apply.sh omci-live` (odi-oss with that verb):
+  omcid applies nothing that re-registers, and with such a change waiting
+  it applies nothing, and the page says why and offers Apply now for all
+  pending OMCI changes. An apply.sh without the verb, an image without
+  apply.sh, or a confd older than the page (which refuses the action with
+  400) applies nothing either, and the page offers the same. `/api/apply`
+  answers 400 for a `what` or a field name that does not decode, instead
+  of running the full apply. The setup wizard stays on "Saved, not
+  applied" until that Apply now worked, offers a failed apply again, and
+  enables the button only once it is done writing; after a live apply its
+  view is headed "Line status".
+
 ## v1.18.1 (2026-11-18)
 
 - Config: a PLOAM password shorter than 10 characters, stored with zero
