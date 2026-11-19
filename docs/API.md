@@ -307,9 +307,13 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           when N is committed in either environment
                                           copy (`nv getenv`, or `nv fallback` on an nv
                                           that has it): the image a failed trial goes
-                                          back to, or when `nv fallback` does not
-                                          answer in time or says a copy could not be
-                                          read in full. The upload lives in
+                                          back to, or when `nv fallback` gives no
+                                          answer to go by: none in time, killed,
+                                          exit 3 (a copy not read in full), or any
+                                          answer but its value, exit 1 with its line
+                                          for no valid second copy, or exit 1 with
+                                          the usage text of an nv without the verb.
+                                          The upload lives in
                                           /tmp/img.upload.tar; an upload removes
                                           /tmp/img.tar, the ssh path
     GET  /api/firmware                    partitions, versions, build manifest,
@@ -317,9 +321,10 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `env` (the sw_* of `nv getenv`),
                                           `fallback` (the sw_* of `nv fallback`, the
                                           other environment copy; empty on stock nv),
-                                          `fallback_unsure` (true when that nv did not
-                                          answer in time or could not read a copy in
-                                          full: no knowing, so no write is offered),
+                                          `fallback_unsure` (true when that nv gave no
+                                          answer to go by, as above, or a dump that
+                                          filled the buffer: no knowing, so no write
+                                          is offered),
                                           `slots` ({"0":{"kernel":..., "built":<unix>}},
                                           from each kernel partition's uImage header;
                                           {} when it cannot be read);

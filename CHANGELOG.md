@@ -11,11 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   refuses that write, as well as one where `sw_commit` cannot be read, and
   one to the partition the fallback copy of the environment still commits
   to (on an nv with `nv fallback`). An `nv fallback` that does not answer
-  in time, exits 3 (odi-oss nv: a copy could not be read in full) or fails
-  with words it has for nothing else refuses the write too; only its line
-  for no valid second copy, or the usage text of a stock nv without the
-  verb, lets it through. confd goes by the exit status there, not by the
-  text of the message. The card and the
+  in time, is killed, exits 3 (odi-oss nv: a copy could not be read in
+  full) or fails with words it has for nothing else refuses the write too;
+  only exit 1 with its line for no valid second copy, or with the usage
+  text of an nv without the verb, lets it through. confd goes by the exit
+  status there, not by the text alone. A fallback dump that fills its
+  buffer, and an exit 0 with words that are not the key, are no answer
+  either. The card and the
   ssh command under the upload follow one rule, so neither offers a
   partition confd refuses, nor one while `sw_tryactive` is none of 0, 1
   and 2. While a write runs, the commands under the upload neither copy

@@ -208,12 +208,27 @@ fi
 # odi-oss nv says it), and /tmp/nv.vendor is the stock nv, which has no verb.
 # /tmp/nv.fbunread is a copy the odi-oss nv could not read in full (exit 3),
 # /tmp/nv.fbcrash an nv that fails with words it has for nothing else, and
-# /tmp/nv.fbhang an nv that does not answer in time.
+# /tmp/nv.fbhang an nv that does not answer in time. /tmp/nv.fbline holds an
+# exit status to give with the line for no valid second copy, which only
+# exit 1 makes a known answer; /tmp/nv.fbkill is an nv killed by a signal
+# after that line; /tmp/nv.fbbig a dump that fills the buffer of confd before
+# sw_commit, and /tmp/nv.fbjunk an exit 0 with words that are not the key.
 if [ "$1" = fallback ]; then
 	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
 	[ -f /tmp/nv.fbunread ] && { echo "nv: fallback: a copy of the environment could not be read in full, so which one U-Boot uses is not known; run it again"; exit 3; }
 	[ -f /tmp/nv.fbcrash ] && { echo "nv: fallback: something else went wrong"; exit 1; }
+	[ -f /tmp/nv.fbline ] && { echo "nv: no valid second copy of the environment"; exit "$(cat /tmp/nv.fbline)"; }
+	[ -f /tmp/nv.fbkill ] && { echo "nv: no valid second copy of the environment"; kill -9 $$; }
 	[ -f /tmp/nv.fbhang ] && exec sleep 5
+	if [ -f /tmp/nv.fbbig ]; then
+		[ -n "${2:-}" ] && exit 0
+		echo "Fallback environment: 2"
+		i=0
+		while [ "$i" -lt 120 ]; do echo "pad$i=0123456789012345678901234567890123456789"; i=$((i + 1)); done
+		echo "sw_commit=0"
+		exit 0
+	fi
+	[ -f /tmp/nv.fbjunk ] && { echo "nv: something that is not a value"; exit 0; }
 	[ -f /tmp/nv.fbcommit ] || { echo "nv: no valid second copy of the environment"; exit 1; }
 	fb="sw_commit=$(cat /tmp/nv.fbcommit)"
 	if [ -n "${2:-}" ]; then echo "$fb" | grep "^$2="; else printf 'Fallback environment: 2\n%s\n\n' "$fb"; fi
@@ -1259,6 +1274,34 @@ check "  so does an nv failure with words of its own" yes \
 check "  and the page is told so" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
 rm -f /tmp/nv.fbcrash
+# The status is what counts, not the words: the line for no valid second
+# copy with exit 3, or any status but 1, or from an nv killed after it, is no
+# knowing. With exit 1 it is the known answer, and the write goes ahead.
+for fbrc in 3 2; do
+	echo "$fbrc" > /tmp/nv.fbline
+	check "  so does the line for no second copy with exit $fbrc" yes \
+		"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+done
+echo 1 > /tmp/nv.fbline
+check "  that line with exit 1 does not stop the write" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+rm -f /tmp/nv.fbline
+touch /tmp/nv.fbkill
+check "  an nv killed after that line stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbkill
+touch /tmp/nv.fbjunk
+check "  an exit 0 with words that are not the key stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+rm -f /tmp/nv.fbjunk
+# A dump that fills the buffer may have lost sw_commit: the page offers no
+# write on it.
+touch /tmp/nv.fbbig
+check "  a fallback dump that fills the buffer is unsure" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbbig
 touch /tmp/nv.fbhang
 check "  so does an nv that does not answer for it in time" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
