@@ -43,6 +43,26 @@ function withPairs(pairs) {
   return out;
 }
 
+/* Requests still running whose answer goes into #saveout: a save, or an
+   Apply now or Reboot it offered. While one runs, Dismiss would hide the bar
+   and the answer would land unseen, so it waits for them. */
+let saveoutBusy = 0;
+
+function dismissSaveout() {
+  if (saveoutBusy > 0) return;
+  $('#saveout').textContent = '';
+  refreshSaveBar();
+}
+$('#saveout-dismiss').onclick = dismissSaveout;
+
+function saveoutIdle() { return saveoutBusy === 0; }
+
+async function intoSaveout(run) {
+  saveoutBusy++;
+  refreshSaveBar();
+  try { return await run(); } finally { saveoutBusy--; refreshSaveBar(); }
+}
+
 function refreshSaveBar() {
   const bar = $('#savebar');
   const n = EDITS.size;
@@ -53,6 +73,7 @@ function refreshSaveBar() {
   const answered = out.children.length > 0 || out.textContent.trim() !== '';
   $('#savebar-in').hidden = n === 0;
   $('#saveout-wrap').hidden = !answered;
+  $('#saveout-dismiss').disabled = saveoutBusy > 0;
   bar.hidden = n === 0 && !answered;
   $('#savecount').textContent = n === 1 ? '1 change' : n + ' changes';
   /* Disabled rather than failing on click: the field is already marked, and a
@@ -93,9 +114,17 @@ const form = (body) => ({
   body: new URLSearchParams(body).toString(),
 });
 
+/* Every way out of a save, the early ones included, ends in refreshSaveBar():
+   what it put into #saveout is only seen once the bar shows it. */
 async function save() {
   const out = $('#saveout');
   out.textContent = '';
+  await intoSaveout(async () => {
+    try { await writeEdits(out); } finally { $('#save').disabled = false; }
+  });
+}
+
+async function writeEdits(out) {
   const edited = [...EDITS.entries()];
   if (!edited.length) return;
   const pairs = withPairs(edited);
@@ -217,9 +246,6 @@ async function save() {
     }
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
-  } finally {
-    $('#save').disabled = false;
-    refreshSaveBar();
   }
 }
 
@@ -294,7 +320,7 @@ function applyButton(cls, text, run) {
         + 'the OLT takes (typically under a minute). Continue?', 'Apply now'))) return;
     if (cls === 'reboot' && !(await confirmClass(cls, rebootWarning(), 'Reboot'))) return;
     b.disabled = true;
-    try { await run(); } finally { b.remove(); }
+    await intoSaveout(async () => { try { await run(); } finally { b.remove(); } });
   };
   return b;
 }
@@ -457,6 +483,10 @@ async function reboot(out) {
 
 /* The legacy apply, kept for a stock-based image. */
 async function doApply(ev, what) {
+  await intoSaveout(() => legacyApply(ev, what));
+}
+
+async function legacyApply(ev, what) {
   const out = $('#saveout');
   ev.target.disabled = true;
   ev.target.textContent = 'Restarting OMCI…';
@@ -525,4 +555,4 @@ function renderIdentitySwitch() {
   host.append(text, acts);
 }
 
-export { refreshSaveBar, save, doApply, withPairs, encode, applyOmci, renderIdentitySwitch, applyButton, rebootWarning, followUp, reportedNow };
+export { refreshSaveBar, saveoutIdle, save, doApply, withPairs, encode, applyOmci, renderIdentitySwitch, applyButton, rebootWarning, followUp, reportedNow };

@@ -9,7 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Config: what a save answers stays in the save bar until it is dismissed
   or the next save starts. The bar used to close as soon as every edit was
   written, and took the *Apply now* and *Reboot* buttons and the hint that
-  a reboot is needed with it.
+  a reboot is needed with it. A save that stops before writing (identity
+  keys without the tick, an invalid value, a question declined) shows why
+  in the bar too. *Dismiss* is disabled while the save, or an *Apply now* or
+  *Reboot* it offered, still runs, and *Discard* keeps their answer, so it
+  is not written into a hidden bar.
 
 ## v1.19.0 (2026-11-20)
 
