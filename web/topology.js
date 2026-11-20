@@ -11,7 +11,7 @@
  * It reads the same `omcicli mib get <class>` the MIB browser runs, once per
  * class, on demand only: no polling, nothing written. Every edge is a pointer
  * attribute the OLT set. Where G.988 leaves the target class to another
- * attribute (a bridge port's TP type), this page resolves it the way odi-oss
+ * attribute (the TP type of a bridge port), this page resolves it the way odi-oss
  * omcid does (src/omci/respond/apply_bridge.c), so the picture shows what
  * the stick builds from, not a second opinion. The rule this page shares with
  * services.js: never invent a meaning. A pointer it cannot place is drawn as
@@ -30,7 +30,7 @@ const ONU_MADE = new Set(['262', '11', '329', '134']);
 const COLUMNS = ['T-CONT', 'GEM port', 'Interworking', '802.1p mapper',
   'Bridge port', 'Bridge', 'Bridge port', 'UNI'];
 
-/* A bridge port's TP type (G.988 9.3.4, attribute 3): which class its TP
+/* The TP type of a bridge port (G.988 9.3.4, attribute 3): which class its TP
    pointer names, and which side of the bridge that puts it on. Type 3 is
    resolved separately, below. */
 const TP_TYPE = {
@@ -47,7 +47,7 @@ const ASSOC = { 0: '47', 1: '130', 2: '11', 3: '134', 5: '266', 6: '281', 10: '3
 const IW_OPT = { 0: 'circuit emulation', 1: 'MAC bridged', 5: '802.1p mapper', 6: 'downstream broadcast' };
 const DIR = { 1: 'upstream', 2: 'downstream', 3: 'both ways' };
 
-/* '0x0001', '0x601', '1', '01' (odi-oss hex) -> 1; anything else -> NaN. */
+/* 0x0001, 0x601, 1, 01 (odi-oss hex) -> 1; anything else -> NaN. */
 function num(v) {
   const s = String(v ?? '').trim();
   if (/^0x[0-9a-f]+$/i.test(s)) return parseInt(s, 16);
@@ -76,7 +76,7 @@ const isNull = (n, exists) => Number.isNaN(n) || n === 0xffff || (n === 0 && !ex
  * Pure, so scripts/web-check.mjs drives it with fixtures.
  *
  * Returns { nodes, edges, dangling, notes }:
- *   nodes     Map 'cls/id' -> { key, cls, id, col, title, lines[], onu, used }
+ *   nodes     Map cls/id -> { key, cls, id, col, title, lines[], onu, used }
  *   edges     [{ from, to, label }], drawn left to right (fibre to UNI)
  *   dangling  [{ from, what, target }] pointers to an entity that is not there
  *   notes     sentences about how an ambiguous pointer was read
@@ -118,7 +118,7 @@ function buildGraph(dumps) {
 
   for (const [id, inst] of rows['262']) {
     const alloc = val(inst, 'AllocID');
-    /* 0x00ff and 0xffff are G.988's "not assigned". A T-CONT in use can
+    /* 0x00ff and 0xffff mean "not assigned" in G.988. A T-CONT in use can
        still show it: the Alloc-ID also comes by PLOAM, and omcli tcont
        says which one the stick runs on. */
     const unset = alloc === 0xff || alloc === 0xffff;
@@ -145,7 +145,9 @@ function buildGraph(dumps) {
     const by = new Map();      /* IW TP id -> the p-bits that reach it */
     for (let p = 0; p < 8; p++) {
       const ptr = val(inst, 'IwTpPtrPbit' + p);
-      if (isNull(ptr, has('266', 0))) continue;
+      /* 0 is unset here whatever exists: omcid skips a p-bit pointer of 0
+         or 0xffff (apply_bridge.c). */
+      if (Number.isNaN(ptr) || ptr === 0 || ptr === 0xffff) continue;
       if (!has('266', ptr)) { dangling.push({ from: n.key, what: 'p-bit ' + p, target: 'ME 266 ' + hex(ptr) }); continue; }
       if (!by.has(ptr)) by.set(ptr, []);
       by.get(ptr).push(p);
@@ -191,16 +193,27 @@ function buildGraph(dumps) {
       if (iw) {
         /* omcid then takes the p-bits from the mapper the IW TP names as
            its service profile, so that mapper is on the path: drawn as
-           IW TP -> mapper -> bridge port. */
+           IW TP -> mapper -> bridge port. When that mapper has the id of
+           the pointer (ISP1), reading the pointer as G.988 says, as the
+           mapper, draws the same thing: the MIB cannot tell which the OLT
+           meant, so nothing is said. Only a pointer the two readings
+           place apart gets the note. */
         const sp = val(rows['266'].get(ptr), 'ServProPtr');
         const via = has('130', sp) ? ', through mapper ' + hex(sp) : '';
         if (via) { target = '130'; to = sp; }
-        kind = 'TP type 3, names IW TP ' + hex(ptr);
-        quirk.push(hex(id) + ' \u2192 IW TP ' + hex(ptr) + via);
+        if (!(via && sp === ptr)) {
+          kind = 'TP type 3, names IW TP ' + hex(ptr);
+          quirk.push(hex(id) + ' \u2192 IW TP ' + hex(ptr) + via);
+        }
       }
     }
     const n = add('47', id, side === 'uni' ? 6 : 4, 'Bridge port ' + hex(id), [kind]);
     n.side = side;
+    /* omcid builds no service on an IW TP of interworking option 6, the
+       downstream broadcast GEM: apply_qos.c programs it as the broadcast
+       flow. Still drawn, since frames do take it, but said. */
+    if (type === 5 && has('266', ptr) && val(rows['266'].get(ptr), 'IwOpt') === 6)
+      n.lines.push('broadcast GEM: a flow, not a service');
     if (target) {
       if (side === 'uni') follow(n.key, 'TP pointer', to, target, () => link('47', id, target, to));
       else follow(n.key, 'TP pointer', to, target, () => link(target, to, '47', id));
@@ -241,7 +254,7 @@ function buildGraph(dumps) {
   return { nodes, edges, dangling, notes };
 }
 
-/* [0,1,2,3,5] -> '0-3, 5' */
+/* [0,1,2,3,5] -> 0-3, 5 */
 function ranges(bits) {
   const out = [];
   for (let i = 0; i < bits.length; i++) {
@@ -310,7 +323,10 @@ function box(n) {
   b.setAttribute('aria-pressed', 'false');
   b.append(el('span', 'topo-title', n.title));
   for (const l of n.lines) b.append(el('span', 'topo-line', l));
-  if (!n.used) b.append(el('span', 'topo-line topo-flag', n.cls === '262' ? 'no GEM port in use' : 'stored, not in a path'));
+  /* What the ONU made for itself (a UNI, an IP host) sits unbridged on many
+     lines; only a T-CONT says something by being unused. */
+  if (!n.used && n.cls === '262') b.append(el('span', 'topo-line topo-flag', 'no GEM port in use'));
+  else if (!n.used && !n.onu) b.append(el('span', 'topo-line topo-flag', 'stored, not in a path'));
   b.onclick = () => select(n.key);
   return b;
 }
@@ -431,21 +447,36 @@ async function renderTopology(force) {
   if (loaded && !force) return;
   loaded = true;
   const run = ++RUN;
+  const facts = $('#topo-facts');
   host.textContent = '';
   host.dataset.sel = '';
+  if (facts) facts.textContent = '';
   msg.textContent = 'Reading ' + CLASSES.length + ' tables…';
 
   const dumps = {};
   const failed = [];
-  for (const cls of CLASSES) {
+  const partial = [];
+  for (let i = 0; i < CLASSES.length; i++) {
+    const cls = CLASSES[i];
     const d = await fetchMe(cls);
     if (run !== RUN) return;
     const why = unavailable(d);
     /* An empty table is a finding (no mapper on this line); a table that
        could not be read is not, and is named so the picture is not taken
-       for the whole truth. */
+       for the whole truth. The T-CONTs are the exception: the ONU always
+       makes them, so none means the read came back incomplete, as on the
+       Services tab. */
     if (why && !/does not know this table/.test(why)) failed.push('ME ' + cls);
+    else if (!why && cls === '262' && !d.instances.length) failed.push('ME ' + cls);
+    else if (!why && d.truncated) partial.push('ME ' + cls);
     dumps[cls] = why ? { instances: [] } : d;
+    /* Each read waits up to 2 s, and confd answers nothing else meanwhile:
+       after one timeout the daemon is stuck, and the rest would only add to
+       the wait. */
+    if (why && /timed out/.test(why)) {
+      for (const rest of CLASSES.slice(i + 1)) { failed.push('ME ' + rest); dumps[rest] = { instances: [] }; }
+      break;
+    }
   }
 
   GRAPH = buildGraph(dumps);
@@ -459,11 +490,14 @@ async function renderTopology(force) {
   renderGraph(host, GRAPH);
   drawEdges(host, GRAPH);
 
-  const facts = $('#topo-facts');
-  facts.textContent = '';
+  if (!facts) return;
   if (failed.length)
     facts.append(el('p', 'me-note bad', 'Not read: ' + failed.join(', ')
       + '. Boxes from those tables are missing, so a path may look broken when it is not.'));
+  if (partial.length)
+    facts.append(el('p', 'me-note bad', 'Read only in part, the dump was longer than the daemon will hold: '
+      + partial.join(', ') + '. Entities past the cut are missing, so a pointer to one shows as naming '
+      + 'nothing and a path may look broken when it is not.'));
   for (const d of GRAPH.dangling)
     facts.append(el('p', 'me-note bad', GRAPH.nodes.get(d.from).title + ': its ' + d.what
       + ' names ' + d.target + ', which does not exist.'));
