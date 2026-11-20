@@ -17,7 +17,7 @@
  * restarting omci_app and a reboot.
  */
 
-import { $, el, get, createHelpToggle } from './dom.js';
+import { $, el, get, createHelpToggle, ask } from './dom.js';
 import {
   S, EDITS, CLASS_LABEL, CLASS_RANK, costBadge, imageAware, settingOf,
   IDENTITY_SWITCH, identitySwitchOn, vlanRisk,
@@ -115,7 +115,7 @@ async function save() {
      point to say that a value can stop the traffic. */
   if (imageAware()) {
     const risk = vlanRisk(S.VALUES, { ...S.VALUES, ...Object.fromEntries(pairs) });
-    if (risk && !confirmClass('live', risk + ' Continue?')) {
+    if (risk && !(await confirmClass('live', risk + ' Continue?', 'Save'))) {
       out.append(el('div', 'warn', 'Not saved.'));
       return;
     }
@@ -147,7 +147,7 @@ async function save() {
         + 'back to the old address after 90 seconds unless you press Keep on the new one. '
         + (net.some(([k]) => k === 'LAN_ROUTES') ? 'The static routes are tried with it. ' : '')
         + 'Nothing is stored until you do. Continue?';
-    if (!confirmClass('live', text)) {
+    if (!(await confirmClass('live', text, routesOnly ? 'Try the routes' : 'Try the address'))) {
       out.append(el('div', 'warn', 'Not saved.'));
       return;
     }
@@ -229,8 +229,8 @@ async function followUp(res, written, out) {
   }
   if (needs.includes('network')) {
     const moves = written.includes('LAN_IP_ADDR') || written.includes('LAN_SUBNET');
-    if (!moves || confirmClass('live', 'The management address changes now, and this '
-        + `page with it, to ${S.VALUES.LAN_IP_ADDR}. Continue?`)) {
+    if (!moves || await confirmClass('live', 'The management address changes now, and this '
+        + `page with it, to ${S.VALUES.LAN_IP_ADDR}. Continue?`, 'Change the address')) {
       await applyNetwork(out, moves);
     } else {
       out.append(el('div', 'warn', 'Saved, not applied: the address changes at the next '
@@ -279,19 +279,24 @@ function applyButton(cls, text, run) {
   b.type = 'button';
   b.append(document.createTextNode(text + ' '), costBadge(cls));
   b.onclick = async () => {
-    if (cls === 'internet' && !confirmClass(cls, 'This takes the fibre service down: the '
+    if (cls === 'internet' && !(await confirmClass(cls, 'This takes the fibre service down: the '
         + 'ONU is deactivated, omcid clears its MIB, and the ONU ranges again and '
         + 'waits for the OLT to provision it. About ten seconds, then however long '
-        + 'the OLT takes (typically under a minute). Continue?')) return;
-    if (cls === 'reboot' && !confirmClass(cls, rebootWarning())) return;
+        + 'the OLT takes (typically under a minute). Continue?', 'Apply now'))) return;
+    if (cls === 'reboot' && !(await confirmClass(cls, rebootWarning(), 'Reboot'))) return;
     b.disabled = true;
     try { await run(); } finally { b.remove(); }
   };
   return b;
 }
 
-function confirmClass(cls, text) {
-  return confirm(`${'\u25AE'.repeat(CLASS_RANK[cls] || 0)} ${CLASS_LABEL[cls] || cls}\n\n${text}`);
+function confirmClass(cls, text, action) {
+  return ask(text, {
+    action,
+    danger: cls === 'internet' || cls === 'reboot',
+    badge: costBadge(cls),
+    badgeText: `${'\u25AE'.repeat(CLASS_RANK[cls] || 0)} ${CLASS_LABEL[cls] || cls}`,
+  });
 }
 
 /* Which slot a reboot comes back on, which is the whole question on a trial. */

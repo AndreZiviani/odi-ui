@@ -123,4 +123,55 @@ function wireHelp() {
   $('#helptoggle').setAttribute('aria-pressed', String(isFullHelpOn()));
 }
 
-export { $, el, fail, get, bytes, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };
+/*
+ * The question before a change, in the page's own dialog (#ask-dialog) rather
+ * than the browser's confirm(): the cost badge heads it as it does everywhere
+ * else, and the button says what it does. `text` is the question as confirm()
+ * took it: a first paragraph that is a question becomes the heading, and a
+ * closing "Continue?" goes, since the button asks it. `badge` is a cost badge
+ * element and `badgeText` its words, for confirm(), which still asks where the
+ * page has no modal dialog (scripts/web-check.mjs). `back` names the other
+ * button. Resolves true or false; Escape and that button are false.
+ */
+function ask(text, { action = 'Continue', back = 'Cancel', danger = false, badge = null, badgeText = '' } = {}) {
+  const dlg = $('#ask-dialog');
+  if (!dlg || typeof dlg.showModal !== 'function') {
+    return Promise.resolve(confirm((badgeText ? badgeText + '\n\n' : '') + text));
+  }
+  const paras = String(text).split('\n\n').map((p) => p.trim()).filter(Boolean);
+  if (paras.length > 1 && paras[paras.length - 1] === 'Continue?') paras.pop();
+  if (paras.length) paras[paras.length - 1] = paras[paras.length - 1].replace(/\s*Continue\?$/, '');
+  const title = paras.length > 1 && paras[0].endsWith('?') ? paras.shift() : '';
+
+  const head = $('#ask-head');
+  head.textContent = '';
+  if (badge) head.append(badge);
+  if (title) head.append(el('h2', null, title));
+  head.hidden = !badge && !title;
+  const body = $('#ask-body');
+  body.textContent = '';
+  for (const p of paras) if (p) body.append(el('p', null, p));
+  const ok = $('#ask-ok');
+  const cancel = $('#ask-cancel');
+  ok.textContent = action;
+  cancel.textContent = back;
+  ok.className = danger ? 'danger' : 'primary';
+
+  return new Promise((resolve) => {
+    const done = (v) => {
+      ok.onclick = cancel.onclick = dlg.oncancel = null;
+      if (dlg.open) dlg.close();
+      resolve(v);
+    };
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    /* Escape closes a modal dialog by itself: that is a no, too. */
+    dlg.oncancel = (e) => { e.preventDefault(); done(false); };
+    dlg.showModal();
+    /* Enter on a focused button presses it: on a change that cannot be taken
+       back that should be Cancel. */
+    (danger ? cancel : ok).focus();
+  });
+}
+
+export { $, el, fail, get, bytes, ask, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };
