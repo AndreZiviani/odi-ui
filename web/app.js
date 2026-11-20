@@ -14,7 +14,7 @@ import { parsePorts } from './flow.js';
 import { linkCheck, trackLink, omciState } from './linkcheck.js';
 import { parseOmci } from './omci.js';
 import { renderAll } from './config.js';
-import { save, refreshSaveBar, renderIdentitySwitch } from './save.js';
+import { save, refreshSaveBar, saveoutIdle, renderIdentitySwitch } from './save.js';
 import { renderFirmware, wireFirmware, renderTrial } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
@@ -158,7 +158,13 @@ wireUpdates();
    odi-oss diag from its own L2 table readback, under the same command. */
 $('#l2-load').onclick = renderL2;
 $('#gopassword').onclick = () => { go('system/access'); $('#pw-pass').focus(); };
-$('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
+/* Discard takes back the edits; the answer of a request still running stays. */
+$('#discard').onclick = () => {
+  EDITS.clear();
+  if (saveoutIdle()) $('#saveout').textContent = '';
+  renderAll(); refreshSaveBar();
+};
+/* Dismiss (#saveout-dismiss) is wired in save.js, which knows what still runs. */
 
 /*
  * Say so while the built-in credential is in force. The fallback exists so a

@@ -2328,13 +2328,93 @@ EDITS.clear();
   await save();
   ok(asked.length === 1 && /stops tagging VLAN 1\b/.test(asked[0]) && /^\u25AE Live/.test(asked[0]),
      'save: router tags asks first, as a Live change that stops the tagging');
-  ok(posts.length === 0 && /Not saved/.test(textOf(doc.querySelector('#saveout'))),
-     'save: declined, nothing is written');
+  ok(posts.length === 0 && /Not saved/.test(textOf(doc.querySelector('#saveout')))
+     && doc.querySelector('#saveout-wrap').hidden === false && doc.querySelector('#savebar').hidden === false,
+     'save: declined, nothing is written, and the bar shows that it was not saved');
   globalThis.confirm = (t) => { asked.push(t); return true; };
   await save();
   ok(posts.some(([p, b]) => p === '/api/config' && /VLAN_MANU_MODE=0/.test(b)),
      'save: accepted, the change is written');
   EDITS.clear();
+
+  /* What a save answered stays in the bar after the written edits have left
+     the count: an Apply now or Reboot there is the rest of the save. */
+  {
+    const json = (v) => ({ ok: true, status: 200, json: async () => v });
+    globalThis.fetch = async (path, opts) => {
+      if (String(path) === '/api/config' && opts && opts.method === 'POST')
+        return json({ results: [{ name: 'VLAN_MANU_TAG_PRI', ok: true, value: '3' }], needs: [], apply: 'reboot' });
+      if (String(path) === '/api/values') return json({ ...S.VALUES, VLAN_MANU_TAG_PRI: '3' });
+      return realFetch(path, opts);
+    };
+    const keepValues = S.VALUES, keepSettings = S.SETTINGS;
+    S.SETTINGS = {};   /* a stock-based image: the reboot is said in the bar */
+    EDITS.set('VLAN_MANU_TAG_PRI', '3');
+    await save();
+    ok(EDITS.size === 0 && doc.querySelector('#savebar').hidden === false
+       && doc.querySelector('#savebar-in').hidden === true && doc.querySelector('#saveout-wrap').hidden === false
+       && /read at boot/.test(textOf(doc.querySelector('#saveout'))),
+       'save: with every edit written, the bar stays for what the save answered');
+    await doc.querySelector('#saveout-dismiss').onclick();
+    ok(doc.querySelector('#savebar').hidden === true && textOf(doc.querySelector('#saveout')) === '',
+       'save: Dismiss clears what the save answered, and the bar goes');
+
+    /* Dismiss waits for a request whose answer goes into the bar: hidden
+       there, a refused reboot was seen only as a stale line later. */
+    let release;
+    const held = new Promise((r) => { release = r; });
+    globalThis.fetch = async (path, opts) => {
+      if (String(path) === '/api/config' && opts && opts.method === 'POST') {
+        await held;
+        return json({ results: [{ name: 'VLAN_MANU_TAG_PRI', ok: true, value: '3' }], needs: [], apply: 'reboot' });
+      }
+      if (String(path) === '/api/values') return json({ ...S.VALUES, VLAN_MANU_TAG_PRI: '3' });
+      return realFetch(path, opts);
+    };
+    { const d = doc.createElement('div'); d.textContent = 'an answer from before'; doc.querySelector('#saveout').append(d); }
+    EDITS.set('VLAN_MANU_TAG_PRI', '3');
+    const running = save();
+    { const d = doc.createElement('div'); d.textContent = 'still running'; doc.querySelector('#saveout').append(d); }
+    refreshSaveBar();
+    ok(doc.querySelector('#saveout-dismiss').disabled === true,
+       'save: while a request runs, Dismiss is disabled');
+    await doc.querySelector('#saveout-dismiss').onclick();
+    ok(/still running/.test(textOf(doc.querySelector('#saveout'))),
+       'save: and a click on it then hides nothing');
+    release();
+    await running;
+    ok(doc.querySelector('#saveout-dismiss').disabled === false && doc.querySelector('#saveout-wrap').hidden === false
+       && /read at boot/.test(textOf(doc.querySelector('#saveout'))),
+       'save: once it is answered, Dismiss works again and the answer is in view');
+    await doc.querySelector('#saveout-dismiss').onclick();
+    S.VALUES = keepValues; S.SETTINGS = keepSettings;
+  }
+
+  /* The early ways out of a save say why in the bar: the message used to go
+     into a hidden #saveout, so Save did nothing anyone could see. */
+  {
+    const keepConfirm = globalThis.confirm;
+    globalThis.confirm = () => true;
+    EDITS.set('GPON_PLOAM_FORMAT', '1');
+    refreshSaveBar();
+    doc.querySelector('#confirm').checked = false;
+    posts.length = 0;
+    await save();
+    ok(posts.length === 0 && /confirmation ticked/.test(textOf(doc.querySelector('#saveout')))
+       && doc.querySelector('#saveout-wrap').hidden === false,
+       'save: an identity key without the tick says so in view');
+    EDITS.clear();
+    await doc.querySelector('#saveout-dismiss').onclick();
+    EDITS.set('VLAN_MANU_TAG_VID', '5000');
+    refreshSaveBar();
+    await save();
+    ok(posts.length === 0 && /VLAN_MANU_TAG_VID/.test(textOf(doc.querySelector('#saveout')))
+       && doc.querySelector('#saveout-wrap').hidden === false,
+       'save: an invalid value says so in view');
+    EDITS.clear();
+    await doc.querySelector('#saveout-dismiss').onclick();
+    globalThis.confirm = keepConfirm;
+  }
   globalThis.fetch = realFetch;
   globalThis.confirm = () => false;
 
