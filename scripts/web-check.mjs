@@ -3569,6 +3569,8 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
      && doc.querySelector('#ask-body').children.length === 1
      && textOf(doc.querySelector('#ask-body')) === 'Whoever holds it can no longer log in.',
      'ask: the badge and the question head the dialog, and the closing Continue? goes');
+  ok(dlg.getAttribute('aria-labelledby') === 'ask-head' && dlg.getAttribute('aria-label') === null,
+     'ask: a heading names the dialog');
   ok(doc.querySelector('#ask-ok').textContent === 'Remove key' && doc.querySelector('#ask-ok').className === 'danger',
      'ask: the button says what it does, in red for a change that cannot be taken back');
   doc.querySelector('#ask-ok').onclick();
@@ -3577,6 +3579,8 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   p = ask('The address changes now. Continue?', { action: 'Change the address' });
   ok(head.hidden === true && textOf(doc.querySelector('#ask-body')) === 'The address changes now.',
      'ask: a single paragraph has no heading, and loses its Continue?');
+  ok(dlg.getAttribute('aria-label') === 'Change the address' && dlg.getAttribute('aria-labelledby') === null,
+     'ask: with no heading the dialog is named by its action');
   let prevented = false;
   dlg.oncancel({ preventDefault: () => { prevented = true; } });
   ok(await p === false && prevented && !dlg.open, 'ask: Escape answers no');
