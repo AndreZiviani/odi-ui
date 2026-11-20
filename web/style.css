@@ -511,8 +511,10 @@ h3.sec { margin: 24px 0 0; padding-bottom: 6px; color: var(--ink-2); font-size: 
 .savebar-in { padding: 12px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
 .savesum, #saveclasses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .saveacts { margin-left: auto; display: flex; gap: 8px; }
-#saveout { padding: 0 24px; max-height: 40vh; overflow: auto; }
-#saveout:not(:empty) { padding-bottom: 12px; }
+.saveout-wrap { display: flex; align-items: flex-start; gap: 12px; padding: 0 24px 12px; }
+.savebar-in[hidden] + .saveout-wrap { padding-top: 12px; }
+#saveout { flex: 1 1 auto; min-width: 0; max-height: 40vh; overflow: auto; }
+#saveout-dismiss { flex: none; }
 #saveout pre { max-height: 160px; }
 
 /* ------------------------------------------------------------- the stick
@@ -884,7 +886,8 @@ button.mib-row:focus-visible { outline-offset: -2px; }
   .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .subtabs [role=tab] { white-space: nowrap; }
   .savebar-in { padding: 10px 16px; }
-  #saveout { padding: 0 16px; }
+  .saveout-wrap { padding: 0 16px 12px; }
+  .savebar-in[hidden] + .saveout-wrap { padding-top: 10px; }
   .saveacts { margin-left: 0; width: 100%; }
   .saveacts button { flex: 1; justify-content: center; }
   .flow { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; }

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config: what a save answers stays in the save bar until it is dismissed
+  or the next save starts. The bar used to close as soon as every edit was
+  written, and took the *Apply now* and *Reboot* buttons and the hint that
+  a reboot is needed with it.
+
 ## v1.18.1 (2026-11-18)
 
 - Config: a PLOAM password shorter than 10 characters, stored with zero

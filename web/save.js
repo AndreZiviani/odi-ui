@@ -46,7 +46,14 @@ function withPairs(pairs) {
 function refreshSaveBar() {
   const bar = $('#savebar');
   const n = EDITS.size;
-  bar.hidden = n === 0;
+  /* What a save answered stays until it is dismissed or the next save starts:
+     an Apply now or Reboot it offers is the rest of that save, and the edits
+     it wrote are gone from the count by then. */
+  const out = $('#saveout');
+  const answered = out.children.length > 0 || out.textContent.trim() !== '';
+  $('#savebar-in').hidden = n === 0;
+  $('#saveout-wrap').hidden = !answered;
+  bar.hidden = n === 0 && !answered;
   $('#savecount').textContent = n === 1 ? '1 change' : n + ' changes';
   /* Disabled rather than failing on click: the field is already marked, and a
      Save button that does nothing is worse than one that says it cannot. */

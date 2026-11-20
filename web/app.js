@@ -155,7 +155,8 @@ wireUpdates();
    odi-oss diag from its own L2 table readback, under the same command. */
 $('#l2-load').onclick = renderL2;
 $('#gopassword').onclick = () => { go('system/access'); $('#pw-pass').focus(); };
-$('#discard').onclick = () => { EDITS.clear(); renderAll(); refreshSaveBar(); $('#saveout').textContent = ''; };
+$('#discard').onclick = () => { EDITS.clear(); $('#saveout').textContent = ''; renderAll(); refreshSaveBar(); };
+$('#saveout-dismiss').onclick = () => { $('#saveout').textContent = ''; refreshSaveBar(); };
 
 /*
  * Say so while the built-in credential is in force. The fallback exists so a

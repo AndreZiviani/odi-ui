@@ -708,7 +708,7 @@ Does the stock firmware work on the same line:</pre>
 </main>
 
 <div id="savebar" class="savebar" hidden>
-  <div class="savebar-in">
+  <div class="savebar-in" id="savebar-in">
     <div class="savesum">
       <strong id="savecount"></strong>
       <span id="saveclasses"></span>
@@ -722,7 +722,10 @@ Does the stock firmware work on the same line:</pre>
       <button id="save" class="primary" type="button">Save changes</button>
     </div>
   </div>
-  <div id="saveout"></div>
+  <div id="saveout-wrap" class="saveout-wrap" hidden>
+    <div id="saveout"></div>
+    <button id="saveout-dismiss" class="quiet" type="button">Dismiss</button>
+  </div>
 </div>
 
 <!-- The management address trial (netaddr.js): modal on every tab while one

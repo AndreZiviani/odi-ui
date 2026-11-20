@@ -2179,6 +2179,30 @@ EDITS.clear();
   ok(posts.some(([p, b]) => p === '/api/config' && /VLAN_MANU_MODE=0/.test(b)),
      'save: accepted, the change is written');
   EDITS.clear();
+
+  /* What a save answered stays in the bar after the written edits have left
+     the count: an Apply now or Reboot there is the rest of the save. */
+  {
+    const json = (v) => ({ ok: true, status: 200, json: async () => v });
+    globalThis.fetch = async (path, opts) => {
+      if (String(path) === '/api/config' && opts && opts.method === 'POST')
+        return json({ results: [{ name: 'VLAN_MANU_TAG_PRI', ok: true, value: '3' }], needs: [], apply: 'reboot' });
+      if (String(path) === '/api/values') return json({ ...S.VALUES, VLAN_MANU_TAG_PRI: '3' });
+      return realFetch(path, opts);
+    };
+    const keepValues = S.VALUES, keepSettings = S.SETTINGS;
+    S.SETTINGS = {};   /* a stock-based image: the reboot is said in the bar */
+    EDITS.set('VLAN_MANU_TAG_PRI', '3');
+    await save();
+    ok(EDITS.size === 0 && doc.querySelector('#savebar').hidden === false
+       && doc.querySelector('#savebar-in').hidden === true && doc.querySelector('#saveout-wrap').hidden === false
+       && /read at boot/.test(textOf(doc.querySelector('#saveout'))),
+       'save: with every edit written, the bar stays for what the save answered');
+    doc.querySelector('#saveout').textContent = '';
+    refreshSaveBar();
+    ok(doc.querySelector('#savebar').hidden === true, 'save: dismissed, the bar goes');
+    S.VALUES = keepValues; S.SETTINGS = keepSettings;
+  }
   globalThis.fetch = realFetch;
   globalThis.confirm = () => false;
 
