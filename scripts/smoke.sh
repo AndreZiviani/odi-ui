@@ -1301,7 +1301,7 @@ check "  an exit 0 with words that are not the key stops the write" yes \
 check "  and the page is told so" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
 rm -f /tmp/nv.fbjunk
-# The key's line must name slot 0 or 1 and be all there is: an empty or
+# The line of the key must name slot 0 or 1 and be all there is: an empty or
 # other value, a second line, or a NUL in the answer is no knowing either.
 for fbv in x ''; do
 	printf '%s\n' "$fbv" > /tmp/nv.fbcommit

@@ -223,23 +223,19 @@ done:
 	put_fd(fd, "}");
 }
 
-/* The exit status of odi-oss nv getenv and fallback when a copy of the
- * environment could not be read in full (src/nv/main.c): no value, and no
- * knowing what that copy says. */
-#define NV_EXIT_UNREAD 3
-
 /*
  * Whether an `nv fallback` answer is one to go by. Three are:
  *   - exit 0 (a value, a dump, or the key not set in that copy), when it
  *     fit the buffer: a full one may have cut what the caller looks for;
- *   - exit 1 with odi-oss nv's exact line for no valid second copy;
+ *   - exit 1 with the exact line odi-oss nv prints for no valid second
+ *     copy;
  *   - exit 1 with the usage text of an nv without the verb, whose first
  *     line is "Usage: nv getenv [parameter_name]". That says nothing about
  *     a second copy, only that this nv cannot tell, and the write it then
  *     allows is the one a stick without the verb always had.
- * Anything else (no answer in time, killed by a signal, an incomplete
- * read, another status or other words) is no knowing, not "no fallback
- * copy".
+ * Anything else (no answer in time, killed by a signal, exit 3 for a
+ * copy odi-oss nv could not read in full, another status or other words)
+ * is no knowing, not "no fallback copy".
  */
 static int nv_fallback_known(long got, long code, const char *buf, unsigned long cap)
 {
@@ -736,8 +732,8 @@ int slot_state_refresh(void)
  * `out` is not taken at all: a value cut after its first digit is not one to
  * decide on. `known`, for fallback, says whether the answer is one to go by
  * (nv_fallback_known); a cut value is not, nor an exit 0 that printed
- * something other than the key: odi-oss nv prints the key's line, or nothing
- * when the copy does not set it.
+ * something other than the key: odi-oss nv prints the line of the key, or
+ * nothing when the copy does not set it.
  */
 static int nv_read(const char *verb, const char *key, char *out, unsigned long cap,
 		   int *known)
@@ -758,7 +754,7 @@ static int nv_read(const char *verb, const char *key, char *out, unsigned long c
 		*known = nv_fallback_known(got, code, buf, sizeof(buf));
 	/* And only from an nv that exited 0: a complete line from one that
 	 * then failed is not a value to decide on. For fallback the answer is
-	 * the key's line alone or nothing: a NUL, more lines, or the line
+	 * the line of the key alone or nothing: a NUL, more lines, or the line
 	 * after others is no knowing. */
 	if (got <= 0 || code != 0)
 		return 0;
