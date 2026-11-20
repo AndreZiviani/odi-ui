@@ -20,6 +20,8 @@ import { dirname, join } from 'path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /* --- a DOM, to the depth this page actually uses ------------------------- */
+/* Each node's parent, outside the node: tests stringify node trees. */
+const PARENT = new WeakMap();
 class El {
   constructor(tag) {
     this.tagName = tag; this.children = []; this.attrs = {};
@@ -47,10 +49,16 @@ class El {
   append(...n) {
     for (const x of n) {
       this.children.push(x);
+      if (x && typeof x === 'object') PARENT.set(x, this);
       if (this.tagName === 'select' && x.tagName === 'option') this.options.push(x);
     }
   }
   appendChild(n) { this.append(n); }
+  remove() {
+    const p = PARENT.get(this);
+    if (p && p.children.includes(this)) p.children.splice(p.children.indexOf(this), 1);
+    PARENT.delete(this);
+  }
   setAttribute(k, v) { this.attrs[k] = v; }
   getAttribute(k) { return this.attrs[k] ?? null; }
   removeAttribute(k) { delete this.attrs[k]; }
@@ -1664,6 +1672,37 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '1' }, fallback: {},
                      slots: {}, exe: '/bin/confd' });
   ok(/Cancel the trial/.test(t), 'a pending trial of a slot whose kernel cannot be read can still be cancelled');
+  /* One rule for the card and the command under the upload, the one confd
+     applies (writeRefusal): the command goes to the starter past confd. */
+  const upload = () => textOf(doc.querySelector('#upload'));
+  const offered = /Write the uploaded image here|Upload an image below/;
+  t = await fwText({ ...trialFW, exe: '/bin/confd' });
+  ok(/This is the committed partition/.test(t) && !offered.test(t) && !/fwu_starter/.test(upload())
+     && /no write command now for partition 0/.test(upload()),
+     'during a trial the committed partition offers no write, on its card or as a command');
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: { sw_commit: '1' },
+                     slots: {}, exe: '/bin/confd' });
+  ok(/fallback copy of the U-Boot environment still commits to this partition/.test(t) && !offered.test(t)
+     && !/fwu_starter/.test(upload()), 'a partition the fallback copy still commits to offers no write either');
+  t = await fwText({ env: { sw_active: '0', sw_tryactive: '2' }, fallback: {}, slots: {}, exe: '/bin/confd' });
+  ok(/cannot tell which partition is committed/.test(t) && !offered.test(t) && !/fwu_starter/.test(upload()),
+     'an unreadable sw_commit offers no write');
+  t = await fwText({ env: { sw_commit: '0', sw_tryactive: '2' }, fallback: {}, slots: {}, exe: '/bin/confd' });
+  ok(!/fwu_starter/.test(upload()) && /no write command now:/.test(upload()),
+     'an unreadable sw_active gives no command, not one for partition 0');
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: { sw_commit: '0' },
+                     slots: {}, exe: '/bin/confd' });
+  ok(offered.test(t) && /fwu_starter\.sh --foreground 1 /.test(upload()),
+     'committed, both copies agreeing: partition 1 is offered, on its card and as a command');
+  t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: {}, fallback_unsure: true,
+                     slots: {}, exe: '/bin/confd' });
+  ok(/fallback copy of the U-Boot environment could not be read/.test(t) && !offered.test(t)
+     && !/fwu_starter/.test(upload()), 'a fallback copy nv could not read offers no write');
+  for (const pend of [undefined, 'x']) {
+    t = await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: pend }, fallback: {}, slots: {}, exe: '/bin/confd' });
+    ok(/cannot tell whether a trial is pending/.test(t) && !offered.test(t) && !/fwu_starter/.test(upload()),
+       `a trial state of ${pend === undefined ? 'none at all' : `'${pend}'`} offers no write, on its card or as a command`);
+  }
   t = await fwText({ ...trialFW, exe: '/etc/config/confd/confd' });
   ok(/override in \/etc\/config is in use/.test(t), 'a confd run from /etc/config is an override');
   t = await fwText({ ...trialFW, env: { sw_active: '1', sw_commit: '1', sw_tryactive: '2' }, exe: '/bin/confd',
@@ -1704,7 +1743,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   let postBody = '';
   globalThis.fetch = async (path, opts) => {
     if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
-    atPost = { disabled: btn0.disabled, title: btn0.title };
+    atPost = { disabled: btn0.disabled, title: btn0.title, upload: upload() };
     postBody = String(opts.body || '');
     return { ok: true, status: 200, json: async () => ({ ok: true }) };
   };
@@ -1716,6 +1755,8 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(rebootBtn() !== btn0 && !rebootBtn().disabled, 'reboot: and the render after the write turns it on');
   ok(atPost && atPost.disabled === true && /being written/.test(atPost.title),
      'reboot: the button is already off while the write request is pending');
+  ok(atPost && !/fwu_starter|cat > \/tmp\/img\.tar/.test(atPost.upload) && /Partition 0 is being written/.test(atPost.upload),
+     'write: the commands under the upload neither copy nor write while the request is pending');
   ok(/(^|&)action=write(&|$)/.test(postBody) && /(^|&)md5=/.test(postBody),
      'write: the request names the md5 of the upload it means');
   /* A request that fails or is refused gives the button back. */
@@ -1723,11 +1764,13 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
                       async () => { throw new Error('network'); }]) {
     await fwText(idleFW);
     const b1 = rebootBtn();
+    const up1 = upload();
     globalThis.confirm = () => true;
     globalThis.fetch = async (path, opts) => (opts && opts.method === 'POST' ? post() : keepFetch(path, opts));
     await fwm.writeImage('0', idleFW);
     globalThis.fetch = keepFetch; globalThis.confirm = keepConfirm;
     ok(b1.disabled === false, 'reboot: a write request that is refused or fails leaves the button on');
+    ok(upload() === up1 && /cat > \/tmp\/img\.tar/.test(up1), 'write: and puts the commands under the upload back');
   }
   /* A writer that is gone with no recorded result: the page says so, and Reboot is not held. */
   await fwText({ ...idleFW, write: { state: 'unknown', pid: '4242', slot: '0', rc: '', log: '' } });
@@ -1749,6 +1792,10 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'running', pid: '4242', slot: '0', rc: '', log: '' } });
   ok(rebootBtn() && rebootBtn().disabled === true && /being written/.test(rebootBtn().title),
      'reboot: the button is off while a write runs, and says why');
+  await fwText({ env: { sw_active: '0', sw_commit: '0', sw_tryactive: '2' }, fallback: {}, slots: {}, exe: '/bin/confd',
+                 write: { state: 'running', pid: '4242', slot: '1', rc: '', log: '' } });
+  ok(!/fwu_starter|cat > \/tmp\/img\.tar/.test(upload()) && /Partition 1 is being written/.test(upload()),
+     'while a write runs the commands under the upload neither copy nor write an image');
   await fwText({ ...trialFW, exe: '/bin/confd', write: { state: 'ok', pid: '4242', slot: '0', rc: '', log: '' } });
   ok(rebootBtn() && !rebootBtn().disabled, 'reboot: and on again once the write is no longer running');
   await fwText({ ...trialFW, exe: '/bin/confd' });
@@ -2440,6 +2487,70 @@ EDITS.clear();
   const out3 = new El('div');
   await followUp({ needs: ['omci'], interrupts: true }, ['OMCI_SW_VER1', 'GPON_SN'], out3);
   ok(/Apply now/.test(textOf(out3)), 'followUp: and so is a batch with one reported key in it');
+
+  /* VLAN keys alone are applied at once, as live, so omcid applies nothing
+     that re-registers. A deferred answer (an identity change saved earlier
+     is waiting too) is said, with the Apply now that does both. */
+  {
+    const keepFetch = globalThis.fetch;
+    const sent = [];
+    let answer = { ok: true, applied: true, output: 'rebuilt' };
+    let status = 200;
+    globalThis.fetch = async (path, opts) => {
+      if (String(path) === '/api/apply') {
+        sent.push(String(opts.body));
+        return { ok: status === 200, status, json: async () => answer };
+      }
+      return keepFetch(path, opts);
+    };
+    const out4 = new El('div');
+    await followUp({ needs: ['omci'], interrupts: false }, ['VLAN_MANU_TAG_VID'], out4);
+    ok(sent.length === 1 && sent[0] === 'what=omci-live' && /Applied without a re-registration/.test(textOf(out4)),
+       'followUp: VLAN keys alone are applied at once, as live: ' + sent.join(' | '));
+    answer = { ok: true, applied: true, reregistered: true, output: 'the last reload left the ONU off the line: this one re-registers it' };
+    const out4b = new El('div');
+    await followUp({ needs: ['omci'], interrupts: false }, ['VLAN_MANU_TAG_VID'], out4b);
+    ok(/Applied, and the ONU re-registers/.test(textOf(out4b)) && !/without a re-registration/.test(textOf(out4b))
+       && !/in place/.test(textOf(out4b)),
+       'followUp: a live apply that re-registered says so, not "without", nor "in place" while it waited');
+    sent.pop(); /* the counts below are of the other answers */
+    answer = { ok: false, applied: false, deferred: true, output: 'identity changed (GPON_SN) and NOT applied' };
+    const out5 = new El('div');
+    await followUp({ needs: ['omci'], interrupts: false }, ['VLAN_MANU_TAG_VID'], out5);
+    ok(/an identity change saved earlier/.test(textOf(out5)) && /Apply now/.test(textOf(out5))
+       && !/re-registration|Apply failed/.test(textOf(out5)),
+       'followUp: a deferred live apply says why and offers Apply now');
+    /* Its Apply now is the full apply, after the confirm. */
+    const keepConfirm = globalThis.confirm;
+    globalThis.confirm = () => true;
+    answer = { ok: true, applied: true, output: 'reregistered' };
+    await out5.children.find((n) => n.tagName === 'button').onclick();
+    ok(sent.length === 3 && sent[2] === 'what=omci' && /Applied\. The Status tab shows O5/.test(textOf(out5))
+       && !out5.children.some((n) => n.tagName === 'button'),
+       'followUp: Apply now after a deferred apply is the full apply, and goes once it ran: ' + sent.join(' | '));
+    globalThis.confirm = keepConfirm;
+    /* An apply.sh without omci-live, or no apply.sh: nothing applied either. */
+    answer = { ok: false, applied: false, unsupported: true, output: 'usage: apply.sh network|omci' };
+    const out7 = new El('div');
+    await followUp({ needs: ['omci'], interrupts: false }, ['VLAN_MANU_TAG_VID'], out7);
+    ok(sent[3] === 'what=omci-live' && /cannot apply VLAN keys on their own/.test(textOf(out7))
+       && /Apply now applies all pending OMCI changes/.test(textOf(out7)) && !/re-registration\.|Apply failed/.test(textOf(out7)),
+       'followUp: an image that cannot apply live says so and offers Apply now');
+    /* A confd older than the page does not know omci-live and refuses it;
+       it is not run as the full apply, and the page offers that one. */
+    answer = { ok: false, error: 'what must be network, omci, syslog, ntp, igmp or sfp' };
+    status = 400;
+    const out8 = new El('div');
+    await followUp({ needs: ['omci'], interrupts: false }, ['VLAN_MANU_TAG_VID'], out8);
+    ok(sent[4] === 'what=omci-live' && /cannot apply VLAN keys on their own/.test(textOf(out8))
+       && /Apply now/.test(textOf(out8)) && !/Apply failed/.test(textOf(out8)),
+       'followUp: a confd that refuses omci-live is an image that cannot apply live, with Apply now');
+    status = 200;
+    const out6 = new El('div');
+    await followUp({ needs: ['omci'], interrupts: true }, ['GPON_SN'], out6);
+    ok(sent.length === 5, 'followUp: an identity key is not applied on its own, live or not');
+    globalThis.fetch = keepFetch;
+  }
 }
 
 /* Without the table, the page is what it was: every key offered. */
@@ -2556,13 +2667,19 @@ ok(inputsOf('#sections') > 100,
   let INSTALLED = [];
   let calls = [];
   let sw = {};
+  /* What /api/apply answers, live and full; null is a plain success. A
+     status other than 200 goes with it. GATE, while set, holds the switch
+     writes (the marker) until it resolves. */
+  let APPLY = { live: null, full: null };
+  let GATE = null;
   globalThis.fetch = async (path, init = {}) => {
     const [key] = String(path).split('?');
     const method = init.method || 'GET';
     const body = init.body || '';
     calls.push({ key, method, body, auth: (init.headers || {}).Authorization });
-    const ans = (j) => ({ ok: true, status: 200, json: async () => j });
+    const ans = (j, status = 200) => ({ ok: status === 200, status, json: async () => j });
     if (key === '/api/switch' && method === 'POST') {
+      if (GATE) await GATE;
       const f = new URLSearchParams(body);
       sw[f.get('name')] = f.get('on') === '1';
       S.FW.switches = { ...S.FW.switches, [f.get('name')]: f.get('on') === '1' };
@@ -2577,7 +2694,11 @@ ok(inputsOf('#sections') > 100,
       const last = calls.filter((c) => c.key === '/api/config').pop();
       return ans({ ...HELD, ...(last ? Object.fromEntries(new URLSearchParams(last.body)) : {}) });
     }
-    if (key === '/api/apply') return ans({ ok: true, output: 'secret-looking output' });
+    if (key === '/api/apply') {
+      const live = new URLSearchParams(body).get('what') === 'omci-live';
+      const a = (live ? APPLY.live : APPLY.full) || { ok: true, output: 'secret-looking output' };
+      return ans(a, a.status || 200);
+    }
     if (key === '/api/password') return ans({ ok: true });
     if (key === '/api/sshkeys' && method === 'GET' && INSTALLED === null) return ans({ ok: false, error: 'authorized_keys is larger than confd can hold (4 KB); edit it over ssh' });
     if (key === '/api/sshkeys' && method === 'GET') return ans({ path: 'x', keys: INSTALLED.map((line, i) => ({ i, line })) });
@@ -2596,6 +2717,8 @@ ok(inputsOf('#sections') > 100,
     calls = [];
     sw = {};
     INSTALLED = [];
+    APPLY = { live: null, full: null };
+    GATE = null;
     S.FW = { switches: { 'omci-identity.on': false, 'confd.setup': false }, defaultauth: false, ...fw };
     S.VALUES = { ...HELD };
     S.SETTINGS = Object.fromEntries(SETT.map((r) => [r.name, r]));
@@ -2788,7 +2911,8 @@ ok(inputsOf('#sections') > 100,
   const cfg = posts('/api/config');
   ok(cfg.length === 1 && cfg[0].body === 'GPON_SN=ODIX00000009&GPON_PLOAM_PASSWD=61626300000000000000&_confirm=identity',
      'apply: exactly the changed keys, the PLOAM password as the converted hex, and the identity confirmation: ' + (cfg[0] || {}).body);
-  ok(posts('/api/apply').length === 1 && /what=omci/.test(posts('/api/apply')[0].body), 'apply: omci is applied after the write');
+  ok(posts('/api/apply').length === 1 && posts('/api/apply')[0].body === 'what=omci',
+     'apply: omci is applied after the write, in full for identity keys: ' + (posts('/api/apply')[0] || {}).body);
   ok(sw['confd.setup'] === true, 'apply: completing writes the marker');
   ok(W.phase === 'live' && title() === 'Registering with the OLT', 'apply: the live view follows');
   ok(!/secret-looking/.test(body()), 'apply: the script output is not shown');
@@ -2806,7 +2930,107 @@ ok(inputsOf('#sections') > 100,
   ok(!/internet drops/.test(body()) && /VLAN 120 instead of 110/.test(body()), 'review: a VLAN change warns about the VLAN, not the internet');
   await click('#wizard-next');
   ok(posts('/api/config')[0].body === 'VLAN_MANU_TAG_VID=120', 'apply: a VLAN-only change writes only the VID');
+  ok(posts('/api/apply').length === 1 && posts('/api/apply')[0].body === 'what=omci-live',
+     'apply: a VLAN-only change is applied live: ' + (posts('/api/apply')[0] || {}).body);
+  ok(W.phase === 'live' && /Applied without a re-registration/.test(body()), 'apply: and the live view says how it was applied');
+  ok(title() === 'Line status', 'apply: under a heading that does not say it registers');
   await wz.exitWizard();
+
+  /* A live apply that applies nothing: the wizard says saved, not applied,
+     keeps its Apply now in view, and goes live only once that worked. */
+  const wizButton = (re) => all(doc.querySelector('#wizard-body'), (n) => n.tagName === 'button' && re.test(textOf(n)))[0];
+  const vlanToReview = async () => {
+    wz.openWizard(true);
+    await wz.next(); await wz.next();
+    type('wiz-vid', '120');
+    await wz.next();
+    await click('#wizard-next');
+  };
+  const keepConfirm = globalThis.confirm;
+  globalThis.confirm = () => true;
+  reset();
+  APPLY.live = { ok: false, applied: false, deferred: true, output: 'secret-looking output' };
+  APPLY.full = { ok: false, applied: false, error: 'omcid did not answer', output: 'secret-looking output' };
+  await vlanToReview();
+  ok(W.phase === 'pending' && title() === 'Review and apply'
+     && doc.querySelector('#wizard-count').textContent === 'Saved, not applied'
+     && /identity change saved earlier/.test(body()) && !/Registering|Applied without/.test(body()),
+     'deferred: the wizard says saved, not applied, and does not go live');
+  ok(doc.querySelector('#wizard-next').textContent === 'Finish' && doc.querySelector('#wizard-back').hidden
+     && sw['confd.setup'] === true, 'deferred: Finish, no Back, and the marker is written');
+  ok(!/secret-looking/.test(body()), 'deferred: the script output is not shown');
+  await wizButton(/Apply now/).onclick();
+  ok(posts('/api/apply').length === 2 && posts('/api/apply')[1].body === 'what=omci',
+     'deferred: Apply now is the full apply: ' + posts('/api/apply').map((c) => c.body).join(' | '));
+  ok(W.phase === 'pending' && /Apply failed: omcid did not answer/.test(body()) && wizButton(/Apply now/)
+     && !wizButton(/Apply now/).disabled,
+     'deferred: a failed Apply now is shown in the wizard, which stays on saved, not applied, and offers it again');
+  await click('#wizard-next');
+  ok(!wz.isOpen(), 'deferred: Finish closes the wizard');
+  reset();
+  APPLY.live = { ok: false, applied: false, unsupported: true, output: 'usage: apply.sh' };
+  await vlanToReview();
+  ok(W.phase === 'pending' && /cannot apply VLAN keys on their own/.test(body()), 'unsupported: saved, not applied, said why');
+  await wizButton(/Apply now/).onclick();
+  ok(W.phase === 'live' && title() === 'Registering with the OLT' && /Applied\. The Status tab/.test(body()),
+     'unsupported: an Apply now that worked starts the live view, with its result in view');
+  await wz.exitWizard();
+  /* Its Apply now waits for the marker (and a key or a password): clicked
+     before, its result would land while the wizard still says saved, not
+     applied. */
+  reset();
+  APPLY.live = { ok: false, applied: false, deferred: true, output: '' };
+  let openGate;
+  GATE = new Promise((r) => { openGate = r; });
+  wz.openWizard(true);
+  await wz.next(); await wz.next();
+  type('wiz-vid', '120');
+  await wz.next();
+  const running = click('#wizard-next');
+  for (let i = 0; i < 10 && !wizButton(/Apply now/); i++) await tick();
+  ok(W.phase === 'applying' && wizButton(/Apply now/) && wizButton(/Apply now/).disabled === true,
+     'deferred: Apply now is shown, but off while the wizard still writes');
+  openGate();
+  await running;
+  ok(W.phase === 'pending' && wizButton(/Apply now/).disabled === false, 'deferred: and on once it says saved, not applied');
+  await wz.exitWizard();
+  /* A live apply that fails offers itself again; once that works, the live view. */
+  reset();
+  APPLY.live = { ok: false, applied: false, error: 'omcid did not answer' };
+  await vlanToReview();
+  ok(W.phase === 'pending' && /Apply failed: omcid did not answer/.test(body()) && wizButton(/Try again/),
+     'failed: a live apply that failed offers Try again');
+  APPLY.live = null;
+  await wizButton(/Try again/).onclick();
+  ok(posts('/api/apply').length === 2 && posts('/api/apply')[1].body === 'what=omci-live'
+     && W.phase === 'live' && title() === 'Line status',
+     'failed: Try again is the live apply, and once it worked the live view follows');
+  await wz.exitWizard();
+  /* A live apply that re-registered all the same (the one before left the
+     ONU off the line): the live view is headed as a registration, from the
+     first answer and from a Try again. */
+  reset();
+  APPLY.live = { ok: true, applied: true, reregistered: true, output: '' };
+  await vlanToReview();
+  ok(W.phase === 'live' && title() === 'Registering with the OLT' && /the ONU re-registers/.test(body()),
+     'reregistered: the live view says the ONU registers: ' + title());
+  await wz.exitWizard();
+  reset();
+  APPLY.live = { ok: false, applied: false, error: 'omcid did not answer' };
+  await vlanToReview();
+  APPLY.live = { ok: true, applied: true, reregistered: true, output: '' };
+  await wizButton(/Try again/).onclick();
+  ok(W.phase === 'live' && title() === 'Registering with the OLT',
+     'reregistered: and so does a Try again that re-registered: ' + title());
+  await wz.exitWizard();
+  /* A confd older than the page refuses omci-live: the wizard offers the full apply. */
+  reset();
+  APPLY.live = { ok: false, error: 'what must be network, omci, syslog, ntp, igmp or sfp', status: 400 };
+  await vlanToReview();
+  ok(W.phase === 'pending' && /cannot apply VLAN keys on their own/.test(body()) && wizButton(/Apply now/)
+     && posts('/api/apply').length === 1, 'old confd: omci-live refused, nothing else applied, Apply now offered');
+  await wz.exitWizard();
+  globalThis.confirm = keepConfirm;
 
   /* nothing to write: Finish just writes the marker */
   reset();
@@ -3235,6 +3459,53 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
      'write follow: a writer that is gone with no result ends the loop as unknown, not failed');
   r = await run([{ env: {} }]);
   ok(/written/.test(r.text) && r.polls === 1, 'write follow: an answered poll with no write state is the blocking starter, finished');
+}
+
+/* --- the question before a change (dom.js ask) ---------------------------- */
+{
+  const { ask, el } = await import(join(root, 'web', 'dom.js'));
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  for (const id of ['ask-dialog', 'ask-head', 'ask-body', 'ask-ok', 'ask-cancel'])
+    ok(html.includes(`id="${id}"`), `ask: index.html has #${id}`);
+
+  /* No modal dialog: confirm() gets the question as it always did. */
+  const keep = globalThis.confirm;
+  let seen = '';
+  globalThis.confirm = (t) => { seen = t; return true; };
+  ok(await ask('Remove this key?\n\nGone.\n\nContinue?', { badgeText: '\u25AE Live' }) === true
+     && seen === '\u25AE Live\n\nRemove this key?\n\nGone.\n\nContinue?',
+     'ask: without a modal dialog, confirm() asks the same text');
+  globalThis.confirm = keep;
+
+  const dlg = doc.querySelector('#ask-dialog');
+  dlg.open = false;
+  dlg.showModal = () => { dlg.open = true; };
+  dlg.close = () => { dlg.open = false; };
+  const badge = el('span', 'cost');
+  let p = ask('Remove this key?\n\nWhoever holds it can no longer log in.\n\nContinue?',
+    { action: 'Remove key', danger: true, badge });
+  const head = doc.querySelector('#ask-head');
+  ok(dlg.open && head.children[0] === badge && textOf(head.children[1]) === 'Remove this key?'
+     && doc.querySelector('#ask-body').children.length === 1
+     && textOf(doc.querySelector('#ask-body')) === 'Whoever holds it can no longer log in.',
+     'ask: the badge and the question head the dialog, and the closing Continue? goes');
+  ok(doc.querySelector('#ask-ok').textContent === 'Remove key' && doc.querySelector('#ask-ok').className === 'danger',
+     'ask: the button says what it does, in red for a change that cannot be taken back');
+  doc.querySelector('#ask-ok').onclick();
+  ok(await p === true && !dlg.open, 'ask: the button answers yes and closes the dialog');
+
+  p = ask('The address changes now. Continue?', { action: 'Change the address' });
+  ok(head.hidden === true && textOf(doc.querySelector('#ask-body')) === 'The address changes now.',
+     'ask: a single paragraph has no heading, and loses its Continue?');
+  let prevented = false;
+  dlg.oncancel({ preventDefault: () => { prevented = true; } });
+  ok(await p === false && prevented && !dlg.open, 'ask: Escape answers no');
+
+  p = ask('Cancel?\n\nIt stops.', { back: 'Keep it' });
+  ok(doc.querySelector('#ask-cancel').textContent === 'Keep it', 'ask: the other button can be named');
+  doc.querySelector('#ask-cancel').onclick();
+  ok(await p === false, 'ask: and answers no');
+  delete dlg.showModal;
 }
 
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');

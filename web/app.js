@@ -6,7 +6,7 @@
  * any of this.
  */
 
-import { $, el, fail, get, wireTheme, wireHelp } from './dom.js';
+import { $, el, fail, get, ask, wireTheme, wireHelp } from './dom.js';
 import { S, EDITS } from './state.js';
 import { liveFibreRates } from './overview.js';
 import { renderStatus, renderLinkCheck, renderPon, sections, lineFacts } from './status.js';
@@ -275,11 +275,11 @@ export async function delSshKey(i, line) {
   out.textContent = '';
   /* The only way into a keys-only stick, and a removal that cannot be undone
      from here: the key has to be pasted again. */
-  if (!confirm('Remove this key?\n\n'
+  if (!(await ask('Remove this key?\n\n'
       + (SSH_LINES.length <= 1
         ? 'It is the last one: on an image whose root password is locked, nothing else lets you log in over ssh. '
         : 'Whoever holds its private half can no longer log in. ')
-      + 'To get it back you have to paste it again.\n\nContinue?')) return;
+      + 'To get it back you have to paste it again.\n\nContinue?', { action: 'Remove key', danger: true }))) return;
   try {
     const r = await fetch('/api/sshkeys', {
       method: 'POST',
@@ -308,12 +308,12 @@ async function resetConfig() {
   const btn = $('#reset-go');
 
   out.textContent = '';
-  if (!confirm('Reset the service configuration to the image defaults?\n\n'
+  if (!(await ask('Reset the service configuration to the image defaults?\n\n'
       + 'The keys in /etc/config_default.xml go back to their defaults: the four '
       + 'LOID keys are emptied, and DEVICE_TYPE, DUAL_MGMT_MODE and the three '
       + 'OMCI_CUSTOM masks (read only by the stock firmware) are reset. The '
       + 'management IP, the VLAN, the PLOAM password, the serial number and the '
-      + 'MAC keys are NOT touched.\n\nA backup downloads first.')) return;
+      + 'MAC keys are NOT touched.\n\nA backup downloads first.', { action: 'Back up and reset', danger: true }))) return;
 
   btn.disabled = true;
   try {

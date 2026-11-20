@@ -5,8 +5,8 @@
  * does not come up reverts itself. Committing it is a separate, deliberate act.
  */
 
-import { $, el, fail, get, bytes } from './dom.js';
-import { S, CLASS_LABEL, CLASS_RANK } from './state.js';
+import { $, el, fail, get, bytes, ask } from './dom.js';
+import { S, CLASS_LABEL, CLASS_RANK, costBadge } from './state.js';
 import { uploadSizeProblem, tarProblem } from './validate.js';
 import { probeAddr } from './netaddr.js';
 
@@ -113,24 +113,32 @@ async function writeImage(part, fw) {
   const out = $('#fwout');
   const k = slotKind(fw || {}, part);
 
-  if (!confirm(`Write the uploaded image to partition ${part}?\n\n`
+  if (!(await ask(`Write the uploaded image to partition ${part}?\n\n`
       + 'This takes about eighty seconds and the stick must not lose power '
       + 'meanwhile. The partition you are running now is not touched, and '
-      + 'nothing boots the new one until you try it.')) return;
+      + 'nothing boots the new one until you try it.', { action: `Write partition ${part}` }))) return;
   /* A second question, only when there is something to lose: the other slot
      is where the stock firmware is kept as the fallback on most sticks, and
      writing it is a choice that cannot be taken back from this page. */
-  if (k.kind !== 'odi' && !confirm(`Partition ${part} holds `
+  if (k.kind !== 'odi' && !(await ask(`Partition ${part} holds `
       + (k.kind === 'stock' ? 'the stock firmware' : k.kind === 'other' ? 'an image that is not odi-oss'
         : 'an image this page cannot identify')
       + ` (${describeSlot(fw || {}, part) || 'no details'}).\n\n`
-      + 'Writing replaces it, and you lose it as a fallback. Overwrite it?')) return;
+      + 'Writing replaces it, and you lose it as a fallback. Overwrite it?', { action: `Overwrite partition ${part}`, danger: true }))) return;
 
   out.textContent = '';
   out.append(el('div', 'warn', `Writing partition ${part}.`));
   /* Held before the request: with a starter that blocks, or a slow answer,
      the button would be on for the whole of it. */
   if (RB) holdReboot(RB, part);
+  /* And the commands under the upload, as a render during the write would
+     give them, until the answer: the page was rendered before the write and
+     would offer the copy and the write meanwhile. A refusal puts them back;
+     a write that starts is followed, and the render after it redraws them. */
+  const up = $('#upload');
+  const upBefore = up ? up.textContent : '';
+  if (up) up.textContent = uploadCommands(location.hostname, part, `Partition ${part} is being written. Wait for that write to end.`, true);
+  const giveBack = () => { if (up) up.textContent = upBefore; releaseReboot(); };
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -143,7 +151,7 @@ async function writeImage(part, fw) {
     if (j.output) out.append(el('pre', null, String(j.output).trim()));
     if (!j.ok) {
       out.append(el('div', 'bad', j.error || 'the updater refused'));
-      releaseReboot();
+      giveBack();
       return;
     }
     /* An image whose starter writes in the background leaves a state in
@@ -152,8 +160,30 @@ async function writeImage(part, fw) {
     await followWrite(part);
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
-    releaseReboot();
+    giveBack();
   }
+}
+
+/* The ssh commands under the upload. `other` is the partition this stick is
+   not running, `noWrite` why no write command is given now (or null), and
+   `writing` leaves the copy out: it could overwrite the archive a running
+   write reads. Pure. */
+function uploadCommands(host, other, noWrite, writing) {
+  return [
+    '# on your machine, in the odi-oss checkout',
+    'make image                     # -> out/image/<version>.tar',
+    '',
+    ...(writing ? [] : [
+      'IMG=out/image/<version>.tar',
+      `cat "$IMG" | ssh root@${host} 'cat > /tmp/img.tar'`,
+      `md5 -q "$IMG"; ssh root@${host} 'md5sum /tmp/img.tar'`,
+      '',
+    ]),
+    ...(noWrite
+      ? [`# no write command now${other === undefined ? '' : ` for partition ${other}`}:`, `# ${noWrite}`]
+      : [`# writes partition ${other}, the one this stick is not running, and waits`,
+        `ssh root@${host} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`]),
+  ].join('\n');
 }
 
 /* The Reboot button of the current render, for followWrite to hold. */
@@ -259,6 +289,43 @@ async function followLoop(part, deps = followDeps) {
   }
 }
 
+/*
+ * Why partition p is not to be written now, or null when it may be. One rule
+ * for the button on its card and the command under the upload: not the
+ * running partition, not one with a trial pending, and not the committed one
+ * in either environment copy, which is the image a failed trial goes back to.
+ * Unknown is not "the other one": a trial state other than 0, 1 or 2, or a
+ * fallback copy nv could not read, refuses as well. confd checks the same
+ * before a write from the button. The command goes past confd to
+ * fwu_starter.sh, and neither it nor the fwu.sh of the upload looks at
+ * sw_tryactive: for the command, that check is this page alone.
+ */
+function writeRefusal(fw, p) {
+  const env = fw.env || {};
+  const fb = (fw.fallback || {}).sw_commit;
+  const slot = (v) => v === '0' || v === '1';
+  if (!slot(env.sw_active)) return 'The stick cannot tell which partition it is running, so neither is offered for writing.';
+  if (p === env.sw_active) return 'This is the partition the stick is running.';
+  if (p === env.sw_tryactive) return 'A trial of this partition is pending. Cancel it to write here.';
+  if (!slot(env.sw_tryactive) && env.sw_tryactive !== '2') {
+    return 'The stick cannot tell whether a trial is pending, so writing is refused.';
+  }
+  if (!slot(env.sw_commit)) return 'The stick cannot tell which partition is committed, so writing is refused.';
+  if (p === env.sw_commit) {
+    return 'This is the committed partition, the one a failed trial goes back to. '
+      + 'Commit the running image before writing here.';
+  }
+  if (fw.fallback_unsure === true) {
+    return 'The fallback copy of the U-Boot environment could not be read, so writing is refused. '
+      + 'Reload the page to read it again.';
+  }
+  if (p === fb) {
+    return 'The fallback copy of the U-Boot environment still commits to this partition. '
+      + 'Commit the running image before writing here.';
+  }
+  return null;
+}
+
 async function renderFirmware() {
   const host = $('#parts');
   let fw;
@@ -350,11 +417,14 @@ async function renderFirmware() {
        refuses the running one as well -- fwu.sh would too -- but finding that
        out after the erase has started is not where anyone should learn it.
        `booted !== undefined` matters: with sw_active unreadable this once
-       offered to write BOTH partitions, including the running one.
+       offered to write BOTH partitions, including the running one. During
+       a trial the other partition is the committed one, which is not
+       offered either (writeRefusal).
     */
     if (booted !== undefined && p !== booted && !writing) {
-      if (p === pending) {
-        acts.append(el('span', 'hint', 'A trial of this partition is pending. Cancel it to write here.'));
+      const why = writeRefusal(fw, p);
+      if (why) {
+        acts.append(el('span', 'hint', why));
       } else if (UPLOADED) {
         const b = el('button', 'danger', 'Write the uploaded image here');
         b.type = 'button';
@@ -375,19 +445,15 @@ async function renderFirmware() {
   if (COMMIT_WHY) host.append(COMMIT_WHY);
 
   /* Spell the commands out with this stick's own address and the partition it
-     is not running, so they can be pasted without being adapted. */
-  const other = booted === '0' ? '1' : '0';
-  $('#upload').textContent = [
-    '# on your machine, in the odi-oss checkout',
-    'make image                     # -> out/image/<version>.tar',
-    '',
-    'IMG=out/image/<version>.tar',
-    `cat "$IMG" | ssh root@${location.hostname} 'cat > /tmp/img.tar'`,
-    `md5 -q "$IMG"; ssh root@${location.hostname} 'md5sum /tmp/img.tar'`,
-    '',
-    `# writes partition ${other}, the one this stick is not running, and waits`,
-    `ssh root@${location.hostname} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`,
-  ].join('\n');
+     is not running, so they can be pasted without being adapted. The write
+     goes to the starter directly, past confd, so it is given only when the
+     card would offer the same partition. While a write runs there is no
+     copy either: it could overwrite the archive that write reads. */
+  const other = booted === '0' ? '1' : booted === '1' ? '0' : undefined;
+  const noWrite = writing
+    ? `Partition ${fw.write.slot} is being written. Wait for that write to end.`
+    : other === undefined ? writeRefusal(fw, '0') : writeRefusal(fw, other);
+  $('#upload').textContent = uploadCommands(location.hostname, other, noWrite, writing);
 
   /* What this image was built from, and which confd is answering: a binary
      at /etc/config/confd/confd overrides the image copy and survives
@@ -456,7 +522,14 @@ let FOLLOWING = false;
 async function fwAction(action, partition, warning) {
   const out = $('#fwout');
   out.textContent = '';
-  if (!confirm((action === 'reboot' ? '\u25AE'.repeat(CLASS_RANK.reboot) + ' ' + CLASS_LABEL.reboot + '\n\n' : '') + warning + '\n\nContinue?')) return;
+  const reboot = action === 'reboot';
+  if (!(await ask(warning + '\n\nContinue?', {
+    action: reboot ? 'Reboot' : action === 'try' ? `Try partition ${partition}` : action === 'cancel' ? 'Cancel the trial' : 'Continue',
+    back: action === 'cancel' ? 'Keep the trial' : 'Cancel',
+    danger: reboot,
+    badge: reboot ? costBadge('reboot') : null,
+    badgeText: reboot ? '\u25AE'.repeat(CLASS_RANK.reboot) + ' ' + CLASS_LABEL.reboot : '',
+  }))) return;
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -668,9 +741,9 @@ async function commitRunning() {
   const out = $('#trial-out');
   out.textContent = '';
   if (run === undefined) return;
-  if (!confirm(`Commit to partition ${run}?\n\nIt becomes the one the stick boots by default`
+  if (!(await ask(`Commit to partition ${run}?\n\nIt becomes the one the stick boots by default`
       + (back !== undefined && back !== run ? `, instead of partition ${back}.` : '.')
-    + ' If it later fails to come up, the stick keeps booting it: there is no trial to fall back from.')) return;
+    + ' If it later fails to come up, the stick keeps booting it: there is no trial to fall back from.', { action: `Commit partition ${run}` }))) return;
   const btn = $('#trial-commit');
   btn.disabled = true;
   try {

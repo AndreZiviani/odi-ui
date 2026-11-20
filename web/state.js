@@ -163,9 +163,9 @@ function vlanTag(v) {
 
 /*
  * What a VLAN change can do to the service, or null when it cannot cut it.
- * These keys are LIVE: saving applies them at once and the ONU stays in O5,
- * so a tag the OLT does not accept stops the traffic with every light still
- * green. `before` is what the stick holds, `after` the same with the edits.
+ * These keys are LIVE: saving applies them at once, normally with the ONU
+ * in O5, so a tag the OLT does not accept stops the traffic with every light
+ * still green. `before` is what the stick holds, `after` the same with the edits.
  */
 function vlanRisk(before, after) {
   const was = vlanTag(before);
@@ -174,14 +174,14 @@ function vlanRisk(before, after) {
   if (now === null) {
     return `The stick stops tagging VLAN ${was}: upstream frames reach the OLT as the `
       + 'router sends them. On a line whose OLT accepts only tagged frames the service '
-      + `stops at once, while the ONU stays in O5, unless the router tags VLAN ${was} itself.`;
+      + `stops at once, even with the ONU in O5, unless the router tags VLAN ${was} itself.`;
   }
   if (was === null) {
     return `The stick starts tagging untagged frames with VLAN ${now}. If the OLT does not `
-      + 'carry that VLAN the service stops at once, while the ONU stays in O5.';
+      + 'carry that VLAN the service stops at once, even with the ONU in O5.';
   }
   return `The stick tags with VLAN ${now} instead of ${was}. If the OLT does not carry `
-    + `VLAN ${now} the service stops at once, while the ONU stays in O5.`;
+    + `VLAN ${now} the service stops at once, even with the ONU in O5.`;
 }
 
 /*

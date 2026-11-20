@@ -156,7 +156,7 @@ PING
 case "$1 $2" in
 "getenv sw_active")  echo "sw_active=0" ;;
 "getenv "|"getenv")  printf "sw_active=0\nsw_commit=0\nsw_tryactive=2\nsw_version0=ODI-260910-6861b53\nsw_version1=V1.0-220923\n" ;;
-"fallback "|"fallback") printf "Fallback environment: 1\nsw_active=0\nsw_commit=0\nsw_tryactive=2\n" ;;
+"fallback "|"fallback") printf "Fallback environment: 1\nsw_active=0\nsw_commit=0\nsw_tryactive=2\n\n" ;;
 "setenv"*)           ;;
 esac
 exit 0

@@ -17,7 +17,7 @@
  * restarting omci_app and a reboot.
  */
 
-import { $, el, get, createHelpToggle } from './dom.js';
+import { $, el, get, createHelpToggle, ask } from './dom.js';
 import {
   S, EDITS, CLASS_LABEL, CLASS_RANK, costBadge, imageAware, settingOf,
   IDENTITY_SWITCH, identitySwitchOn, vlanRisk,
@@ -115,7 +115,7 @@ async function save() {
      point to say that a value can stop the traffic. */
   if (imageAware()) {
     const risk = vlanRisk(S.VALUES, { ...S.VALUES, ...Object.fromEntries(pairs) });
-    if (risk && !confirmClass('live', risk + ' Continue?')) {
+    if (risk && !(await confirmClass('live', risk + ' Continue?', 'Save'))) {
       out.append(el('div', 'warn', 'Not saved.'));
       return;
     }
@@ -147,7 +147,7 @@ async function save() {
         + 'back to the old address after 90 seconds unless you press Keep on the new one. '
         + (net.some(([k]) => k === 'LAN_ROUTES') ? 'The static routes are tried with it. ' : '')
         + 'Nothing is stored until you do. Continue?';
-    if (!confirmClass('live', text)) {
+    if (!(await confirmClass('live', text, routesOnly ? 'Try the routes' : 'Try the address'))) {
       out.append(el('div', 'warn', 'Not saved.'));
       return;
     }
@@ -229,8 +229,8 @@ async function followUp(res, written, out) {
   }
   if (needs.includes('network')) {
     const moves = written.includes('LAN_IP_ADDR') || written.includes('LAN_SUBNET');
-    if (!moves || confirmClass('live', 'The management address changes now, and this '
-        + `page with it, to ${S.VALUES.LAN_IP_ADDR}. Continue?`)) {
+    if (!moves || await confirmClass('live', 'The management address changes now, and this '
+        + `page with it, to ${S.VALUES.LAN_IP_ADDR}. Continue?`, 'Change the address')) {
       await applyNetwork(out, moves);
     } else {
       out.append(el('div', 'warn', 'Saved, not applied: the address changes at the next '
@@ -257,8 +257,10 @@ async function followUp(res, written, out) {
         + 're-registers the ONU and the OLT provisions it again.'));
       out.append(applyButton('internet', 'Apply now', () => applyOmci(out, true)));
     } else {
-      /* Only VLAN keys: omcid rebuilds the connections in place, nothing drops. */
-      await applyOmci(out, false);
+      /* Only VLAN keys: omcid rebuilds the connections in place, nothing
+         drops. Sent as live, so an identity change saved earlier and not
+         applied is not taken along: omcid then applies nothing. */
+      await applyOmci(out, false, true);
     }
   }
   if (needs.includes('reboot')) {
@@ -279,19 +281,24 @@ function applyButton(cls, text, run) {
   b.type = 'button';
   b.append(document.createTextNode(text + ' '), costBadge(cls));
   b.onclick = async () => {
-    if (cls === 'internet' && !confirmClass(cls, 'This takes the fibre service down: the '
+    if (cls === 'internet' && !(await confirmClass(cls, 'This takes the fibre service down: the '
         + 'ONU is deactivated, omcid clears its MIB, and the ONU ranges again and '
         + 'waits for the OLT to provision it. About ten seconds, then however long '
-        + 'the OLT takes (typically under a minute). Continue?')) return;
-    if (cls === 'reboot' && !confirmClass(cls, rebootWarning())) return;
+        + 'the OLT takes (typically under a minute). Continue?', 'Apply now'))) return;
+    if (cls === 'reboot' && !(await confirmClass(cls, rebootWarning(), 'Reboot'))) return;
     b.disabled = true;
     try { await run(); } finally { b.remove(); }
   };
   return b;
 }
 
-function confirmClass(cls, text) {
-  return confirm(`${'\u25AE'.repeat(CLASS_RANK[cls] || 0)} ${CLASS_LABEL[cls] || cls}\n\n${text}`);
+function confirmClass(cls, text, action) {
+  return ask(text, {
+    action,
+    danger: cls === 'internet' || cls === 'reboot',
+    badge: costBadge(cls),
+    badgeText: `${'\u25AE'.repeat(CLASS_RANK[cls] || 0)} ${CLASS_LABEL[cls] || cls}`,
+  });
 }
 
 /* Which slot a reboot comes back on, which is the whole question on a trial. */
@@ -361,21 +368,72 @@ async function applySfp(out) {
 
 /* omcid rereads the store on SIGHUP (apply.sh omci sends it and reports what
    omcid did). `interrupts` says whether the keys re-register the ONU or only
-   rebuild the connections in place. */
-async function applyOmci(out, interrupts) {
+   rebuild the connections in place. `live` asks omcid to apply nothing that
+   re-registers (what=omci-live, apply.sh omci-live): with an identity change
+   also waiting in the store it applies nothing (deferred), an image or a
+   confd that cannot apply that way applies nothing either (unsupported; an
+   older confd refuses the action with 400), and the page offers the apply
+   that does. A live apply after one that left the ONU off the line (a
+   failed activation) re-registers it all the same, and the answer says so
+   (reregistered): the re-registration has started, it may still run.
+   Answers 'ok', 'reregistered' (a live apply that re-registers), 'deferred',
+   'unsupported' or 'failed', for the wizard. `opts.raw` false leaves the script output out (the wizard shows
+   the status lines only); `opts.then` runs once an offered apply worked,
+   with true when the ONU re-registers: the full one, or a live retry that
+   re-registered all the same. With `opts.retry`, a failed apply
+   offers itself again, and `opts.hold` gets every button offered, before
+   it is shown. */
+async function applyOmci(out, interrupts, live, opts = {}) {
+  const raw = opts.raw !== false;
+  /* The full apply behind its confirmation, or the live one again. */
+  /* opts.then gets whether the ONU re-registers: the full apply, or a
+     live one that re-registered all the same. */
+  const offer = (full) => {
+    const b = full
+      ? applyButton('internet', 'Apply now', async () => {
+        if (await applyOmci(out, true, false, opts) === 'ok' && opts.then) opts.then(true);
+      })
+      : applyButton('live', 'Try again', async () => {
+        const got = await applyOmci(out, false, true, opts);
+        if ((got === 'ok' || got === 'reregistered') && opts.then) opts.then(got === 'reregistered');
+      });
+    if (opts.hold) opts.hold(b);
+    out.append(b);
+  };
+  /* Not "in place" while waiting: a live apply may also be held for an
+     identity change, or re-register the ONU (reregistered). */
   out.append(el('div', 'warn', interrupts ? 'Re-registering the ONU…'
-    : 'Rebuilding the connections in place…'));
+    : 'Applying OMCI changes…'));
   try {
-    const r = await fetch('/api/apply', form({ what: 'omci' }));
+    const r = await fetch('/api/apply', form({ what: live ? 'omci-live' : 'omci' }));
     const res = await r.json();
-    if (res.output) out.append(el('pre', null, String(res.output).trim()));
+    if (raw && res.output) out.append(el('pre', null, String(res.output).trim()));
+    const unsupported = live && (res.unsupported || r.status === 400);
+    if (live && (res.deferred || unsupported)) {
+      out.append(el('div', 'warn', res.deferred
+        ? 'Saved, not applied: an identity change saved earlier is waiting too, and '
+          + 'applying it re-registers the ONU. Both take effect together.'
+        : 'Saved, not applied: this image cannot apply VLAN keys on their own. '
+          + 'Apply now applies all pending OMCI changes and re-registers the ONU.'));
+      offer(true);
+      return res.deferred ? 'deferred' : 'unsupported';
+    }
+    const done = 'The Status tab shows O5 and the Services tab the '
+      + 'provisioned services once the OLT is done.';
     out.append(el('div', res.ok ? 'good' : 'bad', res.ok
-      ? (interrupts ? 'Applied. The Status tab shows O5 and the Services tab the '
-        + 'provisioned services once the OLT is done.'
-        : 'Applied. The ONU stayed in O5.')
-      : 'Apply failed: ' + (res.error || 'see above')));
+      ? (interrupts ? 'Applied. ' + done
+        : res.reregistered
+          ? 'Applied, and the ONU re-registers: the last apply left it off the line, '
+            + 'so this one registers it again. ' + done
+          : 'Applied without a re-registration.')
+      : 'Apply failed: ' + (res.error || (raw ? 'see above' : 'apply.sh reported an error'))));
+    if (!res.ok && opts.retry) offer(!live);
+    if (!res.ok) return 'failed';
+    return live && res.reregistered ? 'reregistered' : 'ok';
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
+    if (opts.retry) offer(!live);
+    return 'failed';
   }
 }
 

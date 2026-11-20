@@ -223,6 +223,69 @@ done:
 	put_fd(fd, "}");
 }
 
+/*
+ * Whether an `nv fallback` answer is one to go by. Three are:
+ *   - exit 0 (a value, a dump, or the key not set in that copy), when it
+ *     fit the buffer: a full one may have cut what the caller looks for;
+ *   - exit 1 with the exact line odi-oss nv prints for no valid second
+ *     copy;
+ *   - exit 1 with the usage text of an nv without the verb, whose first
+ *     line is "Usage: nv getenv [parameter_name]". That says nothing about
+ *     a second copy, only that this nv cannot tell, and the write it then
+ *     allows is the one a stick without the verb always had.
+ * Anything else (no answer in time, killed by a signal, exit 3 for a
+ * copy odi-oss nv could not read in full, another status or other words)
+ * is no knowing, not "no fallback copy".
+ */
+static int nv_fallback_known(long got, long code, const char *buf, unsigned long cap)
+{
+	/* A NUL in the answer hides what follows it from every test below. */
+	if (got < 0 || (unsigned long)got != str_len(buf))
+		return 0;
+	if (code == 0)
+		return (unsigned long)got + 1 < cap;
+	if (code != 1)
+		return 0;
+	return seq(buf, "nv: no valid second copy of the environment\n") ||
+	       spre(buf, "Usage: nv getenv [parameter_name]\n");
+}
+
+/*
+ * Whether a full `nv fallback` dump that exited 0 is one, in the shape odi-oss
+ * nv prints it: its header line for the copy, then whole name=value lines, then
+ * one empty line and nothing after it, with no NUL anywhere; and at most one
+ * sw_commit, which names slot 0 or 1. Anything else is no knowing what that
+ * copy says, as on the write route, which asks for sw_commit alone (nv_read).
+ */
+static int nv_fallback_dump_ok(const char *buf, long got)
+{
+	unsigned long i = 24;            /* past "Fallback environment: N\n" */
+	int commits = 0;
+
+	if (got < 0 || (unsigned long)got != str_len(buf))
+		return 0;
+	if (!spre(buf, "Fallback environment: 1\n") && !spre(buf, "Fallback environment: 2\n"))
+		return 0;
+	for (;;) {
+		unsigned long le = i, eq = i;
+
+		while (buf[le] && buf[le] != '\n')
+			le++;
+		if (buf[le] != '\n')
+			return 0;                /* a last line without its end */
+		if (le == i)
+			return buf[le + 1] == 0;     /* the empty line ends it */
+		while (eq < le && buf[eq] != '=')
+			eq++;
+		if (eq == i || eq == le)
+			return 0;                /* not name=value */
+		if (spre(buf + i, "sw_commit=") &&
+		    (++commits > 1 || le != i + 11 || (buf[i + 10] != '0' && buf[i + 10] != '1')))
+			return 0;
+		i = le + 1;
+	}
+}
+
 /* The sw_* lines of an `nv getenv` / `nv fallback` dump, as JSON members. */
 static void emit_sw_pairs(int fd, const char *buf)
 {
@@ -384,8 +447,15 @@ void emit_firmware_body(int fd)
 		}
 	}
 	put_fd(fd, " MB\",\"env\":{");
-	if (run_to_buf("/bin/nv", argv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0)
-		emit_sw_pairs(fd, buf);
+	{
+		/* Only from an nv that exited 0: what one that then failed
+		 * printed, exit 3 included, is not the environment. */
+		long code = -1;
+
+		if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code, NV_TIMEOUT_MS) > 0 &&
+		    code == 0)
+			emit_sw_pairs(fd, buf);
+	}
 	/*
 	 * The OTHER copy of the redundant environment: what U-Boot uses if the
 	 * winning copy is ever left invalid, which an interrupted setenv is how
@@ -398,11 +468,23 @@ void emit_firmware_body(int fd)
 	put_fd(fd, "},\"fallback\":{");
 	{
 		static char *const fargv[] = { "nv", "fallback", 0 };
+		long code = -1;
+		long got = run_to_buf_ex("/bin/nv", fargv, buf, sizeof(buf), &code,
+					 NV_TIMEOUT_MS);
+		int known = nv_fallback_known(got, code, buf, sizeof(buf)) &&
+			    (code != 0 || nv_fallback_dump_ok(buf, got));
 
-		if (run_to_buf("/bin/nv", fargv, buf, sizeof(buf), NV_TIMEOUT_MS) > 0)
+		if (known && got > 0 && code == 0)
 			emit_sw_pairs(fd, buf);
+		/* No knowing what that copy says (no answer in time, a copy
+		 * odi-oss nv could not read in full, a dump that filled the
+		 * buffer or is not one, any answer that is not one of the
+		 * known ones): the page then offers no write, as the write
+		 * route refuses one. */
+		put_fd(fd, "},\"fallback_unsure\":");
+		put_fd(fd, known ? "false" : "true");
 	}
-	put_fd(fd, "},\"slots\":{");
+	put_fd(fd, ",\"slots\":{");
 	{
 		char mtds[1024];
 
@@ -643,33 +725,43 @@ int slot_state_refresh(void)
 }
 
 /*
- * Read one U-Boot variable.
+ * One U-Boot variable, from `nv <verb> <key>`: getenv for the copy U-Boot
+ * uses, fallback for the other one.
  *
- * /api/firmware already emits every sw_* for the page, but a route that has to
- * DECIDE on one needs it in C -- and asking the page to send back what it was
- * told would let a caller choose its own answer.
+ * Only a line that ends in a newline is taken, and a value that does not fit
+ * `out` is not taken at all: a value cut after its first digit is not one to
+ * decide on. `known`, for fallback, says whether the answer is one to go by
+ * (nv_fallback_known); a cut value is not, nor an exit 0 that printed
+ * something other than the key: odi-oss nv prints the line of the key, or
+ * nothing when the copy does not set it.
  */
-int nv_get(const char *key, char *out, unsigned long cap)
+static int nv_read(const char *verb, const char *key, char *out, unsigned long cap,
+		   int *known)
 {
-	/* `nv getenv <key>`, not the whole environment: a dump longer than
-	 * buf was cut, and a value cut after its first digit read as complete.
-	 * Only a line that ends in a newline is taken, and a value that does
-	 * not fit `out` is not taken at all. */
 	char *argv[4];
 	char buf[1024];
 	unsigned long i = 0;
-	long code = -1;
+	long code = -1, got;
 
 	argv[0] = "nv";
-	argv[1] = "getenv";
+	argv[1] = (char *)verb;
 	argv[2] = (char *)key;
 	argv[3] = 0;
 	out[0] = 0;
+	got = run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code,
+			    NV_TIMEOUT_MS);
+	if (known)
+		*known = nv_fallback_known(got, code, buf, sizeof(buf));
 	/* And only from an nv that exited 0: a complete line from one that
-	 * then failed is not a value to decide on. */
-	if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code,
-			  NV_TIMEOUT_MS) <= 0 || code != 0)
+	 * then failed is not a value to decide on. For fallback the answer is
+	 * the line of the key alone or nothing: a NUL, more lines, or the line
+	 * after others is no knowing. */
+	if (got <= 0 || code != 0)
 		return 0;
+	if (known && (unsigned long)got != str_len(buf)) {
+		*known = 0;
+		return 0;
+	}
 
 	while (buf[i]) {
 		unsigned long ls = i, le = i, eq, k = 0;
@@ -680,8 +772,11 @@ int nv_get(const char *key, char *out, unsigned long cap)
 		while (eq < le && buf[eq] != '=')
 			eq++;
 		if (eq < le && spre(buf + ls, key) && (ls + str_len(key)) == eq) {
-			if (buf[le] != '\n' || le - eq > cap) {
+			if (buf[le] != '\n' || le - eq > cap ||
+			    (known && (ls != 0 || buf[le + 1]))) {
 				out[0] = 0;
+				if (known)
+					*known = 0;
 				return 0;
 			}
 			for (k = 0; eq + 1 + k < le; k++)
@@ -691,5 +786,38 @@ int nv_get(const char *key, char *out, unsigned long cap)
 		}
 		i = (buf[le] == '\n') ? le + 1 : le;
 	}
+	if (known && buf[0])
+		*known = 0;
 	return 0;
+}
+
+/*
+ * Read one U-Boot variable.
+ *
+ * /api/firmware already emits every sw_* for the page, but a route that has to
+ * DECIDE on one needs it in C -- and asking the page to send back what it was
+ * told would let a caller choose its own answer. `nv getenv <key>`, not the
+ * whole environment: a dump longer than the buffer was cut.
+ */
+int nv_get(const char *key, char *out, unsigned long cap)
+{
+	return nv_read("getenv", key, out, cap, 0);
+}
+
+/*
+ * The same variable in the OTHER copy of the redundant environment, the one
+ * U-Boot boots by if the winning copy is ever left invalid. Only the odi-oss
+ * nv has the verb; one without it prints its usage and exits 1, and an
+ * odi-oss nv with no valid second copy says so and exits 1. Both answer 0
+ * here: by this answer there is no second copy to go by. -1 for any other
+ * answer, which is no knowing: nv did not answer in time, was killed, said
+ * that a copy could not be read in full (exit 3), exited 0 with something
+ * other than the key, or failed in a way it has no known words for
+ * (nv_fallback_known).
+ */
+int nv_fallback_get(const char *key, char *out, unsigned long cap)
+{
+	int known, r = nv_read("fallback", key, out, cap, &known);
+
+	return known ? r : -1;
 }

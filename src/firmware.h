@@ -33,6 +33,9 @@ int nv_commit(const char *slot, char *msg, unsigned long cap);
 int slot_state_refresh(void);
 /* One U-Boot variable, by name. Returns 0 if it is not set. */
 int nv_get(const char *key, char *out, unsigned long cap);
+/* The same from the other environment copy; 0 as well on a stock nv, -1
+ * when nv did not answer in time or could not read a copy in full. */
+int nv_fallback_get(const char *key, char *out, unsigned long cap);
 /* argv[0] of this process, set by main(): the path the launcher ran. An
  * override deployed by scripts/deploy.sh runs from /etc/config/confd/, the
  * image copy from /bin/confd. Reported so the page can tell the two apart by

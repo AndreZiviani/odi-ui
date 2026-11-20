@@ -795,6 +795,17 @@ Does the stock firmware work on the same line:</pre>
   </div>
 </dialog>
 
+<!-- The question before a change (dom.js ask): modal, headed by the cost
+     badge, with a button that says what it does. -->
+<dialog id="ask-dialog" aria-labelledby="ask-head" aria-describedby="ask-body">
+  <div id="ask-head" class="ask-head"></div>
+  <div id="ask-body" class="ask-body"></div>
+  <div class="ask-acts">
+    <button id="ask-cancel" type="button">Cancel</button>
+    <button id="ask-ok" class="primary" type="button">Continue</button>
+  </div>
+</dialog>
+
 <script type="module" src="/app.js"></script>
 </body>
 </html>
