@@ -131,6 +131,14 @@ async function writeImage(part, fw) {
   /* Held before the request: with a starter that blocks, or a slow answer,
      the button would be on for the whole of it. */
   if (RB) holdReboot(RB, part);
+  /* And the commands under the upload, as a render during the write would
+     give them, until the answer: the page was rendered before the write and
+     would offer the copy and the write meanwhile. A refusal puts them back;
+     a write that starts is followed, and the render after it redraws them. */
+  const up = $('#upload');
+  const upBefore = up ? up.textContent : '';
+  if (up) up.textContent = uploadCommands(location.hostname, part, `Partition ${part} is being written. Wait for that write to end.`, true);
+  const giveBack = () => { if (up) up.textContent = upBefore; releaseReboot(); };
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -143,7 +151,7 @@ async function writeImage(part, fw) {
     if (j.output) out.append(el('pre', null, String(j.output).trim()));
     if (!j.ok) {
       out.append(el('div', 'bad', j.error || 'the updater refused'));
-      releaseReboot();
+      giveBack();
       return;
     }
     /* An image whose starter writes in the background leaves a state in
@@ -152,8 +160,30 @@ async function writeImage(part, fw) {
     await followWrite(part);
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
-    releaseReboot();
+    giveBack();
   }
+}
+
+/* The ssh commands under the upload. `other` is the partition this stick is
+   not running, `noWrite` why no write command is given now (or null), and
+   `writing` leaves the copy out: it could overwrite the archive a running
+   write reads. Pure. */
+function uploadCommands(host, other, noWrite, writing) {
+  return [
+    '# on your machine, in the odi-oss checkout',
+    'make image                     # -> out/image/<version>.tar',
+    '',
+    ...(writing ? [] : [
+      'IMG=out/image/<version>.tar',
+      `cat "$IMG" | ssh root@${host} 'cat > /tmp/img.tar'`,
+      `md5 -q "$IMG"; ssh root@${host} 'md5sum /tmp/img.tar'`,
+      '',
+    ]),
+    ...(noWrite
+      ? [`# no write command now${other === undefined ? '' : ` for partition ${other}`}:`, `# ${noWrite}`]
+      : [`# writes partition ${other}, the one this stick is not running, and waits`,
+        `ssh root@${host} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`]),
+  ].join('\n');
 }
 
 /* The Reboot button of the current render, for followWrite to hold. */
@@ -259,6 +289,43 @@ async function followLoop(part, deps = followDeps) {
   }
 }
 
+/*
+ * Why partition p is not to be written now, or null when it may be. One rule
+ * for the button on its card and the command under the upload: not the
+ * running partition, not one with a trial pending, and not the committed one
+ * in either environment copy, which is the image a failed trial goes back to.
+ * Unknown is not "the other one": a trial state other than 0, 1 or 2, or a
+ * fallback copy nv could not read, refuses as well. confd checks the same
+ * before a write from the button. The command goes past confd to
+ * fwu_starter.sh, and neither it nor the fwu.sh of the upload looks at
+ * sw_tryactive: for the command, that check is this page alone.
+ */
+function writeRefusal(fw, p) {
+  const env = fw.env || {};
+  const fb = (fw.fallback || {}).sw_commit;
+  const slot = (v) => v === '0' || v === '1';
+  if (!slot(env.sw_active)) return 'The stick cannot tell which partition it is running, so neither is offered for writing.';
+  if (p === env.sw_active) return 'This is the partition the stick is running.';
+  if (p === env.sw_tryactive) return 'A trial of this partition is pending. Cancel it to write here.';
+  if (!slot(env.sw_tryactive) && env.sw_tryactive !== '2') {
+    return 'The stick cannot tell whether a trial is pending, so writing is refused.';
+  }
+  if (!slot(env.sw_commit)) return 'The stick cannot tell which partition is committed, so writing is refused.';
+  if (p === env.sw_commit) {
+    return 'This is the committed partition, the one a failed trial goes back to. '
+      + 'Commit the running image before writing here.';
+  }
+  if (fw.fallback_unsure === true) {
+    return 'The fallback copy of the U-Boot environment could not be read, so writing is refused. '
+      + 'Reload the page to read it again.';
+  }
+  if (p === fb) {
+    return 'The fallback copy of the U-Boot environment still commits to this partition. '
+      + 'Commit the running image before writing here.';
+  }
+  return null;
+}
+
 async function renderFirmware() {
   const host = $('#parts');
   let fw;
@@ -350,11 +417,14 @@ async function renderFirmware() {
        refuses the running one as well -- fwu.sh would too -- but finding that
        out after the erase has started is not where anyone should learn it.
        `booted !== undefined` matters: with sw_active unreadable this once
-       offered to write BOTH partitions, including the running one.
+       offered to write BOTH partitions, including the running one. During
+       a trial the other partition is the committed one, which is not
+       offered either (writeRefusal).
     */
     if (booted !== undefined && p !== booted && !writing) {
-      if (p === pending) {
-        acts.append(el('span', 'hint', 'A trial of this partition is pending. Cancel it to write here.'));
+      const why = writeRefusal(fw, p);
+      if (why) {
+        acts.append(el('span', 'hint', why));
       } else if (UPLOADED) {
         const b = el('button', 'danger', 'Write the uploaded image here');
         b.type = 'button';
@@ -375,19 +445,15 @@ async function renderFirmware() {
   if (COMMIT_WHY) host.append(COMMIT_WHY);
 
   /* Spell the commands out with this stick's own address and the partition it
-     is not running, so they can be pasted without being adapted. */
-  const other = booted === '0' ? '1' : '0';
-  $('#upload').textContent = [
-    '# on your machine, in the odi-oss checkout',
-    'make image                     # -> out/image/<version>.tar',
-    '',
-    'IMG=out/image/<version>.tar',
-    `cat "$IMG" | ssh root@${location.hostname} 'cat > /tmp/img.tar'`,
-    `md5 -q "$IMG"; ssh root@${location.hostname} 'md5sum /tmp/img.tar'`,
-    '',
-    `# writes partition ${other}, the one this stick is not running, and waits`,
-    `ssh root@${location.hostname} '/etc/scripts/fwu_starter.sh --foreground ${other} /tmp/img.tar'`,
-  ].join('\n');
+     is not running, so they can be pasted without being adapted. The write
+     goes to the starter directly, past confd, so it is given only when the
+     card would offer the same partition. While a write runs there is no
+     copy either: it could overwrite the archive that write reads. */
+  const other = booted === '0' ? '1' : booted === '1' ? '0' : undefined;
+  const noWrite = writing
+    ? `Partition ${fw.write.slot} is being written. Wait for that write to end.`
+    : other === undefined ? writeRefusal(fw, '0') : writeRefusal(fw, other);
+  $('#upload').textContent = uploadCommands(location.hostname, other, noWrite, writing);
 
   /* What this image was built from, and which confd is answering: a binary
      at /etc/config/confd/confd overrides the image copy and survives

@@ -83,6 +83,7 @@ unsigned long url_decode(const char *in, unsigned long i, char stop,
 			 char *out, unsigned long cap);
 int form_get(const char *body, const char *want, char *out, unsigned long cap);
 int form_has(const char *body, const char *want);
+int form_valid(const char *body);
 unsigned long url_skip(const char *in, unsigned long i);
 void serve_static(int fd, const char *name, const char *ctype);
 

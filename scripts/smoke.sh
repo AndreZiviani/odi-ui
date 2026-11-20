@@ -203,16 +203,53 @@ if [ "$1" = commit ]; then
 	echo "nv: commit $2: committed in both copies, read back"
 	exit 0
 fi
+# `nv fallback`, the other environment copy: /tmp/nv.fbcommit holds its
+# sw_commit; without the file there is no valid second copy (exit 1, as the
+# odi-oss nv says it), and /tmp/nv.vendor is the stock nv, which has no verb.
+# /tmp/nv.fbunread is a copy the odi-oss nv could not read in full (exit 3),
+# /tmp/nv.fbcrash an nv that fails with words it has for nothing else, and
+# /tmp/nv.fbhang an nv that does not answer in time. /tmp/nv.fbline holds an
+# exit status to give with the line for no valid second copy, which only
+# exit 1 makes a known answer; /tmp/nv.fbkill is an nv killed by a signal
+# after that line; /tmp/nv.fbbig a dump that fills the buffer of confd before
+# sw_commit, and /tmp/nv.fbjunk an exit 0 with words that are not the key.
+# /tmp/nv.fbraw holds the exact answer of an exit 0, keyed or not, or of
+# the exit status /tmp/nv.fbrawrc holds.
+if [ "$1" = fallback ]; then
+	[ -f /tmp/nv.vendor ] && { echo "Usage: nv getenv [parameter_name]"; exit 1; }
+	[ -f /tmp/nv.fbunread ] && { echo "nv: fallback: a copy of the environment could not be read in full, so which one U-Boot uses is not known; run it again"; exit 3; }
+	[ -f /tmp/nv.fbcrash ] && { echo "nv: fallback: something else went wrong"; exit 1; }
+	[ -f /tmp/nv.fbline ] && { echo "nv: no valid second copy of the environment"; exit "$(cat /tmp/nv.fbline)"; }
+	[ -f /tmp/nv.fbkill ] && { echo "nv: no valid second copy of the environment"; kill -9 $$; }
+	[ -f /tmp/nv.fbhang ] && exec sleep 5
+	[ -f /tmp/nv.fbraw ] && { cat /tmp/nv.fbraw; exit "$(cat /tmp/nv.fbrawrc 2>/dev/null || echo 0)"; }
+	if [ -f /tmp/nv.fbbig ]; then
+		[ -n "${2:-}" ] && exit 0
+		echo "Fallback environment: 2"
+		i=0
+		while [ "$i" -lt 120 ]; do echo "pad$i=0123456789012345678901234567890123456789"; i=$((i + 1)); done
+		echo "sw_commit=0"
+		exit 0
+	fi
+	[ -f /tmp/nv.fbjunk ] && { echo "nv: something that is not a value"; exit 0; }
+	[ -f /tmp/nv.fbcommit ] || { echo "nv: no valid second copy of the environment"; exit 1; }
+	fb="sw_commit=$(cat /tmp/nv.fbcommit)"
+	if [ -n "${2:-}" ]; then echo "$fb" | grep "^$2="; else printf 'Fallback environment: 2\n%s\n\n' "$fb"; fi
+	exit 0
+fi
 # The running partition: 0, or what /tmp/nv.active holds; /tmp/nv.noactive
 # leaves sw_active out of the environment altogether.
 # /tmp/nv.tryactive holds a pending trial's slot (2, none, by default).
+# /tmp/nv.commit holds sw_commit (0 by default).
 act=0
 [ -f /tmp/nv.active ] && act=$(cat /tmp/nv.active)
 try=2
 [ -f /tmp/nv.tryactive ] && try=$(cat /tmp/nv.tryactive)
+com=0
+[ -f /tmp/nv.commit ] && com=$(cat /tmp/nv.commit)
 sw=""
 [ -f /tmp/nv.noactive ] || sw="sw_active=$act\n"
-dump() { printf "${sw}sw_commit=0\nsw_tryactive=$try\nsw_version0=a\nsw_version1=b\n"; }
+dump() { printf "${sw}sw_commit=$com\nsw_tryactive=$try\nsw_version0=a\nsw_version1=b\n"; }
 case "$1 $2" in
 "getenv ") dump ;;
 "getenv")  dump ;;
@@ -291,6 +328,22 @@ check "cache: meta has its own tag" no \
 	"$([ "$(curl -s -i -u "$AUTH" "$U/api/meta" | tr -d '\r' | sed -n 's/^ETag: //p')" = "$tag" ] && echo yes || echo no)"
 atag=$(curl -s -i -u "$AUTH" "$U/app.js" | tr -d '\r' | sed -n 's/^ETag: //p')
 check "cache: an asset answers 304 to its tag" 304 "$(code -u "$AUTH" -H "If-None-Match: $atag" "$U/app.js")"
+# An asset that does not fit the file buffer is refused, not served cut with
+# a 200 and a tag the browser would keep: an override of 70000 bytes here.
+# The edge, filebuf[65536]: 65,534 bytes are served whole; 65,535 fill what
+# read_file reads and cannot be told from a longer file, so they are refused.
+mkdir -p /etc/config/confd
+head -c 70000 /dev/zero | tr '\0' 'a' > /etc/config/confd/style.css
+check "an asset larger than the file buffer is a 500, not a cut 200" 500 "$(code -u "$AUTH" "$U/style.css")"
+head -c 65534 /dev/zero | tr '\0' 'a' > /etc/config/confd/style.css
+check "  one of 65,534 bytes is served" 200 "$(code -u "$AUTH" "$U/style.css")"
+check "  whole" 65534 "$(curl -s -u "$AUTH" "$U/style.css" | wc -c | tr -d ' ')"
+head -c 65535 /dev/zero | tr '\0' 'a' > /etc/config/confd/style.css
+check "  one of 65,535 bytes is refused" 500 "$(code -u "$AUTH" "$U/style.css")"
+check "  and the answer says what is served" yes \
+	"$(err "$(curl -s -u "$AUTH" "$U/style.css")" 'confd serves files of at most 65,534 bytes')"
+rm -f /etc/config/confd/style.css
+check "  and the stylesheet is served again without it" 200 "$(code -u "$AUTH" "$U/style.css")"
 check "cache: values stay no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/values")" 'Cache-Control: no-store')"
 check "cache: status stays no-store" yes "$(err "$(curl -s -i -u "$AUTH" "$U/api/status")" 'Cache-Control: no-store')"
 # The start-up bundles: /api/static is every image file the single routes
@@ -1188,9 +1241,140 @@ touch /tmp/nv.noactive
 check "an unreadable running partition refuses the write" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
 rm -f /tmp/nv.noactive
+# A trial runs partition 1, partition 0 is committed: that is the image a
+# failed trial goes back to, and it is not written, whatever the fwu.sh of
+# the upload would say.
+echo 1 > /tmp/nv.active
+check "during a trial the committed partition is not written" yes \
+	"$(err "$(wr "action=write&partition=0&md5=$LOCAL_MD5")" 'that is the committed partition')"
+rm -f /tmp/nv.active
+# Committed in the copy U-Boot uses, while the fallback copy still names
+# partition 1: U-Boot boots that one if the winning copy is ever lost, and
+# the trial banner says so. It is not written either.
+echo 1 > /tmp/nv.fbcommit
+check "a partition the fallback copy still commits to is not written" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment still commits to that partition')"
+touch /tmp/nv.vendor
+check "  a stock nv, without the fallback verb, does not stop the write" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+rm -f /tmp/nv.vendor
+echo 0 > /tmp/nv.fbcommit
+check "  nor does a fallback copy that agrees" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+# A fallback copy nv could not read in full, or an nv that does not answer in
+# time, is no knowing what that copy commits to: not "no second copy".
+touch /tmp/nv.fbunread
+check "  a fallback copy that could not be read stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbunread
+# Only the known answers say there is no second copy: any other failure is
+# no knowing too, not a write let through.
+touch /tmp/nv.fbcrash
+check "  so does an nv failure with words of its own" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbcrash
+# The status is what counts, not the words: the line for no valid second
+# copy with exit 3, or any status but 1, or from an nv killed after it, is no
+# knowing. With exit 1 it is the known answer, and the write goes ahead.
+for fbrc in 3 2; do
+	echo "$fbrc" > /tmp/nv.fbline
+	check "  so does the line for no second copy with exit $fbrc" yes \
+		"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+done
+echo 1 > /tmp/nv.fbline
+check "  that line with exit 1 does not stop the write" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+rm -f /tmp/nv.fbline
+touch /tmp/nv.fbkill
+check "  an nv killed after that line stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbkill
+touch /tmp/nv.fbjunk
+check "  an exit 0 with words that are not the key stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbjunk
+# The line of the key must name slot 0 or 1 and be all there is: an empty or
+# other value, a second line, or a NUL in the answer is no knowing either.
+for fbv in x ''; do
+	printf '%s\n' "$fbv" > /tmp/nv.fbcommit
+	check "  a fallback sw_commit of '$fbv' stops the write" yes \
+		"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+	check "  and the page is told so" yes \
+		"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+done
+echo 0 > /tmp/nv.fbcommit
+printf 'sw_commit=0\nsw_commit=0\n' > /tmp/nv.fbraw
+check "  two sw_commit lines stop the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+printf 'sw_commit=0\n\000\n' > /tmp/nv.fbraw
+check "  so does a NUL after the line" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+printf 'Fallback environment: 2\nsw_commit=0\nsw_commit=1\n\n' > /tmp/nv.fbraw
+check "  a dump with two sw_commit lines is unsure" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+printf 'sw_commit=0\n' > /tmp/nv.fbraw
+check "  so is a dump without the header line" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+# The whole shape odi-oss nv prints: the header, name=value lines, one empty
+# line to end it. A header alone, a line that is no pair or a dump without
+# the empty line is not that.
+for fbd in 'Fallback environment: 2\n' 'Fallback environment: 2\nsw_commit=0\njunk\n\n' \
+	   'Fallback environment: 2\nsw_commit=0\n' 'Fallback environment: 2\nsw_commit=0\n\nmore\n'; do
+	printf "$fbd" > /tmp/nv.fbraw
+	check "  so is the dump '$fbd'" yes \
+		"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+done
+# The line for no valid second copy is exact: bytes after a NUL behind it
+# make it another answer.
+printf 'nv: no valid second copy of the environment\n\000x' > /tmp/nv.fbraw
+echo 1 > /tmp/nv.fbrawrc
+check "  the no-copy line with bytes after a NUL stops the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+check "  and the page is told so" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{},"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbrawrc
+# A copy that does not set sw_commit: odi-oss nv prints nothing and exits 0.
+: > /tmp/nv.fbraw
+check "  a fallback copy without sw_commit does not stop the write" passed \
+	"$(gate "$(wr "action=write&partition=1&md5=$LOCAL_MD5")")"
+printf 'Fallback environment: 2\nsw_active=0\n\n' > /tmp/nv.fbraw
+check "  nor flag the page" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{"sw_active":"0"},"fallback_unsure":false,"slots":')"
+rm -f /tmp/nv.fbraw
+# A dump that fills the buffer may have lost sw_commit: the page offers no
+# write on it.
+touch /tmp/nv.fbbig
+check "  a fallback dump that fills the buffer is unsure" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
+rm -f /tmp/nv.fbbig
+touch /tmp/nv.fbhang
+check "  so does an nv that does not answer for it in time" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
+rm -f /tmp/nv.fbhang
+check "  and a readable one is not flagged" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{"sw_commit":"0"},"fallback_unsure":false,"slots":')"
+rm -f /tmp/nv.fbcommit
+echo x > /tmp/nv.commit
+check "an unreadable sw_commit refuses the write" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition is committed')"
+rm -f /tmp/nv.commit
+echo sw_commit > /tmp/nv.getfail
+check "so does a sw_commit from an nv that then fails" yes \
+	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition is committed')"
+rm -f /tmp/nv.getfail
 echo 1 > /tmp/nv.getfail
 check "so does a sw_active from an nv that then fails" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
+check "and the page shows no environment from it" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"env":{},"fallback":')"
 echo sw_tryactive > /tmp/nv.getfail
 check "a sw_tryactive from an nv that then fails is not taken" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell whether a trial is pending')"
@@ -1388,8 +1572,15 @@ echo "== applying"
 # asked, so the argv the route builds is what is checked.
 cat > /etc/scripts/apply.sh <<'APPLY'
 #!/bin/sh
-echo "apply.sh: $1"
-[ "$1" = omci ] && [ -f /tmp/apply-fail ] && exit 1
+# An apply.sh older than omci-live stops at its usage line, doing nothing.
+if [ "$1" = omci-live ] && [ -f /tmp/apply-old ]; then
+	echo "usage: $0 network|omci [--confirm|--revert] [seconds]|syslog|ntp|igmp|sfp" >&2
+	exit 1
+fi
+echo "apply.sh: $*"
+case "$1" in omci|omci-live) [ -f /tmp/apply-fail ] && exit 1 ;; esac
+[ "$1" = omci-live ] && [ -f /tmp/apply-defer ] && exit 3
+case "$1" in omci|omci-live) [ -f /tmp/apply-rereg ] && exit 4 ;; esac
 exit 0
 APPLY
 chmod +x /etc/scripts/apply.sh
@@ -1405,9 +1596,47 @@ check "apply igmp runs apply.sh igmp" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=igmp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: igmp')"
 check "apply sfp runs apply.sh sfp" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=sfp' "http://127.0.0.1:$PORT/api/apply")" 'apply.sh: sfp')"
+# omci-live, what the page sends after a save of VLAN keys alone: apply.sh
+# omci-live, and exit 3 (an identity change waiting, nothing applied) is
+# deferred, not a plain failure. It is an action of its own, so a confd
+# older than the page refuses it instead of running the full apply.
+check "apply omci-live runs apply.sh omci-live" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: omci-live\u000a"')"
+check "no what is still the full apply" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'x=1' "http://127.0.0.1:$PORT/api/apply")" '"output":"apply.sh: omci\u000a"')"
+check "  and so is an empty one" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=' "http://127.0.0.1:$PORT/api/apply")" '"output":"apply.sh: omci\u000a"')"
+# A what that does not decode, or a field name before it that does not, is
+# not "no what": that would be the full apply.
+long=$(printf '%070d' 0)
+for bad in 'what=%zz' "what=$(printf '%020d' 0)" "$long=1&what=omci-live" '%zz=1&what=omci-live'; do
+	check "an apply with $(printf '%.24s' "$bad") is refused" 400 \
+		"$(code -u "$AUTH" -X POST -d "$bad" "http://127.0.0.1:$PORT/api/apply")"
+done
+touch /tmp/apply-defer
+check "a deferred live apply says so" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"deferred":true,')"
+check "  and a plain apply is not deferred" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"output":"apply.sh: omci\u000a"')"
+rm -f /tmp/apply-defer
+# After a reload that left the ONU off the line, omci-live re-registers it
+# all the same, and apply.sh says so with exit 4: applied, not a failure.
+touch /tmp/apply-rereg
+check "a live apply that re-registered says so" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":true,"applied":true,"reregistered":true,')"
+# apply.sh omci never exits 4; one that did is a failure, not a flag.
+check "  and exit 4 from a plain apply is a failure, with no such flag" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"output":"apply.sh: omci\u000a"')"
+rm -f /tmp/apply-rereg
+touch /tmp/apply-old
+check "an apply.sh without omci-live is unsupported, nothing applied" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"unsupported":true,"output":"usage: ')"
+rm -f /tmp/apply-old
 touch /tmp/apply-fail
 check "a failing apply is reported as not applied" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")" '"ok":false')"
+check "  and a failing live apply is a failure, not unsupported" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"output":"apply.sh: omci-live')"
 rm -f /tmp/apply-fail
 check "an unknown action is refused" 400 \
 	"$(code -u "$AUTH" -X POST -d 'what=reboot' "http://127.0.0.1:$PORT/api/apply")"
@@ -1416,6 +1645,15 @@ check "applying needs the credential" 401 \
 check "a cross-origin apply is refused" 403 \
 	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST -d 'what=omci' "http://127.0.0.1:$PORT/api/apply")"
 rm -f /etc/scripts/apply.sh
+# Without apply.sh, omci restarts omci_app through /etc/runomci.sh: a live
+# apply must not get there.
+printf '#!/bin/sh\ntouch /tmp/runomci-ran\n' > /etc/runomci.sh
+chmod +x /etc/runomci.sh
+rm -f /tmp/runomci-ran
+check "without apply.sh a live apply is unsupported" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=omci-live' "http://127.0.0.1:$PORT/api/apply")" '"ok":false,"applied":false,"unsupported":true,')"
+check "  and omci_app was not restarted" no "$([ -e /tmp/runomci-ran ] && echo yes || echo no)"
+rm -f /etc/runomci.sh /tmp/runomci-ran
 check "without apply.sh the network action is refused" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'what=network' "http://127.0.0.1:$PORT/api/apply")" 'reboot to apply')"
 
