@@ -115,8 +115,11 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   On a stock-based image the editable subtabs hold the 23 keys the line
   profiles in `odi-sandbox` carry.
 - **OMCI** &mdash; *Services*, what the OLT actually provisioned, in sentences;
-  and *MIB browser*, the same thing unedited: every table, its entities, and
-  each entity's attributes.
+  *Topology*, how those entities connect, drawn from their pointers (T-CONT,
+  GEM port, interworking TP, 802.1p mapper, bridge port, bridge, UNI), with
+  what no path uses and any pointer to a missing entity called out; and *MIB
+  browser*, the same thing unedited: every table, its entities, and each
+  entity's attributes.
 - **System** &mdash; *Firmware* (both partitions, what each one holds, image
   upload and write, the one-shot trial boot); *Access* (this page's
   credential, SSH keys, and *Locked out? The safe mode*, a closed-by-default

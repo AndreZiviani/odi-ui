@@ -39,7 +39,7 @@ await new Promise((r) => setTimeout(r, 1500));
 
 /* Every view, by the hash that names it. */
 const views = ['status', 'config/line', 'config/vlan', 'config/identity', 'config/network',
-               'config/services', 'config/stock', 'omci/services', 'omci/mib',
+               'config/services', 'config/stock', 'omci/services', 'omci/topology', 'omci/mib',
                'system/firmware', 'system/access', 'system/backup', 'system/logs'];
 for (const v of views) {
   await page.evaluate((h) => { location.hash = h; }, v);

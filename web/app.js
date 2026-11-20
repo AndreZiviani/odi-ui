@@ -18,6 +18,7 @@ import { save, refreshSaveBar, renderIdentitySwitch } from './save.js';
 import { renderFirmware, wireFirmware, renderTrial } from './firmware.js';
 import { renderServices } from './services.js';
 import { renderMeBrowser } from './mebrowser.js';
+import { renderTopology } from './topology.js';
 import { renderPhone, wirePhone, hideSecrets } from './phone.js';
 import { wireRestore, saveBackup } from './restore.js';
 import { renderL2 } from './l2.js';
@@ -48,6 +49,7 @@ const OLD = {
    ~35 ms each is not something to spend before the status page has painted. */
 const ON_SHOW = {
   'omci/services': () => renderServices(),
+  'omci/topology': () => renderTopology(),
   'omci/mib': () => renderMeBrowser(),
   'omci/phone': () => renderPhone(),
   'system/firmware': () => { renderFirmware(); renderUpdateSwitch(); },
@@ -138,6 +140,7 @@ route();
 $('#filter').oninput = () => renderAll();
 $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
+$('#topo-reload').onclick = () => renderTopology(true);
 $('#pw-save').onclick = savePassword;
 $('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;

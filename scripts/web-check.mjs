@@ -73,6 +73,7 @@ class El {
 const byId = new Map();
 const doc = {
   createElement: (t) => new El(t),
+  createElementNS: (ns, t) => new El(t),
   createTextNode: (t) => ({ nodeType: 3, textContent: String(t), children: [] }),
   querySelector: (sel) => {
     if (!byId.has(sel)) byId.set(sel, new El('div'));
@@ -161,12 +162,18 @@ const ME7_SHAPED = [
   'EntityId: 0x0000', 'Version: V1.0-220923', 'IsActive: 1', 'IsCommitted: 1',
   '=================================', '',
 ].join('\n');
+const OMCI_ASKED = [];
 globalThis.fetch = async (path) => {
   const [key, qs] = String(path).split('?');
   if (key === '/api/omci') {
     const p = new URLSearchParams(qs || '');
-    const raw = p.get('cmd') === 'me' ? (OMCI[p.get('me')] ?? '') : '';
-    return { ok: true, status: 200, json: async () => ({ raw, ok: true, truncated: false }) };
+    const v = p.get('cmd') === 'me' ? (OMCI[p.get('me')] ?? '') : '';
+    OMCI_ASKED.push(p.get('me'));
+    /* A string is the dump; an object stands for the other answers of the
+       route (a cut dump, an omcicli that timed out). */
+    if (v && typeof v === 'object')
+      return { ok: true, status: 200, json: async () => ({ raw: v.raw ?? '', ok: v.ok ?? true, truncated: !!v.truncated, error: v.error }) };
+    return { ok: true, status: 200, json: async () => ({ raw: v, ok: true, truncated: false }) };
   }
   /* The two start-up bundles, made of the single routes so a check that
      swaps one of those sees it here too. */
@@ -194,7 +201,7 @@ const ok = (cond, what) => {
 };
 
 const mods = ['dom', 'state', 'status', 'flow', 'overview', 'validate', 'expert', 'config', 'save', 'firmware',
-              'omci', 'services', 'mebrowser', 'phone', 'restore', 'crypto', 'l2', 'tools', 'hostlink', 'netaddr', 'updates', 'wizard'];
+              'omci', 'services', 'topology', 'mebrowser', 'phone', 'restore', 'crypto', 'l2', 'tools', 'hostlink', 'netaddr', 'updates', 'wizard'];
 for (const m of mods) {
   const mod = await import(join(root, 'web', `${m}.js`));
   ok(Object.keys(mod).length > 0, `${m}.js loads and exports something`);
@@ -2038,6 +2045,108 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   ok(fme(seen) && /both forms/.test(fme(seen)), 'a legacy row for a class that has an entity says both forms');
   r1.children[4].children[0].onclick();
   ok(seen === '188:0x8001:1:0011aa', 'removing a row removes its entry');
+}
+
+/* --- the Topology tab: the MIB pointers as a graph ----------------------- */
+{
+  const { buildGraph, pathOf, renderTopology } = await import(join(root, 'web', 'topology.js'));
+  const TOPO = ['262', '268', '266', '281', '130', '47', '45', '11', '329', '134', '84', '171'];
+  const line = (isp) => Object.fromEntries(TOPO.map((c) =>
+    [c, parseOmci(fx(`topology-${isp}/${c}.txt`))]));
+  const of = (g, cls) => [...g.nodes.values()].filter((n) => n.cls === cls);
+
+  /* ISP1: five unicast GEM ports behind mappers, bridge ports of TP type 3
+     that name the GEM IW TPs, a multicast GEM, the UNI and the VEIP. */
+  const g1 = buildGraph(line('isp1'));
+  ok(of(g1, '268').length === 6 && of(g1, '268').every((n) => n.used),
+     'topology ISP1: all six GEM ports reach a UNI');
+  ok(of(g1, '130').length === 5 && of(g1, '130').every((n) => n.used),
+     'topology ISP1: TP type 3 naming an IW TP goes through the mapper of that IW TP, as omcid reads it');
+  ok(g1.notes.length === 0 && of(g1, '47').every((n) => !n.lines.some((l) => /names IW TP/.test(l))),
+     'topology ISP1: each mapper has the id of its IW TP, so both readings draw the same and nothing is said');
+  ok(g1.dangling.length === 0, 'topology ISP1: no pointer names a missing entity');
+  ok(of(g1, '262').filter((n) => n.used).length === 5 && of(g1, '262').filter((n) => !n.used).length === 11,
+     'topology ISP1: five T-CONTs carry a GEM port, eleven carry none');
+  ok(of(g1, '11')[0].used && of(g1, '329')[0].used, 'topology ISP1: the bridge carries the UNI and the VEIP');
+  ok(of(g1, '47').some((n) => n.lines.includes('VLAN 10')), 'topology ISP1: a bridge port shows its ME 84 VLAN');
+  ok(of(g1, '11')[0].lines.some((l) => /^VLAN rules: \d+$/.test(l)), 'topology ISP1: ME 171 rules are counted on the UNI');
+  const sel = pathOf('268/3', g1.edges);
+  ok(sel.has('262/32769') && sel.has('130/2') && sel.has('329/1537') && !sel.has('268/4'),
+     'topology: a GEM port\'s path runs from its T-CONT to the UNIs and leaves the other GEM ports out');
+
+  /* ISP2: TP type 3 names the mapper itself; the bridge has the VEIP only. */
+  const g2 = buildGraph(line('isp2'));
+  ok(g2.edges.some((e) => e.from === '130/4098' && e.to === '47/4098'),
+     'topology ISP2: TP type 3 naming a mapper links the mapper');
+  ok(g2.notes.length === 0, 'topology ISP2: nothing read against G.988, nothing to explain');
+  ok(of(g2, '329')[0].used && !of(g2, '11')[0].used, 'topology ISP2: the VEIP is in use, the UNI is not');
+
+  /* Hand-built, labelled: ISP1 without mapper 0x0002. The IW TP 0x0002 the
+     bridge port names now has no mapper of that id, so only the omcid
+     reading places it, and the page says so for that port alone. */
+  const d130 = line('isp1')['130'];
+  const g1b = buildGraph({ ...line('isp1'),
+    130: { ...d130, instances: d130.instances.filter((i) => parseInt(i.id, 16) !== 2) } });
+  ok(g1b.notes.length === 1 && /^A bridge port has TP type 3/.test(g1b.notes[0]) && /IW TP 0x0002/.test(g1b.notes[0]),
+     'topology: a TP type 3 pointer the two readings place apart is said, once');
+  ok(of(g1b, '47').filter((n) => n.lines.some((l) => /names IW TP/.test(l))).length === 1,
+     'topology: and only that bridge port says it names an IW TP');
+
+  /* Hand-built, labelled: an IW TP naming a GEM port that does not exist.
+     Not a capture -- the shape is that of omcid (cli_row), the fault is invented. */
+  const broken = { ...line('isp2'),
+    266: parseOmci('266 GemIwTp 4097\n    GemCtpPtr                0063\n    IwOpt                    05\n1 row\n') };
+  const g3 = buildGraph(broken);
+  ok(g3.dangling.length === 1 && g3.dangling[0].target === 'ME 268 0x0063',
+     'topology: a pointer to a missing entity is reported, not drawn');
+  ok(!g3.nodes.get('266/4097').used && !g3.nodes.get('130/4098').used && g3.nodes.get('329/1537').used,
+     'topology: with the GEM link broken, the IW TP and its mapper fall off the path; the VEIP keeps multicast');
+
+  /* The page itself, through the same fetch stub as the Services tab. */
+  const keepOmci = { ...OMCI };
+  for (const [c, d] of Object.entries(line('isp1'))) OMCI[c] = fx(`topology-isp1/${c}.txt`);
+  await renderTopology(true);
+  const tg = doc.querySelector('#topo-graph');
+  const tgText = textOf(tg);
+  ok(tg.children.length === 2 && /GEM 1434/.test(tgText) && /VEIP 0x0601/.test(tgText),
+     'topology: the tab renders the columns with the boxes in them');
+  ok(/11 T-CONTs without an Alloc-ID/.test(tgText), 'topology: spare T-CONTs fold into one line');
+  ok(!/omcid reads each as that IW TP/.test(textOf(doc.querySelector('#topo-facts'))),
+     'topology: no TP type 3 note on ISP1');
+
+  /* A cut dump draws what it has and says the rest is missing. */
+  OMCI[268] = { raw: fx('topology-isp1/268.txt'), truncated: true };
+  await renderTopology(true);
+  ok(/Read only in part[^]*ME 268/.test(textOf(doc.querySelector('#topo-facts'))),
+     'topology: a dump cut short is named as read only in part');
+
+  /* A timeout ends the reads: the other tables are named, not asked for. */
+  OMCI[268] = { ok: false, error: 'omcicli timed out; omci_app may be stuck' };
+  OMCI_ASKED.length = 0;
+  await renderTopology(true);
+  ok(OMCI_ASKED.join(',') === '262,268' && /Not read: ME 268, ME 266[^]*ME 171/.test(textOf(doc.querySelector('#topo-facts'))),
+     'topology: after one timeout no other table is read, and every one left is named');
+
+  /* An empty T-CONT table is an incomplete read: the ONU always makes them. */
+  OMCI[268] = fx('topology-isp1/268.txt');
+  OMCI[262] = '0 rows\n';
+  await renderTopology(true);
+  ok(/Not read: ME 262/.test(textOf(doc.querySelector('#topo-facts'))),
+     'topology: no T-CONT at all is taken for a read that came back incomplete');
+
+  /* Nothing to draw: the notes of the read before do not stay. */
+  for (const c of TOPO) OMCI[c] = '0 rows\n';
+  await renderTopology(true);
+  ok(textOf(doc.querySelector('#topo-facts')) === '',
+     'topology: an empty read again clears the notes of the read before');
+
+  /* ISP2: the Ethernet UNI the ONU made sits unbridged and is not flagged. */
+  for (const c of TOPO) OMCI[c] = fx(`topology-isp2/${c}.txt`);
+  await renderTopology(true);
+  ok(!/stored, not in a path/.test(textOf(doc.querySelector('#topo-graph'))),
+     'topology ISP2: what the ONU made for itself is not flagged as unused');
+  for (const k of Object.keys(OMCI)) delete OMCI[k];
+  Object.assign(OMCI, keepOmci);
 }
 
 /* --- LAN_ROUTES: the static routes of the management interface ------------- */

@@ -1,0 +1,8 @@
+329 VEIP 1537
+    AdminState               00
+    OperState                00
+    InterDomainName          00000000000000000000000000000000000000000000000000
+    TcpUdpPtr                0000
+    IansAssignPort           0000
+    CustomizedSlotId         ff
+1 row

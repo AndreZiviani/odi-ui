@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- OMCI: a Topology subtab draws the path the OLT provisioned, from T-CONT
+  through GEM port, interworking TP, 802.1p mapper and bridge ports to the
+  UNI or VEIP, as columns joined by their MIB pointers. Click a box to follow
+  its path. Each box is tinted by who created it, blue for the OLT and green
+  for the ONU. It marks what the OLT created but no GEM-to-UNI path uses, and
+  lists any pointer that names a missing entity, any table it could not read
+  or read only in part. A bridge port of TP type 3 that names a GEM IW TP is
+  read the way odi-oss omcid reads it, and the page says so where that
+  reading and G.988's draw different paths. Read-only: up to twelve `omcicli
+  mib get` runs through the existing `/api/omci` route, only when the tab is
+  opened or *Read again* is pressed, and none after one that timed out.
+  `make check` covers it with omcid's answers for two recorded OLT sessions
+  (`scripts/fixtures/omci/topology-isp1`, `-isp2`). `scripts/preview.sh`
+  takes `PREVIEW_MIB=dir` to serve a captured MIB, one file per class.
+
 - The questions before a change (save, apply, reboot, firmware write, try
   and commit, the host port trials, removing an SSH key, reset, restoring
   identity keys) open in a dialog of the page instead of the browser's

@@ -822,6 +822,42 @@ button.mib-row:focus-visible { outline-offset: -2px; }
 .mib-dumps-head { margin-top: 4px; }
 #me-select { max-width: 320px; }
 
+/* The topology: eight columns that scroll sideways on a narrow screen, the
+   connectors in one SVG behind them. OLT-made boxes carry the UPC blue
+   (what the line set up), ONU-made ones stay neutral, and anything stored
+   but on no path is dashed and quiet. */
+.topo { position: relative; overflow-x: auto; margin: 8px 0 12px; }
+.topo-lines { position: absolute; left: 0; top: 0; pointer-events: none; }
+.topo-edge { fill: none; stroke: var(--blue-ink); stroke-width: 1.5; }
+.topo-edge.unused { stroke: var(--line-2); stroke-dasharray: 4 4; }
+.topo-edge.faded { stroke: var(--line); stroke-dasharray: none; }
+.topo-grid { position: relative; display: grid; grid-template-columns: repeat(8, minmax(140px, 1fr)); gap: 0 26px; min-width: 1300px; }
+.topo-col { display: flex; flex-direction: column; gap: 10px; }
+.topo-col h4 { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.topo-box { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; font: inherit;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line-2); border-left: 3px solid var(--line-2);
+  border-radius: var(--r); padding: 6px 9px; cursor: pointer; }
+/* Who created a box shows as a light tint and the left edge: blue for the
+   OLT, green for the ONU. A box on no path keeps its edge but loses the
+   tint, so what carries traffic stands out. color-mix over --surface makes
+   the tint follow both themes. */
+.topo-box.olt { border-left-color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, var(--surface)); }
+.topo-box.onu { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 14%, var(--surface)); }
+.topo-box.unused { border-style: dashed; color: var(--ink-2); background: var(--surface); }
+.topo-box.spare { cursor: default; font-size: 13px; color: var(--ink-3); border-style: dashed; }
+.topo-box.faded { opacity: 0.35; }
+.topo-box[aria-pressed="true"] { outline: 2px solid var(--blue-ink); outline-offset: 1px; }
+.topo-title { font-weight: 600; font-size: 14px; }
+.topo-line { font-size: 12.5px; color: var(--ink-2); }
+.topo-flag { color: var(--ink-3); }
+.topo-scroll { display: none; }
+@media (max-width: 900px) { .topo-scroll { display: block; margin: 0; } }
+.topo-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.topo-key { display: inline-block; width: 14px; height: 10px; border: 1px solid var(--line-2); border-left: 3px solid var(--line-2); border-radius: 2px; }
+.topo-key.olt { border-left-color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, var(--surface)); }
+.topo-key.onu { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 14%, var(--surface)); }
+.topo-key.unused { border-style: dashed; }
+
 /* ------------------------------------------------------------- system */
 .slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px; }
 .slot { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
