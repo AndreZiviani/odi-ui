@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## v1.19.0 (2026-11-20)
+
 - OMCI: a Topology subtab draws the path the OLT provisioned, from T-CONT
   through GEM port, interworking TP, 802.1p mapper and bridge ports to the
   UNI or VEIP, as columns joined by their MIB pointers. Click a box to follow
