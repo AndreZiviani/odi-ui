@@ -14,7 +14,7 @@
  * device holds and nothing is written until the differences have been shown.
  */
 
-import { $, el } from './dom.js';
+import { $, el, ask } from './dom.js';
 import { S } from './state.js';
 import { valueProblem, restoreSizeProblem } from './validate.js';
 import { isNetKey, netaddrActive, startTrial } from './netaddr.js';
@@ -289,9 +289,9 @@ function wireRestore() {
        another stick they put two ONUs on the line with one serial. The tick
        box says so, and this asks once more with the keys named. */
     if (withIdentity && PLAN.identity.length
-        && !confirm('Write ' + PLAN.identity.length + ' identity key(s) (' + PLAN.identity.map(([k]) => k).join(', ')
+        && !(await ask('Write ' + PLAN.identity.length + ' identity key(s) (' + PLAN.identity.map(([k]) => k).join(', ')
           + ')?\n\nOnly do this onto the stick the backup came from: on another stick the OLT would see '
-          + 'the same serial number twice.\n\nContinue?')) return;
+          + 'the same serial number twice.\n\nContinue?', { action: 'Write identity keys', danger: true }))) return;
     go.disabled = true;
     out.append(line(null, `Writing ${pairs.length} setting(s)…`));
 

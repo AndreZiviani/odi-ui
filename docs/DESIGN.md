@@ -115,8 +115,11 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   On a stock-based image the editable subtabs hold the 23 keys the line
   profiles in `odi-sandbox` carry.
 - **OMCI** &mdash; *Services*, what the OLT actually provisioned, in sentences;
-  and *MIB browser*, the same thing unedited: every table, its entities, and
-  each entity's attributes.
+  *Topology*, how those entities connect, drawn from their pointers (T-CONT,
+  GEM port, interworking TP, 802.1p mapper, bridge port, bridge, UNI), with
+  what no path uses and any pointer to a missing entity called out; and *MIB
+  browser*, the same thing unedited: every table, its entities, and each
+  entity's attributes.
 - **System** &mdash; *Firmware* (both partitions, what each one holds, image
   upload and write, the one-shot trial boot); *Access* (this page's
   credential, SSH keys, and *Locked out? The safe mode*, a closed-by-default
@@ -310,7 +313,7 @@ in odi-oss is the prose version and the source of truth.
 
 | class | meaning | action | keys |
 |---|---|---|---|
-| **LIVE** | takes effect at once | `apply.sh network`, run straight after the save; `apply.sh omci` for the four VLAN keys, also run straight after the save (omcid rereads the store on SIGHUP and rebuilds the connections in place, the ONU stays in O5); `none` where the daemon reads the key each time it uses it | `LAN_IP_ADDR`, `LAN_SUBNET`, `LAN_ENABLE_IP2`, `LAN_IP_ADDR2`, `LAN_SUBNET2`; the four `VLAN_*`; `OLT_SW_DOWNLOAD` |
+| **LIVE** | takes effect at once | `apply.sh network`, run straight after the save; `apply.sh omci-live` for the four VLAN keys, also run straight after the save (omcid rereads the store on SIGHUP and rebuilds the connections in place, the ONU stays in O5; with an identity change saved and not applied it applies nothing, and the page offers *Apply now* for both); `none` where the daemon reads the key each time it uses it | `LAN_IP_ADDR`, `LAN_SUBNET`, `LAN_ENABLE_IP2`, `LAN_IP_ADDR2`, `LAN_SUBNET2`; the four `VLAN_*`; `OLT_SW_DOWNLOAD` |
 | **SERVICE RESTART** | a daemon restarts, internet stays up | `apply.sh syslog` / `apply.sh ntp`, run straight after the save (apply.sh kills the daemon, busybox init respawns it, bounded by `APPLY_TIMEOUT_MS`) | `SYSLOG_SERVER`, `NTP_SERVER` |
 | **INTERRUPTS INTERNET** | applied without a reboot, the fibre service drops meanwhile | `apply.sh omci`, offered as *Apply now* behind a confirmation (omcid deactivates the ONU, clears its MIB and ranges it again, in the same process) | `GPON_SN`, `GPON_PLOAM_PASSWD`, the four `LOID*`, `OMCI_SW_VER1/2`, `GPON_ONU_MODEL`, `OMCC_VER`, `OMCI_VENDOR_PRODUCT_CODE`, `ONU_HW_VERSION`, `OMCI_UNKNOWN_ME_OK`, `OMCI_VEIP`, `OMCI_VEIP_SLOT_ID`, `OMCI_PRIVATE_ME` |
 | **REBOOT** | read only at boot | *Reboot now*, behind a confirmation that names the slot it comes back on | `ELAN_MAC_ADDR` |
@@ -318,9 +321,12 @@ in odi-oss is the prose version and the source of truth.
 The action, not the class, is what the daemon reports in `needs`; a batch that
 needs `omci` also carries `"interrupts"`: false when every key in it is class
 live (the page applies it at once, nothing drops) and true otherwise (the page
-offers *Apply now* behind the confirmation). `apply.sh omci` does the right
-thing for either: it signals omcid, which compares the store with what it runs
-and rebuilds in place or re-registers.
+offers *Apply now* behind the confirmation). The first runs `apply.sh
+omci-live`, the second `apply.sh omci`: both signal omcid, which compares the
+store with what it runs and rebuilds in place or re-registers, and omci-live
+does not re-register for a changed identity. It does re-register an ONU the
+apply before left off the line (a failed activation), and says so
+(`reregistered`).
 
 The class is what APPLYING costs. What a VALUE does to the service is a second
 question, and a live key is where it bites: a VLAN save applies at once, the
@@ -593,7 +599,13 @@ written by the flash itself, so it cannot drift from the image, where
 `sw_version<p>` is only what the last updater chose to record: on a live stick
 it named an odi-oss build for the slot that held the stock firmware.
 
-Writing the other slot stays available whatever it holds. When it holds the
+Writing the other slot stays available whatever it holds, as long as it is not
+the image the stick goes back to: during a trial, or while the fallback copy
+of the environment still commits to it, the slot says so in place of the
+button, the command under the upload is left out, and confd refuses the write
+(409), as it does when sw_commit, sw_tryactive or the fallback copy cannot be
+read. While a write runs, the commands under the upload neither copy nor
+write an image: the copy could overwrite the archive that write reads. When the slot holds the
 stock firmware (or anything that is not odi-oss) the slot says so beside the
 action -- "Partition 1 holds the stock firmware. Writing replaces it, and you
 lose it as a fallback." -- and the write asks a second time, naming what gets
@@ -1333,8 +1345,26 @@ group. At phone width the footer buttons stack.
 is rebuilt in place (the ONU stays in O5, so those keys are LIVE), while an
 identity change deactivates the ONU, clears omcid's MIB and re-activates it so
 the OLT provisions every service again with the settings as they are now --
-which is why that class is INTERRUPTS INTERNET. odi-oss `docs/SETTINGS.md` has the details and the
-measurements. The rest of this section is the stock firmware.
+which is why that class is INTERRUPTS INTERNET. omcid rereads the whole
+store, so a save of VLAN keys alone, which the page applies at once, would
+take along an identity change saved earlier and not applied. The page sends
+that apply as `what=omci-live` (`apply.sh omci-live`): omcid then applies
+nothing that re-registers, and with such a change waiting it applies nothing
+at all (`deferred`). An apply.sh without the verb refuses it at its usage
+line before it does anything (`unsupported`), and a confd older than the
+page refuses the action with 400, which the page reads the same way: an
+update puts the web files in place before the confd that reads them, and a
+flag the old confd ignored would have been the full apply. Either way the
+page says so and offers the Apply now that applies all pending OMCI changes;
+the setup wizard stays on "Saved, not applied" until that worked, offers a
+failed apply again, and holds its button until it is done writing the key,
+the password and the marker, whether or not each write worked. After a live
+apply its view is headed *Line status*, or *Registering with the OLT* when
+that apply re-registered the ONU after all (`reregistered`, apply.sh exit 4).
+While the page waits for the answer it says *Applying OMCI changes*, not that
+the connections are rebuilt in place.
+odi-oss `docs/SETTINGS.md` has the details and the measurements. The rest of
+this section is the stock firmware.
 
 On the stock firmware, config is read **once at boot** — `/etc/runomci.sh` builds the whole `omci_app`
 command line from MIB keys and never re-reads them — so a write does not take

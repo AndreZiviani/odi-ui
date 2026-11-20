@@ -1863,6 +1863,51 @@ void serve(int conn)
 					}
 				}
 
+				/* And the committed one while a trial runs: it
+				 * is the image a failed trial goes back to.
+				 * fwu_starter.sh only refuses an unreadable
+				 * value; the refusal of this slot is in the
+				 * fwu.sh inside the upload, which an older or a
+				 * vendor tarball does not carry. */
+				{
+					char com[8];
+
+					if (!nv_get("sw_commit", com, sizeof(com)) ||
+					    !(seq(com, "0") || seq(com, "1"))) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"cannot tell which partition is committed (sw_commit unreadable); nothing was written\"}");
+						return;
+					}
+					if (seq(com, part)) {
+						respond(conn, "409 Conflict", "application/json", 0);
+						put_fd(conn, "{\"ok\":false,\"error\":\"that is the committed partition, the image a failed trial goes back to; commit the running image first\"}");
+						return;
+					}
+					/* And the slot the other environment copy
+					 * still commits to: U-Boot boots that one if
+					 * the winning copy is ever left invalid, and
+					 * the trial banner says so. A stock nv has no
+					 * fallback verb and answers nothing here; an
+					 * nv that did not answer in time, or could
+					 * not read that copy in full, is no knowing. */
+					{
+						/* A sw_commit there that names no
+						 * slot is no knowing either. */
+						int fb = nv_fallback_get("sw_commit", com, sizeof(com));
+
+						if (fb < 0 || (fb > 0 && !seq(com, "0") && !seq(com, "1"))) {
+							respond(conn, "409 Conflict", "application/json", 0);
+							put_fd(conn, "{\"ok\":false,\"error\":\"the fallback copy of the U-Boot environment could not be read; nothing was written\"}");
+							return;
+						}
+						if (fb > 0 && seq(com, part)) {
+							respond(conn, "409 Conflict", "application/json", 0);
+							put_fd(conn, "{\"ok\":false,\"error\":\"the fallback copy of the U-Boot environment still commits to that partition; commit the running image first\"}");
+							return;
+						}
+					}
+				}
+
 				/* The image this write means, by the md5 its
 				 * upload answered. Only this daemon creates
 				 * UPLOAD_PATH, so a second tab's upload is the
@@ -1981,33 +2026,71 @@ void serve(int conn)
 	 * The image's apply.sh does the work and says what it did. Without
 	 * one, omci falls back to restarting the stock omci_app, the only apply
 	 * a stock-based image has, and network is refused.
+	 *
+	 * omci-live, what the page sends after a save of VLAN keys alone, runs
+	 * apply.sh omci-live: omcid applies nothing that re-registers the ONU,
+	 * and with an identity change waiting in the store it applies nothing
+	 * at all, which apply.sh says with exit 3 (deferred). After a reload
+	 * that left the ONU off the line (a failed activation, no_serial), the
+	 * next one re-registers it, VLAN keys alone too, and apply.sh says so
+	 * with exit 4: applied, with a re-registration. An apply.sh
+	 * without that verb stops at its usage line before it does anything,
+	 * and the answer says unsupported; so does an image without apply.sh,
+	 * whose only apply restarts omci_app. Either way the change stays
+	 * saved, and the page offers the full apply. It is an action of its
+	 * own and not a flag on omci, so that a confd older than the page
+	 * refuses it (400) instead of running the full apply: an update puts
+	 * the web files in place before the confd that reads them.
 	 */
 	if (seq(path, "/api/apply") && seq(method, "POST")) {
-		char what[16];   /* "network", "omci", "syslog", "ntp", "igmp" or "sfp" */
+		char what[16];   /* "network", "omci", "omci-live", "syslog", "ntp", "igmp" or "sfp" */
 		long code = -1, got;
+		int want_live;
 
-		if (!form_get(body, "what", what, sizeof(what)) || !what[0])
+		/* No what is omci, as it always was; a what that does not
+		 * decode, or a body whose field names do not, is not "no what". */
+		if (!form_valid(body)) {
+			respond(conn, "400 Bad Request", "application/json", 0);
+			put_fd(conn, "{\"ok\":false,\"error\":\"the form could not be read\"}");
+			return;
+		}
+		if (!form_has(body, "what"))
 			str_copy(what, "omci", sizeof(what));
-		if (!seq(what, "omci") && !seq(what, "network") &&
+		else if (!form_get(body, "what", what, sizeof(what)))
+			str_copy(what, "?", sizeof(what));
+		else if (!what[0])
+			str_copy(what, "omci", sizeof(what));
+		if (!seq(what, "omci") && !seq(what, "omci-live") && !seq(what, "network") &&
 		    !seq(what, "syslog") && !seq(what, "ntp") && !seq(what, "igmp") &&
 		    !seq(what, "sfp")) {
 			respond(conn, "400 Bad Request", "application/json", 0);
-			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network, omci, syslog, ntp, igmp or sfp\"}");
+			put_fd(conn, "{\"ok\":false,\"error\":\"what must be network, omci, omci-live, syslog, ntp, igmp or sfp\"}");
 			return;
 		}
+		want_live = seq(what, "omci-live");
 		if (file_exists(APPLY_PATH)) {
 			char *argv[3];
+			int ok, rereg, unsupported;
 
 			argv[0] = "apply.sh";
 			argv[1] = what;
 			argv[2] = 0;
 			got = run_to_buf_ex(APPLY_PATH, argv, status, sizeof(status), &code,
 					   APPLY_TIMEOUT_MS);
+			rereg = want_live && got >= 0 && code == 4;
+			ok = got >= 0 && (code == 0 || rereg);
+			unsupported = want_live && got > 0 && code == 1 && spre(status, "usage:");
 			respond(conn, "200 OK", "application/json", 0);
 			put_fd(conn, "{\"ok\":");
-			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ok ? "true" : "false");
 			put_fd(conn, ",\"applied\":");
-			put_fd(conn, (got >= 0 && code == 0) ? "true" : "false");
+			put_fd(conn, ok ? "true" : "false");
+			if (want_live && got >= 0 && code == 3)
+				put_fd(conn, ",\"deferred\":true");
+			if (rereg)
+				put_fd(conn, ",\"reregistered\":true");
+			if (unsupported)
+				put_fd(conn, ",\"unsupported\":true");
 			put_fd(conn, ",\"output\":\"");
 			if (got > 0)
 				put_json_cstr(conn, status);
@@ -2015,6 +2098,11 @@ void serve(int conn)
 			return;
 		}
 		respond(conn, "200 OK", "application/json", 0);
+		if (want_live) {
+			put_fd(conn, "{\"ok\":false,\"applied\":false,\"unsupported\":true,"
+				     "\"error\":\"this image has no " APPLY_PATH "; only the full apply restarts omci_app\"}");
+			return;
+		}
 		if (!seq(what, "omci")) {
 			put_fd(conn, "{\"ok\":false,\"applied\":false,"
 				     "\"error\":\"this image has no " APPLY_PATH "; reboot to apply\"}");

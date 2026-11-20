@@ -1,0 +1,18 @@
+11 EthUni 257
+    ExpectedType             2f
+    SensedType               2f
+    AutoDectectCfg           00
+    EthLoopbackCfg           00
+    AdminState               00
+    OpState                  00
+    DuplexInd                00
+    MaxFrameSize             05ee
+    DTEorDCEInd              00
+    PauseTime                ffff
+    BridgedorIPInd           02
+    ARC                      00
+    ARCInterval              00
+    PppoeFilter              00
+    PowerControl             00
+    PhysicalPortId           00000000
+1 row

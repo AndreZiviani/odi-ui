@@ -50,6 +50,25 @@ for f in sorted(on_disk):
             problems.append(f"web/{f} imports {dep}, which web_assets[] does not serve")
 
 
+# confd serves each asset from filebuf (src/buffers.c), read whole, and
+# read_file() stops one byte short of the buffer without an error: a file
+# that fills it cannot be told from a cut one and is refused with a 500 on
+# the device. So the most confd serves is two bytes less than the buffer
+# (65,534 of 65,536), and every file in web/ has to stay within that.
+bufsrc = open(os.path.join(HERE, "src", "buffers.c"), encoding="utf-8").read()
+mb = re.search(r"^char filebuf\[(\d+)\];", bufsrc, re.M)
+largest = (0, "")
+if not mb:
+    problems.append("could not read the size of filebuf from src/buffers.c")
+else:
+    cap = int(mb.group(1))
+    for f in sorted(on_disk):
+        size = os.path.getsize(os.path.join(HERE, "web", f))
+        largest = max(largest, (size, f))
+        if size + 1 >= cap:
+            problems.append(f"web/{f} is {size} bytes, more than the {cap - 2} confd serves "
+                            f"from filebuf[{cap}]: it would refuse it; split it or grow the buffer")
+
 # The page and the daemon each hold the upload ceiling, and a page that allows
 # more than the daemon takes sends the whole file to be told 413.
 conf_h = open(os.path.join(HERE, "src", "confd.h"), encoding="utf-8").read()
@@ -67,4 +86,5 @@ if problems:
     print(f"\n{len(problems)} problem(s)")
     sys.exit(1)
 
-print(f"assets consistent: {len(table_files)} files, {len(table_urls)} urls")
+print(f"assets consistent: {len(table_files)} files, {len(table_urls)} urls"
+      + (f", largest web/{largest[1]} {largest[0]} bytes, at most {cap - 2}" if mb else ""))

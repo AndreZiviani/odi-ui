@@ -55,7 +55,7 @@ const W = {
   keysErr: '',         /* why the installed keys could not be listed, when they could not */
   pw: null,            /* { user, pass, again }: the admin password typed in, until it is saved */
   pwChanged: false, timer: 0, polls: 0, autoTried: false, marking: false,
-  live: null, out: null, msgs: {}, keysEl: null,
+  live: null, out: null, msgs: {}, keysEl: null, held: [], rereg: false,
 };
 
 /* ------------------------------------------------------------ validation */
@@ -288,7 +288,9 @@ function render() {
   body.textContent = '';
   const live = W.phase === 'live';
   const i = W.steps.indexOf(W.step);
-  $('#wizard-title').textContent = live ? 'Registering with the OLT' : TITLES[W.step];
+  /* After an apply that rebuilt the connections in place nothing registers:
+     the ladder then only shows where the line is. */
+  $('#wizard-title').textContent = live ? (W.rereg ? 'Registering with the OLT' : 'Line status') : TITLES[W.step];
   $('#wizard-count').textContent = live ? 'Applied' : `Step ${i + 1} of ${W.steps.length}`;
   const list = $('#wizard-steps');
   list.textContent = '';
@@ -522,9 +524,10 @@ function stepLive(body) {
 
 function paint() {
   const next = $('#wizard-next');
-  const live = W.phase === 'live';
+  /* Pending: written, and the apply is waiting on its Apply now. */
+  const done = W.phase === 'live' || W.phase === 'pending';
   const i = W.steps.indexOf(W.step);
-  $('#wizard-back').hidden = live || i <= 0;
+  $('#wizard-back').hidden = done || i <= 0;
   const set = (id, text) => { if (W.msgs[id]) W.msgs[id].textContent = text || ''; };
   let bad = null;
   if (W.step === 'access') {
@@ -544,7 +547,7 @@ function paint() {
     bad = W.step === 'isp' ? firstProblem({ sn: p.sn, ploam: p.ploam, loid: p.loid, loidpw: p.loidpw })
       : firstProblem({ vid: p.vid, pri: p.pri });
   }
-  if (live) {
+  if (done) {
     next.textContent = 'Finish';
     next.disabled = false;
   } else if (W.step === 'review') {
@@ -562,7 +565,7 @@ function back() {
 }
 
 async function next() {
-  if (W.phase === 'live') { await exitWizard(); return; }
+  if (W.phase === 'live' || W.phase === 'pending') { await exitWizard(); return; }
   if (W.step !== 'review') { go(W.steps[W.steps.indexOf(W.step) + 1]); return; }
   const { pairs } = planChanges(W.f);
   if (!pairs.length && !W.pw && !W.key) { await exitWizard(); return; }
@@ -575,8 +578,11 @@ async function next() {
  */
 async function apply(pairs) {
   const out = W.out;
+  let pending = false;
   out.textContent = '';
   W.phase = 'applying';
+  W.held = [];
+  W.rereg = false;
   paint();
   try {
     if (pairs.length) {
@@ -602,10 +608,24 @@ async function apply(pairs) {
         return;
       }
       if ((res.needs || []).includes('omci')) {
-        /* The status lines only: the script output is for the Config page. */
-        const box = el('div');
-        await applyOmci(box, Boolean(res.interrupts));
-        for (const n of box.children) if (n.tagName !== 'pre') out.append(n);
+        /* The status lines only: the script output is for the Config page.
+           VLAN keys alone go as live, as on the Config page. Anything but
+           an apply that worked leaves the wizard saying so, with the Apply
+           now that applyOmci offers; once that works, the live view. */
+        /* Its Apply now (or Try again) waits until the key, the password
+           and the marker are done: started before, its result would land
+           while the wizard still says "Saved, not applied". A failed one
+           offers itself again, so there is always a way on. */
+        const done = await applyOmci(out, Boolean(res.interrupts), res.interrupts === false, {
+          raw: false,
+          retry: true,
+          hold: (b) => { if (W.phase !== 'pending') { b.disabled = true; W.held.push(b); } },
+          then: (full) => { if (W.open && W.phase === 'pending') { W.rereg = full; startLive(); } },
+        });
+        pending = done !== 'ok' && done !== 'reregistered';
+        /* The live view's title: the ONU registers again after a full
+           apply, and after a live one that re-registered all the same. */
+        W.rereg = res.interrupts !== false || done === 'reregistered';
       }
     }
     if (W.key) await addKey(out);
@@ -617,6 +637,18 @@ async function apply(pairs) {
     paint();
     return;
   }
+  if (pending) {
+    W.phase = 'pending';
+    $('#wizard-count').textContent = 'Saved, not applied';
+    paint();
+    for (const b of W.held.splice(0)) b.disabled = false;
+    return;
+  }
+  startLive();
+}
+
+/* The live view, after an apply that worked. */
+function startLive() {
   W.phase = 'live';
   W.polls = 0;
   render();

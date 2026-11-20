@@ -1,0 +1,23 @@
+268 GemPortCtp 2
+    PortID                   0291
+    TcAdapterPtr             8000
+    Direction                03
+    UsTraffMgmtPtr           8007
+    UsTraffDescPtr           0000
+    UniCounter               00
+    DsPriQPtr                0008
+    EncryptionState          00
+    DsTraffDescPtr           0000
+    EncryptionKeyRing        00
+268 GemPortCtp 36862
+    PortID                   0ffe
+    TcAdapterPtr             0000
+    Direction                02
+    UsTraffMgmtPtr           0000
+    UsTraffDescPtr           0000
+    UniCounter               00
+    DsPriQPtr                0000
+    EncryptionState          00
+    DsTraffDescPtr           0000
+    EncryptionKeyRing        00
+2 rows

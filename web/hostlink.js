@@ -39,7 +39,7 @@
  *     until it is set. It stays until acknowledged, from its own bar.
  */
 
-import { $, el, get } from './dom.js';
+import { $, el, get, ask } from './dom.js';
 
 const POLL_MS = 3000;
 let H = null;          /* the last /api/hostlink answer */
@@ -288,7 +288,7 @@ async function tryMode(mode) {
       + 'stops answering. Nothing is stored until you keep it: the stick goes back by itself after two minutes.'
     : 'Turn host port auto-negotiation back on?\n\nIf the router port has it off, the link drops and this page '
       + 'stops answering. Nothing is stored until you keep it: the stick goes back by itself after two minutes.';
-  if (!confirm(warn)) return;
+  if (!(await ask(warn, { action: mode === 'off' ? 'Turn it off' : 'Turn it on' }))) return;
   say('#hostlink-out', null, '');
   try {
     const res = await post('action=try&mode=' + encodeURIComponent(mode));
@@ -301,9 +301,9 @@ async function tryMode(mode) {
 async function trySerdes() {
   const mode = $('#hostlink-sd-mode').value;
   if (!SERDES[mode]) return;
-  if (!confirm(`Try ${serdesShort(mode)} on the host port?\n\nIf the router port does not run this mode, the link `
+  if (!(await ask(`Try ${serdesShort(mode)} on the host port?\n\nIf the router port does not run this mode, the link `
     + 'drops and this page stops answering. Nothing is stored until you keep it: the stick goes back by itself '
-    + 'after two minutes (120 s).')) return;
+    + 'after two minutes (120 s).', { action: `Try ${serdesShort(mode)}` }))) return;
   say('#hostlink-sd-out', null, '');
   try {
     const res = await post('action=serdes-try&mode=' + encodeURIComponent(mode));

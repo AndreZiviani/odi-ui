@@ -73,12 +73,34 @@ every session but the one that made it.
                                           On odi-oss also `needs` (the actions),
                                           `stock` and `interrupts` (whether the
                                           omci action drops the fibre service)
-    POST /api/apply     what=network|omci|syslog|ntp|igmp|sfp
+    POST /api/apply     what=network|omci|omci-live|syslog|ntp|igmp|sfp
                                           apply.sh on odi-oss (`omci` signals the
                                           running omcid to reload: a VLAN change is
                                           rebuilt in place, an identity change
                                           re-registers the ONU); without it, `omci`
-                                          restarts omci_app
+                                          restarts omci_app. No `what`, or an empty
+                                          one, is `omci`. `omci-live` runs
+                                          `apply.sh omci-live`: nothing that
+                                          re-registers; with an identity change
+                                          waiting in the store nothing is applied
+                                          and the answer carries `deferred: true`.
+                                          After an apply that left the ONU off the
+                                          line (a failed activation), omcid
+                                          re-registers it all the same: apply.sh
+                                          exits 4 once that worked or still runs
+                                          at its bound, and the answer carries
+                                          `ok: true` and `reregistered: true`:
+                                          the re-registration has started. A
+                                          plain `omci` that exits 4 is a failure.
+                                          An apply.sh without that verb stops at its
+                                          usage line, and an image without apply.sh
+                                          would only restart omci_app: both answer
+                                          `unsupported: true` and apply nothing. A
+                                          confd older than `omci-live` answers it
+                                          400, as any unknown `what`. 400 as well
+                                          for a `what` that does not decode, or a
+                                          body with a field name that does not
+                                          decode: neither is read as no `what`
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file:
                                           `omci-identity.on`; `confd.setup`, the setup
                                           wizard marker below; and `update-check.off`
@@ -282,16 +304,37 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           409 when md5 is not that of the last upload
                                           this confd received (another upload since,
                                           the file changed by hand, a confd restart),
-                                          when a write is running, when sw_active or
-                                          sw_tryactive cannot be read, or when a trial of
-                                          partition N is pending. The upload lives in
+                                          when a write is running, when sw_active,
+                                          sw_tryactive or sw_commit cannot be read,
+                                          when a trial of partition N is pending,
+                                          when N is committed in either environment
+                                          copy (`nv getenv`, or `nv fallback` on an nv
+                                          that has it): the image a failed trial goes
+                                          back to, or when `nv fallback` gives no
+                                          answer to go by: none in time, killed,
+                                          exit 3 (a copy not read in full), or any
+                                          answer but these: exit 0 with nothing
+                                          (that copy does not set sw_commit), exit 0
+                                          with `sw_commit=0` or `sw_commit=1` as the
+                                          one line, exit 1 with its line for no
+                                          valid second copy, or exit 1 with the
+                                          usage text of an nv without the verb.
+                                          The upload lives in
                                           /tmp/img.upload.tar; an upload removes
                                           /tmp/img.tar, the ssh path
     GET  /api/firmware                    partitions, versions, build manifest,
                                           `defaultauth`, `switches`, write progress;
-                                          `env` (the sw_* of `nv getenv`),
+                                          `env` (the sw_* of `nv getenv`, empty
+                                          unless that nv exited 0),
                                           `fallback` (the sw_* of `nv fallback`, the
                                           other environment copy; empty on stock nv),
+                                          `fallback_unsure` (true when that nv gave no
+                                          answer to go by, as above, or a dump that
+                                          filled the buffer or is not one: no
+                                          `Fallback environment: N` line first, or
+                                          a sw_commit that is not one line naming 0
+                                          or 1; no knowing, so no write is offered,
+                                          and `fallback` stays empty),
                                           `slots` ({"0":{"kernel":..., "built":<unix>}},
                                           from each kernel partition's uImage header;
                                           {} when it cannot be read);

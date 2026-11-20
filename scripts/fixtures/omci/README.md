@@ -54,6 +54,20 @@ learned hosts, one on each side (the PON-side row restates the first entry
 of the capture above), and a multicast group whose only member is the host
 side. Replace it with a real listing once one has been read off a stick.
 
+## `topology-isp1/` and `topology-isp2/`
+
+`omcicli mib get <class>` for the twelve classes the Topology tab reads, one
+file per class. Like `../l2-table-odi-oss.txt`, these are **not captures from
+a stick**: they are the real odi-oss omcid (main at fb649c4) run under qemu,
+fed the recorded OLT sessions of its own tests
+(`test/fixtures/omci-session-isp1.txt` and `-isp2.txt`, with their
+`omci-store-*.xml`), and then asked as confd asks. So the bytes are what
+omcid prints for those two lines, in both of its shapes (its own hex rows and
+the stock `Key: Value` dump for 84 and 171). ISP1 is the line whose bridge
+ports carry TP type 3 but point at GEM IW TPs; ISP2 the one whose TP type 3
+points at the mapper, behind a VEIP alone. Replace them with real captures
+when a stick provides them.
+
 ## Captures from this device's own sticks (2026-09-11)
 
 | file | stick | why it is here |

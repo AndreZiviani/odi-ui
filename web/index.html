@@ -325,6 +325,7 @@
   <section id="p-omci" class="panel" role="tabpanel" aria-labelledby="tab-omci" hidden>
     <nav class="subtabs" role="tablist" aria-label="OMCI">
       <button role="tab" id="st-omci-services" aria-controls="o-services" data-sub="services">Services</button>
+      <button role="tab" id="st-omci-topology" aria-controls="o-topology" data-sub="topology">Topology</button>
       <button role="tab" id="st-omci-mib" aria-controls="o-mib" data-sub="mib">MIB browser</button>
       <button role="tab" id="st-omci-phone" aria-controls="o-phone" data-sub="phone">Phone</button>
     </nav>
@@ -335,6 +336,18 @@
         <button id="services-reload" type="button">Read again</button>
       </div>
       <div id="services-cards" class="cards"></div>
+    </div>
+
+    <div class="sub" id="o-topology" role="tabpanel" aria-labelledby="st-omci-topology" data-sub="topology" hidden>
+      <div class="block-head">
+        <p class="lede">How the entities the OLT created connect, from the fibre to the ports. Read from the MIB on demand. Click a box to follow its path.</p>
+        <button id="topo-reload" type="button">Read again</button>
+      </div>
+      <p id="topo-msg" class="hint" role="status" aria-live="polite"></p>
+      <p class="topo-scroll hint">Eight columns: scroll the drawing sideways.</p>
+      <div id="topo-graph" class="topo"></div>
+      <p class="topo-legend hint"><span class="topo-key olt"></span> created by the OLT <span class="topo-key onu"></span> created by the ONU <span class="topo-key unused"></span> stored, not on a path from a GEM port to a UNI</p>
+      <div id="topo-facts"></div>
     </div>
 
     <div class="sub" id="o-phone" role="tabpanel" aria-labelledby="st-omci-phone" data-sub="phone" hidden>
@@ -782,6 +795,17 @@ Does the stock firmware work on the same line:</pre>
   <div id="update-list"></div>
   <div class="switchrow">
     <button id="update-close" class="primary" type="button">Close</button>
+  </div>
+</dialog>
+
+<!-- The question before a change (dom.js ask): modal, headed by the cost
+     badge, with a button that says what it does. -->
+<dialog id="ask-dialog" aria-labelledby="ask-head" aria-describedby="ask-body">
+  <div id="ask-head" class="ask-head"></div>
+  <div id="ask-body" class="ask-body"></div>
+  <div class="ask-acts">
+    <button id="ask-cancel" type="button">Cancel</button>
+    <button id="ask-ok" class="primary" type="button">Continue</button>
   </div>
 </dialog>
 
