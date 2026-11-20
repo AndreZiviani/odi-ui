@@ -3588,5 +3588,33 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   delete dlg.showModal;
 }
 
+/* --- Undo on one field --------------------------------------------------- */
+{
+  const { renderValue } = await import(join(root, 'web', 'config.js'));
+  const { EDITS: Ed } = await import(join(root, 'web', 'state.js'));
+  const row = S.SCHEMA.find((r) => r.name === 'VLAN_MANU_TAG_VID');
+  Ed.clear();
+  const box = renderValue(row, '11');
+  let input = null, undo = null;
+  walk(box, (x) => {
+    if (x.tagName === 'input') input = x;
+    if (x.tagName === 'button' && x.classList.contains('s-undo')) undo = x;
+  });
+  ok(input && undo && undo.hidden === true, 'undo: a field with no edit shows no Undo');
+  input.value = '12';
+  input.oninput();
+  ok(Ed.get('VLAN_MANU_TAG_VID') === '12' && undo.hidden === false, 'undo: an edit shows it');
+  input.value = '11';
+  input.oninput();
+  ok(!Ed.has('VLAN_MANU_TAG_VID') && undo.hidden === true, 'undo: typing the stored value back hides it');
+  input.value = '13';
+  input.oninput();
+  Ed.set('LAN_IP_ADDR', '10.0.0.2');
+  undo.onclick();
+  ok(!Ed.has('VLAN_MANU_TAG_VID') && Ed.get('LAN_IP_ADDR') === '10.0.0.2',
+     'undo: drops this edit and keeps the others');
+  Ed.clear();
+}
+
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
 process.exit(failed ? 1 : 0);

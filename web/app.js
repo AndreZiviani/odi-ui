@@ -158,6 +158,11 @@ wireUpdates();
    odi-oss diag from its own L2 table readback, under the same command. */
 $('#l2-load').onclick = renderL2;
 $('#gopassword').onclick = () => { go('system/access'); $('#pw-pass').focus(); };
+/* Closing or reloading the tab with edits not saved asks first: they live in
+   this page only. Not during a reboot, which reloads the page on purpose. */
+window.addEventListener('beforeunload', (e) => {
+  if (EDITS.size && !S.REBOOTING) { e.preventDefault(); e.returnValue = ''; }
+});
 /* Discard takes back the edits; the answer of a request still running stays. */
 $('#discard').onclick = () => {
   EDITS.clear();
