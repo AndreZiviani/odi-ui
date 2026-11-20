@@ -5,8 +5,8 @@
  * does not come up reverts itself. Committing it is a separate, deliberate act.
  */
 
-import { $, el, fail, get, bytes } from './dom.js';
-import { S, CLASS_LABEL, CLASS_RANK } from './state.js';
+import { $, el, fail, get, bytes, ask } from './dom.js';
+import { S, CLASS_LABEL, CLASS_RANK, costBadge } from './state.js';
 import { uploadSizeProblem, tarProblem } from './validate.js';
 import { probeAddr } from './netaddr.js';
 
@@ -113,18 +113,18 @@ async function writeImage(part, fw) {
   const out = $('#fwout');
   const k = slotKind(fw || {}, part);
 
-  if (!confirm(`Write the uploaded image to partition ${part}?\n\n`
+  if (!(await ask(`Write the uploaded image to partition ${part}?\n\n`
       + 'This takes about eighty seconds and the stick must not lose power '
       + 'meanwhile. The partition you are running now is not touched, and '
-      + 'nothing boots the new one until you try it.')) return;
+      + 'nothing boots the new one until you try it.', { action: `Write partition ${part}` }))) return;
   /* A second question, only when there is something to lose: the other slot
      is where the stock firmware is kept as the fallback on most sticks, and
      writing it is a choice that cannot be taken back from this page. */
-  if (k.kind !== 'odi' && !confirm(`Partition ${part} holds `
+  if (k.kind !== 'odi' && !(await ask(`Partition ${part} holds `
       + (k.kind === 'stock' ? 'the stock firmware' : k.kind === 'other' ? 'an image that is not odi-oss'
         : 'an image this page cannot identify')
       + ` (${describeSlot(fw || {}, part) || 'no details'}).\n\n`
-      + 'Writing replaces it, and you lose it as a fallback. Overwrite it?')) return;
+      + 'Writing replaces it, and you lose it as a fallback. Overwrite it?', { action: `Overwrite partition ${part}`, danger: true }))) return;
 
   out.textContent = '';
   out.append(el('div', 'warn', `Writing partition ${part}.`));
@@ -522,7 +522,14 @@ let FOLLOWING = false;
 async function fwAction(action, partition, warning) {
   const out = $('#fwout');
   out.textContent = '';
-  if (!confirm((action === 'reboot' ? '\u25AE'.repeat(CLASS_RANK.reboot) + ' ' + CLASS_LABEL.reboot + '\n\n' : '') + warning + '\n\nContinue?')) return;
+  const reboot = action === 'reboot';
+  if (!(await ask(warning + '\n\nContinue?', {
+    action: reboot ? 'Reboot' : action === 'try' ? `Try partition ${partition}` : action === 'cancel' ? 'Cancel the trial' : 'Continue',
+    back: action === 'cancel' ? 'Keep the trial' : 'Cancel',
+    danger: reboot,
+    badge: reboot ? costBadge('reboot') : null,
+    badgeText: reboot ? '\u25AE'.repeat(CLASS_RANK.reboot) + ' ' + CLASS_LABEL.reboot : '',
+  }))) return;
   try {
     const r = await fetch('/api/firmware', {
       method: 'POST',
@@ -734,9 +741,9 @@ async function commitRunning() {
   const out = $('#trial-out');
   out.textContent = '';
   if (run === undefined) return;
-  if (!confirm(`Commit to partition ${run}?\n\nIt becomes the one the stick boots by default`
+  if (!(await ask(`Commit to partition ${run}?\n\nIt becomes the one the stick boots by default`
       + (back !== undefined && back !== run ? `, instead of partition ${back}.` : '.')
-    + ' If it later fails to come up, the stick keeps booting it: there is no trial to fall back from.')) return;
+    + ' If it later fails to come up, the stick keeps booting it: there is no trial to fall back from.', { action: `Commit partition ${run}` }))) return;
   const btn = $('#trial-commit');
   btn.disabled = true;
   try {

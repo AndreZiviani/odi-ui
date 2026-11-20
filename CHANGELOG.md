@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- The questions before a change (save, apply, reboot, firmware write, try
+  and commit, the host port trials, removing an SSH key, reset, restoring
+  identity keys) open in a dialog of the page instead of the browser's
+  `confirm()`. The cost badge heads it, the button says what it does
+  (*Reboot*, *Write partition 1*), and on a change that cannot be taken back
+  the button is red and Cancel has the focus. The texts are the same.
+
 - Firmware: during a trial the page no longer offers to write the
   committed partition, the image a failed trial goes back to, and confd
   refuses that write, as well as one where `sw_commit` cannot be read, and

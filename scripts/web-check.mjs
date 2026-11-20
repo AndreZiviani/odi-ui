@@ -3352,5 +3352,52 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   ok(/written/.test(r.text) && r.polls === 1, 'write follow: an answered poll with no write state is the blocking starter, finished');
 }
 
+/* --- the question before a change (dom.js ask) ---------------------------- */
+{
+  const { ask, el } = await import(join(root, 'web', 'dom.js'));
+  const html = readFileSync(join(root, 'web', 'index.html'), 'utf8');
+  for (const id of ['ask-dialog', 'ask-head', 'ask-body', 'ask-ok', 'ask-cancel'])
+    ok(html.includes(`id="${id}"`), `ask: index.html has #${id}`);
+
+  /* No modal dialog: confirm() gets the question as it always did. */
+  const keep = globalThis.confirm;
+  let seen = '';
+  globalThis.confirm = (t) => { seen = t; return true; };
+  ok(await ask('Remove this key?\n\nGone.\n\nContinue?', { badgeText: '\u25AE Live' }) === true
+     && seen === '\u25AE Live\n\nRemove this key?\n\nGone.\n\nContinue?',
+     'ask: without a modal dialog, confirm() asks the same text');
+  globalThis.confirm = keep;
+
+  const dlg = doc.querySelector('#ask-dialog');
+  dlg.open = false;
+  dlg.showModal = () => { dlg.open = true; };
+  dlg.close = () => { dlg.open = false; };
+  const badge = el('span', 'cost');
+  let p = ask('Remove this key?\n\nWhoever holds it can no longer log in.\n\nContinue?',
+    { action: 'Remove key', danger: true, badge });
+  const head = doc.querySelector('#ask-head');
+  ok(dlg.open && head.children[0] === badge && textOf(head.children[1]) === 'Remove this key?'
+     && doc.querySelector('#ask-body').children.length === 1
+     && textOf(doc.querySelector('#ask-body')) === 'Whoever holds it can no longer log in.',
+     'ask: the badge and the question head the dialog, and the closing Continue? goes');
+  ok(doc.querySelector('#ask-ok').textContent === 'Remove key' && doc.querySelector('#ask-ok').className === 'danger',
+     'ask: the button says what it does, in red for a change that cannot be taken back');
+  doc.querySelector('#ask-ok').onclick();
+  ok(await p === true && !dlg.open, 'ask: the button answers yes and closes the dialog');
+
+  p = ask('The address changes now. Continue?', { action: 'Change the address' });
+  ok(head.hidden === true && textOf(doc.querySelector('#ask-body')) === 'The address changes now.',
+     'ask: a single paragraph has no heading, and loses its Continue?');
+  let prevented = false;
+  dlg.oncancel({ preventDefault: () => { prevented = true; } });
+  ok(await p === false && prevented && !dlg.open, 'ask: Escape answers no');
+
+  p = ask('Cancel?\n\nIt stops.', { back: 'Keep it' });
+  ok(doc.querySelector('#ask-cancel').textContent === 'Keep it', 'ask: the other button can be named');
+  doc.querySelector('#ask-cancel').onclick();
+  ok(await p === false, 'ask: and answers no');
+  delete dlg.showModal;
+}
+
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
 process.exit(failed ? 1 : 0);
