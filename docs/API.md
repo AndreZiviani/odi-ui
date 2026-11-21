@@ -477,7 +477,9 @@ it with the rest of `/etc/config`.
 
     GET  /api/backup                      both config stores as a file, identity included
                                           500 when a dump (`flash all cs`, `flash all hs`)
-                                          exits non-zero, prints nothing or does not fit
+                                          exits non-zero, prints nothing or does not fit;
+                                          403 while the built-in admin:admin is in force,
+                                          503 while the password file cannot be read
     POST /api/reset      _confirm=reset   `flash default cs` (service store only;
                                           `hs`, the hardware identity, is not reachable here)
 
@@ -510,7 +512,9 @@ backup go through `/api/netaddr` instead when the image has the trial.
                                           sk- type, the blob is whole base64 that
                                           parses to that same type, one printable
                                           line of at most 1000 characters; a key
-                                          already in the file is refused
+                                          already in the file is refused; 403 while
+                                          the built-in admin:admin is in force, 503
+                                          while the password file cannot be read
     POST /api/sshkeys    delete=<i>       rewrite the file without line i
                          [&line=<text>]   only while line i still reads <text>, as
                                           the list gave it; 409 when it does not
@@ -518,5 +522,7 @@ backup go through `/api/netaddr` instead when the image has the trial.
 A missing `authorized_keys` is an empty list. One that cannot be read, or that
 does not fit the daemon's 4 KB buffer (4094 bytes fit), answers 500 with
 `{"ok":false,"error":...}` to all three, and nothing is written: edit it over
-ssh. Send `line` with a delete: without it the number alone decides, and a
+ssh. Listing and removing keys work with the built-in credential too; adding
+one does not, since a key is root over ssh: set a password with `POST
+/api/password` first. Send `line` with a delete: without it the number alone decides, and a
 list that is out of date removes whatever key holds that line now.

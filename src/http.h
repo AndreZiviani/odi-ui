@@ -75,6 +75,9 @@ int header_has(const char *r, const char *name, const char *needle);
  * Reported to the page, because a well-known default that nobody can see is
  * the same thing as no password at all. */
 int auth_is_default(void);
+/* 1: a credential of the owner's is in force; 0: the built-in default;
+ * -1: the credential file cannot be read, so which one is unknown. */
+int auth_state(void);
 /* Whether `pass` is the password of the credential in force (constant time). */
 int password_matches(const char *pass);
 /* Write /etc/config/confd.auth. Returns 0 and sets *why on refusal. */

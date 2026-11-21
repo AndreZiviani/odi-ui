@@ -103,6 +103,14 @@ function showAuth() {
   const on = !!(S.FW && S.FW.defaultauth);
   $('#defaultauth').hidden = !on || !loud;
   $('#authchip').hidden = !on || loud;
+  /* What confd refuses with the factory credential (routes.c): adding an
+     SSH key and the backup. Said here rather than left to fail. */
+  $('#sshkey-locked').hidden = !on;
+  $('#sshkey-add').disabled = on;
+  $('#backup-locked').hidden = !on;
+  $('#backup-go').disabled = on;
+  $('#backup-plain').hidden = on;
+  $('#reset-go').disabled = on;   /* it backs up first, which is refused */
 }
 
 function go(view) {

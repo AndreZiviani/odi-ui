@@ -1280,10 +1280,12 @@ and *Skip, I'll use Config* is on every step):
 
 1. **Admin access**: the web password and, optionally, one SSH key. The
    password block shows only while the built-in `admin` / `admin` is in force:
-   the same `/api/password` and `passwordProblem` as System, Access, saved last,
-   after the line settings, because the browser keeps sending the old credential
-   (from then on the wizard sends the new one itself, and closing it signs out so
-   the browser asks for it); *Skip the password* is offered with the warning.
+   the same `/api/password` and `passwordProblem` as System, Access, saved
+   first, then the key, before the line settings: confd adds no key while
+   `admin` / `admin` is in force, and a refusal of either stops the apply with
+   nothing written, so Apply can be pressed again (this browser's session
+   survives the change). *Skip the password* is offered with the warning that
+   no key is added then, and drops a key already typed.
    The key goes through `POST /api/sshkeys` with the same `sshKeyProblem` as
    System, Access, checked against the keys already installed (`GET
    /api/sshkeys`), which the step shows as a count and comments so a stick that

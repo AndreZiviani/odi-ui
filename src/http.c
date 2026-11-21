@@ -617,6 +617,21 @@ int auth_is_default(void)
 }
 
 /*
+ * For the routes that only a credential of the owner's may use: they must
+ * not take an unreadable file for one. A browser signed in before the read
+ * started failing is still let in by its session, so "not the default" is
+ * not the same as "the owner's".
+ */
+int auth_state(void)
+{
+	int def = 0;
+
+	if (load_credential(&def) < 0)
+		return -1;
+	return def ? 0 : 1;
+}
+
+/*
  * Write a new credential file.
  *
  * Constrained, not sanitised: a value that does not fit the file format is
