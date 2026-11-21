@@ -3569,6 +3569,8 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
      && doc.querySelector('#ask-body').children.length === 1
      && textOf(doc.querySelector('#ask-body')) === 'Whoever holds it can no longer log in.',
      'ask: the badge and the question head the dialog, and the closing Continue? goes');
+  ok(dlg.getAttribute('aria-labelledby') === 'ask-head' && dlg.getAttribute('aria-label') === null,
+     'ask: a heading names the dialog');
   ok(doc.querySelector('#ask-ok').textContent === 'Remove key' && doc.querySelector('#ask-ok').className === 'danger',
      'ask: the button says what it does, in red for a change that cannot be taken back');
   doc.querySelector('#ask-ok').onclick();
@@ -3577,6 +3579,8 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   p = ask('The address changes now. Continue?', { action: 'Change the address' });
   ok(head.hidden === true && textOf(doc.querySelector('#ask-body')) === 'The address changes now.',
      'ask: a single paragraph has no heading, and loses its Continue?');
+  ok(dlg.getAttribute('aria-label') === 'Change the address' && dlg.getAttribute('aria-labelledby') === null,
+     'ask: with no heading the dialog is named by its action');
   let prevented = false;
   dlg.oncancel({ preventDefault: () => { prevented = true; } });
   ok(await p === false && prevented && !dlg.open, 'ask: Escape answers no');
@@ -3586,6 +3590,34 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   doc.querySelector('#ask-cancel').onclick();
   ok(await p === false, 'ask: and answers no');
   delete dlg.showModal;
+}
+
+/* --- Undo on one field --------------------------------------------------- */
+{
+  const { renderValue } = await import(join(root, 'web', 'config.js'));
+  const { EDITS: Ed } = await import(join(root, 'web', 'state.js'));
+  const row = S.SCHEMA.find((r) => r.name === 'VLAN_MANU_TAG_VID');
+  Ed.clear();
+  const box = renderValue(row, '11');
+  let input = null, undo = null;
+  walk(box, (x) => {
+    if (x.tagName === 'input') input = x;
+    if (x.tagName === 'button' && x.classList.contains('s-undo')) undo = x;
+  });
+  ok(input && undo && undo.hidden === true, 'undo: a field with no edit shows no Undo');
+  input.value = '12';
+  input.oninput();
+  ok(Ed.get('VLAN_MANU_TAG_VID') === '12' && undo.hidden === false, 'undo: an edit shows it');
+  input.value = '11';
+  input.oninput();
+  ok(!Ed.has('VLAN_MANU_TAG_VID') && undo.hidden === true, 'undo: typing the stored value back hides it');
+  input.value = '13';
+  input.oninput();
+  Ed.set('LAN_IP_ADDR', '10.0.0.2');
+  undo.onclick();
+  ok(!Ed.has('VLAN_MANU_TAG_VID') && Ed.get('LAN_IP_ADDR') === '10.0.0.2',
+     'undo: drops this edit and keeps the others');
+  Ed.clear();
 }
 
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');

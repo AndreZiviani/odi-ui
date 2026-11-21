@@ -260,6 +260,21 @@ function renderValue(row, raw, readonly = false) {
      ordering to get wrong, and the DOM stub in scripts/web-check.mjs only has
      to model the one. */
   let follow = null;
+  /* Back to the stored value, for this one field: Discard in the save bar
+     drops every edit at once. */
+  const undo = el('button', 'quiet s-undo', 'Undo');
+  undo.type = 'button';
+  undo.title = 'Back to the stored value';
+  undo.setAttribute('aria-label', 'Undo the change to ' + (meta.label || row.name));
+  undo.hidden = !EDITS.has(row.name);
+  undo.onclick = () => {
+    EDITS.delete(row.name);
+    if (gatesOthers(row.name)) dropIgnoredEdits();
+    renderAll();
+    const again = $('#f-' + row.name);
+    if (again) again.focus();
+    document.dispatchEvent(new Event('edits-changed'));
+  };
   input.oninput = input.onchange = () => {
     /* A serial number typed or pasted as 16 hex digits becomes the form the
        stick stores, in the field, so what is saved is what is shown. */
@@ -269,6 +284,7 @@ function renderValue(row, raw, readonly = false) {
     const same = v === raw || (fallback !== undefined && v === fallback);
     if (same) EDITS.delete(row.name); else EDITS.set(row.name, v);
     input.classList.toggle('changed', !same);
+    undo.hidden = same;
     validateInput(row, input);
     if (follow) follow(v);
     /* A key others depend on locks or unlocks them: redraw, and keep the
@@ -285,7 +301,7 @@ function renderValue(row, raw, readonly = false) {
   };
   input.classList.toggle('changed', EDITS.has(row.name));
   validateInput(row, input);
-  box.append(input);
+  box.append(input, undo);
 
   /* The OMCI_CUSTOM_* masks decode to the plugins the image will load, on
      every keystroke: the point is to see what a value DOES before saving it.

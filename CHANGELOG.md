@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- The dialog before a change is named by its action (*Change the address*)
+  when it has no heading, so a screen reader announces it; until now it
+  pointed at the empty heading and had no name.
+
+- Config: a changed field has an *Undo* beside it that puts back the stored
+  value of that field alone; *Discard* still drops every edit. Closing or
+  reloading the tab while edits are not saved asks first.
+
 - Config: what a save answers stays in the save bar until it is dismissed
   or the next save starts. The bar used to close as soon as every edit was
   written, and took the *Apply now* and *Reboot* buttons and the hint that
