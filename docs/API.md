@@ -369,18 +369,30 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           (`/var/run/host-autoneg`), the link mode and
                                           trial (`serdes`: `supported` and `state`, from
                                           `/var/run/host-serdes`), the safe-mode
-                                          flag for this boot and the record of an
+                                          flag for this boot (`safemode_now`: with
+                                          `login` `default` or `stored`, `exit_at`, the
+                                          uptime at which the boot reboots by itself, and
+                                          `exit` `timed`, `held`, `exiting` or `failed`,
+                                          on an image that
+                                          writes them) and the record of an
                                           unacknowledged one, `reseed` (the record of
                                           a config store recreated at boot,
                                           `/etc/config/config-reseeded`: `files`,
-                                          `build`, `uptime`, or null), the host link;
+                                          `build`, `uptime`, or null), the host link,
+                                          `safe_login` (what the flag means for the web
+                                          login, as the request path judges it: `none`,
+                                          `default`, `stored`, or `strict`, the saved
+                                          credential or nothing);
                                           `supported` is false on an image without it
     POST /api/hostlink  action=try&mode=on|off
                         action=confirm | revert | ack | reseed-ack
                         action=serdes-try&mode=fiber1g|2500basex|hisgmii
                         action=serdes-confirm | serdes-revert | serdes-status
                                           fixed verbs: try, confirm and revert run
-                                          `host-autoneg.sh`, ack runs `safe-mode.sh ack`,
+                                          `host-autoneg.sh`, ack runs `safe-mode.sh ack`
+                                          (it removes the record and holds a safe-mode
+                                          boot that would end by itself; it fails once
+                                          that reboot has begun),
                                           reseed-ack runs `config-reseed.sh ack`,
                                           the serdes-* ones run `host-serdes.sh try MODE`,
                                           `confirm`, `revert` and `status` (the mode is
