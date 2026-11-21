@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the status poll runs one at a time. A poll that took longer than
+  the 15 s between ticks had the next one queue behind it in confd, which
+  answers one request at a time, and the link check could take its samples
+  twice and out of order. A tick that finds a poll still going is now
+  skipped. Each read the poll waits for (`/api/status` and the two OMCI reads
+  of the link check) gives up after 60 s, so one with no answer cannot stop
+  the polling for good; `get()` in `dom.js` takes an optional `timeout` for
+  that, covering headers and body. The setup wizard's marker write is no
+  longer waited for. The wizard's own 3 s status read is unchanged. `make
+  check` covers the timeout and the one-at-a-time guard.
+
 - OMCI, Topology: the connectors no longer collapse into the corner after the
   window changed size while another tab was open. A resize measured the
   hidden drawing, where every box is 0 x 0, and going back to the tab did not

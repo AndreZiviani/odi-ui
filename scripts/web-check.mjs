@@ -3668,5 +3668,67 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   Ed.clear();
 }
 
+/* --- get() with a timeout: a request with no answer gives up ------------- */
+{
+  const { get } = await import(join(root, 'web', 'dom.js'));
+  const keep = globalThis.fetch;
+  let seen = null;
+  globalThis.fetch = (path, opts) => {
+    seen = opts;
+    return new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+  };
+  let why = '';
+  try { await get('/api/status', { timeout: 20 }); } catch (e) { why = e.message; }
+  ok(why === '/api/status -> no answer in 0 s' && seen.signal.aborted,
+     'get: a request with no answer is aborted after the timeout and says so');
+
+  /* Headers in time, then a body that never comes: still given up. */
+  globalThis.fetch = async (path, opts) => ({
+    ok: true,
+    json: () => new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    }),
+  });
+  why = '';
+  try { await get('/api/status', { timeout: 20 }); } catch (e) { why = e.message; }
+  ok(why === '/api/status -> no answer in 0 s', 'get: a body that stops coming is given up too');
+
+  globalThis.fetch = async (path, opts) => { seen = opts; return { ok: true, json: async () => ({ fine: 1 }) }; };
+  const quick = await get('/api/status', { timeout: 60000 });
+  ok(quick.fine === 1 && !seen.signal.aborted, 'get: an answer in time is returned as before');
+  await get('/api/values');
+  ok(seen === undefined, 'get: without a timeout the request is made as before');
+  globalThis.fetch = keep;
+}
+
+/* --- the status poll: one at a time ------------------------------------ */
+{
+  const { oneAtATime } = await import(join(root, 'web', 'dom.js'));
+  let calls = 0, release;
+  const poll = oneAtATime(() => { calls++; return new Promise((r) => { release = r; }); });
+  const first = poll();
+  poll();
+  ok(calls === 1, 'poll: a tick while a poll is still going starts no second one');
+  release(7);
+  ok(await first === 7, 'poll: the running poll still answers');
+  poll();
+  ok(calls === 2, 'poll: once it ended, the next tick polls again');
+  release();
+  const failing = oneAtATime(async () => { calls++; throw new Error('x'); });
+  await failing().catch(() => {});
+  await failing().catch(() => {});
+  ok(calls === 4, 'poll: a poll that failed does not block the next one');
+
+  /* app.js is not loaded here (it wires the whole page), so its source is
+     held to the shape the cases above test. */
+  const app = readFileSync(join(root, 'web', 'app.js'), 'utf8');
+  ok(/const refresh = oneAtATime\(/.test(app)
+     && /get\('\/api\/status', \{ timeout: POLL_READ_MS \}\)/.test(app)
+     && (app.match(/get\('\/api\/omci\?cmd=[^']*', \{ timeout: POLL_READ_MS \}\)/g) || []).length === 2,
+     'poll: refresh() runs one at a time and every read it waits for has a timeout');
+}
+
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');
 process.exit(failed ? 1 : 0);
