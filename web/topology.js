@@ -362,6 +362,10 @@ function drawEdges(host, g) {
   const svg = host.querySelector('svg.topo-lines');
   if (!svg || typeof host.getBoundingClientRect !== 'function') return;
   const base = host.getBoundingClientRect();
+  /* A hidden tab has no layout: every box measures 0 x 0, and drawing from
+     that stacks every connector in the corner. Keep the last drawing; the
+     tab draws again when it is shown. */
+  if (!base.width && !base.height) return;
   const at = new Map();
   for (const b of host.querySelectorAll('.topo-box')) at.set(b.dataset.key, b.getBoundingClientRect());
   svg.setAttribute('width', String(host.scrollWidth));
@@ -444,7 +448,11 @@ async function renderTopology(force) {
   const host = $('#topo-graph');
   const msg = $('#topo-msg');
   if (!host) return;
-  if (loaded && !force) return;
+  if (loaded && !force) {
+    /* The window may have changed size while another tab was open. */
+    if (GRAPH) drawEdges(host, GRAPH);
+    return;
+  }
   loaded = true;
   const run = ++RUN;
   const facts = $('#topo-facts');
@@ -508,7 +516,7 @@ async function renderTopology(force) {
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function')
   window.addEventListener('resize', () => {
     const host = $('#topo-graph');
-    if (host && GRAPH && !host.hidden) drawEdges(host, GRAPH);
+    if (host && GRAPH) drawEdges(host, GRAPH);
   });
 
-export { renderTopology, buildGraph, pathOf };
+export { renderTopology, buildGraph, pathOf, drawEdges };

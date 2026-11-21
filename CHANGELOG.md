@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- OMCI, Topology: the connectors no longer collapse into the corner after the
+  window changed size while another tab was open. A resize measured the
+  hidden drawing, where every box is 0 x 0, and going back to the tab did not
+  draw again. Now a hidden drawing is left as it is and the tab redraws when
+  it is shown. `make check` covers it.
+
 - The dialog before a change is named by its action (*Change the address*)
   when it has no heading, so a screen reader announces it; until now it
   pointed at the empty heading and had no name.
