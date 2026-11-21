@@ -100,7 +100,10 @@ v1.0.1 (a hand upload reporting `v1.0.0-dirty`) is why.
   are confirmed illegal and raise SIGILL; `bltzl` does not trap but
   misexecutes (its delay slot always runs), so it is not used either. Every build uses `-march=mips1
   -mabi=32 -EB -msoft-float -G0 -fno-pic -mno-abicalls -ffreestanding
-  -fno-builtin -fno-stack-protector`, plus `-flto` (splitting the daemon
+  -fno-builtin`, plus the hardening flags of the Makefile (the stack
+  protector, whose guard and failure path are in `src/start.S`, and the
+  rest of odi-oss `src/harden.mk`, checked by `scripts/check-hardening.sh`
+  before the strip), plus `-flto` (splitting the daemon
   into translation units cost measurable code size back before LTO
   recovered it -- keep `make verify`'s ISA audit in the loop whenever you
   touch `-flto` or split files further, since LTO changes codegen and this
