@@ -2752,6 +2752,10 @@ ok(inputsOf('#sections') > 100,
      writes (the marker) until it resolves. */
   let APPLY = { live: null, full: null };
   let GATE = null;
+  /* The daemon's side of the credential: DEFAULT while admin:admin is in
+     force (it then adds no key, as confd does), PWFAIL to refuse a password. */
+  let DEFAULT = false;
+  let PWFAIL = false;
   globalThis.fetch = async (path, init = {}) => {
     const [key] = String(path).split('?');
     const method = init.method || 'GET';
@@ -2779,11 +2783,17 @@ ok(inputsOf('#sections') > 100,
       const a = (live ? APPLY.live : APPLY.full) || { ok: true, output: 'secret-looking output' };
       return ans(a, a.status || 200);
     }
-    if (key === '/api/password') return ans({ ok: true });
+    if (key === '/api/password') {
+      if (PWFAIL) return ans({ ok: false, error: 'could not write the credential file' }, 500);
+      DEFAULT = false;
+      return ans({ ok: true });
+    }
+    if (key === '/api/firmware' && method === 'GET') return ans({ ...S.FW, defaultauth: DEFAULT });
     if (key === '/api/sshkeys' && method === 'GET' && INSTALLED === null) return ans({ ok: false, error: 'authorized_keys is larger than confd can hold (4 KB); edit it over ssh' });
     if (key === '/api/sshkeys' && method === 'GET') return ans({ path: 'x', keys: INSTALLED.map((line, i) => ({ i, line })) });
     if (key === '/api/sshkeys') {
       const line = new URLSearchParams(body).get('key');
+      if (DEFAULT) return ans({ ok: false, error: 'refused: this stick still has the factory password. Set your own under System, Access first.' }, 403);
       if (INSTALLED.includes(line)) return ans({ ok: false, error: 'that key is already in the file' });
       INSTALLED.push(line);
       return ans({ ok: true });
@@ -2800,6 +2810,8 @@ ok(inputsOf('#sections') > 100,
     APPLY = { live: null, full: null };
     GATE = null;
     S.FW = { switches: { 'omci-identity.on': false, 'confd.setup': false }, defaultauth: false, ...fw };
+    DEFAULT = S.FW.defaultauth;
+    PWFAIL = false;
     S.VALUES = { ...HELD };
     S.SETTINGS = Object.fromEntries(SETT.map((r) => [r.name, r]));
     Object.assign(W, { open: false, autoTried: false, marking: false, pwChanged: false, phase: 'edit' });
@@ -3148,6 +3160,55 @@ ok(inputsOf('#sections') > 100,
   skipPw.onclick();
   ok(title() === 'Your ISP login' && W.pw === null, 'password: skipping goes on to the ISP step and keeps nothing');
   await wz.exitWizard();
+
+  /* the password and a key together: the password first, since confd adds
+     no key while admin:admin is in force, and the page learns the new state */
+  reset({ defaultauth: true });
+  wz.openWizard(true);
+  await tick();
+  type('wiz-pw-pass', 'pa55word');
+  type('wiz-pw-again', 'pa55word');
+  type('wiz-sshkey', KEY2);
+  await wz.next(); await wz.next(); await wz.next();
+  await click('#wizard-next');
+  const order = calls.filter((c) => c.method === 'POST').map((c) => c.key);
+  ok(order.indexOf('/api/password') === 0 && order.indexOf('/api/sshkeys') === 1 && INSTALLED.includes(KEY2),
+     'password and key: the password is saved first, then the key is added');
+  ok(S.FW.defaultauth === false, 'password and key: the page reads the firmware again and no longer sees the default');
+  await wz.exitWizard();
+  /* a key typed, then the password skipped: the key is dropped, not promised */
+  reset({ defaultauth: true });
+  wz.openWizard(true);
+  await tick();
+  type('wiz-sshkey', KEY2);
+  all(doc.querySelector('#wizard-body'), (n) => n.tagName === 'button' && n.textContent === 'Skip the password')[0].onclick();
+  ok(W.key === '', 'password skipped: the queued key goes with it');
+  await wz.exitWizard();
+  /* a password the daemon refuses stops the setup before the key and the line */
+  reset({ defaultauth: true });
+  PWFAIL = true;
+  wz.openWizard(true);
+  await tick();
+  type('wiz-pw-pass', 'pa55word');
+  type('wiz-pw-again', 'pa55word');
+  type('wiz-sshkey', KEY2);
+  await wz.next(); await wz.next(); await wz.next();
+  await click('#wizard-next');
+  ok(!posts('/api/sshkeys').length && !posts('/api/config').length && sw['confd.setup'] !== true && W.phase === 'edit',
+     'password refused: no key, no config write, no marker, and Apply can be pressed again');
+  ok(/Admin password: could not write/.test(body()), 'password refused: and says why');
+  await wz.exitWizard();
+  /* a key the daemon refuses stops it too */
+  reset();
+  DEFAULT = true;   /* the page thought otherwise (a safe-mode boot); the daemon decides */
+  wz.openWizard(true);
+  await tick();
+  type('wiz-sshkey', KEY2);
+  await wz.next(); await wz.next(); await wz.next();
+  await click('#wizard-next');
+  ok(posts('/api/sshkeys').length === 1 && !INSTALLED.includes(KEY2) && !posts('/api/config').length
+     && sw['confd.setup'] !== true && W.phase === 'edit' && /SSH key: refused/.test(body()),
+     'key refused: no config write, no marker, the refusal shown');
 
   /* the SSH key: shown against what is installed, checked like System, Access, added through /api/sshkeys */
   reset();

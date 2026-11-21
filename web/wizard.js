@@ -357,9 +357,10 @@ function stepAccess(body) {
     body.append(u.wrap, p.wrap, a.wrap, showTick(p.input));
     const skip = el('button', null, 'Skip the password');
     skip.type = 'button';
-    skip.onclick = () => { W.pw = null; go('isp'); };
-    body.append(el('p', 'callout warn', 'Without a password the stick keeps the built-in admin / admin. '
-      + 'You can set one later under System, Access.'), skip);
+    /* confd adds no key while the built-in password is in force. */
+    skip.onclick = () => { W.pw = null; W.key = ''; go('isp'); };
+    body.append(el('p', 'callout warn', 'Without a password the stick keeps the built-in admin / admin, '
+      + 'and it adds no SSH key. You can set one later under System, Access.'), skip);
   } else {
     body.append(el('p', 'lede', 'This page already has its own password. You can add an SSH key below, or go on.'));
   }
@@ -573,7 +574,7 @@ async function next() {
 }
 
 /*
- * The write, the apply, the password, the marker, then the live view. Values
+ * The password, the key, the write, the apply, the marker, then the live view. Values
  * are never printed: a result line names the key and says saved or why not.
  */
 async function apply(pairs) {
@@ -585,6 +586,15 @@ async function apply(pairs) {
   W.rereg = false;
   paint();
   try {
+    /* The password first, then the key, before anything that changes the
+       line: confd adds no key while the built-in password is in force, and
+       a failure here stops the setup with nothing applied, so Apply can
+       simply be pressed again. */
+    if ((W.pw && !(await savePassword(out))) || (W.key && !(await addKey(out)))) {
+      W.phase = 'edit';
+      paint();
+      return;
+    }
     if (pairs.length) {
       const r = await post('/api/config', writeBody(pairs));
       if (r.status === 401) {
@@ -628,8 +638,6 @@ async function apply(pairs) {
         W.rereg = res.interrupts !== false || done === 'reregistered';
       }
     }
-    if (W.key) await addKey(out);
-    if (W.pw) await savePassword(out);
     await setMarker();
   } catch (e) {
     out.append(el('div', 'bad', String(e.message || e)));
@@ -657,27 +665,34 @@ function startLive() {
   pollLive();
 }
 
-/* One public key, through the route System, Access uses (it refuses a duplicate). */
+/* One public key, through the route System, Access uses (it refuses a
+   duplicate). True once it is added; the key is then no longer pending. */
 async function addKey(out) {
   const bad = sshKeyProblem(W.key, W.keys);
-  if (bad) { out.append(el('div', 'bad', 'SSH key: ' + bad)); return; }
+  if (bad) { out.append(el('div', 'bad', 'SSH key: ' + bad)); return false; }
   const j = await (await post('/api/sshkeys', new URLSearchParams({ key: W.key }).toString())).json();
-  if (!j.ok) { out.append(el('div', 'bad', 'SSH key: ' + (j.error || 'refused'))); return; }
+  if (!j.ok) { out.append(el('div', 'bad', 'SSH key: ' + (j.error || 'refused'))); return false; }
   W.keys.push(W.key);
+  W.key = '';
   out.append(el('div', 'good', 'SSH key: added. dropbear reads the file on every login.'));
+  return true;
 }
 
-/* The admin password, last. This browser's session survives the change; every
-   other browser signed in to the page is signed out by confd. */
+/* The admin password, before the key. This browser's session survives the
+   change; every other browser signed in to the page is signed out by confd.
+   True once it is saved. The firmware is read again for defaultauth, which
+   System, Access and Backup go by (and which a safe-mode boot keeps true). */
 async function savePassword(out) {
   const { user, pass, again } = W.pw;
   const bad = passwordProblem(user, pass, again);
-  if (bad) { out.append(el('div', 'bad', 'Admin password: ' + bad)); return; }
+  if (bad) { out.append(el('div', 'bad', 'Admin password: ' + bad)); return false; }
   const j = await (await post('/api/password', new URLSearchParams({ user, password: pass }).toString())).json();
-  if (!j.ok) { out.append(el('div', 'bad', 'Admin password: ' + (j.error || 'refused'))); return; }
+  if (!j.ok) { out.append(el('div', 'bad', 'Admin password: ' + (j.error || 'refused'))); return false; }
   W.pwChanged = true;
-  W.pw = { user, pass: '', again: '' };
+  W.pw = null;
   out.append(el('div', 'good', 'Admin password: saved. Other browsers signed in to this page are signed out.'));
+  try { S.FW = await (await wfetch('/api/firmware')).json(); } catch (e) { /* advisory, as in app.js */ }
+  return true;
 }
 
 /* ------------------------------------------------------------ live view */

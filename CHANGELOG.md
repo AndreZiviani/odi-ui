@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Access: with the built-in `admin` / `admin` in force, confd answers 403
+  to adding an SSH key (`POST /api/sshkeys` with `key=`) and to the backup
+  (`GET /api/backup`), as it already did for the VoIP secrets, and 503 to
+  both while the password file cannot be read. Listing and removing keys
+  still work. System, Access and System, Backup say so and disable Add
+  key, the backup downloads and Back up, then reset until a password is
+  set. The setup wizard saves the password, then adds the key, before it
+  writes the line settings, and stops there if either is refused; a
+  skipped password drops the key. The safe-mode help says to add a lost
+  key after the reboot or over SSH (odi-oss#482).
+
 - Config: what a save answers stays in the save bar until it is dismissed
   or the next save starts. The bar used to close as soon as every edit was
   written, and took the *Apply now* and *Reboot* buttons and the hint that
