@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- The dialog before a change is named by its action (*Change the address*)
+  when it has no heading, so a screen reader announces it; until now it
+  pointed at the empty heading and had no name.
+
+- Config: a changed field has an *Undo* beside it that puts back the stored
+  value of that field alone; *Discard* still drops every edit. Closing or
+  reloading the tab while edits are not saved asks first.
+
 - Build: confd is built with the hardening odi-oss gives its own tools:
   `-fstack-protector-strong` with a guard seeded per process from the
   kernel's random bytes (`AT_RANDOM`), stack clash probes, zero-initialised
