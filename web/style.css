@@ -335,6 +335,8 @@ details > summary::before { content: "+"; display: inline-block; width: 1.1em; c
 details[open] > summary::before { content: "\2212"; }
 details.more[open] > summary { margin-bottom: 6px; }
 details.more p { font-size: 14px; color: var(--ink-2); }
+details.more ol { font-size: 14px; color: var(--ink-2); padding-left: 22px; }
+details.more li + li { margin-top: 4px; }
 
 pre {
   background: var(--well); border: 1px solid var(--line); border-radius: var(--r);
@@ -992,3 +994,4 @@ input[type=file]::file-selector-button {
 #signin-msg { font-size: 14px; margin: 0 0 12px; }
 #signin-msg:empty { display: none; }
 .signin .help { font-size: 13px; margin: 0; }
+.signin details.more { margin-top: 14px; }

@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Sign-in: a *Forgot your password?* section explains the odi-oss safe mode:
+  five short power-ups, or three when the host port runs 2500BASE-X or
+  HiSGMII or has auto-negotiation off, then sign in with `admin` / `admin`.
+  When the count is unknown it says to try three first and then five. It is
+  static text: it sends nothing and tells no one on the LAN how the stick is
+  set up or whether it is in the safe mode.
+- Safe mode: signing in on a safe-mode boot opens System › Access with the
+  password field focused, unless the address names another view. The
+  safe-mode bar has *Set a new password*, the default-password warning no
+  longer shows a second time, and a password saved in that boot says it is
+  in force from the next boot and that other browsers sign in with `admin` /
+  `admin` until then. The help under System › Access names
+  2500BASE-X and HiSGMII as lowering the count to three.
+- Save password and both *Acknowledge* buttons are off while their request
+  runs, so clicks in a row send one request. Saving the credential already
+  on flash answers ok without writing `confd.auth` again, unless the file is
+  not 0600: then it is written, as before, to make it private.
+
 - Config: what a save answers stays in the save bar until it is dismissed
   or the next save starts. The bar used to close as soon as every edit was
   written, and took the *Apply now* and *Reboot* buttons and the hint that

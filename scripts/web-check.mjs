@@ -1277,7 +1277,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
 
 /* --- the host-link banner and the Host port control ------------------------- */
 {
-  const { bannerText, trialLeft, renderHostlink, wireHostlink } = await import(join(root, 'web', 'hostlink.js'));
+  const { bannerText, trialLeft, renderHostlink, wireHostlink, safeModeNow, passwordSavedText } = await import(join(root, 'web', 'hostlink.js'));
   const keep = API['/api/hostlink'];
   const st = (o) => ({ setting: 'on', running: 'on', phase: 'steady', fallback: '0', ...o });
 
@@ -1328,6 +1328,113 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(/id="safe-details" href="#system\/access"/.test(html) && /<details[^>]*id="safemode-help"/.test(html),
      'host link: Details points at the safe-mode help on System, Access, which exists');
   ok(!/id="hostlinkbanner"/.test(html), 'host link: the big card is gone');
+  ok(doc.querySelector('#safe-password').hidden === true && !safeModeNow(),
+     'safe mode: an old record alone offers no new password and is not this boot');
+  /* Acknowledge writes a record: one request at a time, the button off until it answers. */
+  {
+    const keepFetch = globalThis.fetch;
+    const btn = doc.querySelector('#hostlink-ack');
+    let posts = 0, release;
+    const held = new Promise((r) => { release = r; });
+    globalThis.fetch = async (path, opts) => {
+      if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
+      posts++;
+      await held;
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    };
+    wireHostlink();
+    btn.onclick();
+    btn.onclick();
+    btn.onclick();
+    ok(btn.disabled === true && posts === 1, 'safe mode: Acknowledge clicked three times sends one request, and is off meanwhile');
+    release();
+    for (let i = 0; i < 20 && btn.disabled; i++) await new Promise((r) => setTimeout(r, 0));
+    ok(btn.disabled === false, 'safe mode: and is on again once it answered');
+    globalThis.fetch = async (path, opts) => {
+      if (opts && opts.method === 'POST') throw new Error('network');
+      return keepFetch(path, opts);
+    };
+    btn.onclick();
+    for (let i = 0; i < 20 && btn.disabled; i++) await new Promise((r) => setTimeout(r, 0));
+    ok(btn.disabled === false, 'safe mode: a failed Acknowledge gives the button back');
+    globalThis.fetch = keepFetch;
+  }
+  {
+    const keepFetch = globalThis.fetch;
+    const rb = doc.querySelector('#reseed-ack');
+    let posts = 0, release;
+    const held = new Promise((r) => { release = r; });
+    globalThis.fetch = async (path, opts) => {
+      if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
+      posts++;
+      await held;
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    };
+    rb.onclick();
+    rb.onclick();
+    ok(rb.disabled === true && posts === 1, 'recreated store: Acknowledge clicked twice sends one request');
+    release();
+    for (let i = 0; i < 20 && rb.disabled; i++) await new Promise((r) => setTimeout(r, 0));
+    ok(rb.disabled === false, 'recreated store: and is on again once it answered');
+    globalThis.fetch = keepFetch;
+  }
+  API['/api/hostlink'] = { supported: true, state: st({}), safemode_now: { short_boots: '3' },
+                           safemode: { short_boots: '3' }, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(safeModeNow() && doc.querySelector('#safe-password').hidden === false,
+     'safe mode: a safe-mode boot offers Set a new password in its bar');
+  API['/api/hostlink'] = { supported: true, state: st({}), safemode_now: {}, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(safeModeNow(), 'safe mode: an empty flag is still a safe-mode boot');
+  /* Back to the fallback answer the checks below read. */
+  API['/api/hostlink'] = { supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }),
+                           safemode_now: null, safemode: { short_boots: '3' }, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(/three times when the host port is set to 2500BASE-X or\s+HiSGMII, or to auto-negotiation off/.test(html),
+     'safe mode: the help names every setting that lowers the count to three');
+  {
+    const login = readFileSync(join(root, 'web', 'login.html'), 'utf8');
+    const forgot = (login.match(/<details[^>]*id="forgot"[\s\S]*?<\/details>/) || [''])[0];
+    ok(/<summary>Forgot your password\?<\/summary>/.test(forgot),
+       'sign-in: the page has a Forgot your password? section');
+    ok(forgot && !/<(script|form|button|a|input)\b/.test(forgot),
+       'sign-in: and it is static: nothing in it sends or writes anything');
+    ok(/five/.test(forgot) && /three/.test(forgot) && /2500BASE-X/.test(forgot) && /HiSGMII/.test(forgot)
+       && /auto-negotiation is off/.test(forgot) && /three times first/.test(forgot),
+       'sign-in: it gives both counts, what lowers it to three, and what to do when unsure');
+  }
+  {
+    const app = readFileSync(join(root, 'web', 'app.js'), 'utf8');
+    ok(/function savePassword\(\) \{ return once\('#pw-save', savePasswordOnce\); \}/.test(app)
+       && /\$\('#pw-save'\)\.onclick = savePassword;/.test(app),
+       'password: Save password goes through once(), one request at a time');
+    const { once } = await import(join(root, 'web', 'dom.js'));
+    const b = { disabled: false };
+    let runs = 0, release;
+    const held = new Promise((r) => { release = r; });
+    const first = once(b, async () => { runs++; await held; });
+    const second = await once(b, async () => { runs++; });
+    ok(b.disabled === true && runs === 1 && second === false,
+       'once: a second click while the first runs does nothing, and the button is off');
+    release();
+    await first;
+    ok(b.disabled === false, 'once: the button is on again when it settled');
+    let threw = false;
+    try { await once(b, async () => { throw new Error('network'); }); } catch (e) { threw = true; }
+    ok(threw && b.disabled === false, 'once: a failure gives the button back and is not swallowed');
+  }
+  {
+    const fresh = passwordSavedText('op', { safemode_now: null, safemode: null });
+    ok(fresh[0] === 'Saved to /etc/config/confd.auth.' && /signs in again as op\./.test(fresh[1]),
+       'password: a normal boot says saved, and that other browsers sign in as the new user');
+    const sm = passwordSavedText('op', { safemode_now: {}, safemode: { short_boots: '5' } });
+    ok(/From the next boot this page answers to op/.test(sm[0]) && /Acknowledge the safe-mode bar, then reboot\./.test(sm[0])
+       && /until the reboot signs in again with admin \/ admin/.test(sm[1]) && !/as op/.test(sm[1]),
+       'password: on a safe-mode boot the new credential is for the next boot, and others use admin / admin until then');
+    const acked = passwordSavedText('op', { safemode_now: {}, safemode: null });
+    ok(!/Acknowledge/.test(acked[0]) && /Reboot to use it\./.test(acked[0]),
+       'password: once acknowledged it no longer asks for an Acknowledge that is gone');
+  }
   ok(textOf(doc.querySelector('#hostlink-now')).includes('Host link'), 'host link: status rows render');
   ok(doc.querySelector('#hostlink').hidden === false, 'host link: the Host port block shows on an image that has it');
   ok(doc.querySelector('#hostlink-keep-on').hidden === false,

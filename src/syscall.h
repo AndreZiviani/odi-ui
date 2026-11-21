@@ -31,6 +31,7 @@
 #define __NR_write 4004
 #define __NR_open  4005
 #define __NR_chmod 4015
+#define __NR_stat64 4213
 #define __NR_unlink 4010
 #define __NR_rename 4038
 #define __NR_fsync  4118
@@ -402,6 +403,22 @@ __attribute__((unused)) static long write_file(const char *path, const char *buf
 	if (n < 0 || (unsigned long)n != len)
 		return -1;
 	return syscall3(__NR_chmod, (long)path, mode, 0);
+}
+
+/*
+ * The permission bits of a file (07777), or negative on error. stat64 of
+ * MIPS o32: st_dev and three pad words, the 64-bit st_ino, then st_mode at
+ * byte 24 (arch/mips/include/uapi/asm/stat.h). The buffer is larger than
+ * the structure and 8-byte aligned.
+ */
+__attribute__((unused)) static long file_mode(const char *path)
+{
+	unsigned long long st[20];
+	long r = syscall3(__NR_stat64, (long)path, (long)st, 0);
+
+	if (r < 0)
+		return r;
+	return (long)(((const unsigned int *)st)[6] & 07777);
 }
 
 /*
