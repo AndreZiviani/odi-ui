@@ -14,7 +14,7 @@ trap 'rm -rf "$T"' EXIT
 pass=0; fail=0
 cc -std=c99 -Wall -Wextra -Werror -o "$T/chk" scripts/sha256_check.c src/sha256.c || exit 1
 
-t() { if [ "$2" = "$3" ]; then echo "ok    $1"; pass=$((pass + 1)); else echo "FAIL  $1: want [$2] got [$3]"; fail=$((fail + 1)); fi; }
+t() { if [ -n "$3" ] && [ "$2" = "$3" ]; then echo "ok    $1"; pass=$((pass + 1)); else echo "FAIL  $1: want [$2] got [$3]"; fail=$((fail + 1)); fi; }
 f() { printf '%s' "$2" > "$T/$1"; }
 
 : > "$T/empty"
@@ -38,6 +38,7 @@ t = sys.argv[1]
 open(f"{t}/k1", "wb").write(b"\x0b" * 20)
 open(f"{t}/k6", "wb").write(b"\xaa" * 131)
 PY
+[ -s "$T/k1" ] && [ -s "$T/k6" ] || { echo "FAIL  python did not write the HMAC keys" >&2; exit 1; }
 f m1 "Hi There"
 f k2 Jefe
 f m2 "what do ya want for nothing?"
@@ -85,11 +86,21 @@ open(f"{t}/binsalt", "wb").write(salt)
 open(f"{t}/kdf.want", "w").write(hashlib.pbkdf2_hmac("sha256", pw, salt, 1000).hex() + "\n")
 open(f"{t}/hmac.want", "w").write(hmac.new(pw, salt * 9, "sha256").hexdigest() + "\n")
 open(f"{t}/salt9", "wb").write(salt * 9)
+open(f"{t}/done", "w").write("135\n")
 PY
-bad=0
+# The reference is the test: without it, or with half of it, there is
+# nothing to compare with, and an empty answer on both sides is not a match.
+[ "$(cat "$T/done" 2>/dev/null)" = 135 ] || { echo "FAIL  python did not write the reference values" >&2; exit 1; }
+for f in kdf.want hmac.want; do
+	[ "$(tr -d '\n' < "$T/$f" | wc -c | tr -d ' ')" = 64 ] || { echo "FAIL  $f is not a hash" >&2; exit 1; }
+done
+bad=0; seen=0
 while read -r n want; do
-	[ "$("$T/chk" sha256 "$T/len$n")" = "$want" ] || bad=$((bad + 1))
+	seen=$((seen + 1))
+	got=$("$T/chk" sha256 "$T/len$n") || got=
+	[ ${#want} = 64 ] && [ "$got" = "$want" ] || bad=$((bad + 1))
 done < "$T/lens.want"
+t "sha256 was compared with hashlib for 135 lengths" 135 "$seen"
 t "sha256 equals hashlib for every length around a block" 0 "$bad"
 t "hmac equals python: a 128-byte key, a 144-byte message" \
 	"$(cat "$T/hmac.want")" "$("$T/chk" hmac "$T/longpw" "$T/salt9")"

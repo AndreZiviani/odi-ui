@@ -1038,28 +1038,76 @@ line from there does not work here.
   write, by rename, mode 0600. A wrong password changes nothing. A stick that
   cannot write the file keeps the one it has. A safe-mode boot never does this,
   since what signs in there is not what the file holds. A save from the page
-  always stores the hash.
+  always stores the hash. Just before the write the file is read once more and
+  must still hold the line that was proven: the hash took a few hundred
+  milliseconds to make, and a file rewritten over ssh in that time must not
+  get the hash of the password it has just replaced renamed over it.
+- **Not during a firmware trial.** While the running image is not committed
+  (`uncommitted=0` is not in `/var/run/odi-slot`), a sign-in leaves a file as
+  typed alone, and makes the hash at the first sign-in after the commit. The
+  other slot may hold a confd from before the hash, and a trial that is not
+  kept boots it: see the next point. An image without that file (a stock-based
+  one) has no trial to wait for. A password **saved from the page** during a
+  trial is stored as a hash all the same, because the operator asked for a
+  write; if the trial is then dropped for an older image, the next point
+  applies.
+- **Going back to a confd from before the hash** (v1.19.0 or older: a trial
+  not kept after a save, or an older image flashed later). That confd compares
+  the file with what is typed, so the password no longer signs in, and the
+  text after the colon in the file would. The way back is the safe mode (sign
+  in as `admin` / `admin` and save a password, which that confd writes as
+  typed), or over ssh
+  `printf "user:password" > /etc/config/confd.auth`.
 - **A damaged hashed line lets nobody in.** A line that starts with
   `$pbkdf2-sha256$` and is not a whole one (a field short, a count of 0 or above
   the limit) is treated like a file that cannot be read: every sign-in is
   refused, the default included, and the safe mode is the way back. Read as a
   password as typed, the text in the file would be the password, known to
   whoever has seen the file. A count above the limit is refused rather than
-  run, so a typo cannot make the one thread spend minutes per sign-in. A
-  password as typed therefore cannot itself begin with `$pbkdf2-sha256$`; one
-  set from the page can.
+  run, so a typo cannot make the one thread spend minutes per sign-in. So is a
+  line of 255 bytes or more, which does not fit the buffer it is read into: it
+  used to be cut there without a word, and its first 255 bytes were the
+  credential.
+- **A password as typed cannot begin with `$pbkdf2-sha256$`**; one set from
+  the page can, since it is stored hashed. This is a known edge of the update:
+  the page of v1.19.0 and older would store a password beginning with exactly
+  those fifteen characters as typed, and such a file now reads as a damaged
+  hash and lets nobody in. The safe mode is the way back there too. Any other
+  mark inside a one-line text file would collide with some password in the
+  same way; this one is long and unlikely.
+- **No control characters against a hash.** HMAC pads a short key with zero
+  bytes, so PBKDF2 gives the same result for a password and for that password
+  followed by a NUL, which a Basic header can carry. A credential with a
+  control character in it (below 0x20, or 0x7f) is therefore refused before it
+  is hashed or remembered; no password saved from the page ever had one. A
+  file as typed is compared byte for byte, so one with such a character keeps
+  working and is simply never turned into a hash.
 - **Basic does not pay for it on every request.** A script sends the password
   with each request, and 0.4 s of hashing each time, on a server with one
   thread, would be felt by everything else. After the first check that
   succeeds, confd keeps a tag of the credential that was presented:
   HMAC-SHA256 under a key read from `/dev/urandom`, in RAM only. Later requests
   are compared with the tag. It is dropped when the line in the file is not
-  byte for byte the one it was made for, and with the process. That tag is a
-  fast hash of the password, which is the thing the file no longer is; it is
-  never on flash, and whoever can read confd's memory can read the password
-  itself in the request buffer, since the UI is plain HTTP. So the slow hash
-  runs once per boot and once per change of the file, and once for each wrong
-  guess made before the first right one.
+  the one it was made for (told by a tag of the line under the same key, not
+  by a copy of the line, which for a file as typed would be the password),
+  and with the process. That tag is a fast hash of the password, which is the
+  thing the file no longer is; it is never on flash, and whoever can read
+  confd's memory can read the password itself in the request buffer, since the
+  UI is plain HTTP. So the slow hash runs for the first right password after a
+  start of confd or a change of the file, and not again for that line. The
+  sign-in page and sign-out, which need no credential, never run it: they look
+  for a session cookie only.
+- **Wrong guesses before the first right one are rationed.** Until a password
+  has been proven there is no tag, and telling a wrong password from the right
+  one takes the slow hash each time. The second a failure costs is a sleep;
+  the hash is the one CPU at full load, taken from omcid, for anyone who can
+  reach the port. So after a wrong password that cost a hash, the next one
+  that would cost one is refused without it for four times as long as the hash
+  took, one second at least: guessing gets a fifth of the CPU at most. In that
+  time the right password is refused as well, since only refusing wrong ones
+  is what cannot be done cheaply; with the default count that is about 0.6 s
+  after the answer to the wrong one. A stick with no `/dev/urandom` has no key
+  for the tag and runs the hash for every Basic request.
 - **"Same password saved again"** is now "the stored hash is of this
   password", since a new salt makes every hash different. It costs one check
   and still writes nothing.

@@ -56,6 +56,9 @@
 /* Rewrites /var/run/odi-slot (what the exporter and the trial banner read)
  * from the environment; odi-oss only, absent on a stock-based image. */
 #define SLOT_STATE_SCRIPT "/etc/scripts/slot-state.sh"
+/* What it writes, KEY=value lines; `uncommitted=0` on a committed image.
+ * http.c reads it before turning a typed password file into a hash. */
+#define SLOT_STATE_FILE "/var/run/odi-slot"
 /*
  * What fwu_starter.sh leaves behind on an image that writes in the background
  * (odi-oss): the state, "running|ok|failed <pid> <slot> [rc]", and the flasher's
@@ -377,9 +380,14 @@
  * 37,000 to 47,000 rounds a second, and 16000 rounds 0.34 to 0.43 s. qemu
  * says nothing about the cycles; time one sign-in after a restart to know.
  *
- * It is paid once per boot and per change of the file, not per request:
- * see `known` in http.c. A plain decimal number, it is pasted into the line
- * as text.
+ * It is not paid per request. Once a password has been proven against a
+ * line, requests are checked against a tag in RAM (`known` in http.c). It
+ * is paid for the first right password after a start of confd or a change
+ * of the file, for each wrong one tried before that (no more often than
+ * COLD_KDF_MIN_MS in http.c allows), once more when the page asks whether
+ * a line changed under a session is the default, and by every save. A
+ * stick with no /dev/urandom has no tag and pays it per request. A plain
+ * decimal number, it is pasted into the line as text.
  *
  * PBKDF2_ITER_MAX is the most a line may ask for. A file is written by
  * hand too, and a count with a digit too many must not become a daemon

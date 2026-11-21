@@ -25,11 +25,20 @@ its own password dialog. Without a credential, a `GET` that accepts
 All writes refuse a cross-site `Origin`, and (for `/api/config`) read every
 value back before reporting success.
 
-A body is sent with one `Content-Length`. A value that is not a decimal number
-(empty, letters, a sign, a list), or two `Content-Length` headers that disagree,
-is `400` on any route, before the credential is looked at; the same value sent
-twice is accepted. A body larger than the route takes is `413`. A request with
-a `Transfer-Encoding` header is `501`: chunked bodies are not read.
+A body is sent with one `Content-Length`, and is exactly that many bytes:
+anything sent after them is not read, and with no `Content-Length` there is no
+body. A value that is not a decimal number on a line of its own (empty,
+letters, a sign, a list, a bare CR after the digits), or two `Content-Length`
+headers that disagree, whatever their size, is `400` on any route, before the
+credential is looked at; the same value sent twice is accepted. A body larger
+than the route takes is `413`. A request with a `Transfer-Encoding` header,
+with any value or none, is `501` on any route, before the credential is looked
+at: chunked bodies are not read.
+
+Against a credential file that holds a hash, a credential with a control
+character in it is `401`. For about a second after a wrong password that was
+tried before any right one (since confd started or the file changed), the right
+one is `401` too: see DESIGN.md, "The file holds a hash".
 
 ## Sign in
 

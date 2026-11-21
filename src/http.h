@@ -64,6 +64,8 @@ int authorised(const char *r);
  * file may hold the password as typed or its hash; a sign-in that proves
  * one as typed replaces the file with the hash (http.c, migrate). */
 int credential_matches(const char *user, const char *pass);
+/* Whether the request has a live session cookie; never looks at Basic. */
+int session_live(const char *r);
 /* Start a browser session; its token (32 hex digits) goes into tok[33]. */
 int session_start(char *tok);
 /* End the session the request carries, if it carries a live one. */

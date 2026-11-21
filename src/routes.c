@@ -790,7 +790,7 @@ static int serve_public(int conn, unsigned long body_have, unsigned long body_wa
 	if (spre(req, "GET ") &&
 	    (seq(target, "/login") || seq(target, "/login.js") || seq(target, "/style.css"))) {
 		/* Signed in already: nothing to do there. */
-		if (seq(target, "/login") && authorised(req) == AUTH_SESSION) {
+		if (seq(target, "/login") && session_live(req)) {
 			respond(conn, "303 See Other", "text/plain", "Location: /\r\n");
 			return 1;
 		}
@@ -862,7 +862,7 @@ static int serve_public(int conn, unsigned long body_have, unsigned long body_wa
 	 * challenge, so a browser that cached the password drops it.
 	 */
 	if (seq(target, "/api/logout")) {
-		if (authorised(req) != AUTH_SESSION &&
+		if (!session_live(req) &&
 		    header_copy(req, "authorization", hdrbuf, sizeof(hdrbuf))) {
 			respond(conn, "401 Unauthorized", "text/html",
 				"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");

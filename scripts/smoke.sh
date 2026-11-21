@@ -503,6 +503,11 @@ salt = os.urandom(16)
 print(sys.argv[1] + ":$pbkdf2-sha256$" + sys.argv[3] + "$" + salt.hex() + "$" +
       kdf(sys.argv[2].encode(), salt, int(sys.argv[3])), end="")' "$@"; }
 signin() { code -X POST -H "Origin: $B" --data "$1" "$B/api/login"; }
+# The session cookie a sign-in with this form body gets.
+session_of() { curl -s -D - -o /dev/null -X POST -H "Origin: $B" --data "$1" "$B/api/login" |
+	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p'; }
+# A Basic header from raw bytes, for what curl -u cannot say: printf format.
+basic_raw() { printf 'Authorization: Basic %s' "$(printf "$1" | base64 | tr -d '\n')"; }
 defaultauth() { curl -s "$@" "$B/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p'; }
 
 typed "$AUTH" 644
@@ -553,9 +558,15 @@ check "the highest count a line may ask for, hex in capitals" 200 "$(code -u op:
 
 # Saving from the page stores the hash, and the same password saved again is
 # still not written again, though every hash of it differs by its salt.
+# From a session: a Basic header would prove the password first and make
+# the hash before the save was looked at, and the save would have nothing
+# left to do.
 typed op:hunter22
+tok=$(session_of 'user=op&password=hunter22')
+typed op:hunter22
+check "a session leaves a file as typed alone" op:hunter22 "$(curl -s -o /dev/null -H "Cookie: odi_session=$tok" "$B/api/schema"; cat $A)"
 check "a save over a file as typed answers ok" yes \
-	"$(err "$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "$B/api/password")" '"ok":true')"
+	"$(err "$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'user=op&password=hunter22' "$B/api/password")" '"ok":true')"
 check "  and stores the hash" yes "$(hashed op)"
 before=$(stat -c '%i' $A)
 check "the same password saved again answers ok" yes \
@@ -629,6 +640,161 @@ check "the same line whole signs in" 200 "$(code -u op:hunter22 "$B/api/schema")
 # writes is read as a hash.
 typed 'op:$6$notours'
 check "a password that looks like some other hash is a password" 200 "$(code -u 'op:$6$notours' "$B/api/schema")"
+
+# HMAC pads a short key with zeros, so PBKDF2 cannot tell a password from the
+# same password with a NUL after it. Sent first, to a line nothing has been
+# proven against yet, that spelling was the one remembered, and the password
+# itself was refused from then on. Each case starts from a new line.
+line_for op hunter22 16000 > $A
+check "a password with a NUL after it is refused" 401 "$(code -H "$(basic_raw 'op:hunter22\000')" "$B/api/schema")"
+check "  and the password itself signs in after it" 200 "$(code -u op:hunter22 "$B/api/schema")"
+check "  and still does not with the NUL" 401 "$(code -H "$(basic_raw 'op:hunter22\000')" "$B/api/schema")"
+line_for op hunter22 16000 > $A
+check "  nor with two, or one inside, or a tab" 401401401 \
+	"$(code -H "$(basic_raw 'op:hunter22\000\000')" "$B/api/schema")$(code -H "$(basic_raw 'op:hun\000ter22')" "$B/api/schema")$(code -H "$(basic_raw 'op:hunter22\t')" "$B/api/schema")"
+check "  nor on the form with a control character" 401 "$(signin 'user=op&password=hunter22%01')"
+check "  and the password itself signs in after those" 200 "$(code -u op:hunter22 "$B/api/schema")"
+line_for admin admin 16000 > $A
+check "admin:admin with a NUL is refused against its hash" 401 "$(code -H "$(basic_raw 'admin:admin\000')" "$B/api/schema")"
+check "  and the default is still reported as the default" true "$(defaultauth -u admin:admin)"
+# A file as typed is compared byte for byte and has no such second spelling.
+# One with a control character in it keeps signing in and is not hashed.
+printf 'op:hun\tter22' > $A
+check "a typed password with a tab in it still signs in" 200 "$(code -H "$(basic_raw 'op:hun\tter22')" "$B/api/schema")"
+check "  and is left as typed" 'op:hun	ter22' "$(cat $A)"
+
+# A firmware trial that is not committed yet: the other slot may hold a confd
+# that reads the file as the password, so a sign-in leaves the file alone
+# until the image is committed. An explicit save still stores the hash.
+mkdir -p /var/run
+typed op:hunter22
+printf '%s\n' running=1 next_boot=0 uncommitted=1 other_slot=0 > /var/run/odi-slot
+check "during a trial the password as typed signs in" 200 "$(code -u op:hunter22 "$B/api/schema")"
+check "  on the form too" 200 "$(signin 'user=op&password=hunter22')"
+check "  and the file stays as typed" op:hunter22 "$(cat $A)"
+printf '%s\n' running=1 next_boot= uncommitted= other_slot=0 > /var/run/odi-slot
+check "  also when the state of the trial is not known" op:hunter22 "$(code -u op:hunter22 "$B/api/schema" >/dev/null; cat $A)"
+printf '%s\n' running=1 uncommitted=01 > /var/run/odi-slot
+check "  or reads like nothing slot-state.sh writes" op:hunter22 "$(code -u op:hunter22 "$B/api/schema" >/dev/null; cat $A)"
+printf '%s\n' running=1 next_boot=0 uncommitted=1 other_slot=0 > /var/run/odi-slot
+check "  a save from the page stores the hash all the same" yes \
+	"$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
+typed op:hunter22
+printf '%s\n' running=1 next_boot=1 uncommitted=0 other_slot=0 > /var/run/odi-slot
+check "once committed, the next sign-in makes the hash" yes "$(code -u op:hunter22 "$B/api/schema" >/dev/null; hashed op)"
+rm -f /var/run/odi-slot
+
+# read_file fills its buffer without saying that the file was longer. A line
+# cut at 255 bytes used to be the credential: its prefix signed in. Now a
+# file that fills the buffer is refused whole.
+long=$(python3 -I -c 'print("op:" + "x" * 300, end="")')
+printf '%s' "$long" > $A
+check "a line too long to read whole lets nobody in: not its first 255 bytes" 401 \
+	"$(code -u "$(printf '%s' "$long" | cut -c1-255)" "$B/api/schema")"
+check "  not the default" 401 "$(code -u admin:admin "$B/api/schema")"
+check "  and it is left alone" "$long" "$(cat $A)"
+printf '%s' "$long" | cut -c1-255 | tr -d '\n' > $A
+check "  nor one of exactly 255 bytes, which cannot be told from a cut one" 401 \
+	"$(code -u "$(cat $A)" "$B/api/schema")"
+printf '%s' "$long" | cut -c1-254 | tr -d '\n' > $A
+check "a line of 254 bytes is read whole and signs in" 200 "$(code -u "$(printf '%s' "$long" | cut -c1-254)" "$B/api/schema")"
+check "  and becomes a hash of all of it" yes "$(hash_of "$(printf '%s' "$long" | cut -c4-254)")"
+printf '%s' "$long" > $A
+tok=$(typed op:hunter22; session_of 'user=op&password=hunter22'; printf '%s' "$long" > $A)
+check "a save over a line too long is written" yes \
+	"$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
+
+# A shorter line after a longer one that began the same way.
+typed op:hunter22extra
+check "a longer password as typed" 200 "$(code -u op:hunter22extra "$B/api/schema")"
+typed op:hunter22
+check "  then a shorter one that it began with: that one signs in" 200 "$(code -u op:hunter22 "$B/api/schema")"
+check "  and the longer no longer does" 401 "$(code -u op:hunter22extra "$B/api/schema")"
+
+# The file written by hand while the hash of the old password is being made:
+# the rename must not put that hash over the new line. A named pipe stands
+# in for the file, so that each read of it can be given its own content:
+# the read that the sign-in is checked against, then the one made just
+# before the write, which finds another line. Had the write gone ahead, the
+# rename would have replaced the pipe with a file. The pause lets the first
+# read see its end before the second writer opens the pipe.
+rm -f $A && mkfifo $A
+( printf 'op:hunter22' > $A; sleep 1; printf 'op:changed1' > $A ) &
+feeder=$!
+check "a sign-in against the line as it was" 200 "$(code --max-time 10 -u op:hunter22 "$B/api/schema")"
+check "  does not write its hash over a line changed meanwhile" pipe "$([ -p $A ] && echo pipe || echo "replaced: $(cat $A)")"
+# Unblock whichever side is still waiting on the pipe, then put a file back.
+kill $feeder 2>/dev/null || true
+[ -p $A ] && timeout 2 sh -c ": > $A" 2>/dev/null || true
+rm -f $A
+typed "$AUTH"
+check "the server still answers after it" 200 "$(code --max-time 10 -u "$AUTH" "$B/api/schema")"
+
+# What runs PBKDF2 and what does not, counted: build/confd-kdfcount is the
+# same daemon with one addition, a byte appended to a file for each PBKDF2.
+# In it the pause after a wrong password that cost one is 4 s at least.
+echo "== where the slow hash runs"
+KBIN=build/confd-kdfcount
+KC=/tmp/confd-kdf-count
+[ -x "$KBIN" ] || { echo "no $KBIN -- run 'make confd' first" >&2; exit 1; }
+KPORT=$((PORT + 1))
+K="http://127.0.0.1:$KPORT"
+line_for op hunter22 16000 > $A
+rm -f $KC
+qemu-mips-static "$KBIN" "$KPORT" "$HWMON" &
+KDAEMON=$!
+trap 'kill $DAEMON $KDAEMON 2>/dev/null || true' EXIT
+for _ in $(seq 40); do
+	[ "$(code "$K/login")" = 200 ] && break
+	sleep 0.25
+done
+kdfs() { if [ -f $KC ]; then wc -c < $KC | tr -d ' '; else echo 0; fi; }
+# The routes that answer without a credential asked only whether a session
+# was there, and went on to Basic, and so to PBKDF2, when there was none.
+for _ in 1 2 3; do
+	code -u op:hunter22 "$K/login" >/dev/null
+	code -u op:wrong "$K/login" >/dev/null
+	code -u op:wrong -X POST "$K/api/logout" >/dev/null
+	code -u op:wrong "$K/login.js" >/dev/null
+done
+check "the sign-in page and sign-out never run it, whatever Basic header they get" 0 "$(kdfs)"
+check "  and answer as before" "200 401" "$(code -u op:wrong "$K/login") $(code -u op:wrong -X POST "$K/api/logout")"
+check "a NUL spelling is refused before it" "401 0" "$(code -H "$(basic_raw 'op:hunter22\000')" "$K/api/schema") $(kdfs)"
+check "the first right password runs it once" "200 1" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
+for _ in 1 2 3 4 5; do code -u op:hunter22 "$K/api/schema" >/dev/null; done
+check "five more requests with it run none" 1 "$(kdfs)"
+check "nor the form" "200 1" "$(code -X POST -H "Origin: $K" --data 'user=op&password=hunter22' "$K/api/login") $(kdfs)"
+check "nor a wrong password, once the right one is known" "401 1" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+check "nor asking whether it is the default" "false 1" \
+	"$(curl -s -u op:hunter22 "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
+check "nor the password asked again for the secrets" 1 \
+	"$(code -u op:hunter22 -X POST --data 'password=hunter22' "$K/api/voip/secrets" >/dev/null; kdfs)"
+# Another line: nothing is known about it. A wrong password costs one
+# PBKDF2, and then for a while the next costs none, the right one included.
+line_for op hunter23 16000 > $A
+check "against a new line a wrong password runs it once" "401 2" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+check "  a second one straight after is refused without it" "401 2" "$(code -u op:wrong2 "$K/api/schema") $(kdfs)"
+check "  and so is the right one, for that time" "401 2" "$(code -u op:hunter23 "$K/api/schema") $(kdfs)"
+sleep 3
+check "  after it the right one runs it and signs in" "200 3" "$(code -u op:hunter23 "$K/api/schema") $(kdfs)"
+check "  and from then on none" "200 3" "$(code -u op:hunter23 "$K/api/schema") $(kdfs)"
+# A session outlives a change of the line; the page then asks whether the
+# new line is the default, which takes one PBKDF2 and is remembered.
+ktok=$(curl -s -D - -o /dev/null -X POST -H "Origin: $K" --data 'user=op&password=hunter23' "$K/api/login" |
+	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p')
+line_for admin admin 16000 > $A
+check "a session asking about a new line runs it once" "true 4" \
+	"$(curl -s -H "Cookie: odi_session=$ktok" "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
+check "  and not again" "true 4" \
+	"$(curl -s -H "Cookie: odi_session=$ktok" "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
+# A file as typed is compared as it is; the one PBKDF2 is the hash made of it.
+typed op:hunter22
+check "a wrong password against a file as typed runs none" "401 4" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+check "the right one runs the one that makes the hash" "200 5 yes" "$(code -u op:hunter22 "$K/api/schema") $(kdfs) $(hashed op)"
+check "  and the next request none" "200 5" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
+kill $KDAEMON 2>/dev/null || true
+trap 'kill $DAEMON 2>/dev/null || true' EXIT
+rm -f $KC
 typed "$AUTH"
 
 echo "== ssh keys"
@@ -759,11 +925,12 @@ check "an oversized body is refused, not trimmed" 413 \
 # A Content-Length that is not a number used to be read as 0: the request was
 # served as one with no body and the body was not read. Of two that disagree
 # the first was believed. Sent raw, since curl will not send most of these.
-# cl <method> <header line>...: the status, and the body of the answer.
+# cl <method> <header line>...: the status, and the body of the answer. The
+# body sent is VLAN_MANU_TAG_VID=100, 21 bytes, or $CLBODY.
 cl() { python3 -I - "$PORT" "$AUTH" "$@" <<'PY'
-import base64, socket, sys
+import base64, os, socket, sys
 port, auth, method, lines = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4:]
-body = b"VLAN_MANU_TAG_VID=100" if method == "POST" else b""
+body = os.environ.get("CLBODY", "VLAN_MANU_TAG_VID=100").encode() if method == "POST" else b""
 s = socket.create_connection(("127.0.0.1", port), timeout=10)
 s.sendall((method + (" /api/config" if body else " /api/schema") + " HTTP/1.1\r\nHost: 127.0.0.1\r\n"
            "Authorization: Basic " + base64.b64encode(auth.encode()).decode() + "\r\n" +
@@ -802,7 +969,15 @@ check "two Content-Length that disagree are refused" 400 "$(clcode POST 'Content
 check "  whichever comes first" 400 "$(clcode POST 'Content-Length: 0' 'Content-Length: 21')"
 check "  with other headers between them" 400 "$(clcode POST 'Content-Length: 21' 'X-Other: 1' 'content-length: 5')"
 check "  and when the second is not a number" 400 "$(clcode POST 'Content-Length: 21' 'Content-Length: x')"
-check "  two too large and different are still too large" 413 "$(clcode POST 'Content-Length: 99999999999' 'Content-Length: 88888888888')"
+check "  and when both are too large: they still disagree" 400 "$(clcode POST 'Content-Length: 99999999999' 'Content-Length: 88888888888')"
+check "  or differ only past where the sum is cut" 400 "$(clcode POST 'Content-Length: 99999999991' 'Content-Length: 99999999992')"
+check "  the same too large one twice is too large" 413 "$(clcode POST 'Content-Length: 99999999999' 'Content-Length: 99999999999')"
+check "  21 and 0021 are the same length" yes \
+	"$(err "$(cl POST 'Content-Length: 21' 'Content-Length: 0021')" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
+check "  21 and 210 are not" 400 "$(clcode POST 'Content-Length: 21' 'Content-Length: 210')"
+# A CR alone does not end a line: what follows it on the line was not read.
+check "a bare CR after the digits is refused" 400 "$(clcode POST "$(printf 'Content-Length: 21\rX-Rest: 1')")"
+check "  and one before them" 400 "$(clcode POST "$(printf 'Content-Length:\r21')")"
 check "the same Content-Length twice is one length" yes \
 	"$(err "$(cl POST 'Content-Length: 21' 'Content-Length: 21')" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
 check "a header that only ends in the name is not it" yes \
@@ -816,6 +991,22 @@ check "  with a Content-Length beside it too" 501 "$(clcode POST 'Content-Length
 check "  whatever coding it names" 501 "$(clcode POST 'transfer-encoding: gzip')"
 check "  as curl sends it" 501 \
 	"$(code -u "$AUTH" -X POST -H 'Transfer-Encoding: chunked' --data 'VLAN_MANU_TAG_VID=100' "http://127.0.0.1:$PORT/api/config")"
+check "  with an empty value" 501 "$(clcode POST 'Transfer-Encoding:' 'Content-Length: 21')"
+check "  and an empty one does not hide a second" 501 "$(clcode POST 'Transfer-Encoding:' 'Content-Length: 21' 'Transfer-Encoding: chunked')"
+check "  a header that only ends in the name is not it" 200 "$(clcode POST 'X-Transfer-Encoding: chunked' 'Content-Length: 21')"
+# The body is the bytes Content-Length names. What arrived after them in the
+# same segment used to be parsed with them, so a field past the declared
+# length was applied, and with a length of 0 or none the whole body was.
+r=$(CLBODY='VLAN_MANU_TAG_VID=100&PON_VENDOR_ID=EVIL' cl POST 'Content-Length: 21')
+check "a field past the declared length is not applied" no "$(case "$r" in *PON_VENDOR_ID*) echo yes ;; *) echo no ;; esac)"
+check "  the one inside it is" yes "$(err "$r" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
+r=$(CLBODY='VLAN_MANU_TAG_VID=100&PON_VENDOR_ID=EVIL' cl POST 'Content-Length: 17')
+check "  a length that ends inside a field cuts the field there" yes "$(err "$r" '"name":"VLAN_MANU_TAG_VID","ok":false')"
+check "    and what was cut off is not in the error either" no "$(case "$r" in *PON_VENDOR_ID*) echo yes ;; *) echo no ;; esac)"
+check "with a length of 0 nothing sent after the headers is applied" yes \
+	"$(err "$(CLBODY='VLAN_MANU_TAG_VID=100' cl POST 'Content-Length: 0')" '200 {"results":[]')"
+check "  nor with no length at all" yes \
+	"$(err "$(CLBODY='VLAN_MANU_TAG_VID=100' cl POST)" '200 {"results":[]')"
 
 echo "== sessions"
 L="http://127.0.0.1:$PORT"
