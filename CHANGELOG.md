@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Build: confd is built with the hardening odi-oss gives its own tools:
+  `-fstack-protector-strong` with a guard seeded per process from the
+  kernel's random bytes (`AT_RANDOM`), stack clash probes, zero-initialised
+  locals, wrapping signed overflow, `-Wvla`, and a stack marked
+  non-executable in the ELF (the RLX5281 has no execute-inhibit bit, so
+  that marking is not enforced). A return through an overwritten guard in
+  the request path now ends confd with SIGABRT (or a plain exit if SIGABRT
+  is blocked) and a line on stderr and, where `/dev/kmsg` opens, in the
+  kernel log, instead of returning into overwritten data.
+  `scripts/check-hardening.sh` checks every build before the strip, and a
+  binary that fails it is deleted. The binary grows by 10.5 KB (88,628 to
+  99,124 bytes), uses no instruction mnemonic it did not use before, and
+  passes the same smoke checks (odi-oss#482).
+
 - Config: what a save answers stays in the save bar until it is dismissed
   or the next save starts. The bar used to close as soon as every edit was
   written, and took the *Apply now* and *Reboot* buttons and the hint that
