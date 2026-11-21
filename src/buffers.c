@@ -11,6 +11,7 @@ char omci[32768];
 char authbuf[256];
 char hdrbuf[512];
 char credbuf[256];
+char credseen[256];
 char filebuf[65536];
 
 _Static_assert(META_CAP + CONS_CAP <= sizeof(filebuf),

@@ -337,6 +337,8 @@
  */
 #define DEFAULT_CS "/etc/config_default.xml"
 #define DEFAULT_HS "/etc/config_default_hs.xml"
+/* One line: `user:` and a hash of the password, or `user:password` as
+ * written by hand. http.c has the format and why both are read. */
 #define AUTH_PATH    "/etc/config/confd.auth"
 /* Extra names the UI answers to, one per line (http.c, host_ok). */
 #define HOSTS_PATH   "/etc/config/confd.hosts"
@@ -359,6 +361,33 @@
  * use and the page says so on every tab until a real credential is written.
  */
 #define DEFAULT_AUTH "admin:admin"
+
+/*
+ * How many rounds of PBKDF2-HMAC-SHA256 a password written to confd.auth is
+ * hashed with (http.c has the file format). The count is stored in the
+ * line, so this can be raised later and the files already written keep
+ * working with the count they have.
+ *
+ * AN ESTIMATE, TO BE CONFIRMED ON A STICK. The aim is 0.3 to 0.5 s for one
+ * check: slow enough to matter to somebody guessing from a copy of the
+ * file, short enough for a server with one thread, which answers nothing
+ * else meanwhile. One round is two SHA-256 blocks, counted under qemu at
+ * about 11,400 instructions as this file is built (-Os, MIPS-I, no rotate
+ * instruction). At 600 MHz and 0.7 to 0.9 instructions per cycle that is
+ * 37,000 to 47,000 rounds a second, and 16000 rounds 0.34 to 0.43 s. qemu
+ * says nothing about the cycles; time one sign-in after a restart to know.
+ *
+ * It is paid once per boot and per change of the file, not per request:
+ * see `known` in http.c. A plain decimal number, it is pasted into the line
+ * as text.
+ *
+ * PBKDF2_ITER_MAX is the most a line may ask for. A file is written by
+ * hand too, and a count with a digit too many must not become a daemon
+ * that answers nothing for a minute per sign-in; ten times the default is
+ * a few seconds and leaves room to raise it.
+ */
+#define PBKDF2_ITER     16000
+#define PBKDF2_ITER_MAX 160000
 
 /*
  * Browser sign-in sessions (http.c). A browser signs in once on /login and

@@ -14,6 +14,10 @@
 
 #define REQ_INCOMPLETE (-1)
 #define REQ_TOO_LARGE  (-2)
+/* A Content-Length that is not a number, or two that disagree: 400. */
+#define REQ_BAD_LENGTH (-3)
+/* A body in a Transfer-Encoding, which this server does not read: 501. */
+#define REQ_UNSUPPORTED (-4)
 
 /* A ceiling on a declared Content-Length, so the parse cannot wrap. Not a
  * policy limit -- the upload route sets its own, much lower. */
@@ -56,7 +60,9 @@ const char *request_refusal(const char *r);
 #define AUTH_BASIC   1
 #define AUTH_SESSION 2
 int authorised(const char *r);
-/* Whether user and pass are the credential in force (constant time). */
+/* Whether user and pass are the credential in force (constant time). The
+ * file may hold the password as typed or its hash; a sign-in that proves
+ * one as typed replaces the file with the hash (http.c, migrate). */
 int credential_matches(const char *user, const char *pass);
 /* Start a browser session; its token (32 hex digits) goes into tok[33]. */
 int session_start(char *tok);
@@ -77,7 +83,8 @@ int header_has(const char *r, const char *name, const char *needle);
 int auth_is_default(void);
 /* Whether `pass` is the password of the credential in force (constant time). */
 int password_matches(const char *pass);
-/* Write /etc/config/confd.auth. Returns 0 and sets *why on refusal. */
+/* Write /etc/config/confd.auth, the password as a salted PBKDF2 hash.
+ * Returns 0 and sets *why on refusal. */
 int set_credential(const char *user, const char *pass, const char **why);
 unsigned long url_decode(const char *in, unsigned long i, char stop,
 			 char *out, unsigned long cap);

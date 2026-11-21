@@ -1054,6 +1054,19 @@ void serve(int conn)
 		put_fd(conn, "request too large\n");
 		return;
 	}
+	/* Answered before any route, the public ones and the credential
+	 * check included: a request whose body cannot be delimited is not one
+	 * to act on, or to judge a password from. */
+	if (n == REQ_BAD_LENGTH) {
+		respond(conn, "400 Bad Request", "text/plain", 0);
+		put_fd(conn, "bad Content-Length: one number, or the same one repeated\n");
+		return;
+	}
+	if (n == REQ_UNSUPPORTED) {
+		respond(conn, "501 Not Implemented", "text/plain", 0);
+		put_fd(conn, "Transfer-Encoding is not supported: send the body with a Content-Length\n");
+		return;
+	}
 	if (n <= 0)
 		return;
 	note_cache_request(req);

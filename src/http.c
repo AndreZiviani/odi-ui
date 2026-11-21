@@ -10,6 +10,7 @@
 #include "confd.h"
 #include "buffers.h"
 #include "http.h"
+#include "sha256.h"
 
 /* ------------------------------------------------------------------ HTTP --- */
 
@@ -210,6 +211,77 @@ int header_copy(const char *r, const char *name, char *out, unsigned long cap)
 	}
 }
 
+/* Whether two characters are the same letter, whatever the case. */
+static int lower_eq(char a, char b)
+{
+	if (a >= 'A' && a <= 'Z')
+		a = (char)(a - 'A' + 'a');
+	if (b >= 'A' && b <= 'Z')
+		b = (char)(b - 'A' + 'a');
+	return a == b;
+}
+
+/*
+ * The declared length of the body: 1 and the value (0 with no Content-Length
+ * at all), or 0 when the header is not a number.
+ *
+ * The value used to be read with header_copy, and anything that was not a
+ * digit made it 0: `Content-Length: abc`, an empty value, `+5`, `5, 6`. The
+ * request was then served as one with no body, and what the client sent as
+ * the body was not read. For a write that is the failure read_request exists
+ * to prevent, a POST answered as if it had said nothing. header_copy also
+ * stops at the first header of that name, so of two that disagree the first
+ * was believed and the second never seen; which one a client or a proxy in
+ * front means is not something to guess at (RFC 9112, 6.3). All of that is
+ * a 400 now.
+ *
+ * Accepted: one or more digits, with spaces or tabs around them. A header
+ * repeated with the same value is one value. A number above MAX_BODY is
+ * still a number: it is cut to MAX_BODY + 1 as before, which no route
+ * accepts, and answered 413 rather than 400, since the request was well
+ * formed and only too big. The digits after the cut are still checked.
+ */
+static int content_length(const char *r, unsigned long *out)
+{
+	static const char name[] = "content-length:";
+	unsigned long i = 0, v = 0;
+	int seen = 0;
+
+	*out = 0;
+	for (;;) {
+		unsigned long k = 0, one = 0;
+
+		while (r[i] && r[i] != '\n')
+			i++;
+		if (!r[i++] || !r[i] || r[i] == '\r' || r[i] == '\n')
+			break;                 /* end of headers */
+		while (name[k] && lower_eq(r[i + k], name[k]))
+			k++;
+		if (name[k])
+			continue;
+		i += k;
+		while (r[i] == ' ' || r[i] == '\t')
+			i++;
+		if (r[i] < '0' || r[i] > '9')
+			return 0;
+		for (; r[i] >= '0' && r[i] <= '9'; i++)
+			if (one <= MAX_BODY)
+				one = one * 10 + (unsigned long)(r[i] - '0');
+		if (one > MAX_BODY)
+			one = MAX_BODY + 1;
+		while (r[i] == ' ' || r[i] == '\t')
+			i++;
+		if (r[i] != '\r' && r[i] != '\n')
+			return 0;
+		if (seen && one != v)
+			return 0;
+		seen = 1;
+		v = one;
+	}
+	*out = v;
+	return 1;
+}
+
 /*
  * Read a whole request: the headers, then exactly Content-Length bytes of body.
  *
@@ -224,8 +296,9 @@ int header_copy(const char *r, const char *name, char *out, unsigned long cap)
  * write path was satisfied by a value the user never typed. A request that does
  * not fit is therefore refused outright, not trimmed.
  *
- * Returns the byte count, -1 if the peer gave up mid-request, -2 if it does not
- * fit.
+ * Returns the byte count, or a REQ_* code: the peer gave up mid-request, the
+ * headers do not fit, the length of the body is not stated in a way that can
+ * be trusted, or the body is in a framing this server does not read.
  */
 long read_request(int conn, char *buf, unsigned long cap,
 		  unsigned long *body_have, unsigned long *body_want)
@@ -292,28 +365,23 @@ long read_request(int conn, char *buf, unsigned long cap,
 			continue;
 
 		/* A GET has no Content-Length and wants nothing more. An absent
-		 * or unparsable header is treated as zero rather than guessed
-		 * at: a body we were not told the length of is one we cannot
-		 * know we have all of. */
-		if (header_copy(buf, "content-length", hdrbuf, sizeof(hdrbuf))) {
-			unsigned long v = 0, k;
-
-			for (k = 0; hdrbuf[k]; k++) {
-				if (hdrbuf[k] < '0' || hdrbuf[k] > '9') {
-					v = 0;
-					break;
-				}
-				v = v * 10 + (unsigned long)(hdrbuf[k] - '0');
-				/* Bound the arithmetic, not the route. The
-				 * upload has its own limit; this only stops a
-				 * declared length from wrapping. */
-				if (v > MAX_BODY) {
-					v = MAX_BODY + 1;
-					break;
-				}
-			}
-			want = v;
-		}
+		 * header is zero rather than guessed at: a body we were not told
+		 * the length of is one we cannot know we have all of. One that
+		 * is there and is not a number is refused, see content_length(). */
+		if (!content_length(buf, &want))
+			return REQ_BAD_LENGTH;
+		/*
+		 * A body sent with Transfer-Encoding is not read here: there
+		 * is no chunk parser, and none is wanted for a page and a few
+		 * scripts that all send Content-Length. Left alone, such a
+		 * request was taken as one with no body, or, with a
+		 * Content-Length beside it, the chunk framing was handed to
+		 * the route as if it were the form. The header is refused
+		 * whatever it names: 501 is what RFC 9112 6.1 asks for a
+		 * transfer coding the server does not implement.
+		 */
+		if (header_copy(buf, "transfer-encoding", hdrbuf, sizeof(hdrbuf)))
+			return REQ_UNSUPPORTED;
 	}
 }
 
@@ -377,15 +445,6 @@ int same_origin(const char *r)
  * A trailing dot (`stick.`) is not a single label and is refused on purpose:
  * it is how a browser is told "this is already fully qualified".
  */
-static int lower_eq(char a, char b)
-{
-	if (a >= 'A' && a <= 'Z')
-		a = (char)(a - 'A' + 'a');
-	if (b >= 'A' && b <= 'Z')
-		b = (char)(b - 'A' + 'a');
-	return a == b;
-}
-
 static int name_ends(const char *name, unsigned long n, const char *suffix)
 {
 	unsigned long sl = slen(suffix), k;
@@ -544,6 +603,207 @@ const char *request_refusal(const char *r)
 	return 0;
 }
 
+/* ----------------------------------------------------------- credential --- */
+
+/*
+ * The credential file holds one line, in one of two forms:
+ *
+ *   user:$pbkdf2-sha256$<iterations>$<salt>$<hash>     what confd writes
+ *   user:password                                      what a person writes
+ *
+ * <iterations> is decimal, 1 to PBKDF2_ITER_MAX; <salt> is 16 bytes and
+ * <hash> 32 bytes, both in hex; the hash is PBKDF2-HMAC-SHA256 of the
+ * password with that salt and count. The username is not hashed: it is not
+ * the secret, and password_matches() needs it.
+ *
+ * Why a hash: the file was the password, readable by everything that reads
+ * /etc/config (a backup of the partition, a support bundle before its
+ * scrub, any process on the stick), and people use a password in more than
+ * one place. Why PBKDF2: it is SHA-256 in a loop, about 3 KB of code and a
+ * few hundred bytes of stack. scrypt and argon2 are better because they
+ * need memory, megabytes of it, on a stick with under 2 MB free.
+ *
+ * Why the second form stays, for good: docs/DESIGN.md tells the operator to
+ * write the file by hand over ssh, with printf, and a stick updated from a
+ * release that stored the password as typed has such a file. Refusing it
+ * is a lockout at a remote site. A file in that form is replaced by the
+ * hashed one at the first sign-in that proves the password, see migrate().
+ *
+ * A password that itself begins with $pbkdf2-sha256$ cannot be written by
+ * hand in the second form. set_credential() stores any password hashed, so
+ * the page has no such limit.
+ */
+#define HASH_TAG "$pbkdf2-sha256$"
+#define SALT_LEN 16
+/* What a new line starts with after `user:`. The count is pasted in as
+ * text, which is why PBKDF2_ITER is a plain decimal number. */
+#define HASH_STR_(x) #x
+#define HASH_STR(x) HASH_STR_(x)
+#define HASH_HEAD HASH_TAG HASH_STR(PBKDF2_ITER) "$"
+_Static_assert(PBKDF2_ITER >= 1 && PBKDF2_ITER <= PBKDF2_ITER_MAX,
+	       "a line confd writes must be one confd reads");
+
+struct cred {
+	unsigned long ulen;      /* the username is line[0..ulen); the line
+				  * length when it has no colon */
+	unsigned long iter;      /* 0: user:password as typed */
+	unsigned char salt[SALT_LEN];
+	unsigned char hash[SHA256_LEN];
+};
+
+/* The line in credbuf, taken apart by load_credential(). */
+static struct cred cred;
+
+static int hex_bytes(const char *in, unsigned char *out, unsigned long n)
+{
+	unsigned long k;
+
+	for (k = 0; k < n; k++) {
+		int hi = hexval(in[2 * k]), lo = hi < 0 ? -1 : hexval(in[2 * k + 1]);
+
+		if (lo < 0)
+			return 0;
+		out[k] = (unsigned char)((hi << 4) | lo);
+	}
+	return 1;
+}
+
+/*
+ * Take a credential line apart. 0 when it cannot be used.
+ *
+ * A line that starts like a hash and is not a whole one is refused, not
+ * read as the second form: read that way, the text in the file would be the
+ * password, and whoever has seen the file could sign in with it. Not the
+ * default credential either, for the reason load_credential() gives for a
+ * file it cannot read. So is a count of 0 or above PBKDF2_ITER_MAX: the
+ * daemon is one thread, and a count with three more digits would hold every
+ * request for minutes each time a password is tried.
+ */
+static int cred_parse(const char *line, unsigned long n, struct cred *c)
+{
+	unsigned long i = 0, v = 0;
+	const char *p;
+
+	c->iter = 0;
+	while (i < n && line[i] != ':')
+		i++;
+	c->ulen = i;
+	if (i == n || !spre(line + i + 1, HASH_TAG))
+		return 1;
+	p = line + i + sizeof(HASH_TAG);
+	for (i = 0; i < 7 && p[i] >= '0' && p[i] <= '9'; i++)
+		v = v * 10 + (unsigned long)(p[i] - '0');
+	if (v < 1 || v > PBKDF2_ITER_MAX || p[i] != '$')
+		return 0;
+	p += i + 1;
+	if (!hex_bytes(p, c->salt, SALT_LEN) || p[2 * SALT_LEN] != '$' ||
+	    !hex_bytes(p + 2 * SALT_LEN + 1, c->hash, SHA256_LEN) ||
+	    p + 2 * SALT_LEN + 1 + 2 * SHA256_LEN != line + n)
+		return 0;
+	c->iter = v;
+	return 1;
+}
+
+/*
+ * What has been worked out about the line in credbuf, kept while that line
+ * stays the same.
+ *
+ * PBKDF2 is slow on purpose, and HTTP Basic sends the password with every
+ * request: tools/config-backup.sh and anything else driving the API with
+ * curl would pay that cost per request, on a server with one thread. So the
+ * first time a password is proven against the hash, a tag of what was
+ * presented is kept: HMAC-SHA256 of "user:password" under a key read from
+ * /dev/urandom at that moment. A later request is checked against the tag,
+ * four hash blocks, not thousands.
+ *
+ * The trade: the tag is a fast hash of the password, which is what the file
+ * no longer is. It is in RAM only, never on flash, in a bundle or in a
+ * backup, and its key dies with the process, so a tag read from one boot
+ * says nothing at the next. Reading it takes reading the memory of this
+ * process, and that already holds the password itself, in the request
+ * buffer, each time one arrives over plain HTTP.
+ *
+ * It is kept for one line: load_credential() compares the line it read with
+ * the one this was worked out for, byte for byte, and drops all of it on any
+ * difference. The content, not the inode, size and date: jffs2 dates are
+ * whole seconds, and a file written twice in one second with a password of
+ * the same length would keep the old password in force. The read is the one
+ * every request has always made.
+ *
+ * While the tag is there, a credential that does not match it is refused
+ * without running PBKDF2: one line has one password, and it is the one the
+ * tag was made from. A wrong guess still costs the second it always did.
+ */
+static struct {
+	int def;                 /* the line is DEFAULT_AUTH: 1, 0, -1 not yet known */
+	int have_tag;
+	int stay;                /* migrate() failed for this line: not again */
+	unsigned char tag[SHA256_LEN];
+} known = { -1, 0, 0, { 0 } };
+
+static void known_reset(void)
+{
+	unsigned long k;
+
+	for (k = 0; k < SHA256_LEN; k++)
+		((volatile unsigned char *)known.tag)[k] = 0;
+	known.def = -1;
+	known.have_tag = known.stay = 0;
+}
+
+/* n random bytes, n at most 32. 0 when /dev/urandom does not give them. */
+static int random_bytes(unsigned char *out, unsigned long n)
+{
+	char raw[33];
+	unsigned long k;
+
+	if (read_file(RANDOM_PATH, raw, n + 1) != (long)n)
+		return 0;
+	for (k = 0; k < n; k++) {
+		out[k] = (unsigned char)raw[k];
+		((volatile char *)raw)[k] = 0;
+	}
+	return 1;
+}
+
+/*
+ * The tag of a presented credential. 0 with no key: nothing is remembered
+ * then, and every check runs PBKDF2. Slow, and still right.
+ */
+static int boot_tag(const char *p, unsigned long n, unsigned char *tag)
+{
+	static unsigned char key[SHA256_LEN];
+	static int have_key;
+
+	if (!have_key && !random_bytes(key, sizeof(key)))
+		return 0;
+	have_key = 1;
+	hmac_sha256(key, sizeof(key), p, n, tag);
+	return 1;
+}
+
+/* Every byte compared whatever the first difference is. */
+static int bytes_differ(const unsigned char *a, const unsigned char *b, unsigned long n)
+{
+	unsigned long k;
+	int diff = 0;
+
+	for (k = 0; k < n; k++)
+		diff |= a[k] ^ b[k];
+	return diff;
+}
+
+/* Whether p[0..n) is DEFAULT_AUTH. Not a secret, so not constant time. */
+static int default_text(const char *p, unsigned long n)
+{
+	static const char def[] = DEFAULT_AUTH;
+	unsigned long k;
+
+	for (k = 0; k < n && k < sizeof(def) - 1 && p[k] == def[k]; k++)
+		;
+	return k == n && k == sizeof(def) - 1;
+}
+
 /*
  * Load the expected credential into credbuf.
  *
@@ -566,7 +826,8 @@ const char *request_refusal(const char *r)
  * directory in its place) answers -1, and every login is refused until it
  * reads again: falling back there would put the password everybody knows
  * in force on a stick whose owner set another one. Safe mode is the way in
- * if it never reads again.
+ * if it never reads again. A line that is a damaged hash is such a file,
+ * see cred_parse().
  */
 /* ENOENT: 2 on MIPS o32 as everywhere (the low errno numbers are shared). */
 #define ENOENT_ 2
@@ -581,20 +842,167 @@ static long load_credential(int *is_default)
 		while (want > 0 && (credbuf[want - 1] == '\n' || credbuf[want - 1] == '\r'))
 			credbuf[--want] = 0;
 	}
-	if (want > 0) {
-		if (is_default)
-			*is_default = 0;
-		return want;
-	}
+	if (is_default)
+		*is_default = want <= 0;
 	if (want < 0 && want != -ENOENT_)
 		return -1;
+	if (want <= 0) {
+		for (k = 0; DEFAULT_AUTH[k] && k + 1 < sizeof(credbuf); k++)
+			credbuf[k] = DEFAULT_AUTH[k];
+		credbuf[k] = 0;
+		want = (long)k;
+	}
 
-	for (k = 0; DEFAULT_AUTH[k] && k + 1 < sizeof(credbuf); k++)
-		credbuf[k] = DEFAULT_AUTH[k];
-	credbuf[k] = 0;
-	if (is_default)
-		*is_default = 1;
-	return (long)k;
+	/* Another line than the one `known` is about: forget it. The
+	 * terminating NUL is compared too, so a longer line is another. */
+	for (k = 0; k <= (unsigned long)want && credbuf[k] == credseen[k]; k++)
+		;
+	if (k <= (unsigned long)want) {
+		known_reset();
+		for (k = 0; k <= (unsigned long)want; k++)
+			credseen[k] = credbuf[k];
+	}
+	if (!cred_parse(credbuf, (unsigned long)want, &cred))
+		return -1;
+	return want;
+}
+
+/*
+ * Whether p[0..n), a "user:password", is what the hash in `c` was made
+ * from; `line` is where the username of `c` is. Constant time over the
+ * hash, and PBKDF2 runs whether or not the username was right, so the time
+ * taken does not say which half was wrong.
+ */
+static int hash_matches(const struct cred *c, const char *line,
+			const char *p, unsigned long n)
+{
+	unsigned char dk[SHA256_LEN];
+	unsigned long k, at = n > c->ulen ? c->ulen + 1 : n;
+	int diff = n <= c->ulen || p[c->ulen] != ':';
+
+	for (k = 0; k < c->ulen; k++)
+		diff |= line[k] ^ (k < n ? p[k] : 0);
+	pbkdf2_sha256(p + at, n - at, c->salt, SALT_LEN, c->iter, dk);
+	diff |= bytes_differ(dk, c->hash, SHA256_LEN);
+	for (k = 0; k < SHA256_LEN; k++)
+		((volatile unsigned char *)dk)[k] = 0;
+	return diff == 0;
+}
+
+/*
+ * The line that stores user and pass hashed, into out[cap]: its length, or
+ * 0 when there is no salt to be had or it does not fit. No salt is no
+ * hash: one made with a salt that can be guessed is one table for every
+ * stick.
+ */
+static unsigned long hash_line(char *out, unsigned long cap,
+			       const char *user, unsigned long ulen,
+			       const char *pass, unsigned long plen)
+{
+	static const char hex[] = "0123456789abcdef";
+	unsigned char salt[SALT_LEN], dk[SHA256_LEN];
+	unsigned long n = 0, k;
+
+	if (ulen + 1 + sizeof(HASH_HEAD) - 1 + 2 * SALT_LEN + 1 + 2 * SHA256_LEN + 1 > cap ||
+	    !random_bytes(salt, SALT_LEN))
+		return 0;
+	pbkdf2_sha256(pass, plen, salt, SALT_LEN, PBKDF2_ITER, dk);
+
+	for (k = 0; k < ulen; k++)
+		out[n++] = user[k];
+	out[n++] = ':';
+	for (k = 0; HASH_HEAD[k]; k++)
+		out[n++] = HASH_HEAD[k];
+	for (k = 0; k < SALT_LEN; k++) {
+		out[n++] = hex[salt[k] >> 4];
+		out[n++] = hex[salt[k] & 15];
+	}
+	out[n++] = '$';
+	for (k = 0; k < SHA256_LEN; k++) {
+		out[n++] = hex[dk[k] >> 4];
+		out[n++] = hex[dk[k] & 15];
+		((volatile unsigned char *)dk)[k] = 0;
+	}
+	out[n] = 0;
+	return n;
+}
+
+/*
+ * Replace a file that holds the password as typed with the hashed form.
+ * Called with the "user:password" that has just been proven against it, at
+ * a sign-in: that is the one moment the password is here to be hashed.
+ *
+ * One write to flash for the life of the file, atomic like any other save
+ * of it, 0600. A stick that cannot be written (a full partition, no
+ * /dev/urandom for the salt) keeps the file it has, which keeps working;
+ * `stay` stops the attempt from being made again on every request while
+ * the line is the same.
+ *
+ * Never on a safe-mode boot or for the built-in default: the caller passes
+ * only a line that was read from the file, and neither of those is.
+ */
+static void migrate(const char *p, unsigned long n)
+{
+	unsigned long len, k;
+
+	if (known.stay)
+		return;
+	known.stay = 1;
+	/* No colon: not a line this could have written, leave it. */
+	if (cred.ulen >= n)
+		return;
+	len = hash_line(credbuf, sizeof(credbuf), p, cred.ulen,
+			p + cred.ulen + 1, n - cred.ulen - 1);
+	if (len && write_file_atomic(AUTH_PATH, credbuf, len, 0600) == 0) {
+		/* The new line is known as well as the old one was: the same
+		 * password proves it, so the next request starts from the
+		 * tag and not from PBKDF2 again. */
+		for (k = 0; k <= len; k++)
+			credseen[k] = credbuf[k];
+		known.have_tag = boot_tag(p, n, known.tag);
+		known.def = default_text(p, n);
+	}
+	/* Not written: credbuf no longer holds the line that is in force,
+	 * and nothing reads it again before the next load_credential(). */
+}
+
+/*
+ * Whether p[0..n), a "user:password", is the credential load_credential()
+ * has just put in credbuf, of length `want`. `from_file` is 0 for the
+ * built-in default. The one comparison behind the sign-in form, HTTP Basic
+ * and password_matches(): constant time, a length mismatch folded in rather
+ * than returned early.
+ */
+static int credential_ok(const char *p, unsigned long n, long want, int from_file)
+{
+	unsigned char tag[SHA256_LEN];
+	unsigned long k;
+	int ok;
+
+	if (want <= 0)
+		return 0;
+	if (!cred.iter) {
+		int diff = n != (unsigned long)want;
+
+		for (k = 0; k < (unsigned long)want; k++)
+			diff |= credbuf[k] ^ (k < n ? p[k] : 0);
+		if (diff)
+			return 0;
+		if (from_file)
+			migrate(p, n);
+		return 1;
+	}
+	if (known.have_tag)
+		return boot_tag(p, n, tag) && !bytes_differ(tag, known.tag, SHA256_LEN);
+	ok = hash_matches(&cred, credbuf, p, n);
+	if (ok) {
+		/* Proven, so two things are known for free: the tag, and
+		 * whether this is the default (it is if what was presented
+		 * is), which auth_is_default() would run PBKDF2 to find. */
+		known.have_tag = boot_tag(p, n, known.tag);
+		known.def = default_text(p, n);
+	}
+	return ok;
 }
 
 /*
@@ -604,16 +1012,23 @@ static long load_credential(int *is_default)
  * you on the default password while making the warning go away, which is the
  * worst of both. The question the page needs answered is "is this stick on the
  * credential everybody knows", and that is this.
+ *
+ * A hashed line cannot be read for it, so the default is tried against the
+ * hash, once: /api/firmware asks on every page load and the answer does not
+ * change until the line does.
  */
 int auth_is_default(void)
 {
 	long want = load_credential(0);
-	unsigned long i;
 
-	for (i = 0; DEFAULT_AUTH[i]; i++)
-		if ((long)i >= want || credbuf[i] != DEFAULT_AUTH[i])
-			return 0;
-	return want == (long)i;
+	if (want <= 0)
+		return 0;
+	if (!cred.iter)
+		return default_text(credbuf, (unsigned long)want);
+	if (known.def < 0)
+		known.def = hash_matches(&cred, credbuf, DEFAULT_AUTH,
+					 sizeof(DEFAULT_AUTH) - 1);
+	return known.def;
 }
 
 /*
@@ -621,9 +1036,12 @@ int auth_is_default(void)
  *
  * Constrained, not sanitised: a value that does not fit the file format is
  * refused rather than rewritten into one that does. The file is one line of
- * `user:password`, so the username cannot contain a colon and neither half can
- * contain a newline -- a credential mangled on the way in is one nobody can
- * log in with afterwards, on a device where "afterwards" may mean a site visit.
+ * `user:` and the hash of the password, so the username cannot contain a
+ * colon and neither half can contain a newline -- a credential mangled on the
+ * way in is one nobody can log in with afterwards, on a device where
+ * "afterwards" may mean a site visit. The password rules are the ones the
+ * file had while it held the password itself, kept so that a password the
+ * page takes is also one that can be written by hand.
  */
 int set_credential(const char *user, const char *pass, const char **why)
 {
@@ -654,37 +1072,41 @@ int set_credential(const char *user, const char *pass, const char **why)
 		*why = "the password must be 4 to 128 characters";
 		return 0;
 	}
-	if (u + 1 + p + 1 > sizeof(credbuf)) {
+	if (u + 1 + p + 1 > sizeof(authbuf)) {
 		*why = "too long";
 		return 0;
 	}
-
-	for (n = 0; n < u; n++)
-		credbuf[n] = user[n];
-	credbuf[n++] = ':';
-	for (p = 0; pass[p]; p++)
-		credbuf[n++] = pass[p];
-	credbuf[n] = 0;
 
 	/*
 	 * The same credential saved again is not written again: a button
 	 * pressed twice, or a page that resends, costs the flash nothing. The
 	 * file is compared as it is on flash, not with load_credential(), which
-	 * answers the default on a safe-mode boot. A file with other modes
-	 * than 0600 is written, so a save still makes it private.
+	 * answers the default on a safe-mode boot. A new salt makes every
+	 * hash of one password different, so "the same" is "the stored hash
+	 * is of this password", which costs one PBKDF2. A file with other
+	 * modes than 0600 is written, so a save still makes it private, and so
+	 * is one that holds this password as typed: a save stores the hash.
 	 */
 	{
 		char cur[sizeof(credbuf)];
+		struct cred c;
 		long have = read_file(AUTH_PATH, cur, sizeof(cur));
-		unsigned long k = 0;
-		int same;
+		unsigned long k;
+		int same = 0;
 
 		while (have > 0 && (cur[have - 1] == '\n' || cur[have - 1] == '\r'))
-			have--;
-		if (have == (long)n)
-			while (k < n && cur[k] == credbuf[k])
-				k++;
-		same = have == (long)n && k == n && file_mode(AUTH_PATH) == 0600;
+			cur[--have] = 0;
+		if (have > 0 && file_mode(AUTH_PATH) == 0600 &&
+		    cred_parse(cur, (unsigned long)have, &c) && c.iter) {
+			for (n = 0; n < u; n++)
+				authbuf[n] = user[n];
+			authbuf[n++] = ':';
+			for (k = 0; k < p; k++)
+				authbuf[n++] = pass[k];
+			same = hash_matches(&c, cur, authbuf, n);
+			for (k = 0; k < sizeof(authbuf); k++)
+				((volatile char *)authbuf)[k] = 0;
+		}
 		for (k = 0; k < sizeof(cur); k++)
 			((volatile char *)cur)[k] = 0;
 		if (same) {
@@ -693,6 +1115,11 @@ int set_credential(const char *user, const char *pass, const char **why)
 		}
 	}
 
+	n = hash_line(credbuf, sizeof(credbuf), user, u, pass, p);
+	if (!n) {
+		*why = "could not hash the password: no random bytes from " RANDOM_PATH;
+		return 0;
+	}
 	/* 0600: the file sits in /etc/config next to the device identity, and
 	 * this daemon is not the only thing that can read that directory. */
 	if (write_file_atomic(AUTH_PATH, credbuf, n, 0600) < 0) {
@@ -707,30 +1134,33 @@ int set_credential(const char *user, const char *pass, const char **why)
  * Whether `pass` is the password half of the credential in force. For the
  * routes that make the caller repeat it before showing a secret: the Basic
  * header the browser replays is not proof that the person at the keyboard
- * knows it. Constant-time over the credential, length folded in, like
- * authorised(). The username half is not asked again.
+ * knows it. The username half is not asked again: it is taken from the
+ * line, and the two go through the comparison every sign-in does.
  */
 int password_matches(const char *pass)
 {
-	long want = load_credential(0);
-	unsigned long colon = 0, i, plen = slen(pass);
-	int diff = 0;
+	int def = 0, ok;
+	long want = load_credential(&def);
+	unsigned long plen = slen(pass), n = 0, k;
 
-	if (want <= 0)
+	/* No colon in the line: there is no password half. Too long for
+	 * the buffer is too long to be the credential. */
+	if (want <= 0 || cred.ulen >= (unsigned long)want ||
+	    cred.ulen + 1 + plen + 1 > sizeof(authbuf))
 		return 0;
-	while ((long)colon < want && credbuf[colon] != ':')
-		colon++;
-	if ((long)colon >= want)
-		return 0;
-	if (plen != (unsigned long)want - colon - 1)
-		diff = 1;
-	for (i = 0; i < (unsigned long)want - colon - 1; i++)
-		diff |= credbuf[colon + 1 + i] ^ (i < plen ? pass[i] : 0);
-	return diff == 0;
+	for (k = 0; k <= cred.ulen; k++)
+		authbuf[n++] = credbuf[k];
+	for (k = 0; k < plen; k++)
+		authbuf[n++] = pass[k];
+	authbuf[n] = 0;
+	ok = credential_ok(authbuf, n, want, !def);
+	for (k = 0; k < sizeof(authbuf); k++)
+		((volatile char *)authbuf)[k] = 0;
+	return ok;
 }
 
 /*
- * HTTP Basic, against user:password in /etc/config/confd.auth -- or against
+ * HTTP Basic, against the credential in /etc/config/confd.auth -- or against
  * DEFAULT_AUTH when that file has never been written. See confd.h for why the
  * fallback exists rather than a refusal, and note that it is a fallback to a
  * WEAKER credential, not to none: every request is still checked, the
@@ -738,11 +1168,10 @@ int password_matches(const char *pass)
  */
 static int basic_ok(const char *r)
 {
+	int def = 0;
 	long n, want;
-	unsigned long i = 0;
-	int diff = 0;
 
-	want = load_credential(0);
+	want = load_credential(&def);
 	if (want <= 0)
 		return 0;
 
@@ -754,25 +1183,18 @@ static int basic_ok(const char *r)
 	n = b64decode(hdrbuf + 6, slen(hdrbuf + 6), authbuf, sizeof(authbuf));
 	if (n < 0)
 		return 0;
-
-	/* Compare every byte regardless, so timing does not leak the prefix.
-	 * A length mismatch is folded in rather than returned early. */
-	if (n != want)
-		diff = 1;
-	for (i = 0; i < (unsigned long)want && i + 1 < sizeof(authbuf); i++)
-		diff |= (authbuf[i] ^ credbuf[i]);
-	return diff == 0;
+	return credential_ok(authbuf, (unsigned long)n, want, !def);
 }
 
 /*
  * Whether `user` and `pass` are the credential in force, for the sign-in
- * form. The same constant-time comparison as basic_ok, over "user:pass".
+ * form. The same comparison as basic_ok, over "user:pass".
  */
 int credential_matches(const char *user, const char *pass)
 {
-	long want = load_credential(0);
-	unsigned long u = slen(user), p = slen(pass), n = 0, k, i;
-	int diff = 0;
+	int def = 0, ok;
+	long want = load_credential(&def);
+	unsigned long u = slen(user), p = slen(pass), n = 0, k;
 
 	/* Too long for the buffer is too long to be the credential. */
 	if (want <= 0 || u + 1 + p + 1 > sizeof(authbuf))
@@ -783,13 +1205,10 @@ int credential_matches(const char *user, const char *pass)
 	for (k = 0; k < p; k++)
 		authbuf[n++] = pass[k];
 	authbuf[n] = 0;
-	if ((long)n != want)
-		diff = 1;
-	for (i = 0; i < (unsigned long)want && i + 1 < sizeof(authbuf); i++)
-		diff |= (authbuf[i] ^ credbuf[i]);
-	for (i = 0; i < sizeof(authbuf); i++)
-		((volatile char *)authbuf)[i] = 0;
-	return diff == 0;
+	ok = credential_ok(authbuf, n, want, !def);
+	for (k = 0; k < sizeof(authbuf); k++)
+		((volatile char *)authbuf)[k] = 0;
+	return ok;
 }
 
 /* ------------------------------------------------------------- sessions --- */

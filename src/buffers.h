@@ -47,6 +47,9 @@ extern char omci[32768];
 extern char authbuf[256];
 extern char hdrbuf[512];
 extern char credbuf[256];
+/* The credential line that what http.c remembers about it was worked out
+ * for: a copy to compare each newly read line with. */
+extern char credseen[256];
 extern char filebuf[65536];
 /*
  * The write path's two optional tables live in filebuf. Its other users are

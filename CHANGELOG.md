@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- `/etc/config/confd.auth` holds a salted, slow hash of the password, no
+  longer the password: `user:$pbkdf2-sha256$<iterations>$<salt>$<hash>`,
+  PBKDF2-HMAC-SHA256 with a 16-byte salt and 16000 rounds (an estimate for
+  about 0.4 s on the stick, to be confirmed on hardware). A file that holds
+  `user:password` as typed keeps working, and can still be written by hand:
+  the first sign-in that proves the password replaces it with the hashed
+  line, in one atomic write, mode 0600. A wrong password, a safe-mode boot
+  and a stick that cannot write the file leave it as it is. Saving a
+  password from the page always stores the hash, and the same password saved
+  again is still not written again. The default-password warning still
+  shows for a hashed `admin:admin`. HTTP Basic does not pay for the hash on
+  every request: after the first check confd keeps a keyed tag of the
+  credential in RAM until the file changes. A hashed line that is damaged,
+  or asks for more than 160000 rounds, lets nobody in (as a file that
+  cannot be read does); the safe mode is the way back. Anything that reads
+  the file expecting the password (the odi-oss bundle scrub cuts after the
+  first colon and is fine) now finds the hash there. See DESIGN.md, "The
+  file holds a hash".
+- A `Content-Length` that is not a number (empty, letters, `+5`, a list) and
+  two `Content-Length` headers that disagree are answered `400`. They were
+  read as 0, or the first was believed, and the request was served as one
+  with no body. The same value twice is accepted; a number too large is
+  still `413`. A request with `Transfer-Encoding` is answered `501`: there
+  is no chunk parser, and such a body was ignored or handed to the route
+  with the chunk sizes in it.
+- `make check` runs `scripts/sha256-test.sh`: `src/sha256.c` built for the
+  host, against the FIPS 180-4, RFC 4231 and RFC 7914 vectors and against
+  hashlib.
 - Sign-in: a *Forgot your password?* section explains the odi-oss safe mode:
   five short power-ups, or three when the host port runs 2500BASE-X or
   HiSGMII or has auto-negotiation off, then sign in with `admin` / `admin`.

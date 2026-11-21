@@ -66,11 +66,11 @@ LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none -fl
            -Wl,-z,noexecstack
 
 SRCS := src/start.S src/main.c src/routes.c src/http.c src/mib.c \
-        src/firmware.c src/status.c src/omci.c src/buffers.c
+        src/firmware.c src/status.c src/omci.c src/sha256.c src/buffers.c
 HDRS := $(wildcard src/*.h)
 
 # One compiler invocation rather than per-object rules and a link step: there
-# are eight inputs, the whole build takes under a second, and there is no
+# are ten inputs, the whole build takes under a second, and there is no
 # incremental case worth the machinery. Splitting into real translation units
 # was for the source, not for the build.
 # BUILD_ID is compiled in, but it is a make VARIABLE -- make cannot see it
@@ -128,6 +128,7 @@ check:
 	scripts/check-api-doc.sh
 	scripts/parser-check.sh
 	scripts/uimage-test.sh
+	scripts/sha256-test.sh
 	node scripts/crypto-check.mjs
 	node scripts/web-check.mjs
 

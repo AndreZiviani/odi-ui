@@ -968,13 +968,17 @@ exits 1, and the write is reported as failed.
 
 ## Authentication
 
-One credential, in `/etc/config/confd.auth` as `user:password`. A browser signs
-in with it once, on the sign-in page, and gets a session cookie; `curl` and
-scripts send it as HTTP Basic on every request (see "Sessions" below):
+One credential, in `/etc/config/confd.auth`. A browser signs in with it once,
+on the sign-in page, and gets a session cookie; `curl` and scripts send it as
+HTTP Basic on every request (see "Sessions" below). The file can be written by
+hand as `user:password`:
 
 ```sh
 ssh admin@<stick> 'printf "user:password" > /etc/config/confd.auth; chmod 600 /etc/config/confd.auth'
 ```
+
+confd replaces that line with a hash of the password at the first sign-in that
+proves it (see "The file holds a hash" below).
 
 **With no credential file, confd answers to a built-in `admin` / `admin`** —
 the same credential `SUSER_NAME`/`SUSER_PASSWORD` ship with, and the ssh and
@@ -995,6 +999,74 @@ the same reason: truncating the file is how anyone clears a password, and
 treating the result as "accept nothing" would lock you out of the device you
 were changing the password on.
 
+### The file holds a hash
+
+Up to v1.19.0 the file was the password, as typed. Everything that reads
+`/etc/config` could read it: a copy of the partition, the support bundle before
+its scrub, any process on the stick. And a password is rarely used in one place
+only. The file now holds one line:
+
+```
+user:$pbkdf2-sha256$<iterations>$<salt>$<hash>
+```
+
+`<iterations>` is a decimal count, `<salt>` 16 random bytes and `<hash>` 32
+bytes, both in lowercase hex (capitals are read too). The hash is
+PBKDF2-HMAC-SHA256 of the password with that salt and count, and the username
+stays readable: it is not the secret. The same value comes out of
+`openssl kdf -keylen 32 -kdfopt digest:SHA256 -kdfopt pass:<password>
+-kdfopt hexsalt:<salt> -kdfopt iter:<iterations> PBKDF2`. The fields are those
+of passlib's `pbkdf2_sha256`, but passlib writes them in its own base64, so a
+line from there does not work here.
+
+- **Why PBKDF2.** It is SHA-256 in a loop: about 6 KB in the binary all told
+  and a few hundred bytes of stack. scrypt and argon2 are the better choice
+  where there is memory to spend, since they cost an attacker memory as well as
+  time; they want megabytes, and the stick has under two free.
+- **The count** is `PBKDF2_ITER` in `src/confd.h`, 16000, aimed at 0.3 to 0.5 s
+  for one check on the stick. That figure is an estimate from an instruction
+  count under qemu and has yet to be timed on hardware. It is far below what a
+  server would use, because this CPU is: the hash turns a leaked file from "the
+  password" into work per guess, which protects a good password and only slows
+  down the finding of a poor one. The count is stored in the line, so it can be
+  raised later and older files keep working. A line may ask for 160000 at
+  most.
+- **A file as typed keeps working, for good.** It is what every stick updated
+  from an earlier release has, and what the `printf` above writes. The first
+  sign-in that proves the password (the form, Basic, or the password asked
+  again for the VoIP secrets) replaces the file with the hashed line: one
+  write, by rename, mode 0600. A wrong password changes nothing. A stick that
+  cannot write the file keeps the one it has. A safe-mode boot never does this,
+  since what signs in there is not what the file holds. A save from the page
+  always stores the hash.
+- **A damaged hashed line lets nobody in.** A line that starts with
+  `$pbkdf2-sha256$` and is not a whole one (a field short, a count of 0 or above
+  the limit) is treated like a file that cannot be read: every sign-in is
+  refused, the default included, and the safe mode is the way back. Read as a
+  password as typed, the text in the file would be the password, known to
+  whoever has seen the file. A count above the limit is refused rather than
+  run, so a typo cannot make the one thread spend minutes per sign-in. A
+  password as typed therefore cannot itself begin with `$pbkdf2-sha256$`; one
+  set from the page can.
+- **Basic does not pay for it on every request.** A script sends the password
+  with each request, and 0.4 s of hashing each time, on a server with one
+  thread, would be felt by everything else. After the first check that
+  succeeds, confd keeps a tag of the credential that was presented:
+  HMAC-SHA256 under a key read from `/dev/urandom`, in RAM only. Later requests
+  are compared with the tag. It is dropped when the line in the file is not
+  byte for byte the one it was made for, and with the process. That tag is a
+  fast hash of the password, which is the thing the file no longer is; it is
+  never on flash, and whoever can read confd's memory can read the password
+  itself in the request buffer, since the UI is plain HTTP. So the slow hash
+  runs once per boot and once per change of the file, and once for each wrong
+  guess made before the first right one.
+- **"Same password saved again"** is now "the stored hash is of this
+  password", since a new salt makes every hash different. It costs one check
+  and still writes nothing.
+
+What this does not do: the password still crosses the LAN in clear at sign-in
+and with every Basic request, and the session cookie does too.
+
 ### Changing it, from the page
 
 System > Access has the field, and it **creates `/etc/config/confd.auth` if it
@@ -1011,8 +1083,10 @@ including the ones that change what the OLT authenticates against.
 A credential that cannot be expressed in the file format is **refused, not
 rewritten** — no colon in the username, no newline in either half, 4 to 128
 characters. A mangled credential is one nobody can log in with, on a device
-where finding that out means a site visit. The file is written `0600`, with an
-explicit `chmod`: `open()`'s mode applies only when the file is created, so
+where finding that out means a site visit. (The password is stored hashed and
+could be anything; the rules are kept so that a password the page takes is
+also one that can be written into the file by hand.) The file is written
+`0600`, with an explicit `chmod`: `open()`'s mode applies only when the file is created, so
 rewriting one that already exists world-readable would leave it that way.
 
 Afterwards the browser that made the change stays signed in, and every other
@@ -1030,7 +1104,9 @@ Note *default one*, not *no file*: a file containing `admin:admin` leaves you on
 the password everybody knows while making the warning disappear, which is the
 worst of both. The check compares the credential in force against the built-in
 one, so writing the default into the file changes nothing about what the page
-tells you.
+tells you. A hashed line cannot be compared, so the default is tried against
+the hash; the answer is kept until the line changes, since the page asks on
+every load.
 
 ### Every request is checked, which the stock UI cannot say
 
@@ -1393,6 +1469,7 @@ src/mib.c           the schema, validation, flash reads and writes
 src/status.c        the diag scrape, the MAC table, the kernel log
 src/omci.c          the OMCI MIB read path
 src/firmware.c      partitions, the trial slot, the build manifest
+src/sha256.c        SHA-256, HMAC, PBKDF2: the hash in the credential file
 src/buffers.c       every static buffer, in one place
 src/util.h          base64, JSON escaping, small string helpers
 src/syscall.h       copied from odi-sfp-exporter; fix it in both places
