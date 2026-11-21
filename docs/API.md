@@ -36,9 +36,10 @@ with any value or none, is `501` on any route, before the credential is looked
 at: chunked bodies are not read.
 
 Against a credential file that holds a hash, a credential with a control
-character in it is `401`. For about a second after a wrong password that was
-tried before any right one (since confd started or the file changed), the right
-one is `401` too: see DESIGN.md, "The file holds a hash".
+character in it is `401`. The first right password after confd started or the
+file changed takes about 0.4 s to check, and a check that follows a wrong one
+in that state waits up to 1.6 s more before it is answered: see DESIGN.md,
+"The file holds a hash".
 
 ## Sign in
 

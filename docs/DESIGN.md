@@ -1024,13 +1024,13 @@ line from there does not work here.
   where there is memory to spend, since they cost an attacker memory as well as
   time; they want megabytes, and the stick has under two free.
 - **The count** is `PBKDF2_ITER` in `src/confd.h`, 16000, aimed at 0.3 to 0.5 s
-  for one check on the stick. That figure is an estimate from an instruction
-  count under qemu and has yet to be timed on hardware. It is far below what a
+  for one check on the stick. Measured on an RTL9602C (RLX5281, idle): 381 to
+  397 ms for 16000 rounds over nine runs, about 0.4 s. It is far below what a
   server would use, because this CPU is: the hash turns a leaked file from "the
   password" into work per guess, which protects a good password and only slows
   down the finding of a poor one. The count is stored in the line, so it can be
   raised later and older files keep working. A line may ask for 160000 at
-  most.
+  most, about 4 s.
 - **A file as typed keeps working, for good.** It is what every stick updated
   from an earlier release has, and what the `printf` above writes. The first
   sign-in that proves the password (the form, Basic, or the password asked
@@ -1038,16 +1038,25 @@ line from there does not work here.
   write, by rename, mode 0600. A wrong password changes nothing. A stick that
   cannot write the file keeps the one it has. A safe-mode boot never does this,
   since what signs in there is not what the file holds. A save from the page
-  always stores the hash. Just before the write the file is read once more and
-  must still hold the line that was proven: the hash took a few hundred
-  milliseconds to make, and a file rewritten over ssh in that time must not
-  get the hash of the password it has just replaced renamed over it.
-- **Not during a firmware trial.** While the running image is not committed
-  (`uncommitted=0` is not in `/var/run/odi-slot`), a sign-in leaves a file as
-  typed alone, and makes the hash at the first sign-in after the commit. The
-  other slot may hold a confd from before the hash, and a trial that is not
-  kept boots it: see the next point. An image without that file (a stock-based
-  one) has no trial to wait for. A password **saved from the page** during a
+  always stores the hash. The new file is written and synced under its
+  temporary name, then the old one is read once more and must still hold the
+  line that was proven, and only then comes the rename: the hash took 0.4 s to
+  make and the write to flash takes time too, and a file rewritten over ssh
+  meanwhile must not get the hash of the password it has just replaced renamed
+  over it. What is left is the moment between that read and the rename. A
+  hashed line longer than the 254 bytes that are read back is not written
+  either: that takes a username of 136 characters or more typed into the file
+  (the page allows 64), and such a file stays as typed.
+- **Not during a firmware trial.** A sign-in makes the hash only when
+  `/var/run/odi-slot` says the running image is committed: read whole, with
+  one `uncommitted=` line, which is `uncommitted=0`. Otherwise it leaves a
+  file as typed alone, and makes the hash at the first sign-in after the
+  commit. The other slot may hold a confd from before the hash, and a trial
+  that is not kept boots it: see the next point. No such file is not "committed"
+  on an image that has `slot-state.sh`: the trial is in the U-Boot environment
+  whether or not the script has run yet, and confd does not run it from a
+  sign-in to find out (it may take twelve seconds). An image with neither the
+  file nor the script (a stock-based one) has no trial to wait for. A password **saved from the page** during a
   trial is stored as a hash all the same, because the operator asked for a
   write; if the trial is then dropped for an older image, the next point
   applies.
@@ -1067,7 +1076,7 @@ line from there does not work here.
   run, so a typo cannot make the one thread spend minutes per sign-in. So is a
   line of 255 bytes or more, which does not fit the buffer it is read into: it
   used to be cut there without a word, and its first 255 bytes were the
-  credential.
+  credential. The same limit, 254 bytes, holds for what confd writes.
 - **A password as typed cannot begin with `$pbkdf2-sha256$`**; one set from
   the page can, since it is stored hashed. This is a known edge of the update:
   the page of v1.19.0 and older would store a password beginning with exactly
@@ -1097,17 +1106,20 @@ line from there does not work here.
   start of confd or a change of the file, and not again for that line. The
   sign-in page and sign-out, which need no credential, never run it: they look
   for a session cookie only.
-- **Wrong guesses before the first right one are rationed.** Until a password
-  has been proven there is no tag, and telling a wrong password from the right
-  one takes the slow hash each time. The second a failure costs is a sleep;
-  the hash is the one CPU at full load, taken from omcid, for anyone who can
-  reach the port. So after a wrong password that cost a hash, the next one
-  that would cost one is refused without it for four times as long as the hash
-  took, one second at least: guessing gets a fifth of the CPU at most. In that
-  time the right password is refused as well, since only refusing wrong ones
-  is what cannot be done cheaply; with the default count that is about 0.6 s
-  after the answer to the wrong one. A stick with no `/dev/urandom` has no key
-  for the tag and runs the hash for every Basic request.
+- **Wrong guesses before the first right one are spaced out.** Until a
+  password has been proven there is no tag, and telling a wrong password from
+  the right one takes the slow hash each time. The second a failure costs is a
+  sleep; the hash is the one CPU at full load, taken from omcid, for anyone
+  who can reach the port. So after a wrong password that cost a hash, the next
+  check that would cost one first sleeps out a pause: four times what the hash
+  took, 1.6 s with the measured 0.4 s (one second at least, five at most).
+  Guessing then gets a fifth of the CPU. The check is held back, not refused:
+  refusing would turn away the right password with the wrong ones, and one
+  client that keeps guessing could keep everyone else from ever signing in.
+  Sleeping is what a failure has always cost in this one-threaded daemon; a
+  valid sign-in waits its turn behind the guesses, as before, and succeeds
+  when it is served. A stick with no `/dev/urandom` has no key for the tag and
+  runs the hash for every Basic request.
 - **"Same password saved again"** is now "the stored hash is of this
   password", since a new salt makes every hash different. It costs one check
   and still writes nothing.

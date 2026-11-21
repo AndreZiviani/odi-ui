@@ -599,6 +599,12 @@ int request_target(const char *r, char *out, unsigned long cap)
 	return o > 0;
 }
 
+/* See http.h. */
+int header_present(const char *r, const char *name)
+{
+	return header_next(r, 0, name) != 0;
+}
+
 int header_has(const char *r, const char *name, const char *needle)
 {
 	char v[512];
@@ -686,6 +692,19 @@ const char *request_refusal(const char *r)
 #define HASH_STR_(x) #x
 #define HASH_STR(x) HASH_STR_(x)
 #define HASH_HEAD HASH_TAG HASH_STR(PBKDF2_ITER) "$"
+/*
+ * The longest line, typed or hashed, that is read and that is written: one
+ * number for both. read_file leaves a byte for the NUL and cannot tell a
+ * file that fills the rest from a longer one, so the most that is known to
+ * be whole is two bytes short of the buffer. A line confd wrote and could
+ * not read back is a stick nobody signs in to: a username of 136 characters
+ * typed into the file made a hashed line of exactly 255 bytes.
+ */
+#define CRED_MAX (sizeof(credbuf) - 2)
+/* A hashed line without its username. */
+#define HASH_ROOM (1 + sizeof(HASH_HEAD) - 1 + 2 * SALT_LEN + 1 + 2 * SHA256_LEN)
+_Static_assert(64 + HASH_ROOM <= CRED_MAX,
+	       "the longest username set_credential takes must hash to a line that is read");
 _Static_assert(PBKDF2_ITER >= 1 && PBKDF2_ITER <= PBKDF2_ITER_MAX,
 	       "a line confd writes must be one confd reads");
 
@@ -947,9 +966,8 @@ static int default_text(const char *p, unsigned long n)
  * line that fills it may have been cut. Checked against, a cut line is a
  * credential nobody set: the first 255 bytes of it signed in, and migrate()
  * would then have stored the hash of that prefix as the password. The
- * longest line confd writes is 184 bytes and the longest it takes as typed
- * 193, so a file that fills the buffer is refused whole, like one that
- * cannot be read.
+ * longest line the page can make is 183 bytes, so a file longer than
+ * CRED_MAX is refused whole, like one that cannot be read.
  */
 static long read_cred_file(char *buf, unsigned long cap)
 {
@@ -957,7 +975,7 @@ static long read_cred_file(char *buf, unsigned long cap)
 
 	if (got == -ENOENT_)
 		return 0;
-	if (got < 0 || (unsigned long)got + 1 >= cap)
+	if (got < 0 || (unsigned long)got > CRED_MAX || (unsigned long)got + 2 > cap)
 		return -1;
 	/* trim trailing newline/CR so an editor-written file works */
 	while (got > 0 && (buf[got - 1] == '\n' || buf[got - 1] == '\r'))
@@ -1022,9 +1040,10 @@ static int hash_matches(const struct cred *c, const char *line,
 
 /*
  * The line that stores user and pass hashed, into out[cap]: its length, or
- * 0 when there is no salt to be had or it does not fit. No salt is no
- * hash: one made with a salt that can be guessed is one table for every
- * stick.
+ * 0 when there is no salt to be had or the line would be longer than
+ * CRED_MAX, which only a username typed into the file can make it. No salt
+ * is no hash: one made with a salt that can be guessed is one table for
+ * every stick.
  */
 static unsigned long hash_line(char *out, unsigned long cap,
 			       const char *user, unsigned long ulen,
@@ -1034,7 +1053,7 @@ static unsigned long hash_line(char *out, unsigned long cap,
 	unsigned char salt[SALT_LEN], dk[SHA256_LEN];
 	unsigned long n = 0, k;
 
-	if (ulen + 1 + sizeof(HASH_HEAD) - 1 + 2 * SALT_LEN + 1 + 2 * SHA256_LEN + 1 > cap ||
+	if (ulen + HASH_ROOM > CRED_MAX || ulen + HASH_ROOM + 1 > cap ||
 	    !random_bytes(salt, SALT_LEN))
 		return 0;
 	kdf(pass, plen, salt, PBKDF2_ITER, dk);
@@ -1070,32 +1089,43 @@ static unsigned long hash_line(char *out, unsigned long cap,
  * image is committed; the commit route has slot-state.sh write the file
  * again, and the next sign-in then makes the hash.
  *
- * Only `uncommitted=0` is "committed". An empty value is slot-state.sh not
- * having been able to read the environment, which may be a trial. No file
- * at all is an image without the mechanism (a stock-based one), where
- * there is nothing to wait for.
+ * "Committed" needs evidence: the file read whole, with exactly one
+ * `uncommitted=` line, and that line `uncommitted=0`. An empty value is
+ * slot-state.sh not having been able to read the environment. No file is
+ * not evidence either on an image that has slot-state.sh: the trial is in
+ * the U-Boot environment whether or not the script has run yet at this
+ * boot, or ran and failed. The script is not run from here to find out: it
+ * takes up to SLOT_STATE_TIMEOUT_MS, a sign-in is not the place to wait for
+ * it, and nothing is lost by the file staying as typed a while longer.
+ *
+ * With neither the file nor the script this is an image without the
+ * mechanism (a stock-based one), where there is nothing to wait for.
  */
 static int trial_uncommitted(void)
 {
-	static const char want[] = "uncommitted=0";
+	static const char key[] = "uncommitted=";
 	char st[1024];
 	long got = read_file(SLOT_STATE_FILE, st, sizeof(st));
 	unsigned long i = 0;
+	int lines = 0, committed = 0;
 
 	if (got == -ENOENT_)
-		return 0;
-	if (got <= 0)
+		return file_exists(SLOT_STATE_SCRIPT);
+	/* Unreadable, empty, cut by the buffer, or cut before a line end. */
+	if (got <= 0 || (unsigned long)got + 1 >= sizeof(st) || st[got - 1] != '\n' ||
+	    (unsigned long)got != slen(st))
 		return 1;
 	while (st[i]) {
-		if (spre(st + i, want) && (st[i + sizeof(want) - 1] == '\n' ||
-					   !st[i + sizeof(want) - 1]))
-			return 0;
-		while (st[i] && st[i] != '\n')
+		if (spre(st + i, key)) {
+			lines++;
+			committed = st[i + sizeof(key) - 1] == '0' &&
+				    st[i + sizeof(key)] == '\n';
+		}
+		while (st[i] != '\n')
 			i++;
-		if (st[i])
-			i++;
+		i++;
 	}
-	return 1;
+	return !(lines == 1 && committed);
 }
 
 /*
@@ -1117,8 +1147,11 @@ static int trial_uncommitted(void)
  */
 static void migrate(const char *p, unsigned long n, long want)
 {
+	static const char tmp[] = AUTH_PATH ".new";
 	char line[sizeof(credbuf)], cur[sizeof(credbuf)];
 	unsigned long len;
+	long fd;
+	int staged;
 
 	/* Before `stay`: this is asked again at every sign-in of a trial,
 	 * so that the first one after the commit makes the hash. */
@@ -1130,55 +1163,86 @@ static void migrate(const char *p, unsigned long n, long want)
 		return;
 	len = hash_line(line, sizeof(line), p, cred.ulen,
 			p + cred.ulen + 1, n - cred.ulen - 1);
+	if (!len)
+		return;
+
 	/*
-	 * PBKDF2 took a few hundred milliseconds, and the file may have
-	 * been written by hand meanwhile, over ssh: the rename below would
-	 * put the hash of a password that has just been replaced over the
-	 * new one. So the file is read once more and must still be the line
-	 * that was proven. What is left is the time between this read and
-	 * the rename, a few system calls; closing that too would take a lock
-	 * that everything writing the file by hand would have to know of.
+	 * write_file_atomic in three steps, because of what has to happen
+	 * between the second and the third: the new file written and synced
+	 * under its temporary name, the old one read once more, the rename.
+	 *
+	 * PBKDF2 took a few hundred milliseconds and the write and fsync to
+	 * jffs2 take their time too, and the file may have been written by
+	 * hand meanwhile, over ssh: the rename would put the hash of a
+	 * password that has just been replaced over the new one. So the
+	 * file must still be the line that was proven, read as late as it
+	 * can be. What is left is the time between that read and the rename,
+	 * two system calls; closing that too would take a lock that
+	 * everything writing the file by hand would have to know of.
 	 */
-	if (len && read_cred_file(cur, sizeof(cur)) == want &&
+	syscall3(__NR_unlink, (long)tmp, 0, 0);
+	fd = syscall3(__NR_open, (long)tmp, O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (fd < 0)
+		return;
+	staged = write_all((int)fd, line, len) == (long)len &&
+		 syscall3(__NR_fsync, fd, 0, 0) >= 0 &&
+		 syscall3(__NR_chmod, (long)tmp, 0600, 0) >= 0;
+	syscall3(__NR_close, fd, 0, 0);
+	if (staged && read_cred_file(cur, sizeof(cur)) == want &&
 	    !bytes_differ((const unsigned char *)cur, (const unsigned char *)credbuf,
 			  (unsigned long)want) &&
-	    write_file_atomic(AUTH_PATH, line, len, 0600) == 0) {
+	    syscall3(__NR_rename, (long)tmp, (long)AUTH_PATH, 0) >= 0) {
 		/* The new line is known as well as the old one was: the same
 		 * password proves it, so the next request starts from the
 		 * tag and not from PBKDF2 again. */
 		known.have_line = boot_tag(line, len, known.line);
 		known.have_tag = boot_tag(p, n, known.tag);
 		known.def = default_text(p, n);
+	} else {
+		syscall3(__NR_unlink, (long)tmp, 0, 0);
 	}
 	wipe(cur, sizeof(cur));
 }
 
 /*
- * How long after a wrong password that cost a PBKDF2 the next one that
- * would cost one is refused without it: four times what that one took, and
- * COLD_KDF_MIN_MS at least.
+ * How long after a wrong password that cost a PBKDF2 the next check that
+ * would cost one is held back: four times what that one took, between
+ * COLD_KDF_MIN_MS and COLD_KDF_MAX_MS.
  *
  * Until a password has been proven there is no tag, and telling a wrong
  * password from the right one takes PBKDF2 each time. The second a failure
  * costs is a sleep, which the stick does not notice; PBKDF2 is the one CPU
  * at full load, taken from omcid. Whoever can reach the port could keep it
  * there by guessing, without ever being right. With this, guessing gets a
- * fifth of the CPU at most, and of the daemon no more than the sleep
- * already gave it.
+ * fifth of the CPU at the default count.
  *
- * The price: in that time the right password is refused too, as a wrong
- * one, since refusing only wrong ones is what cannot be done cheaply. With
- * the default count that is about 0.6 s after the answer to a wrong
- * password, of which the caller has seen a second go by already. Once a
- * password is proven, the tag decides and none of this runs.
+ * Held back, not refused: the check sleeps out what is left of the time
+ * and then runs. Refusing would be cheaper still, but it refuses the right
+ * password with the wrong ones, and one client that keeps guessing would
+ * keep everybody else from ever signing in. Sleeping is what a failure has
+ * always cost here, in a daemon with one thread: a valid sign-in waits its
+ * turn behind the guesses, as it did, and succeeds when it is served. The
+ * upper bound keeps that wait from growing with a count near
+ * PBKDF2_ITER_MAX, where the share of the CPU is then larger instead.
  *
- * Not while a script signs in with the right password and there is no key
- * for a tag: that is a stick without /dev/urandom, and it pays PBKDF2 per
- * request.
+ * Once a password is proven the tag decides and none of this runs. Not for
+ * a script that signs in with the right password on a stick with no
+ * /dev/urandom: there is no tag there, and it pays PBKDF2 per request.
  */
 #ifndef COLD_KDF_MIN_MS
 #define COLD_KDF_MIN_MS 1000
 #endif
+#define COLD_KDF_MAX_MS 5000
+_Static_assert(COLD_KDF_MIN_MS <= COLD_KDF_MAX_MS, "the bounds of one wait");
+
+static void sleep_ms(unsigned long ms)
+{
+	long ts[2];
+
+	ts[0] = (long)(ms / 1000);
+	ts[1] = (long)(ms % 1000) * 1000000L;
+	syscall3(__NR_nanosleep, (long)ts, 0, 0);
+}
 
 /*
  * Whether p[0..n), a "user:password", is the credential load_credential()
@@ -1213,9 +1277,11 @@ static int credential_ok(const char *p, unsigned long n, long want, int from_fil
 		return boot_tag(p, n, tag) && !bytes_differ(tag, known.tag, SHA256_LEN);
 
 	t0 = mono_ms();
-	/* t0 of 0 is no clock: then nothing is refused on its account. */
-	if (cold_wait && t0 && t0 - cold_at < cold_wait)
-		return 0;
+	/* t0 of 0 is no clock: then nothing waits on its account. */
+	if (cold_wait && t0 && t0 - cold_at < cold_wait) {
+		sleep_ms(cold_wait - (t0 - cold_at));
+		t0 = mono_ms();
+	}
 	ok = hash_matches(&cred, credbuf, p, n);
 	if (ok) {
 		/* Proven, so two things are known for free: the tag, and
@@ -1229,6 +1295,8 @@ static int credential_ok(const char *p, unsigned long n, long want, int from_fil
 		cold_wait = 4 * (cold_at - t0);
 		if (cold_wait < COLD_KDF_MIN_MS)
 			cold_wait = COLD_KDF_MIN_MS;
+		if (cold_wait > COLD_KDF_MAX_MS)
+			cold_wait = COLD_KDF_MAX_MS;
 		if (!t0 || !cold_at)
 			cold_wait = 0;
 	}

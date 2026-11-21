@@ -8,8 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `/etc/config/confd.auth` holds a salted, slow hash of the password, no
   longer the password: `user:$pbkdf2-sha256$<iterations>$<salt>$<hash>`,
-  PBKDF2-HMAC-SHA256 with a 16-byte salt and 16000 rounds (an estimate for
-  about 0.4 s on the stick, to be confirmed on hardware). A file that holds
+  PBKDF2-HMAC-SHA256 with a 16-byte salt and 16000 rounds (about 0.4 s,
+  measured on an RTL9602C). A file that holds
   `user:password` as typed keeps working, and can still be written by hand:
   the first sign-in that proves the password replaces it with the hashed
   line, in one atomic write, mode 0600. A wrong password, a safe-mode boot,
@@ -20,11 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Basic does not pay for the hash on every request: after the first check
   confd keeps a keyed tag of the credential in RAM until the file changes,
   and the sign-in page and sign-out never run it. Wrong passwords tried
-  before the first right one are rationed: for about a second after one, a
-  further attempt is refused without the hash, the right password included.
-  A hashed line that is damaged, or asks for more than 160000 rounds, lets
-  nobody in (as a file that cannot be read does), and so does a file of 255
-  bytes or more, whose first 255 bytes used to be taken for the credential;
+  before the first right one are spaced out: the check after one waits up to
+  1.6 s before it runs the hash, and is not refused, so the right password
+  still signs in. A hashed line that is damaged, or asks for more than
+  160000 rounds, lets nobody in (as a file that cannot be read does), and
+  so does a file of 255 bytes or more, whose first 255 bytes used to be
+  taken for the credential (a username of 136 characters or more typed
+  into the file keeps it as typed, since its hashed line would be that long);
   the safe mode is the way back. Anything that reads the file expecting the
   password (the odi-oss bundle scrub cuts after the first colon and is
   fine) now finds the hash there. See DESIGN.md, "The file holds a hash".
@@ -32,9 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reads the hashed file as the password as typed, so the password no longer
   signs in. Use the safe mode, or write the file again over ssh
   (`printf "user:password" > /etc/config/confd.auth`). A sign-in does not
-  make the hash while a firmware trial is uncommitted, so a trial that is
-  not kept leaves the file as it was, unless a password was saved from the
-  page during it. A password set with v1.19.0 or older that begins with
+  make the hash until `/var/run/odi-slot` says the image is committed, so
+  a trial that is not kept leaves the file as it was, unless a password was
+  saved from the page during it. A password set with v1.19.0 or older that begins with
   `$pbkdf2-sha256$` reads as a damaged hash after the update: safe mode.
 - A `Content-Length` that is not a number (empty, letters, `+5`, a list) and
   two `Content-Length` headers that disagree are answered `400`. They were

@@ -274,6 +274,24 @@ echo refreshed >> /tmp/slot-state.calls
 exit 0
 SLOTSTATE
 chmod +x /etc/scripts/slot-state.sh
+# What the real one writes at boot, here for a committed image. With the
+# script there, confd takes this for an odi-oss stick and turns a password
+# file as typed into a hash only when this file says the image is committed.
+mkdir -p /var/run
+COMMITTED='running=1
+sw_active=1
+sw_tryactive=
+primary_copy=1
+primary_sw_commit=1
+fallback_copy=2
+fallback_sw_commit=1
+next_boot=1
+uncommitted=0
+other_slot=0
+other_slot_check=ok
+other_slot_detail=
+'
+printf '%s' "$COMMITTED" > /var/run/odi-slot
 
 cat > /bin/omcicli <<'OMCICLI'
 #!/bin/sh
@@ -679,10 +697,67 @@ check "  or reads like nothing slot-state.sh writes" op:hunter22 "$(code -u op:h
 printf '%s\n' running=1 next_boot=0 uncommitted=1 other_slot=0 > /var/run/odi-slot
 check "  a save from the page stores the hash all the same" yes \
 	"$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
+# Committed is what the file has to say, whole and once. Anything less is
+# not evidence, and the file stays as typed: the trial is in the U-Boot
+# environment whether or not slot-state.sh has run yet at this boot.
 typed op:hunter22
-printf '%s\n' running=1 next_boot=1 uncommitted=0 other_slot=0 > /var/run/odi-slot
-check "once committed, the next sign-in makes the hash" yes "$(code -u op:hunter22 "$B/api/schema" >/dev/null; hashed op)"
+staytyped() { check "$1" op:hunter22 "$(code -u op:hunter22 "$B/api/schema" >/dev/null; cat $A)"; }
 rm -f /var/run/odi-slot
+staytyped "no state file on an image that has slot-state.sh: not yet"
+: > /var/run/odi-slot
+staytyped "  an empty one"
+printf '%s\n' running=1 next_boot=1 other_slot=0 > /var/run/odi-slot
+staytyped "  one without the line"
+printf '%s\n' running=1 uncommitted=0 uncommitted=1 > /var/run/odi-slot
+staytyped "  one that says both"
+printf '%s\n' running=1 uncommitted=1 uncommitted=0 > /var/run/odi-slot
+staytyped "  in either order"
+printf '%s\n' running=1 uncommitted=0 uncommitted=0 > /var/run/odi-slot
+staytyped "  or the same thing twice"
+printf 'running=1\nuncommitted=0' > /var/run/odi-slot
+staytyped "  one cut before the end of the line"
+printf 'running=1\nuncommitted=0\n\000rest\n' > /var/run/odi-slot
+staytyped "  one with a NUL in it"
+{ printf 'uncommitted=0\n'; head -c 1100 /dev/zero | tr '\0' 'x'; echo; } > /var/run/odi-slot
+staytyped "  one too long to be read whole"
+printf '%s\n' running=1 xuncommitted=0 > /var/run/odi-slot
+staytyped "  one where the line only ends like it"
+printf '%s\n' running=1 next_boot=1 uncommitted=0 other_slot=0 > /var/run/odi-slot
+check "once it says committed, the next sign-in makes the hash" yes "$(code -u op:hunter22 "$B/api/schema" >/dev/null; hashed op)"
+# An image with neither the script nor the file has no trial to wait for.
+typed op:hunter22
+rm -f /var/run/odi-slot
+mv /etc/scripts/slot-state.sh /etc/scripts/slot-state.sh.kept
+check "with no slot-state.sh and no state file a sign-in makes the hash" yes "$(code -u op:hunter22 "$B/api/schema" >/dev/null; hashed op)"
+typed op:hunter22
+printf '%s\n' running=1 uncommitted=1 > /var/run/odi-slot
+staytyped "  but a state file that says trial is believed without the script too"
+mv /etc/scripts/slot-state.sh.kept /etc/scripts/slot-state.sh
+printf '%s' "$COMMITTED" > /var/run/odi-slot
+
+# What confd writes it must be able to read. A username typed into the file
+# can be longer than the page allows, and with 136 characters the hashed line
+# is the 255 bytes that are refused as too long: written, it let nobody in.
+# With 135 it is the longest line there is; from 136 on the file stays as
+# typed and keeps working.
+u135=$(head -c 135 /dev/zero | tr '\0' u)
+typed "$u135:hunter22"
+check "a username of 135 characters as typed signs in" 200 "$(code -u "$u135:hunter22" "$B/api/schema")"
+check "  its hashed line is 254 bytes, the longest that is read" "yes 254" "$(hashed "$u135") $(wc -c < $A | tr -d ' ')"
+check "  and signs in" 200 "$(code -u "$u135:hunter22" "$B/api/schema")"
+check "  also on the form" 200 "$(signin "user=$u135&password=hunter22")"
+typed "u$u135:hunter22"
+check "one of 136 signs in" 200 "$(code -u "u$u135:hunter22" "$B/api/schema")"
+check "  and is left as typed, since its hash would not fit" "u$u135:hunter22" "$(cat $A)"
+check "  with no temp file" no "$([ -e $A.new ] && echo yes || echo no)"
+check "  and keeps signing in" 200 "$(code -u "u$u135:hunter22" "$B/api/schema")"
+
+# A wrong password against a line nothing is known about holds the next
+# check back; it does not refuse it. The right password straight after a
+# wrong one signs in.
+line_for op hunter22 16000 > $A
+check "a wrong password against a new hashed line" 401 "$(code -u op:wrong "$B/api/schema")"
+check "  does not keep the right one out" 200 "$(code -u op:hunter22 "$B/api/schema")"
 
 # read_file fills its buffer without saying that the file was longer. A line
 # cut at 255 bytes used to be the credential: its prefix signed in. Now a
@@ -723,6 +798,7 @@ rm -f $A && mkfifo $A
 feeder=$!
 check "a sign-in against the line as it was" 200 "$(code --max-time 10 -u op:hunter22 "$B/api/schema")"
 check "  does not write its hash over a line changed meanwhile" pipe "$([ -p $A ] && echo pipe || echo "replaced: $(cat $A)")"
+check "  and takes the hash it had staged away again" no "$([ -e $A.new ] && echo yes || echo no)"
 # Unblock whichever side is still waiting on the pipe, then put a file back.
 kill $feeder 2>/dev/null || true
 [ -p $A ] && timeout 2 sh -c ": > $A" 2>/dev/null || true
@@ -770,28 +846,37 @@ check "nor asking whether it is the default" "false 1" \
 check "nor the password asked again for the secrets" 1 \
 	"$(code -u op:hunter22 -X POST --data 'password=hunter22' "$K/api/voip/secrets" >/dev/null; kdfs)"
 # Another line: nothing is known about it. A wrong password costs one
-# PBKDF2, and then for a while the next costs none, the right one included.
+# PBKDF2, and the next check that would cost one waits out a pause first (4 s
+# from the end of the last in this build, of which the answer to the wrong
+# password has used one). It is held back, not refused: the right password
+# signs in when its turn comes.
+timed() { curl -s -o /dev/null -w '%{http_code} %{time_total}' "$@"; }
+waited() { awk -v t="${1#* }" -v min="$2" 'BEGIN { print (t >= min) ? "waited" : "did not wait: " t }'; }
 line_for op hunter23 16000 > $A
 check "against a new line a wrong password runs it once" "401 2" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
-check "  a second one straight after is refused without it" "401 2" "$(code -u op:wrong2 "$K/api/schema") $(kdfs)"
-check "  and so is the right one, for that time" "401 2" "$(code -u op:hunter23 "$K/api/schema") $(kdfs)"
-sleep 3
-check "  after it the right one runs it and signs in" "200 3" "$(code -u op:hunter23 "$K/api/schema") $(kdfs)"
-check "  and from then on none" "200 3" "$(code -u op:hunter23 "$K/api/schema") $(kdfs)"
+r=$(timed -u op:wrong2 "$K/api/schema")
+check "  a second one straight after runs it too" "401 3" "${r%% *} $(kdfs)"
+check "    after the pause" waited "$(waited "$r" 2.5)"
+r=$(timed -u op:hunter23 "$K/api/schema")
+check "  the right one straight after signs in" "200 4" "${r%% *} $(kdfs)"
+check "    after the pause as well" waited "$(waited "$r" 1.5)"
+r=$(timed -u op:hunter23 "$K/api/schema")
+check "  and from then on at once, with none" "200 4" "${r%% *} $(kdfs)"
+check "    " "did not wait" "$(waited "$r" 1.0 | cut -c1-12)"
 # A session outlives a change of the line; the page then asks whether the
 # new line is the default, which takes one PBKDF2 and is remembered.
 ktok=$(curl -s -D - -o /dev/null -X POST -H "Origin: $K" --data 'user=op&password=hunter23' "$K/api/login" |
 	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p')
 line_for admin admin 16000 > $A
-check "a session asking about a new line runs it once" "true 4" \
+check "a session asking about a new line runs it once" "true 5" \
 	"$(curl -s -H "Cookie: odi_session=$ktok" "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
-check "  and not again" "true 4" \
+check "  and not again" "true 5" \
 	"$(curl -s -H "Cookie: odi_session=$ktok" "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
 # A file as typed is compared as it is; the one PBKDF2 is the hash made of it.
 typed op:hunter22
-check "a wrong password against a file as typed runs none" "401 4" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
-check "the right one runs the one that makes the hash" "200 5 yes" "$(code -u op:hunter22 "$K/api/schema") $(kdfs) $(hashed op)"
-check "  and the next request none" "200 5" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
+check "a wrong password against a file as typed runs none" "401 5" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+check "the right one runs the one that makes the hash" "200 6 yes" "$(code -u op:hunter22 "$K/api/schema") $(kdfs) $(hashed op)"
+check "  and the next request none" "200 6" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
 kill $KDAEMON 2>/dev/null || true
 trap 'kill $DAEMON 2>/dev/null || true' EXIT
 rm -f $KC

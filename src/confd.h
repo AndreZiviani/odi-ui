@@ -371,20 +371,19 @@
  * line, so this can be raised later and the files already written keep
  * working with the count they have.
  *
- * AN ESTIMATE, TO BE CONFIRMED ON A STICK. The aim is 0.3 to 0.5 s for one
- * check: slow enough to matter to somebody guessing from a copy of the
- * file, short enough for a server with one thread, which answers nothing
- * else meanwhile. One round is two SHA-256 blocks, counted under qemu at
- * about 11,400 instructions as this file is built (-Os, MIPS-I, no rotate
- * instruction). At 600 MHz and 0.7 to 0.9 instructions per cycle that is
- * 37,000 to 47,000 rounds a second, and 16000 rounds 0.34 to 0.43 s. qemu
- * says nothing about the cycles; time one sign-in after a restart to know.
+ * The aim is 0.3 to 0.5 s for one check: slow enough to matter to somebody
+ * guessing from a copy of the file, short enough for a server with one
+ * thread, which answers nothing else meanwhile. Measured on a stick
+ * (RTL9602C, RLX5281, odi-oss v1.18.1, idle; src/sha256.c as built here,
+ * -Os, MIPS-I): 1000 rounds take 24 ms, 16000 rounds 381 to 397 ms over
+ * nine runs. So 16000 is about 0.4 s. One round is two SHA-256 blocks,
+ * about 11,400 instructions without a rotate instruction to use.
  *
  * It is not paid per request. Once a password has been proven against a
  * line, requests are checked against a tag in RAM (`known` in http.c). It
  * is paid for the first right password after a start of confd or a change
- * of the file, for each wrong one tried before that (no more often than
- * COLD_KDF_MIN_MS in http.c allows), once more when the page asks whether
+ * of the file, for each wrong one tried before that (held apart by the
+ * pause of COLD_KDF_MIN_MS in http.c), once more when the page asks whether
  * a line changed under a session is the default, and by every save. A
  * stick with no /dev/urandom has no tag and pays it per request. A plain
  * decimal number, it is pasted into the line as text.
@@ -392,7 +391,7 @@
  * PBKDF2_ITER_MAX is the most a line may ask for. A file is written by
  * hand too, and a count with a digit too many must not become a daemon
  * that answers nothing for a minute per sign-in; ten times the default is
- * a few seconds and leaves room to raise it.
+ * about 4 s and leaves room to raise it.
  */
 #define PBKDF2_ITER     16000
 #define PBKDF2_ITER_MAX 160000

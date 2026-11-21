@@ -77,6 +77,12 @@ void session_end_others(void);
  * request_path() edits the request. 0 when it does not fit.
  */
 int request_target(const char *r, char *out, unsigned long cap);
+/*
+ * Whether the request has a header of this name, given in lower case with
+ * its colon ("authorization:"), whatever its value. Nothing is copied: the
+ * callers that ask this about Authorization have no use for the password.
+ */
+int header_present(const char *r, const char *name);
 /* Whether a header holds `needle`, case-sensitive: Accept and text/html. */
 int header_has(const char *r, const char *name, const char *needle);
 /* Whether the credential came from the file or from the built-in default.

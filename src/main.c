@@ -9,6 +9,7 @@
  */
 
 #include "confd.h"
+#include "buffers.h"
 #include "routes.h"
 #include "firmware.h"
 #include "status.h"
@@ -135,6 +136,10 @@ int main(int argc, char **argv)
 		out_err = 0;
 		serve((int)conn);
 		out_flush();
+		/* A request can hold the password: in a Basic header, in the
+		 * sign-in form, in a password save. It does not stay in the
+		 * buffer until the next request happens to overwrite it. */
+		memset(req, 0, sizeof(req));
 		out_fd = -1;
 		syscall3(__NR_close, conn, 0, 0);
 	}
