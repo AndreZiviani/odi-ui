@@ -71,6 +71,7 @@
   <div id="safebanner" class="trial" role="status" hidden>
     <p id="safe-text"></p>
     <a id="safe-details" href="#system/access">Details</a>
+    <button id="safe-password" type="button" hidden>Set a new password</button>
     <button id="hostlink-ack" type="button" hidden>Acknowledge</button>
   </div>
   <!-- The config store was recreated from the image defaults at boot (odi-oss
@@ -532,8 +533,10 @@
              it is saved and takes effect from the next boot. Acknowledge the banner, then reboot. The next
              boot uses the saved configuration again, with the fibre on.</p>
           <p><strong>How to enter it.</strong> Plug the stick in, wait about 80 seconds, pull it, wait a few
-             seconds. Do that five times in a row (three times when the host port is set to auto-negotiation
-             off), then plug it in and leave it in: that boot is the safe mode. Do not pull it again. Each
+             seconds. Do that five times in a row (three times when the host port is set to 2500BASE-X or
+             HiSGMII, or to auto-negotiation off), then plug it in and leave it in: that boot is the safe
+             mode. Do not pull it again. Not sure which count applies: do it three times first, and if
+             <code>admin</code> / <code>admin</code> is still refused a few minutes later, five times. Each
              power-up has to end roughly 60 to 110 seconds after power-on (the stick spends about
              54 seconds before its kernel starts; that can vary by board).</p>
           <p><strong>The trade-off.</strong> Anyone who can power-cycle the stick can do this, and gets
