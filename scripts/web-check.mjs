@@ -2111,6 +2111,29 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   ok(tg.children.length === 2 && /GEM 1434/.test(tgText) && /VEIP 0x0601/.test(tgText),
      'topology: the tab renders the columns with the boxes in them');
   ok(/11 T-CONTs without an Alloc-ID/.test(tgText), 'topology: spare T-CONTs fold into one line');
+
+  /* Shown again, the tab draws the connectors from where the boxes are now,
+     without reading the tables again. */
+  {
+    const boxes = [];
+    const walk = (n) => { if (n && n.dataset && n.dataset.key) boxes.push(n); for (const c of (n && n.children) || []) walk(c); };
+    walk(tg);
+    boxes.forEach((b, i) => { b.getBoundingClientRect = () => ({ left: (i % 8) * 150, right: (i % 8) * 150 + 100, top: i * 30, height: 20, width: 100 }); });
+    const svg = new El('svg');
+    svg.removeChild = (c) => { svg.children.splice(svg.children.indexOf(c), 1); };
+    Object.defineProperty(svg, 'firstChild', { get: () => svg.children[0] || null });
+    Object.assign(tg, {
+      getBoundingClientRect: () => ({ left: 0, right: 1200, top: 0, height: 900, width: 1200 }),
+      querySelector: (q) => (q === 'svg.topo-lines' ? svg : null),
+      querySelectorAll: (q) => (q === '.topo-box' ? boxes : []),
+      scrollWidth: 1200, scrollHeight: 900, scrollLeft: 0, scrollTop: 0,
+    });
+    OMCI_ASKED.length = 0;
+    await renderTopology();
+    ok(boxes.length > 0 && svg.children.length > 0 && OMCI_ASKED.length === 0,
+       'topology: shown again, the connectors are drawn anew and no table is read again');
+    delete tg.getBoundingClientRect; delete tg.querySelector; delete tg.querySelectorAll;
+  }
   ok(!/omcid reads each as that IW TP/.test(textOf(doc.querySelector('#topo-facts'))),
      'topology: no TP type 3 note on ISP1');
 
@@ -2147,6 +2170,31 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
      'topology ISP2: what the ONU made for itself is not flagged as unused');
   for (const k of Object.keys(OMCI)) delete OMCI[k];
   Object.assign(OMCI, keepOmci);
+
+  /* The connectors are measured from the boxes. On a hidden tab every box is
+     0 x 0, so a resize there must keep the drawing rather than stack every
+     connector in the corner. */
+  const { drawEdges } = await import(join(root, 'web', 'topology.js'));
+  const gd = { nodes: new Map([['a', { used: true }], ['b', { used: true }]]), edges: [{ from: 'a', to: 'b' }] };
+  const lines = new El('svg');
+  lines.removeChild = (c) => { lines.children.splice(lines.children.indexOf(c), 1); };
+  Object.defineProperty(lines, 'firstChild', { get: () => lines.children[0] || null });
+  let shown = true;
+  const rect = (x, w) => () => (shown ? { left: x, right: x + w, top: 0, height: 20, width: w } : { left: 0, right: 0, top: 0, height: 0, width: 0 });
+  const box = (k, x) => Object.assign(new El('div'), { getBoundingClientRect: rect(x, 100), dataset: { key: k } });
+  const fakeHost = {
+    dataset: {}, scrollWidth: 400, scrollHeight: 40, scrollLeft: 0, scrollTop: 0,
+    getBoundingClientRect: rect(0, 400),
+    querySelector: (q) => (q === 'svg.topo-lines' ? lines : null),
+    querySelectorAll: (q) => (q === '.topo-box' ? [box('a', 0), box('b', 300)] : []),
+  };
+  drawEdges(fakeHost, gd);
+  const drawn = lines.children.length === 1 && lines.children[0].getAttribute('d');
+  ok(drawn === 'M100,10 C200,10 200,10 300,10', 'topology: a connector runs from the right of one box to the left of the next');
+  shown = false;
+  drawEdges(fakeHost, gd);
+  ok(lines.children.length === 1 && lines.children[0].getAttribute('d') === drawn,
+     'topology: measured while the tab is hidden, the connectors stay as they were');
 }
 
 /* --- LAN_ROUTES: the static routes of the management interface ------------- */

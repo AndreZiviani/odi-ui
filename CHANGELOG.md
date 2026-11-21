@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- OMCI, Topology: the connectors no longer collapse into the corner after the
+  window changed size while another tab was open. A resize measured the
+  hidden drawing, where every box is 0 x 0, and going back to the tab did not
+  draw again. Now a hidden drawing is left as it is and the tab redraws when
+  it is shown. `make check` covers it.
+
 - Config: what a save answers stays in the save bar until it is dismissed
   or the next save starts. The bar used to close as soon as every edit was
   written, and took the *Apply now* and *Reboot* buttons and the hint that
