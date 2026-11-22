@@ -20,7 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   confd keeps a keyed tag of the credential in RAM until the file changes,
   and the sign-in page and sign-out never run it. Wrong passwords tried
   before the first right one are spaced out: the check after one waits up to
-  1.6 s before it runs the hash, and is not refused, so the right password
+  1.6 s at the default count (at most 5 s) before it runs the hash, and is
+  not refused, so the right password
   still signs in. A hashed line that is damaged, or asks for more than
   160000 rounds, lets nobody in (as a file that cannot be read does), and
   so does a file of 255 bytes or more, whose first 255 bytes used to be
@@ -29,9 +30,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the safe mode is the way back. Anything that reads the file expecting the
   password now finds the hash there: the odi-oss bundle scrub, which cuts
   after the first colon, then redacts the hash, and
-  `scripts/schema-drift.sh` takes the credential from `CONFD_AUTH` once the
-  file holds a hash, and hands it to curl on stdin rather than on its
-  command line. See DESIGN.md, "The file holds a hash".
+  `scripts/schema-drift.sh`, which takes the credential from `CONFD_AUTH`
+  once the file holds a hash, stops with an error without it, and hands it
+  to curl on stdin rather than on its command line. In odi-oss,
+  `tools/config-backup.sh` (`ODI_AUTH_FILE`, described as the same shape as
+  the file on the stick), `docs/TOOLS.md` and `docs/SETTINGS.md` describe
+  the file as `user:password`: a copy of a hashed file gets 401 from the
+  backup. A companion odi-oss change corrects those. See DESIGN.md, "The
+  file holds a hash".
 - **Going back to v1.19.0 or older after this release:** an older confd
   reads the hashed file as the password as typed, so the password no longer
   signs in. Use the safe mode, or write the file again over ssh

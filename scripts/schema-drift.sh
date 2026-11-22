@@ -80,8 +80,10 @@ fail=0
 #
 # Read the port off the device, and the credential too while the file still
 # holds it as typed. A file that holds a hash (`user:$pbkdf2-...`) cannot sign
-# in, so then the credential comes from CONFD_AUTH. It goes to curl on stdin,
-# not on the command line, where any process on the host could read it.
+# in, so then the credential comes from CONFD_AUTH, and without it the run
+# stops: falling back to the reference parser would compare it with itself and
+# pass, on every stick that has had a sign-in. It goes to curl on stdin, not on
+# the command line, where any process on the host could read it.
 port=$("${SSH[@]}" 'cat /etc/config/confd.port 2>/dev/null' | tr -dc '0-9')
 port="${port:-8080}"
 auth="${CONFD_AUTH:-}"
@@ -89,8 +91,9 @@ if [ -z "$auth" ]; then
 	auth=$("${SSH[@]}" 'cat /etc/config/confd.auth 2>/dev/null' | tr -d '\r\n')
 	case "$auth" in
 	*:\$pbkdf2-*)
-		echo "confd.auth on $HOST holds a hash -- set CONFD_AUTH=user:password to query the daemon" >&2
-		auth= ;;
+		echo "confd.auth on $HOST holds a hash, which cannot sign in." >&2
+		echo "Set CONFD_AUTH=user:password so the parser in confd is checked too." >&2
+		exit 1 ;;
 	esac
 fi
 addr="${HOST#*@}"
@@ -100,7 +103,7 @@ curl_auth() {
 }
 
 if [ -z "$auth" ]; then
-	echo "no usable confd credential for $HOST -- cannot query the daemon" >&2
+	echo "no /etc/config/confd.auth on $HOST -- cannot query the daemon" >&2
 	echo "(the schema was still checked against the reference parser)" >&2
 	cp "$tmp/ref" "$tmp/dev"
 elif ! curl_auth | curl -fsS --max-time 20 -K - "http://$addr:$port/api/values" > "$tmp/api.json"; then

@@ -245,7 +245,8 @@ SSH_OPTS='-S /tmp/odi_ctl' scripts/schema-drift.sh admin@<stick>
 
 Once `confd.auth` holds a hash, which it does after a password was saved or
 signed in with, the script cannot sign in with it: pass
-`CONFD_AUTH=user:password` in the environment.
+`CONFD_AUTH=user:password` in the environment. Without it the script stops
+with an error rather than check the schema against the reference parser alone.
 
 Asserts the schema and a live device agree **in both directions**, and that no
 `address` still carries the display form.
