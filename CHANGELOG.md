@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Security: SECURITY.md sends reports to odi-oss private vulnerability
+  reporting and covers the latest confd release and the one pinned by the
+  latest odi-oss release. The release workflow pins every action to a commit
+  SHA, and Dependabot proposes action updates weekly
+  (AndreZiviani/odi-oss#482).
+
 - `/etc/config/confd.auth` holds a salted, slow hash of the password, no
   longer the password: `user:$pbkdf2-sha256$<iterations>$<salt>$<hash>`,
   PBKDF2-HMAC-SHA256 with a 16-byte salt and 16000 rounds (about 0.4 s,
