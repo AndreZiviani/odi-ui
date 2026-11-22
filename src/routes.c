@@ -1434,24 +1434,11 @@ void serve(int conn)
 				put_fd(conn, "{\"ok\":true}");
 				return;
 			}
-			/* A key is root over ssh, for good. With the factory
-			 * credential anyone who can reach this page could add
-			 * one, so adding waits for a password of the owner's.
-			 * Removing stays open: it gives no one access. */
-			switch (auth_state()) {
-			case 1:
-				break;
-			case 0:
-				respond(conn, "403 Forbidden", "application/json", 0);
-				put_fd(conn, "{\"ok\":false,\"error\":\"refused: this stick still has the factory "
-					     "password. Set your own under System, Access first.\"}");
+			/* A key is root over ssh, for good, so adding one waits
+			 * until somebody has set a password. Removing stays
+			 * open: it gives no one access. */
+			if (refuse_unless_set(conn, 1))
 				return;
-			default:
-				respond(conn, "503 Service Unavailable", "application/json", 0);
-				put_fd(conn, "{\"ok\":false,\"error\":\"refused: the password file cannot be "
-					     "read, so it is not known whether the factory password is in force\"}");
-				return;
-			}
 			if (!form_get(body, "key", key, sizeof(key)) || !key[0] ||
 			    str_len(key) > 1000) {
 				respond(conn, "400 Bad Request", "application/json", 0);
@@ -2601,28 +2588,15 @@ void serve(int conn)
 	 * you cannot regenerate. It is served as a download rather than shown,
 	 * because a page you have to remember to copy out of is not a backup.
 	 *
-	 * It carries the identity keys in clear. That is the point of it, and
-	 * it is why it needs a credential of the owner's: with the factory one,
-	 * which everybody knows, it is refused, as the VoIP secrets are, and so
-	 * it is while the credential file cannot be read.
+	 * It carries the identity keys in clear. That is the point of it. Like
+	 * adding an SSH key it waits until somebody has set a password, and it
+	 * is refused while the credential file cannot be read.
 	 */
 	if (seq(path, "/api/backup")) {
 		long n;
 
-		switch (auth_state()) {
-		case 1:
-			break;
-		case 0:
-			respond(conn, "403 Forbidden", "text/plain", 0);
-			put_fd(conn, "refused: this stick still has the factory password. "
-				     "Set your own under System, Access first.\n");
+		if (refuse_unless_set(conn, 0))
 			return;
-		default:
-			respond(conn, "503 Service Unavailable", "text/plain", 0);
-			put_fd(conn, "refused: the password file cannot be read, so it is not "
-				     "known whether the factory password is in force\n");
-			return;
-		}
 		n = load_values(1);
 
 		/* A cut backup would be missing the hs store, the one part that

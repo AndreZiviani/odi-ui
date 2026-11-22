@@ -7,7 +7,7 @@
  */
 
 import { $, el, fail, get, ask, once, wireTheme, wireHelp } from './dom.js';
-import { S, EDITS } from './state.js';
+import { S, EDITS, pwGate } from './state.js';
 import { liveFibreRates } from './overview.js';
 import { renderStatus, renderLinkCheck, renderPon, sections, lineFacts } from './status.js';
 import { parsePorts } from './flow.js';
@@ -73,6 +73,10 @@ function select(list, on) {
 
 function route() {
   let h = location.hash.replace(/^#/, '');
+  /* No password set yet: the password block is the whole page, whatever the
+     address says. The address is kept for when it opens. */
+  GATED = pwGate();
+  if (GATED) h = 'system/access';
   if (OLD[h]) h = OLD[h];
   let [tab, sub] = h.split('/');
   if (!TABS.includes(tab)) tab = 'status';
@@ -86,8 +90,6 @@ function route() {
     select(subs, on);
     view = tab + '/' + on.dataset.sub;
   }
-  /* The default-password banner is loud on the two views where it is about
-     what you are looking at, and a small chip in the header everywhere else. */
   VIEW = view;
   showAuth();
   /* Asked for by toPassword(): the field can take the focus once its view shows. */
@@ -101,21 +103,30 @@ function route() {
 
 let VIEW = 'status';
 let FOCUS_PASSWORD = false;
+let GATED = false;
 function showAuth() {
-  const loud = VIEW === 'status' || VIEW === 'system/access';
-  /* A safe-mode boot answers to the default whatever was saved, and its own
-     bar already says so and leads to the password: no second warning. */
-  const on = !!(S.FW && S.FW.defaultauth) && !safeModeNow();
-  $('#defaultauth').hidden = !on || !loud;
-  $('#authchip').hidden = !on || loud;
-  /* What confd refuses with the factory credential (routes.c): adding an
-     SSH key and the backup. Said here rather than left to fail. */
+  const gate = pwGate();
+  document.body.classList.toggle('pwgate', gate);
+  $('#pw-gate').hidden = !gate;
+  /* What confd refuses while the default is in force (refuse_unless_set in
+     http.c): adding an SSH key and the backup, and so the reset, which
+     downloads a backup first. Only seen past the gate, so on a safe-mode
+     boot after a save, where the default stays until the reboot. */
+  const on = !!(S.FW && S.FW.defaultauth);
   $('#sshkey-locked').hidden = !on;
   $('#sshkey-add').disabled = on;
   $('#backup-locked').hidden = !on;
   $('#backup-go').disabled = on;
   $('#backup-plain').hidden = on;
-  $('#reset-go').disabled = on;   /* it backs up first, which is refused */
+  $('#backup-plain-help').hidden = on;
+  $('#reset-locked').hidden = !on;
+  $('#reset-go').disabled = on;
+  /* The gate came or went (a save, or the first read of the firmware): show
+     the view it allows, with the focus in the password field when it came. */
+  if (gate !== GATED) {
+    if (gate) FOCUS_PASSWORD = true;
+    route();
+  }
 }
 
 function go(view) {
@@ -175,7 +186,6 @@ function toPassword() {
   FOCUS_PASSWORD = true;
   go('system/access');
 }
-$('#gopassword').onclick = toPassword;
 $('#safe-password').onclick = toPassword;
 /* Closing or reloading the tab with edits not saved asks first: they live in
    this page only. Not during a reboot, which reloads the page on purpose. */

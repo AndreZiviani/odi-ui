@@ -6,16 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Access: with the built-in `admin` / `admin` in force, confd answers 403
-  to adding an SSH key (`POST /api/sshkeys` with `key=`) and to the backup
-  (`GET /api/backup`), as it already did for the VoIP secrets, and 503 to
-  both while the password file cannot be read. Listing and removing keys
-  still work. System, Access and System, Backup say so and disable Add
-  key, the backup downloads and Back up, then reset until a password is
-  set. The setup wizard saves the password, then adds the key, before it
-  writes the line settings, and stops there if either is refused; a
-  skipped password drops the key. The safe-mode help says to add a lost
-  key after the reboot or over SSH (odi-oss#482).
+- Access: "default password" now means that no password was set: no
+  `confd.auth`, an empty one, or a safe-mode boot. A file that holds
+  `admin:admin` counts as set. One check answers `defaultauth` and every
+  route that refuses the default. While it holds, the page shows the
+  password form of System, Access and nothing else (no tab, no setup
+  wizard), and confd answers 403 to adding an SSH key and to
+  `GET /api/backup`, as it did for the VoIP secrets; all of them answer 503
+  while the file cannot be read. Saving any password, `admin` / `admin`
+  included, writes the file and opens the page. On a safe-mode boot the
+  page opens after the save (`authsaved` in `/api/firmware`), while keys
+  and the backup stay refused until the reboot, and the page says so. The
+  default-password banner and header chip are gone, and the setup wizard
+  no longer asks for the password (odi-oss#482).
 
 - Sign-in: a *Forgot your password?* section explains the odi-oss safe mode:
   five short power-ups, or three when the host port runs 2500BASE-X or
