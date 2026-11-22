@@ -24,7 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `stored`, `strict`) and the page takes it from there, so the bar and the
   login cannot disagree. The safe-mode bar
   says why the boot is a safe-mode boot, which passwords apply (root over
-  SSH apart when the image reports `root_password=failed`), and that it
+  SSH apart when the image reports `root_password=failed`, and the default
+  when `login=stored` finds no saved password), and that it
   reboots after 30 minutes (`exit_at=`) unless acknowledged, with no promise
   about the boot after it; *Acknowledge* is offered for that even when
   there is no record (an unusable config partition), the bar then says the

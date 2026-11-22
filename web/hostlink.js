@@ -45,6 +45,7 @@
  */
 
 import { $, el, get, ask, once } from './dom.js';
+import { S } from './state.js';
 
 const POLL_MS = 3000;
 let H = null;          /* the last /api/hostlink answer */
@@ -182,9 +183,16 @@ const defaultLogin = (h) => {
    said apart from this page: root_password=failed is a boot whose web login
    is the default while root kept its own account (the image could not put
    the default one in place). An older image writes no root_password line,
-   or default. */
+   or default. A boot that keeps the saved login but finds no saved password
+   (login=stored with no confd.auth) answers to the default like any boot
+   without one: defaultauth from /api/firmware says so. */
 function loginText(h, now) {
-  if (!defaultLogin(h)) return 'your saved password and SSH keys still apply.';
+  if (!defaultLogin(h)) {
+    if (h.safe_login === 'stored' && S.FW && S.FW.defaultauth) {
+      return 'no password is saved, so this page accepts the default password; one you save applies at once.';
+    }
+    return 'your saved password and SSH keys still apply.';
+  }
   if (now.root_password === 'failed') {
     return 'this page accepts the default password for this boot only; root over SSH does not (its saved login applies).';
   }

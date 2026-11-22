@@ -1371,6 +1371,20 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
     b = bannerText({ supported: true, state: st({}), safemode_now: { ...sb, login: 'default' }, safemode: sb, safe_login: 'stored' });
     ok(/saved password and SSH keys still apply/.test(b.safe),
        'safe mode: safe_login=stored wins too (login=stored beside login=default)');
+    {
+      /* login=stored with no confd.auth: confd falls back to the default as on
+         any boot without a password, and the bar must not say a saved one applies. */
+      const keep = S.FW;
+      S.FW = { defaultauth: true };
+      b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd }, safemode: wd, safe_login: 'stored' });
+      ok(/no password is saved, so this page accepts the default password/.test(b.safe)
+         && !/saved password and SSH keys still apply/.test(b.safe),
+         'safe mode: login=stored with no saved password says the default applies, not a saved one');
+      S.FW = { defaultauth: false };
+      b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd }, safemode: wd, safe_login: 'stored' });
+      ok(/saved password and SSH keys still apply/.test(b.safe), 'safe mode: and with one saved, the saved login applies');
+      S.FW = keep;
+    }
     b = bannerText({ supported: true, state: st({}), safemode_now: { cause: 'short_boots' }, safemode: null, safe_login: 'default' });
     ok(/default passwords work for this boot only/.test(b.safe), 'safe mode: safe_login=default is the default login');
     ok(passwordSavedText('op', { safemode_now: { ...sb }, safemode: sb, safe_login: 'strict' })[0] === 'Saved to /etc/config/confd.auth.',
