@@ -36,7 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Config: a changed field has an *Undo* beside it that puts back the stored
   value of that field alone; *Discard* still drops every edit. Closing or
-  reloading the tab while edits are not saved asks first.
+  reloading the tab while edits are not saved asks first. The space of the
+  *Undo* is kept while it is hidden, so a field no longer shrinks under the
+  cursor at its first keystroke.
 
 - Build: confd is built with the hardening odi-oss gives its own tools:
   `-fstack-protector-strong` with a guard seeded per process from the
@@ -48,8 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is blocked) and a line on stderr and, where `/dev/kmsg` opens, in the
   kernel log, instead of returning into overwritten data.
   `scripts/check-hardening.sh` checks every build before the strip, and a
-  binary that fails it is deleted. The binary grows by 10.5 KB (88,628 to
-  99,124 bytes), uses no instruction mnemonic it did not use before, and
+  binary that fails it is deleted. The binary grows by 10.5 KB (88,440 to
+  98,936 bytes with the pinned toolchain), uses no instruction mnemonic it did not use before, and
   passes the same smoke checks (odi-oss#482).
 
 - Config: what a save answers stays in the save bar until it is dismissed

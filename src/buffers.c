@@ -21,8 +21,10 @@ _Static_assert(META_CAP + CONS_CAP <= sizeof(filebuf),
  * to memset, whatever -ffreestanding and -fno-builtin say, so it has to
  * exist. Here because this file is the one without code of its own. used:
  * the calls appear only at code generation, after LTO would have dropped a
- * function nothing called. Built with -fno-tree-loop-distribute-patterns,
- * without which gcc recognises this loop as a memset and calls itself.
+ * function nothing called. Built with -fno-tree-loop-distribute-patterns as
+ * a precaution: gcc can recognise this loop as a memset and turn it into a
+ * call to itself (seen at -O2 without -ffreestanding, not with the flags
+ * here).
  */
 void *memset(void *dst, int c, unsigned long n) __attribute__((used));
 void *memset(void *dst, int c, unsigned long n)

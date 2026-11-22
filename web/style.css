@@ -473,6 +473,10 @@ button.apply .cost { padding: 1px 6px; }
 /* The field and its Undo share a line; what follows the field goes under both. */
 .s-field > input, .s-field > select { flex: 1 1 0; max-width: 560px; }
 .s-field > .s-undo { flex: none; padding: 4px 10px; font-size: 13px; }
+/* A hidden Undo keeps its place, so the field does not shrink under the
+   cursor when the first keystroke shows it. Invisible, so neither seen,
+   clicked nor reached by Tab. */
+.s-field > .s-undo[hidden] { display: inline-block !important; visibility: hidden; }
 .s-ro { display: inline-block; padding: 7px 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .s-aside { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
 /* A phone is narrower than the sentence; let it wrap rather than push the page sideways. */
