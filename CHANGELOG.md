@@ -27,8 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   taken for the credential (a username of 136 characters or more typed
   into the file keeps it as typed, since its hashed line would be that long);
   the safe mode is the way back. Anything that reads the file expecting the
-  password (the odi-oss bundle scrub cuts after the first colon and is
-  fine) now finds the hash there. See DESIGN.md, "The file holds a hash".
+  password now finds the hash there: the odi-oss bundle scrub, which cuts
+  after the first colon, then redacts the hash, and
+  `scripts/schema-drift.sh` takes the credential from `CONFD_AUTH` once the
+  file holds a hash, and hands it to curl on stdin rather than on its
+  command line. See DESIGN.md, "The file holds a hash".
 - **Going back to v1.19.0 or older after this release:** an older confd
   reads the hashed file as the password as typed, so the password no longer
   signs in. Use the safe mode, or write the file again over ssh

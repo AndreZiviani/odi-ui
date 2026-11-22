@@ -21,6 +21,9 @@
 # so the schema is judged against the daemon.
 #
 #   SSH_OPTS='-S /tmp/odi_ctl' scripts/schema-drift.sh admin@<stick>
+#
+# confd.auth holds a hash once a password was saved or signed in with, and a
+# hash does not sign in: then pass the credential as CONFD_AUTH=user:password.
 
 set -euo pipefail
 
@@ -75,20 +78,33 @@ fail=0
 
 # --- the daemon's own parser, over the same XML ------------------------------
 #
-# Read the credential and port off the device rather than asking for them: they
-# are already there, and a second argument nobody remembers to pass is a check
-# nobody runs.
+# Read the port off the device, and the credential too while the file still
+# holds it as typed. A file that holds a hash (`user:$pbkdf2-...`) cannot sign
+# in, so then the credential comes from CONFD_AUTH. It goes to curl on stdin,
+# not on the command line, where any process on the host could read it.
 port=$("${SSH[@]}" 'cat /etc/config/confd.port 2>/dev/null' | tr -dc '0-9')
 port="${port:-8080}"
-auth=$("${SSH[@]}" 'cat /etc/config/confd.auth 2>/dev/null' | tr -d '\r\n')
+auth="${CONFD_AUTH:-}"
+if [ -z "$auth" ]; then
+	auth=$("${SSH[@]}" 'cat /etc/config/confd.auth 2>/dev/null' | tr -d '\r\n')
+	case "$auth" in
+	*:\$pbkdf2-*)
+		echo "confd.auth on $HOST holds a hash -- set CONFD_AUTH=user:password to query the daemon" >&2
+		auth= ;;
+	esac
+fi
 addr="${HOST#*@}"
+curl_auth() {
+	local a=${auth//\\/\\\\}
+	printf 'user = "%s"\n' "${a//\"/\\\"}"
+}
 
 if [ -z "$auth" ]; then
-	echo "no /etc/config/confd.auth on $HOST -- cannot query the daemon" >&2
+	echo "no usable confd credential for $HOST -- cannot query the daemon" >&2
 	echo "(the schema was still checked against the reference parser)" >&2
 	cp "$tmp/ref" "$tmp/dev"
-elif ! curl -fsS --max-time 20 -u "$auth" "http://$addr:$port/api/values" > "$tmp/api.json"; then
-	echo "could not reach confd at $addr:$port -- is it running?" >&2
+elif ! curl_auth | curl -fsS --max-time 20 -K - "http://$addr:$port/api/values" > "$tmp/api.json"; then
+	echo "could not query confd at $addr:$port -- is it running, and is the credential right?" >&2
 	exit 1
 else
 	python3 -c 'import json,sys; [print(k) for k in json.load(open(sys.argv[1]))]' \

@@ -344,7 +344,7 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           `defaultauth` (true when no credential was
                                           set: no `confd.auth` or an empty one, and on a
                                           safe-mode boot; false for a file with
-                                          content, `admin:admin` included), `authsaved`
+                                          content, `admin:admin` included, as typed or as a hash), `authsaved`
                                           (a password was saved on this safe-mode boot:
                                           the page opens, the default stays in force
                                           until the reboot), `switches`, write progress;
