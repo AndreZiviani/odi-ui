@@ -1,12 +1,16 @@
 # Security policy
 
-confd ships inside the odi-oss image, so a vulnerability in it is handled
-there: same supported versions, same reporting channel.
+confd ships inside the odi-oss image and is also released on its own, for
+example to run on the stock firmware. Either way, a vulnerability in it is
+reported through odi-oss.
 
 ## Supported versions
 
-Only the confd pinned by the latest odi-oss release is supported. A fix ships
-as a new confd release and an odi-oss release that pins it.
+Supported are the latest confd release and the confd pinned by the latest
+odi-oss release, on the odi-oss image or on its own. Older releases get no
+patches. A fix ships as a new confd release and an odi-oss release that pins
+it. If you run confd on its own, update to the new confd release. On the
+odi-oss image, flash that odi-oss release.
 
 ## Reporting a vulnerability
 

@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Security: SECURITY.md sends reports to odi-oss private vulnerability reporting, the release workflow pins every action to a commit SHA, and Dependabot proposes action updates weekly (AndreZiviani/odi-oss#482).
+- Security: SECURITY.md sends reports to odi-oss private vulnerability
+  reporting and covers the latest confd release and the one pinned by the
+  latest odi-oss release. The release workflow pins every action to a commit
+  SHA, and Dependabot proposes action updates weekly
+  (AndreZiviani/odi-oss#482).
 - Status: the status poll runs one at a time. A poll that took longer than
   the 15 s between ticks had the next one queue behind it in confd, which
   answers one request at a time, and the link check could take its samples
