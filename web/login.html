@@ -33,6 +33,29 @@
   </form>
   <p class="help">The password you set in System › Access. A stick that never had one, or that was
      reset, uses <code>admin</code> / <code>admin</code>.</p>
+  <!-- Static on purpose: opening it sends nothing and writes nothing, and it
+       tells nobody on the LAN how this stick is set up or whether it is in
+       the safe mode right now. -->
+  <details class="more" id="forgot">
+    <summary>Forgot your password?</summary>
+    <p>On the odi-oss firmware the safe mode lets you back in with nothing but the stick's power.
+       It keeps your settings, apart from ones that could have locked you out; after you sign in the
+       page names any it reset.</p>
+    <ol>
+      <li>Plug the stick in, wait about 80 seconds, pull it, wait a few seconds.</li>
+      <li>Do that <strong>five</strong> times in a row, or <strong>three</strong> times if the host
+          port is set to 2500BASE-X or HiSGMII or its auto-negotiation is off.</li>
+      <li>Plug it in and leave it in. That boot is the safe mode.</li>
+      <li>After a few minutes sign in here with <code>admin</code> / <code>admin</code>. The page
+          opens at System › Access: set a new password there, acknowledge the safe-mode bar and
+          reboot.</li>
+    </ol>
+    <p>Not sure which count applies? Do it three times first. If <code>admin</code> /
+       <code>admin</code> is still refused a few minutes after the last plug-in, do it five times.</p>
+    <p>Each power-up has to end roughly 60 to 110 seconds after power-on. During the safe mode the
+       fibre is off, so there is no internet through the stick. Besides its usual address it answers
+       at <code>169.254.1.1</code>.</p>
+  </details>
 </main>
 <script type="module" src="/login.js"></script>
 </body>

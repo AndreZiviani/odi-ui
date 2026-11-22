@@ -124,8 +124,8 @@ function wireHelp() {
 }
 
 /*
- * The question before a change, in the page's own dialog (#ask-dialog) rather
- * than the browser's confirm(): the cost badge heads it as it does everywhere
+ * The question before a change, in a dialog of the page (#ask-dialog) rather
+ * than in confirm() of the browser: the cost badge heads it as it does everywhere
  * else, and the button says what it does. `text` is the question as confirm()
  * took it: a first paragraph that is a question becomes the heading, and a
  * closing "Continue?" goes, since the button asks it. `badge` is a cost badge
@@ -148,6 +148,9 @@ function ask(text, { action = 'Continue', back = 'Cancel', danger = false, badge
   if (badge) head.append(badge);
   if (title) head.append(el('h2', null, title));
   head.hidden = !badge && !title;
+  /* A hidden heading names nothing: the dialog is then named by its action. */
+  if (head.hidden) { dlg.removeAttribute('aria-labelledby'); dlg.setAttribute('aria-label', action); }
+  else { dlg.removeAttribute('aria-label'); dlg.setAttribute('aria-labelledby', 'ask-head'); }
   const body = $('#ask-body');
   body.textContent = '';
   for (const p of paras) if (p) body.append(el('p', null, p));
@@ -174,4 +177,17 @@ function ask(text, { action = 'Continue', back = 'Cancel', danger = false, badge
   });
 }
 
-export { $, el, fail, get, bytes, ask, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };
+/*
+ * Run `fn` for a button that writes something, one at a time: the button is
+ * off from the click until `fn` has settled, and a click while it is off does
+ * nothing. Returns whether `fn` ran.
+ */
+async function once(btn, fn) {
+  const b = typeof btn === 'string' ? $(btn) : btn;
+  if (b.disabled) return false;
+  b.disabled = true;
+  try { await fn(); } finally { b.disabled = false; }
+  return true;
+}
+
+export { $, el, fail, get, bytes, ask, once, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };

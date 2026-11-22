@@ -681,6 +681,33 @@ int set_credential(const char *user, const char *pass, const char **why)
 		credbuf[n++] = pass[p];
 	credbuf[n] = 0;
 
+	/*
+	 * The same credential saved again is not written again: a button
+	 * pressed twice, or a page that resends, costs the flash nothing. The
+	 * file is compared as it is on flash, not with load_credential(), which
+	 * answers the default on a safe-mode boot. A file with other modes
+	 * than 0600 is written, so a save still makes it private.
+	 */
+	{
+		char cur[sizeof(credbuf)];
+		long have = read_file(AUTH_PATH, cur, sizeof(cur));
+		unsigned long k = 0;
+		int same;
+
+		while (have > 0 && (cur[have - 1] == '\n' || cur[have - 1] == '\r'))
+			have--;
+		if (have == (long)n)
+			while (k < n && cur[k] == credbuf[k])
+				k++;
+		same = have == (long)n && k == n && file_mode(AUTH_PATH) == 0600;
+		for (k = 0; k < sizeof(cur); k++)
+			((volatile char *)cur)[k] = 0;
+		if (same) {
+			*why = 0;
+			return 1;
+		}
+	}
+
 	/* 0600: the file sits in /etc/config next to the device identity, and
 	 * this daemon is not the only thing that can read that directory. */
 	if (write_file_atomic(AUTH_PATH, credbuf, n, 0600) < 0) {

@@ -384,6 +384,17 @@ check "the new credential works" 200 \
 	"$(code -u op:hunter22 "http://127.0.0.1:$PORT/api/schema")"
 check "no temp file is left beside the credential" no \
 	"$([ -e /etc/config/confd.auth.new ] && echo yes || echo no)"
+# The same credential saved again is not written again: a button pressed
+# twice costs the flash nothing. A rename would give the file a new inode.
+before=$(stat -c '%i' /etc/config/confd.auth)
+check "saving the same credential again answers ok" yes \
+	"$(err "$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+check "and leaves the file as it was" "$before" "$(stat -c '%i' /etc/config/confd.auth)"
+# Unless the file is not private: then the save writes it again, 0600.
+chmod 644 /etc/config/confd.auth
+curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "http://127.0.0.1:$PORT/api/password" >/dev/null
+check "the same credential in a file others can read is written again, 0600" 600 \
+	"$(stat -c '%a' /etc/config/confd.auth)"
 check "the default stops working once one is set" 401 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "and the default is no longer reported" false \
@@ -2236,9 +2247,23 @@ check "safe-mode boot: the saved credential is not" 401 \
 check "safe-mode boot: the page is told the default is in force" yes \
 	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware")" '"defaultauth":true')"
 check "safe-mode boot: confd.auth is untouched" "$AUTH" "$(cat /etc/config/confd.auth)"
+# The saved credential sent again is not written, though load_credential()
+# answers the default here; a new one is written, and in force from the next
+# boot only.
+before=$(stat -c '%i' /etc/config/confd.auth)
+check "safe-mode boot: saving the stored credential answers ok" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data "user=${AUTH%%:*}&password=${AUTH#*:}" "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+check "safe-mode boot: and leaves the file as it was" "$before" "$(stat -c '%i' /etc/config/confd.auth)"
+check "safe-mode boot: a new credential is saved" yes \
+	"$(err "$(curl -s -u admin:admin -X POST -d 'user=op&password=rescued1' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+check "safe-mode boot: and admin:admin still works for this boot" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 rm -f /var/run/safe-mode
-check "the next boot: the saved credential again" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "the next boot: the credential saved in the safe mode" 200 "$(code -u op:rescued1 "http://127.0.0.1:$PORT/api/schema")"
 check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+printf '%s' "$AUTH" > /etc/config/confd.auth
+chmod 600 /etc/config/confd.auth
+check "the saved credential again" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
 

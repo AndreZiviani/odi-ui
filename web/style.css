@@ -335,6 +335,8 @@ details > summary::before { content: "+"; display: inline-block; width: 1.1em; c
 details[open] > summary::before { content: "\2212"; }
 details.more[open] > summary { margin-bottom: 6px; }
 details.more p { font-size: 14px; color: var(--ink-2); }
+details.more ol { font-size: 14px; color: var(--ink-2); padding-left: 22px; }
+details.more li + li { margin-top: 4px; }
 
 pre {
   background: var(--well); border: 1px solid var(--line); border-radius: var(--r);
@@ -466,6 +468,15 @@ button.apply .cost { padding: 1px 6px; }
 .s-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .s-inline .s-ro { padding: 0; }
 .s-field input, .s-field select { width: min(100%, 560px); }
+.s-field { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; }
+.s-field > * { flex: 1 1 100%; min-width: 0; }
+/* The field and its Undo share a line; what follows the field goes under both. */
+.s-field > input, .s-field > select { flex: 1 1 0; max-width: 560px; }
+.s-field > .s-undo { flex: none; padding: 4px 10px; font-size: 13px; }
+/* A hidden Undo keeps its place, so the field does not shrink under the
+   cursor when the first keystroke shows it. Invisible, so neither seen,
+   clicked nor reached by Tab. */
+.s-field > .s-undo[hidden] { display: inline-block !important; visibility: hidden; }
 .s-ro { display: inline-block; padding: 7px 0; color: var(--ink-2); overflow-wrap: anywhere; }
 .s-aside { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
 /* A phone is narrower than the sentence; let it wrap rather than push the page sideways. */
@@ -992,3 +1003,4 @@ input[type=file]::file-selector-button {
 #signin-msg { font-size: 14px; margin: 0 0 12px; }
 #signin-msg:empty { display: none; }
 .signin .help { font-size: 13px; margin: 0; }
+.signin details.more { margin-top: 14px; }

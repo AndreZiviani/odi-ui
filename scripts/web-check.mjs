@@ -1277,7 +1277,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
 
 /* --- the host-link banner and the Host port control ------------------------- */
 {
-  const { bannerText, trialLeft, renderHostlink, wireHostlink } = await import(join(root, 'web', 'hostlink.js'));
+  const { bannerText, trialLeft, renderHostlink, wireHostlink, safeModeNow, passwordSavedText } = await import(join(root, 'web', 'hostlink.js'));
   const keep = API['/api/hostlink'];
   const st = (o) => ({ setting: 'on', running: 'on', phase: 'steady', fallback: '0', ...o });
 
@@ -1328,6 +1328,113 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(/id="safe-details" href="#system\/access"/.test(html) && /<details[^>]*id="safemode-help"/.test(html),
      'host link: Details points at the safe-mode help on System, Access, which exists');
   ok(!/id="hostlinkbanner"/.test(html), 'host link: the big card is gone');
+  ok(doc.querySelector('#safe-password').hidden === true && !safeModeNow(),
+     'safe mode: an old record alone offers no new password and is not this boot');
+  /* Acknowledge writes a record: one request at a time, the button off until it answers. */
+  {
+    const keepFetch = globalThis.fetch;
+    const btn = doc.querySelector('#hostlink-ack');
+    let posts = 0, release;
+    const held = new Promise((r) => { release = r; });
+    globalThis.fetch = async (path, opts) => {
+      if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
+      posts++;
+      await held;
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    };
+    wireHostlink();
+    btn.onclick();
+    btn.onclick();
+    btn.onclick();
+    ok(btn.disabled === true && posts === 1, 'safe mode: Acknowledge clicked three times sends one request, and is off meanwhile');
+    release();
+    for (let i = 0; i < 20 && btn.disabled; i++) await new Promise((r) => setTimeout(r, 0));
+    ok(btn.disabled === false, 'safe mode: and is on again once it answered');
+    globalThis.fetch = async (path, opts) => {
+      if (opts && opts.method === 'POST') throw new Error('network');
+      return keepFetch(path, opts);
+    };
+    btn.onclick();
+    for (let i = 0; i < 20 && btn.disabled; i++) await new Promise((r) => setTimeout(r, 0));
+    ok(btn.disabled === false, 'safe mode: a failed Acknowledge gives the button back');
+    globalThis.fetch = keepFetch;
+  }
+  {
+    const keepFetch = globalThis.fetch;
+    const rb = doc.querySelector('#reseed-ack');
+    let posts = 0, release;
+    const held = new Promise((r) => { release = r; });
+    globalThis.fetch = async (path, opts) => {
+      if (!(opts && opts.method === 'POST')) return keepFetch(path, opts);
+      posts++;
+      await held;
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    };
+    rb.onclick();
+    rb.onclick();
+    ok(rb.disabled === true && posts === 1, 'recreated store: Acknowledge clicked twice sends one request');
+    release();
+    for (let i = 0; i < 20 && rb.disabled; i++) await new Promise((r) => setTimeout(r, 0));
+    ok(rb.disabled === false, 'recreated store: and is on again once it answered');
+    globalThis.fetch = keepFetch;
+  }
+  API['/api/hostlink'] = { supported: true, state: st({}), safemode_now: { short_boots: '3' },
+                           safemode: { short_boots: '3' }, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(safeModeNow() && doc.querySelector('#safe-password').hidden === false,
+     'safe mode: a safe-mode boot offers Set a new password in its bar');
+  API['/api/hostlink'] = { supported: true, state: st({}), safemode_now: {}, safemode: null, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(safeModeNow(), 'safe mode: an empty flag is still a safe-mode boot');
+  /* Back to the fallback answer the checks below read. */
+  API['/api/hostlink'] = { supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }),
+                           safemode_now: null, safemode: { short_boots: '3' }, link: '1', uptime: '40' };
+  await renderHostlink();
+  ok(/three times when the host port is set to 2500BASE-X or\s+HiSGMII, or to auto-negotiation off/.test(html),
+     'safe mode: the help names every setting that lowers the count to three');
+  {
+    const login = readFileSync(join(root, 'web', 'login.html'), 'utf8');
+    const forgot = (login.match(/<details[^>]*id="forgot"[\s\S]*?<\/details>/) || [''])[0];
+    ok(/<summary>Forgot your password\?<\/summary>/.test(forgot),
+       'sign-in: the page has a Forgot your password? section');
+    ok(forgot && !/<(script|form|button|a|input)\b/.test(forgot),
+       'sign-in: and it is static: nothing in it sends or writes anything');
+    ok(/five/.test(forgot) && /three/.test(forgot) && /2500BASE-X/.test(forgot) && /HiSGMII/.test(forgot)
+       && /auto-negotiation is off/.test(forgot) && /three times first/.test(forgot),
+       'sign-in: it gives both counts, what lowers it to three, and what to do when unsure');
+  }
+  {
+    const app = readFileSync(join(root, 'web', 'app.js'), 'utf8');
+    ok(/function savePassword\(\) \{ return once\('#pw-save', savePasswordOnce\); \}/.test(app)
+       && /\$\('#pw-save'\)\.onclick = savePassword;/.test(app),
+       'password: Save password goes through once(), one request at a time');
+    const { once } = await import(join(root, 'web', 'dom.js'));
+    const b = { disabled: false };
+    let runs = 0, release;
+    const held = new Promise((r) => { release = r; });
+    const first = once(b, async () => { runs++; await held; });
+    const second = await once(b, async () => { runs++; });
+    ok(b.disabled === true && runs === 1 && second === false,
+       'once: a second click while the first runs does nothing, and the button is off');
+    release();
+    await first;
+    ok(b.disabled === false, 'once: the button is on again when it settled');
+    let threw = false;
+    try { await once(b, async () => { throw new Error('network'); }); } catch (e) { threw = true; }
+    ok(threw && b.disabled === false, 'once: a failure gives the button back and is not swallowed');
+  }
+  {
+    const fresh = passwordSavedText('op', { safemode_now: null, safemode: null });
+    ok(fresh[0] === 'Saved to /etc/config/confd.auth.' && /signs in again as op\./.test(fresh[1]),
+       'password: a normal boot says saved, and that other browsers sign in as the new user');
+    const sm = passwordSavedText('op', { safemode_now: {}, safemode: { short_boots: '5' } });
+    ok(/From the next boot this page answers to op/.test(sm[0]) && /Acknowledge the safe-mode bar, then reboot\./.test(sm[0])
+       && /until the reboot signs in again with admin \/ admin/.test(sm[1]) && !/as op/.test(sm[1]),
+       'password: on a safe-mode boot the new credential is for the next boot, and others use admin / admin until then');
+    const acked = passwordSavedText('op', { safemode_now: {}, safemode: null });
+    ok(!/Acknowledge/.test(acked[0]) && /Reboot to use it\./.test(acked[0]),
+       'password: once acknowledged it no longer asks for an Acknowledge that is gone');
+  }
   ok(textOf(doc.querySelector('#hostlink-now')).includes('Host link'), 'host link: status rows render');
   ok(doc.querySelector('#hostlink').hidden === false, 'host link: the Host port block shows on an image that has it');
   ok(doc.querySelector('#hostlink-keep-on').hidden === false,
@@ -2111,6 +2218,29 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   ok(tg.children.length === 2 && /GEM 1434/.test(tgText) && /VEIP 0x0601/.test(tgText),
      'topology: the tab renders the columns with the boxes in them');
   ok(/11 T-CONTs without an Alloc-ID/.test(tgText), 'topology: spare T-CONTs fold into one line');
+
+  /* Shown again, the tab draws the connectors from where the boxes are now,
+     without reading the tables again. */
+  {
+    const boxes = [];
+    const walk = (n) => { if (n && n.dataset && n.dataset.key) boxes.push(n); for (const c of (n && n.children) || []) walk(c); };
+    walk(tg);
+    boxes.forEach((b, i) => { b.getBoundingClientRect = () => ({ left: (i % 8) * 150, right: (i % 8) * 150 + 100, top: i * 30, height: 20, width: 100 }); });
+    const svg = new El('svg');
+    svg.removeChild = (c) => { svg.children.splice(svg.children.indexOf(c), 1); };
+    Object.defineProperty(svg, 'firstChild', { get: () => svg.children[0] || null });
+    Object.assign(tg, {
+      getBoundingClientRect: () => ({ left: 0, right: 1200, top: 0, height: 900, width: 1200 }),
+      querySelector: (q) => (q === 'svg.topo-lines' ? svg : null),
+      querySelectorAll: (q) => (q === '.topo-box' ? boxes : []),
+      scrollWidth: 1200, scrollHeight: 900, scrollLeft: 0, scrollTop: 0,
+    });
+    OMCI_ASKED.length = 0;
+    await renderTopology();
+    ok(boxes.length > 0 && svg.children.length > 0 && OMCI_ASKED.length === 0,
+       'topology: shown again, the connectors are drawn anew and no table is read again');
+    delete tg.getBoundingClientRect; delete tg.querySelector; delete tg.querySelectorAll;
+  }
   ok(!/omcid reads each as that IW TP/.test(textOf(doc.querySelector('#topo-facts'))),
      'topology: no TP type 3 note on ISP1');
 
@@ -2147,6 +2277,31 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
      'topology ISP2: what the ONU made for itself is not flagged as unused');
   for (const k of Object.keys(OMCI)) delete OMCI[k];
   Object.assign(OMCI, keepOmci);
+
+  /* The connectors are measured from the boxes. On a hidden tab every box is
+     0 x 0, so a resize there must keep the drawing rather than stack every
+     connector in the corner. */
+  const { drawEdges } = await import(join(root, 'web', 'topology.js'));
+  const gd = { nodes: new Map([['a', { used: true }], ['b', { used: true }]]), edges: [{ from: 'a', to: 'b' }] };
+  const lines = new El('svg');
+  lines.removeChild = (c) => { lines.children.splice(lines.children.indexOf(c), 1); };
+  Object.defineProperty(lines, 'firstChild', { get: () => lines.children[0] || null });
+  let shown = true;
+  const rect = (x, w) => () => (shown ? { left: x, right: x + w, top: 0, height: 20, width: w } : { left: 0, right: 0, top: 0, height: 0, width: 0 });
+  const box = (k, x) => Object.assign(new El('div'), { getBoundingClientRect: rect(x, 100), dataset: { key: k } });
+  const fakeHost = {
+    dataset: {}, scrollWidth: 400, scrollHeight: 40, scrollLeft: 0, scrollTop: 0,
+    getBoundingClientRect: rect(0, 400),
+    querySelector: (q) => (q === 'svg.topo-lines' ? lines : null),
+    querySelectorAll: (q) => (q === '.topo-box' ? [box('a', 0), box('b', 300)] : []),
+  };
+  drawEdges(fakeHost, gd);
+  const drawn = lines.children.length === 1 && lines.children[0].getAttribute('d');
+  ok(drawn === 'M100,10 C200,10 200,10 300,10', 'topology: a connector runs from the right of one box to the left of the next');
+  shown = false;
+  drawEdges(fakeHost, gd);
+  ok(lines.children.length === 1 && lines.children[0].getAttribute('d') === drawn,
+     'topology: measured while the tab is hidden, the connectors stay as they were');
 }
 
 /* --- LAN_ROUTES: the static routes of the management interface ------------- */
@@ -3630,6 +3785,8 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
      && doc.querySelector('#ask-body').children.length === 1
      && textOf(doc.querySelector('#ask-body')) === 'Whoever holds it can no longer log in.',
      'ask: the badge and the question head the dialog, and the closing Continue? goes');
+  ok(dlg.getAttribute('aria-labelledby') === 'ask-head' && dlg.getAttribute('aria-label') === null,
+     'ask: a heading names the dialog');
   ok(doc.querySelector('#ask-ok').textContent === 'Remove key' && doc.querySelector('#ask-ok').className === 'danger',
      'ask: the button says what it does, in red for a change that cannot be taken back');
   doc.querySelector('#ask-ok').onclick();
@@ -3638,6 +3795,8 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   p = ask('The address changes now. Continue?', { action: 'Change the address' });
   ok(head.hidden === true && textOf(doc.querySelector('#ask-body')) === 'The address changes now.',
      'ask: a single paragraph has no heading, and loses its Continue?');
+  ok(dlg.getAttribute('aria-label') === 'Change the address' && dlg.getAttribute('aria-labelledby') === null,
+     'ask: with no heading the dialog is named by its action');
   let prevented = false;
   dlg.oncancel({ preventDefault: () => { prevented = true; } });
   ok(await p === false && prevented && !dlg.open, 'ask: Escape answers no');
@@ -3647,6 +3806,34 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   doc.querySelector('#ask-cancel').onclick();
   ok(await p === false, 'ask: and answers no');
   delete dlg.showModal;
+}
+
+/* --- Undo on one field --------------------------------------------------- */
+{
+  const { renderValue } = await import(join(root, 'web', 'config.js'));
+  const { EDITS: Ed } = await import(join(root, 'web', 'state.js'));
+  const row = S.SCHEMA.find((r) => r.name === 'VLAN_MANU_TAG_VID');
+  Ed.clear();
+  const box = renderValue(row, '11');
+  let input = null, undo = null;
+  walk(box, (x) => {
+    if (x.tagName === 'input') input = x;
+    if (x.tagName === 'button' && x.classList.contains('s-undo')) undo = x;
+  });
+  ok(input && undo && undo.hidden === true, 'undo: a field with no edit shows no Undo');
+  input.value = '12';
+  input.oninput();
+  ok(Ed.get('VLAN_MANU_TAG_VID') === '12' && undo.hidden === false, 'undo: an edit shows it');
+  input.value = '11';
+  input.oninput();
+  ok(!Ed.has('VLAN_MANU_TAG_VID') && undo.hidden === true, 'undo: typing the stored value back hides it');
+  input.value = '13';
+  input.oninput();
+  Ed.set('LAN_IP_ADDR', '10.0.0.2');
+  undo.onclick();
+  ok(!Ed.has('VLAN_MANU_TAG_VID') && Ed.get('LAN_IP_ADDR') === '10.0.0.2',
+     'undo: drops this edit and keeps the others');
+  Ed.clear();
 }
 
 console.log(failed ? `\n${failed} failed` : '\nweb modules ok');

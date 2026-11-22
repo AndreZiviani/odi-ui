@@ -505,7 +505,10 @@ backup go through `/api/netaddr` instead when the image has the trial.
     POST /api/password   user=...&password=...
                                           user 1-64 printable characters, no space or
                                           colon; password 4-128 printable ASCII. Ends
-                                          every session but the one that made the change
+                                          every session but the one that made the change.
+                                          The credential already on flash, in a file
+                                          of mode 0600, is not written again: the same
+                                          answer, the file untouched
     GET  /api/sshkeys                     {"path":..., "keys":[{"i":0,"line":"ssh-ed25519 AAAA... comment"}]}
     POST /api/sshkeys    key=<line>       append; the type is one of ssh-ed25519,
                                           ssh-rsa, ecdsa-sha2-nistp256/384/521 or an

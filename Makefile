@@ -31,15 +31,39 @@ STRIP := $(CROSS)strip
 # so nothing is quietly turned back into a libc call.
 CFLAGS  := -std=c99 -Os -Wall -Wextra -Werror=implicit-function-declaration \
            -march=mips1 -mabi=32 -EB -msoft-float -G0 \
-           -fno-pic -mno-abicalls -ffreestanding -fno-builtin -fno-stack-protector \
+           -fno-pic -mno-abicalls -ffreestanding -fno-builtin \
            -flto \
            -DBUILD_ID='"$(BUILD_ID)"' 
+# The hardening odi-oss builds its own tools with (src/harden.mk there):
+# -fstack-protector-strong       a guard word below the saved registers of
+#                                every function with a local array or a local
+#                                whose address is taken, checked on return.
+#                                The guard and the failure path are ours, in
+#                                src/start.S: no libc provides them.
+# -fstack-clash-protection       probes every page of a frame larger than one
+#                                page, so no frame can step over the guard gap
+#                                below the stack.
+# -ftrivial-auto-var-init=zero   locals start at zero, never at what the last
+#                                call left on the stack.
+# -fno-strict-overflow           signed and pointer overflow wrap, so a bounds
+#                                check written as an overflow test is never
+#                                optimised away.
+# -Wvla                          a variable-length array is an attacker-sized
+#                                stack allocation; there are none, keep it so.
+# -z noexecstack                 PT_GNU_STACK without the execute bit.
+# scripts/check-hardening.sh checks the result before the strip. A binary
+# that fails it is deleted (.DELETE_ON_ERROR below), so the next make links
+# and checks it again instead of taking the unchecked file as up to date.
+CFLAGS  += -fstack-protector-strong -fstack-clash-protection \
+           -ftrivial-auto-var-init=zero -fno-strict-overflow -Wvla \
+           -fno-tree-loop-distribute-patterns
 # -flto on both sides. Splitting confd.c into translation units cost 6.5 KB of
 # lost cross-file inlining (20664 -> 27208); LTO gives it back at 20712, within
 # 48 bytes of the single-file build. `make verify` re-runs the ISA audit on the
 # result, which is the check that matters: LTO changes codegen, and this core
 # traps on instructions GCC will happily emit.
-LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none -flto
+LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none -flto \
+           -Wl,-z,noexecstack
 
 SRCS := src/start.S src/main.c src/routes.c src/http.c src/mib.c \
         src/firmware.c src/status.c src/omci.c src/buffers.c
@@ -57,12 +81,14 @@ HDRS := $(wildcard src/*.h)
 # Park the value in a file and depend on the file. FORCE runs the recipe every
 # time; `cmp` means the file -- and its mtime -- only moves when the value
 # actually differs.
+.DELETE_ON_ERROR:
 .PHONY: FORCE
 $(BUILD)/.build-id: FORCE | $(BUILD)
 	@printf '%s' '$(BUILD_ID)' | cmp -s - $@ 2>/dev/null || printf '%s' '$(BUILD_ID)' > $@
 
-$(BUILD)/confd: $(SRCS) $(HDRS) $(BUILD)/.build-id | $(BUILD)
+$(BUILD)/confd: $(SRCS) $(HDRS) $(BUILD)/.build-id scripts/check-hardening.sh Makefile | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(filter %.S %.c,$^)
+	sh scripts/check-hardening.sh $(CROSS) $@
 	$(STRIP) $@
 
 $(BUILD):
