@@ -39,7 +39,7 @@
  *     until it is set. It stays until acknowledged, from its own bar.
  */
 
-import { $, el, get, ask } from './dom.js';
+import { $, el, get, ask, once } from './dom.js';
 
 const POLL_MS = 3000;
 let H = null;          /* the last /api/hostlink answer */
@@ -160,6 +160,34 @@ function renderBanner() {
   bar('#reseedbanner', '#reseed-text', b.reseed);
   bar('#fallbackbanner', '#fallback-text', b.fallback);
   $('#hostlink-ack').hidden = !b.ack;
+  $('#safe-password').hidden = !safeModeNow();
+}
+
+/* The last /api/hostlink answer. */
+function hostlinkNow() { return H; }
+
+/* Whether this boot is a safe-mode boot: the flag, not an old record. */
+function safeModeNow() {
+  return !!(H && H.safemode_now);
+}
+
+/*
+ * What the page says after a password was saved, for a /api/hostlink answer
+ * h: two lines, the result and what other browsers do. A safe-mode boot
+ * answers to admin / admin until it ends whatever was saved, so the new
+ * credential is for the next boot, and the bar is named only while it still
+ * waits for Acknowledge. Pure, so make check can drive it.
+ */
+function passwordSavedText(user, h) {
+  const saved = 'Saved to /etc/config/confd.auth.';
+  if (!(h && h.safemode_now)) {
+    return [saved, 'You stay signed in here. Any other browser signed in to this page is signed out, '
+      + 'and signs in again as ' + user + '.'];
+  }
+  return [saved + ' From the next boot this page answers to ' + user + ' and the new password. '
+      + (h.safemode ? 'Acknowledge the safe-mode bar, then reboot.' : 'Reboot to use it.'),
+    'You stay signed in here. Any other browser signed in to this page is signed out, and until the '
+      + 'reboot signs in again with admin / admin.'];
 }
 
 /* Seconds left in the trial, from the stick's own clock: the deadline and the
@@ -377,24 +405,26 @@ async function finish(action) {
   closeDialog(await refresh());
 }
 
-async function ack() {
+/* The two Acknowledge buttons write a record on the stick: one request at a
+   time, the button off until the answer and the new state are in. */
+const ack = () => once('#hostlink-ack', async () => {
   try {
     const res = await post('action=ack');
     if (!res.ok) { say('#hostlink-out', 'bad', res.error || res.output || 'not acknowledged'); return; }
   } catch (e) { return; }
   await refresh();
-}
+});
 
 /* The recreated-store bar answers in itself: it shows on every view, and
    the Host port block may not be on screen. */
-async function ackReseed() {
+const ackReseed = () => once('#reseed-ack', async () => {
   say('#reseed-out', null, '');
   try {
     const res = await post('action=reseed-ack');
     if (!res.ok) { say('#reseed-out', 'bad', res.error || res.output || 'not acknowledged'); return; }
   } catch (e) { say('#reseed-out', 'bad', String(e.message || e)); return; }
   await refresh();
-}
+});
 
 function wireHostlink() {
   $('#hostlink-try').onclick = () => tryMode($('#hostlink-try').dataset.mode || 'off');
@@ -411,4 +441,4 @@ function wireHostlink() {
   };
 }
 
-export { bannerText, trialLeft, refresh as renderHostlink, wireHostlink, serdesShort };
+export { bannerText, trialLeft, refresh as renderHostlink, wireHostlink, serdesShort, safeModeNow, passwordSavedText, hostlinkNow };

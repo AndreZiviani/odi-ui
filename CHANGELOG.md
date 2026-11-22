@@ -17,6 +17,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   longer waited for. The wizard's own 3 s status read is unchanged. `make
   check` covers the timeout and the one-at-a-time guard.
 
+- Sign-in: a *Forgot your password?* section explains the odi-oss safe mode:
+  five short power-ups, or three when the host port runs 2500BASE-X or
+  HiSGMII or has auto-negotiation off, then sign in with `admin` / `admin`.
+  When the count is unknown it says to try three first and then five. It is
+  static text: it sends nothing and tells no one on the LAN how the stick is
+  set up or whether it is in the safe mode.
+- Safe mode: signing in on a safe-mode boot opens System › Access with the
+  password field focused, unless the address names another view. The
+  safe-mode bar has *Set a new password*, the default-password warning no
+  longer shows a second time, and a password saved in that boot says it is
+  in force from the next boot and that other browsers sign in with `admin` /
+  `admin` until then. The help under System › Access names
+  2500BASE-X and HiSGMII as lowering the count to three.
+- Save password and both *Acknowledge* buttons are off while their request
+  runs, so clicks in a row send one request. Saving the credential already
+  on flash answers ok without writing `confd.auth` again, unless the file is
+  not 0600: then it is written, as before, to make it private.
+
 - OMCI, Topology: the connectors no longer collapse into the corner after the
   window changed size while another tab was open. A resize measured the
   hidden drawing, where every box is 0 x 0, and going back to the tab did not
@@ -29,7 +47,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Config: a changed field has an *Undo* beside it that puts back the stored
   value of that field alone; *Discard* still drops every edit. Closing or
-  reloading the tab while edits are not saved asks first.
+  reloading the tab while edits are not saved asks first. The space of the
+  *Undo* is kept while it is hidden, so a field no longer shrinks under the
+  cursor at its first keystroke.
 
 - Build: confd is built with the hardening odi-oss gives its own tools:
   `-fstack-protector-strong` with a guard seeded per process from the
@@ -41,8 +61,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is blocked) and a line on stderr and, where `/dev/kmsg` opens, in the
   kernel log, instead of returning into overwritten data.
   `scripts/check-hardening.sh` checks every build before the strip, and a
-  binary that fails it is deleted. The binary grows by 10.5 KB (88,628 to
-  99,124 bytes), uses no instruction mnemonic it did not use before, and
+  binary that fails it is deleted. The binary grows by 10.5 KB (88,440 to
+  98,936 bytes with the pinned toolchain), uses no instruction mnemonic it did not use before, and
   passes the same smoke checks (odi-oss#482).
 
 - Config: what a save answers stays in the save bar until it is dismissed

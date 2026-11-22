@@ -6,7 +6,7 @@
  * any of this.
  */
 
-import { $, el, fail, get, oneAtATime, ask, wireTheme, wireHelp } from './dom.js';
+import { $, el, fail, get, oneAtATime, ask, once, wireTheme, wireHelp } from './dom.js';
 import { S, EDITS } from './state.js';
 import { liveFibreRates } from './overview.js';
 import { renderStatus, renderLinkCheck, renderPon, sections, lineFacts } from './status.js';
@@ -23,7 +23,7 @@ import { renderPhone, wirePhone, hideSecrets } from './phone.js';
 import { wireRestore, saveBackup } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
-import { renderHostlink, wireHostlink } from './hostlink.js';
+import { renderHostlink, wireHostlink, safeModeNow, passwordSavedText, hostlinkNow } from './hostlink.js';
 import { renderNetaddr, wireNetaddr } from './netaddr.js';
 import { checkForUpdate, wireUpdates, renderUpdateSwitch } from './updates.js';
 import { passwordProblem, sshKeyProblem } from './validate.js';
@@ -90,6 +90,8 @@ function route() {
      what you are looking at, and a small chip in the header everywhere else. */
   VIEW = view;
   showAuth();
+  /* Asked for by toPassword(): the field can take the focus once its view shows. */
+  if (FOCUS_PASSWORD && view === 'system/access') { FOCUS_PASSWORD = false; $('#pw-pass').focus(); }
   /* Full help opens the field help, and only the Config tab has fields. */
   $('#helptoggle').hidden = tab !== 'config';
   /* The phone secrets live in memory only while that view is open. */
@@ -98,9 +100,12 @@ function route() {
 }
 
 let VIEW = 'status';
+let FOCUS_PASSWORD = false;
 function showAuth() {
   const loud = VIEW === 'status' || VIEW === 'system/access';
-  const on = !!(S.FW && S.FW.defaultauth);
+  /* A safe-mode boot answers to the default whatever was saved, and its own
+     bar already says so and leads to the password: no second warning. */
+  const on = !!(S.FW && S.FW.defaultauth) && !safeModeNow();
   $('#defaultauth').hidden = !on || !loud;
   $('#authchip').hidden = !on || loud;
 }
@@ -157,7 +162,13 @@ wireUpdates();
    status page do not need it. Both firmwares answer it: the stock diag, and
    odi-oss diag from its own L2 table readback, under the same command. */
 $('#l2-load').onclick = renderL2;
-$('#gopassword').onclick = () => { go('system/access'); $('#pw-pass').focus(); };
+/* The view changes on the hashchange, and route() focuses the field once it shows. */
+function toPassword() {
+  FOCUS_PASSWORD = true;
+  go('system/access');
+}
+$('#gopassword').onclick = toPassword;
+$('#safe-password').onclick = toPassword;
 /* Closing or reloading the tab with edits not saved asks first: they live in
    this page only. Not during a reboot, which reloads the page on purpose. */
 window.addEventListener('beforeunload', (e) => {
@@ -193,7 +204,10 @@ async function checkAuth(known) {
  * of every factory-reset stick, and a credential that can only be set from a
  * shell is one that stays at its default.
  */
-async function savePassword() {
+/* It writes the credential: one request at a time (once() in dom.js). */
+function savePassword() { return once('#pw-save', savePasswordOnce); }
+
+async function savePasswordOnce() {
   const out = $('#pw-out');
   const user = $('#pw-user').value.trim();
   const pass = $('#pw-pass').value;
@@ -213,11 +227,9 @@ async function savePassword() {
     });
     const j = await r.json();
     if (!j.ok) { out.append(el('div', 'bad', j.error || 'refused')); return; }
-    out.append(el('div', 'good', 'Saved to /etc/config/confd.auth.'));
     /* This browser stays signed in; confd has signed out every other one. */
-    out.append(el('div', null,
-      'You stay signed in here. Any other browser signed in to this page is signed out, '
-      + 'and signs in again as ' + user + '.'));
+    const [said, others] = passwordSavedText(user, hostlinkNow());
+    out.append(el('div', 'good', said), el('div', null, others));
     $('#pw-pass').value = '';
     $('#pw-pass2').value = '';
     await checkAuth();
@@ -507,6 +519,10 @@ let INIT_HOSTLINK = null;
   renderSetupEntry();
   /* The host-link banner, from what /api/init already brought. */
   await renderHostlink(INIT_HOSTLINK);
+  showAuth();
+  /* Signed in on a safe-mode boot, most likely to replace a lost password:
+     open that form, unless the address already names a view. */
+  if (safeModeNow() && !location.hash.slice(1)) toPassword();
   /* The address trial: whether the image has it (Save and Restore then go through it) and a trial that
      is already running, which raises its dialog. Before the form is used. */
   await renderNetaddr();

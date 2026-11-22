@@ -199,4 +199,17 @@ function ask(text, { action = 'Continue', back = 'Cancel', danger = false, badge
   });
 }
 
-export { $, el, fail, get, oneAtATime, bytes, ask, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };
+/*
+ * Run `fn` for a button that writes something, one at a time: the button is
+ * off from the click until `fn` has settled, and a click while it is off does
+ * nothing. Returns whether `fn` ran.
+ */
+async function once(btn, fn) {
+  const b = typeof btn === 'string' ? $(btn) : btn;
+  if (b.disabled) return false;
+  b.disabled = true;
+  try { await fn(); } finally { b.disabled = false; }
+  return true;
+}
+
+export { $, el, fail, get, oneAtATime, bytes, ask, once, currentTheme, setTheme, wireTheme, createHelpToggle, setFullHelp, wireHelp, THEME_KEY, HELP_KEY };
