@@ -85,7 +85,11 @@ int request_target(const char *r, char *out, unsigned long cap);
 int header_present(const char *r, const char *name);
 /* Whether a header holds `needle`, case-sensitive: Accept and text/html. */
 int header_has(const char *r, const char *name, const char *needle);
-/* Whether the credential came from the file or from the built-in default.
+/* Which credential is in force: 1 one the owner set, whatever it is; 0 the
+ * built-in default; -1 when the credential file cannot be read. */
+int cred_state(void);
+/* Whether the built-in default is what signs in: no credential file, or an
+ * empty one, or a safe-mode boot that opens it. Not what the file holds.
  * Reported to the page, because a well-known default that nobody can see is
  * the same thing as no password at all. */
 int auth_is_default(void);

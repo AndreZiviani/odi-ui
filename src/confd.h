@@ -383,8 +383,7 @@
  * line, requests are checked against a tag in RAM (`known` in http.c). It
  * is paid for the first right password after a start of confd or a change
  * of the file, for each wrong one tried before that (held apart by the
- * pause of COLD_KDF_MIN_MS in http.c), once more when the page asks whether
- * a line changed under a session is the default, and by every save. A
+ * pause of COLD_KDF_MIN_MS in http.c), and by every save. A
  * stick with no /dev/urandom has no tag and pays it per request. A plain
  * decimal number, it is pasted into the line as text.
  *

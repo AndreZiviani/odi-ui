@@ -429,11 +429,11 @@ done
 check "a newline in the password is refused" 400 \
 	"$(code -u op:hunter22 -X POST -d 'user=op&password=one%0Atwo' "http://127.0.0.1:$PORT/api/password")"
 
-# Writing admin:admin into the file must NOT clear the warning: the question
-# the page answers is "is this stick on the credential everybody knows", and
-# a file containing the default is the worst of both.
+# The default is the credential of a stick with no file. A file somebody
+# wrote is theirs, admin:admin included: the page asks whether a credential
+# was set, not which one.
 curl -s -u op:hunter22 -X POST -d 'user=admin&password=admin' "http://127.0.0.1:$PORT/api/password" >/dev/null
-check "a file holding the default still reports the default" true \
+check "admin:admin saved from the page is a credential that was set, not the default" false \
 	"$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
 mv /etc/config/confd.auth.kept /etc/config/confd.auth
 
@@ -596,23 +596,32 @@ check "  as a hash of that one" yes "$(hash_of hunter23)"
 check "  and is the one in force" 200 "$(code -u op:hunter23 "$B/api/schema")"
 check "  the old one is not" 401 "$(code -u op:hunter22 "$B/api/schema")"
 
-# The warning about the default password asks what the password IS, and a
-# hash of admin:admin is still admin:admin. With a session, so that the
-# answer is worked out from the hash and not from what was just presented.
+# The warning about the default password is about a stick with no file. A
+# file that says admin:admin, as a hash or as typed, was written by
+# somebody and is their credential. Asked from a session too, which says
+# nothing about the password in the file.
 typed "$AUTH"
-tok=$(curl -s -D - -o /dev/null -X POST -H "Origin: $B" --data "user=${AUTH%%:*}&password=${AUTH#*:}" "$B/api/login" |
-	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p')
+tok=$(session_of "user=${AUTH%%:*}&password=${AUTH#*:}")
 line_for admin admin 16000 > $A
-check "a hashed admin:admin is reported as the default, to a session" true "$(defaultauth -H "Cookie: odi_session=$tok")"
-check "  and to Basic" true "$(defaultauth -u admin:admin)"
-line_for admin admin1 16000 > $A
-check "a hashed password that only starts like it is not" false "$(defaultauth -H "Cookie: odi_session=$tok")"
-line_for admin2 admin 16000 > $A
-check "nor the default password under another name" false "$(defaultauth -H "Cookie: odi_session=$tok")"
+check "a hashed admin:admin is not reported as the default, to a session" false "$(defaultauth -H "Cookie: odi_session=$tok")"
+check "  nor to Basic" false "$(defaultauth -u admin:admin)"
 typed admin:admin
-check "admin:admin as typed signs in" 200 "$(code -u admin:admin "$B/api/schema")"
+check "admin:admin as typed is not reported as the default, to a session" false "$(defaultauth -H "Cookie: odi_session=$tok")"
+check "  and the file is still as typed: asking proved nothing" admin:admin "$(cat $A)"
+check "  it signs in" 200 "$(code -u admin:admin "$B/api/schema")"
 check "  becomes a hash" yes "$(hashed admin)"
-check "  and is still reported as the default" true "$(defaultauth -u admin:admin)"
+check "  and is not reported as the default then either" false "$(defaultauth -u admin:admin)"
+# No file and an empty file are the default; a file that cannot be read is
+# not, and is not a credential that was set either (the routes that want
+# one refuse, see the secrets below).
+rm -f $A
+check "with no file the default is reported, to the session as well" "true true" \
+	"$(defaultauth -H "Cookie: odi_session=$tok") $(defaultauth -u admin:admin)"
+: > $A
+check "with an empty file too" "true true" "$(defaultauth -H "Cookie: odi_session=$tok") $(defaultauth -u admin:admin)"
+rm -f $A && mkdir $A
+check "a file that cannot be read is not reported as the default" false "$(defaultauth -H "Cookie: odi_session=$tok")"
+rmdir $A
 
 # A line that starts like a hash and is not a whole one. Nobody signs in:
 # not with the password it was made from, not with the default, and not with
@@ -674,7 +683,7 @@ check "  nor on the form with a control character" 401 "$(signin 'user=op&passwo
 check "  and the password itself signs in after those" 200 "$(code -u op:hunter22 "$B/api/schema")"
 line_for admin admin 16000 > $A
 check "admin:admin with a NUL is refused against its hash" 401 "$(code -H "$(basic_raw 'admin:admin\000')" "$B/api/schema")"
-check "  and the default is still reported as the default" true "$(defaultauth -u admin:admin)"
+check "  and admin:admin signs in after it" 200 "$(code -u admin:admin "$B/api/schema")"
 # A file as typed is compared byte for byte and has no such second spelling.
 # One with a control character in it keeps signing in and is not hashed.
 printf 'op:hun\tter22' > $A
@@ -863,20 +872,19 @@ check "    after the pause as well" waited "$(waited "$r" 1.5)"
 r=$(timed -u op:hunter23 "$K/api/schema")
 check "  and from then on at once, with none" "200 4" "${r%% *} $(kdfs)"
 check "    " "did not wait" "$(waited "$r" 1.0 | cut -c1-12)"
-# A session outlives a change of the line; the page then asks whether the
-# new line is the default, which takes one PBKDF2 and is remembered.
+# A session outlives a change of the line. The page then asks whether the
+# default is in force, and the answer is whether there is a file: nothing
+# is tried against the new hash, also when it is one of admin:admin.
 ktok=$(curl -s -D - -o /dev/null -X POST -H "Origin: $K" --data 'user=op&password=hunter23' "$K/api/login" |
 	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p')
 line_for admin admin 16000 > $A
-check "a session asking about a new line runs it once" "true 5" \
-	"$(curl -s -H "Cookie: odi_session=$ktok" "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
-check "  and not again" "true 5" \
+check "a session asking whether a new line is the default runs none" "false 4" \
 	"$(curl -s -H "Cookie: odi_session=$ktok" "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
 # A file as typed is compared as it is; the one PBKDF2 is the hash made of it.
 typed op:hunter22
-check "a wrong password against a file as typed runs none" "401 5" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
-check "the right one runs the one that makes the hash" "200 6 yes" "$(code -u op:hunter22 "$K/api/schema") $(kdfs) $(hashed op)"
-check "  and the next request none" "200 6" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
+check "a wrong password against a file as typed runs none" "401 4" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+check "the right one runs the one that makes the hash" "200 5 yes" "$(code -u op:hunter22 "$K/api/schema") $(kdfs) $(hashed op)"
+check "  and the next request none" "200 5" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
 kill $KDAEMON 2>/dev/null || true
 trap 'kill $DAEMON 2>/dev/null || true' EXIT
 rm -f $KC
@@ -2518,6 +2526,26 @@ check "secrets: the answer is not cached" yes \
 mv /etc/config/confd.auth /etc/config/confd.auth.kept
 check "secrets: refused while the factory password is in force" 403 \
 	"$(code -u admin:admin -X POST --data 'password=admin' "$S")"
+: > /etc/config/confd.auth
+check "secrets:   with an empty file as well" 403 \
+	"$(code -u admin:admin -X POST --data 'password=admin' "$S")"
+# A file the owner wrote is theirs, also when it says admin:admin.
+typed admin:admin
+check "secrets: open to admin:admin once it was set in a file" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data 'password=admin' "$S")" 'password SIPPASS9')"
+check "secrets:   also after that file has become a hash" "yes yes" \
+	"$(hashed admin) $(err "$(curl -s -u admin:admin -X POST --data 'password=admin' "$S")" 'password SIPPASS9')"
+# A file that cannot be read: a session from before still gets in, and must
+# not be taken for the owner because the default cannot be seen in force.
+tok=$(session_of 'user=admin&password=admin')
+rm -f /etc/config/confd.auth && mkdir /etc/config/confd.auth
+r=$(curl -s -i -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'password=admin' "$S")
+check "secrets: refused while the credential file cannot be read" yes "$(err "$r" '503 Service Unavailable')"
+check "secrets:   saying why" yes "$(err "$r" 'the password file cannot be read')"
+check "secrets:   and showing none" no "$(case "$r" in *SIPPASS9*) echo yes ;; *) echo no ;; esac)"
+check "status: refused then too" 503 \
+	"$(code -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'port=1&state=registered' "$V/status")"
+rmdir /etc/config/confd.auth
 mv /etc/config/confd.auth.kept /etc/config/confd.auth
 # No omcicli: 503, and no body to leak.
 mv /bin/omcicli /bin/omcicli.kept

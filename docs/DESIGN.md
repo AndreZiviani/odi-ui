@@ -1160,13 +1160,20 @@ credential is no longer the default one: a banner with a button that lands on
 the field, on Status and on System &rsaquo; Access, and a *Default password*
 chip in the header on every other view.
 
-Note *default one*, not *no file*: a file containing `admin:admin` leaves you on
-the password everybody knows while making the warning disappear, which is the
-worst of both. The check compares the credential in force against the built-in
-one, so writing the default into the file changes nothing about what the page
-tells you. A hashed line cannot be compared, so the default is tried against
-the hash; the answer is kept until the line changes, since the page asks on
-every load.
+"Default" means that there is no credential file: it is absent or empty and
+the built-in credential is what signs in, or the boot is a safe-mode boot that
+opens it. It does not mean a particular password. A file you wrote yourself
+counts as yours, even one that says `admin:admin`, as typed or as a hash: the
+warning goes away and the routes that are closed under the default open. The
+banner, `defaultauth` and those routes (the VoIP secrets and the VoIP status
+report) all ask the same check, so the page and the server cannot disagree.
+A file that is there and cannot be read is neither: nobody signs in, the
+warning is not shown, and those routes refuse with `503`, since a browser
+signed in earlier still has its session and must not pass for the owner.
+
+Earlier releases compared the content, so that `admin:admin` in the file kept
+the warning. With a hash in the file that comparison would mean trying the
+default against the hash, and it was the less simple rule anyway.
 
 ### Every request is checked, which the stock UI cannot say
 

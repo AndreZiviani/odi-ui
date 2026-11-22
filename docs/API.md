@@ -178,9 +178,13 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           password in clear, for a caller that repeats
                                           the admin password in the body. 403 on a wrong
                                           password (after a one-second delay) and while
-                                          the built-in admin:admin is in force, 400
-                                          without a password, 503 `{"ok":false}` and no
-                                          output when the image has no omcicli.
+                                          the built-in default is in force (no
+                                          credential file; a file that holds
+                                          admin:admin is a credential that was set),
+                                          503 while the credential file cannot be
+                                          read, 400 without a password, 503
+                                          `{"ok":false}` and no output when the image
+                                          has no omcicli.
                                           Nothing is logged and confd wipes the
                                           password and the output after answering
     POST /api/voip/status  port=1&state=registered
@@ -339,7 +343,12 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           /tmp/img.upload.tar; an upload removes
                                           /tmp/img.tar, the ssh path
     GET  /api/firmware                    partitions, versions, build manifest,
-                                          `defaultauth`, `switches`, write progress;
+                                          `defaultauth` (true when there is no
+                                          credential file or it is empty, and on a
+                                          safe-mode boot that opens the default;
+                                          false for any file with a credential in
+                                          it, `admin:admin` included),
+                                          `switches`, write progress;
                                           `env` (the sw_* of `nv getenv`, empty
                                           unless that nv exited 0),
                                           `fallback` (the sw_* of `nv fallback`, the

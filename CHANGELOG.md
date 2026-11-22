@@ -16,8 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a firmware trial that is not committed yet and a stick that cannot write
   the file leave it as it is. Saving a password from the page always stores
   the hash, and the same password saved again is still not written again.
-  The default-password warning still shows for a hashed `admin:admin`. HTTP
-  Basic does not pay for the hash on every request: after the first check
+  HTTP Basic does not pay for the hash on every request: after the first check
   confd keeps a keyed tag of the credential in RAM until the file changes,
   and the sign-in page and sign-out never run it. Wrong passwords tried
   before the first right one are spaced out: the check after one waits up to
@@ -30,6 +29,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the safe mode is the way back. Anything that reads the file expecting the
   password (the odi-oss bundle scrub cuts after the first colon and is
   fine) now finds the hash there. See DESIGN.md, "The file holds a hash".
+- "Default password" now means that there is no credential file (absent
+  or empty), or a safe-mode boot that opens the default. A file that holds
+  `admin:admin`, as typed or as a hash, is a credential that was set: the
+  warning is not shown for it, `defaultauth` in `/api/firmware` is `false`,
+  and the VoIP secrets and the VoIP status report are open to it. Before,
+  the content of the file was compared with the default. Those two routes
+  answer `503` while the credential file cannot be read.
 - **Going back to v1.19.0 or older after this release:** an older confd
   reads the hashed file as the password as typed, so the password no longer
   signs in. Use the safe mode, or write the file again over ssh

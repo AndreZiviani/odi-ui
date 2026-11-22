@@ -804,13 +804,12 @@ static int cred_parse(const char *line, unsigned long n, struct cred *c)
  * does not give, see has_ctl().
  */
 static struct {
-	int def;                 /* the line is DEFAULT_AUTH: 1, 0, -1 not yet known */
 	int have_line;           /* `line` is the tag of a line */
 	int have_tag;
 	int stay;                /* migrate() failed for this line: not again */
 	unsigned char line[SHA256_LEN];
 	unsigned char tag[SHA256_LEN];
-} known = { -1, 0, 0, 0, { 0 }, { 0 } };
+} known = { 0, 0, 0, { 0 }, { 0 } };
 
 static void known_reset(void)
 {
@@ -818,7 +817,6 @@ static void known_reset(void)
 
 	for (k = 0; k < SHA256_LEN; k++)
 		((volatile unsigned char *)known.tag)[k] = 0;
-	known.def = -1;
 	known.have_line = known.have_tag = known.stay = 0;
 }
 
@@ -860,8 +858,7 @@ static int boot_tag(const char *p, unsigned long n, unsigned char *tag)
  * "secret" and for "secret" followed by a NUL: two spellings of one
  * password. A Basic header can carry the second. Proven first, it was the
  * spelling the tag remembered, and the password without the NUL was then
- * refused until the file changed; for a hashed admin:admin it also recorded
- * "not the default". So nothing with a control character in it is checked
+ * refused until the file changed. So nothing with a control character in it is checked
  * against a hash, remembered, or hashed into the file. set_credential()
  * has never taken one, so no password stored from the page has any.
  *
@@ -917,17 +914,6 @@ static int bytes_differ(const unsigned char *a, const unsigned char *b, unsigned
 	for (k = 0; k < n; k++)
 		diff |= a[k] ^ b[k];
 	return diff;
-}
-
-/* Whether p[0..n) is DEFAULT_AUTH. Not a secret, so not constant time. */
-static int default_text(const char *p, unsigned long n)
-{
-	static const char def[] = DEFAULT_AUTH;
-	unsigned long k;
-
-	for (k = 0; k < n && k < sizeof(def) - 1 && p[k] == def[k]; k++)
-		;
-	return k == n && k == sizeof(def) - 1;
 }
 
 /*
@@ -1157,6 +1143,13 @@ static void migrate(const char *p, unsigned long n, long want)
 	 * so that the first one after the commit makes the hash. */
 	if (known.stay || trial_uncommitted())
 		return;
+	/* A recovery boot does not write the credential file by itself,
+	 * whatever it lets sign in. Today the file is not in force on any
+	 * such boot and the caller never comes here; asked again all the
+	 * same, so that it stays true when a safe-mode boot keeps the saved
+	 * credential. */
+	if (file_exists(SAFEMODE_FLAG))
+		return;
 	known.stay = 1;
 	/* No colon: not a line this could have written, leave it. */
 	if (cred.ulen >= n || has_ctl(p, n))
@@ -1197,7 +1190,6 @@ static void migrate(const char *p, unsigned long n, long want)
 		 * tag and not from PBKDF2 again. */
 		known.have_line = boot_tag(line, len, known.line);
 		known.have_tag = boot_tag(p, n, known.tag);
-		known.def = default_text(p, n);
 	} else {
 		syscall3(__NR_unlink, (long)tmp, 0, 0);
 	}
@@ -1284,11 +1276,7 @@ static int credential_ok(const char *p, unsigned long n, long want, int from_fil
 	}
 	ok = hash_matches(&cred, credbuf, p, n);
 	if (ok) {
-		/* Proven, so two things are known for free: the tag, and
-		 * whether this is the default (it is if what was presented
-		 * is), which auth_is_default() would run PBKDF2 to find. */
 		known.have_tag = boot_tag(p, n, known.tag);
-		known.def = default_text(p, n);
 		cold_wait = 0;
 	} else {
 		cold_at = mono_ms();
@@ -1319,32 +1307,39 @@ static int check_credential(const char *p, unsigned long n)
 }
 
 /*
- * Whether the credential in force IS the built-in default.
+ * Which credential is in force: 1 one the owner set (a file with a line in
+ * it), 0 the built-in default (no file, an empty one, or a safe-mode boot
+ * that opens the default), -1 when the file cannot be read, so that which
+ * of the two is not known.
  *
- * Deliberately not "is the file missing": a file containing admin:admin leaves
- * you on the default password while making the warning go away, which is the
- * worst of both. The question the page needs answered is "is this stick on the
- * credential everybody knows", and that is this.
+ * What the file holds does not come into it. A file somebody wrote is
+ * their credential, also when it says admin:admin, as typed or as a hash:
+ * once set it is the owner, and the routes that are closed while the
+ * default is in force are open to them. This used to compare the content,
+ * and with a hash in the file that took a PBKDF2 of the default against it
+ * and something to remember the answer by.
  *
- * A hashed line cannot be read for it, so the default is tried against the
- * hash, once: /api/firmware asks on every page load and the answer does not
- * change until the line does.
+ * One check for the banner, for defaultauth in /api/firmware and for the
+ * routes that want the owner (omci.c), so that the page and the server
+ * cannot disagree. -1 is neither: nobody signs in then, but a browser that
+ * signed in before the read began to fail still has its session, and for
+ * it "not the default" must not read as "the owner".
  */
+int cred_state(void)
+{
+	int def = 0;
+	long want = load_credential(&def);
+
+	wipe(credbuf, sizeof(credbuf));
+	if (want < 0)
+		return -1;
+	return def ? 0 : 1;
+}
+
+/* Whether the built-in default is what signs in. See cred_state(). */
 int auth_is_default(void)
 {
-	long want = load_credential(0);
-	int def = 0;
-
-	if (want > 0 && !cred.iter) {
-		def = default_text(credbuf, (unsigned long)want);
-	} else if (want > 0) {
-		if (known.def < 0)
-			known.def = hash_matches(&cred, credbuf, DEFAULT_AUTH,
-						 sizeof(DEFAULT_AUTH) - 1);
-		def = known.def;
-	}
-	wipe(credbuf, sizeof(credbuf));
-	return def;
+	return cred_state() == 0;
 }
 
 /*
