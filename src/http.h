@@ -85,14 +85,21 @@ int request_target(const char *r, char *out, unsigned long cap);
 int header_present(const char *r, const char *name);
 /* Whether a header holds `needle`, case-sensitive: Accept and text/html. */
 int header_has(const char *r, const char *name, const char *needle);
-/* Which credential is in force: 1 one the owner set, whatever it is; 0 the
- * built-in default; -1 when the credential file cannot be read. */
-int cred_state(void);
-/* Whether the built-in default is what signs in: no credential file, or an
- * empty one, or a safe-mode boot that opens it. Not what the file holds.
- * Reported to the page, because a well-known default that nobody can see is
- * the same thing as no password at all. */
+/* Which credential is in force: 1 one that was set (confd.auth has
+ * content, whatever it says); 0 the built-in default (no file, an empty one,
+ * or a safe-mode boot); -1 the file cannot be read, so which one is unknown.
+ * The one check for the page and for every route that refuses the default. */
+int auth_state(void);
+/* auth_state() == 0. Reported to the page, because a well-known default that
+ * nobody can see is the same thing as no password at all. */
 int auth_is_default(void);
+/* Answers 403 (the default) or 503 (unreadable) and returns 1 unless a
+ * credential was set. For the routes that want the owner: keys, backup,
+ * VoIP secrets. */
+int refuse_unless_set(int fd, int json);
+/* Whether a password was saved on this safe-mode boot: it opens the page
+ * again, while the default stays in force until the reboot. */
+int auth_saved(void);
 /* Whether `pass` is the password of the credential in force (constant time). */
 int password_matches(const char *pass);
 /* Write /etc/config/confd.auth, the password as a salted PBKDF2 hash.

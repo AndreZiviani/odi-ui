@@ -1307,25 +1307,20 @@ static int check_credential(const char *p, unsigned long n)
 }
 
 /*
- * Which credential is in force: 1 one the owner set (a file with a line in
- * it), 0 the built-in default (no file, an empty one, or a safe-mode boot
- * that opens the default), -1 when the file cannot be read, so that which
- * of the two is not known.
+ * Which credential is in force, for every caller that asks: the banner and
+ * the page through auth_is_default(), the VoIP secrets, the SSH keys and the
+ * backup. One check, so the page and the routes cannot disagree.
  *
- * What the file holds does not come into it. A file somebody wrote is
- * their credential, also when it says admin:admin, as typed or as a hash:
- * once set it is the owner, and the routes that are closed while the
- * default is in force are open to them. This used to compare the content,
- * and with a hash in the file that took a PBKDF2 of the default against it
- * and something to remember the answer by.
- *
- * One check for the banner, for defaultauth in /api/firmware and for the
- * routes that want the owner (omci.c), so that the page and the server
- * cannot disagree. -1 is neither: nobody signs in then, but a browser that
- * signed in before the read began to fail still has its session, and for
- * it "not the default" must not read as "the owner".
+ *    1  a credential somebody set: confd.auth has content, admin:admin
+ *       included, as typed or as a hash. What is in the file is not
+ *       judged, only that it is there.
+ *    0  the built-in default: no file or an empty one, or a safe-mode boot,
+ *       which does not read the file.
+ *   -1  the file is there and cannot be read. A browser signed in before the
+ *       read started failing still has its session, so this is not taken for
+ *       a credential of the owner.
  */
-int cred_state(void)
+int auth_state(void)
 {
 	int def = 0;
 	long want = load_credential(&def);
@@ -1336,10 +1331,53 @@ int cred_state(void)
 	return def ? 0 : 1;
 }
 
-/* Whether the built-in default is what signs in. See cred_state(). */
 int auth_is_default(void)
 {
-	return cred_state() == 0;
+	return auth_state() == 0;
+}
+
+/*
+ * For the routes that only a credential somebody set may use: adding an SSH
+ * key, the backup and the VoIP secrets. Answers the refusal and returns 1
+ * unless auth_state() is 1; `json` picks the body the route speaks.
+ */
+int refuse_unless_set(int fd, int json)
+{
+	switch (auth_state()) {
+	case 1:
+		return 0;
+	case 0:
+		respond(fd, "403 Forbidden", json ? "application/json" : "text/plain", 0);
+		put_fd(fd, json ? "{\"ok\":false,\"error\":\"" : "");
+		put_fd(fd, "refused: the built-in admin:admin is in force (no password was set, or this is "
+			   "a safe-mode boot). Set a password under System, Access, or reboot out of the "
+			   "safe mode.");
+		break;
+	default:
+		respond(fd, "503 Service Unavailable", json ? "application/json" : "text/plain", 0);
+		put_fd(fd, json ? "{\"ok\":false,\"error\":\"" : "");
+		put_fd(fd, "refused: the password file cannot be read, so it is not known whether a "
+			   "password was set");
+		break;
+	}
+	put_fd(fd, json ? "\"}" : "\n");
+	return 1;
+}
+
+/*
+ * Set once a password is saved on a safe-mode boot. That boot keeps the
+ * default in force until the reboot whatever is saved, so auth_state() stays
+ * 0, and this is what lets the page open again after the save (firmware
+ * upload has to be reachable there). The routes that refuse the default keep
+ * refusing for the whole boot. On a normal boot the saved file is what
+ * counts and this is not needed. RAM only: a restart of confd asks again,
+ * and saving the same password again answers at once.
+ */
+static int saved_now;
+
+int auth_saved(void)
+{
+	return saved_now;
 }
 
 /*
@@ -1418,6 +1456,8 @@ int set_credential(const char *user, const char *pass, const char **why)
 		}
 		wipe(cur, sizeof(cur));
 		if (same) {
+			if (file_exists(SAFEMODE_FLAG))
+				saved_now = 1;
 			*why = 0;
 			return 1;
 		}
@@ -1434,6 +1474,8 @@ int set_credential(const char *user, const char *pass, const char **why)
 		*why = "could not write /etc/config/confd.auth";
 		return 0;
 	}
+	if (file_exists(SAFEMODE_FLAG))
+		saved_now = 1;
 	*why = 0;
 	return 1;
 }
