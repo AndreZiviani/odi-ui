@@ -211,8 +211,10 @@ fi
 # /tmp/nv.fbhang an nv that does not answer in time. /tmp/nv.fbline holds an
 # exit status to give with the line for no valid second copy, which only
 # exit 1 makes a known answer; /tmp/nv.fbkill is an nv killed by a signal
-# after that line; /tmp/nv.fbbig a dump that fills the buffer of confd before
-# sw_commit, and /tmp/nv.fbjunk an exit 0 with words that are not the key.
+# after that line; /tmp/nv.fbbig a dump of about 5.5 KB with sw_commit last,
+# which the buffer of confd holds, /tmp/nv.fbhuge one of about 9 KB, more
+# than any odi-oss nv prints, which fills it before sw_commit, and
+# /tmp/nv.fbjunk an exit 0 with words that are not the key.
 # /tmp/nv.fbraw holds the exact answer of an exit 0, keyed or not, or of
 # the exit status /tmp/nv.fbrawrc holds.
 if [ "$1" = fallback ]; then
@@ -223,12 +225,14 @@ if [ "$1" = fallback ]; then
 	[ -f /tmp/nv.fbkill ] && { echo "nv: no valid second copy of the environment"; kill -9 $$; }
 	[ -f /tmp/nv.fbhang ] && exec sleep 5
 	[ -f /tmp/nv.fbraw ] && { cat /tmp/nv.fbraw; exit "$(cat /tmp/nv.fbrawrc 2>/dev/null || echo 0)"; }
-	if [ -f /tmp/nv.fbbig ]; then
+	if [ -f /tmp/nv.fbbig ] || [ -f /tmp/nv.fbhuge ]; then
 		[ -n "${2:-}" ] && exit 0
 		echo "Fallback environment: 2"
+		n=120
+		[ -f /tmp/nv.fbhuge ] && n=200
 		i=0
-		while [ "$i" -lt 120 ]; do echo "pad$i=0123456789012345678901234567890123456789"; i=$((i + 1)); done
-		echo "sw_commit=0"
+		while [ "$i" -lt "$n" ]; do echo "pad$i=0123456789012345678901234567890123456789"; i=$((i + 1)); done
+		printf 'sw_commit=0\n\n'
 		exit 0
 	fi
 	[ -f /tmp/nv.fbjunk ] && { echo "nv: something that is not a value"; exit 0; }
@@ -241,6 +245,9 @@ fi
 # leaves sw_active out of the environment altogether.
 # /tmp/nv.tryactive holds a pending trial's slot (2, none, by default).
 # /tmp/nv.commit holds sw_commit (0 by default).
+# /tmp/nv.pad holds a count of pad lines of 45 bytes after sw_active, the
+# first line: 120 put the other sw_* lines past 4 KB, 200 past the buffer of
+# confd, which then holds sw_active alone.
 act=0
 [ -f /tmp/nv.active ] && act=$(cat /tmp/nv.active)
 try=2
@@ -249,7 +256,14 @@ com=0
 [ -f /tmp/nv.commit ] && com=$(cat /tmp/nv.commit)
 sw=""
 [ -f /tmp/nv.noactive ] || sw="sw_active=$act\n"
-dump() { printf "${sw}sw_commit=$com\nsw_tryactive=$try\nsw_version0=a\nsw_version1=b\n"; }
+dump() {
+	printf "${sw}"
+	if [ -f /tmp/nv.pad ]; then
+		i=0
+		while [ "$i" -lt "$(cat /tmp/nv.pad)" ]; do echo "pad$i=0123456789012345678901234567890123456789"; i=$((i + 1)); done
+	fi
+	printf "sw_commit=$com\nsw_tryactive=$try\nsw_version0=a\nsw_version1=b\n"
+}
 case "$1 $2" in
 "getenv ") dump ;;
 "getenv")  dump ;;
@@ -1922,12 +1936,17 @@ printf 'Fallback environment: 2\nsw_active=0\n\n' > /tmp/nv.fbraw
 check "  nor flag the page" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{"sw_active":"0"},"fallback_unsure":false,"slots":')"
 rm -f /tmp/nv.fbraw
-# A dump that fills the buffer may have lost sw_commit: the page offers no
-# write on it.
+# A dump of more than 4 KB is read whole, sw_commit after the padding
+# included. One that fills the buffer may have lost sw_commit: the page
+# offers no write on it.
 touch /tmp/nv.fbbig
+check "  a fallback dump of 5.5 KB is read whole" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback":{"sw_commit":"0"},"fallback_unsure":false,"slots":')"
+rm -f /tmp/nv.fbbig
+touch /tmp/nv.fbhuge
 check "  a fallback dump that fills the buffer is unsure" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"fallback_unsure":true,"slots":')"
-rm -f /tmp/nv.fbbig
+rm -f /tmp/nv.fbhuge
 touch /tmp/nv.fbhang
 check "  so does an nv that does not answer for it in time" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'the fallback copy of the U-Boot environment could not be read; nothing was written')"
@@ -1948,6 +1967,18 @@ check "so does a sw_active from an nv that then fails" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell which partition this stick is running')"
 check "and the page shows no environment from it" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"env":{},"fallback":')"
+rm -f /tmp/nv.getfail
+# An environment of more than 4 KB is shown whole, its sw_* lines after the
+# padding included; one that fills the buffer is not shown in part, not even
+# the sw_active before the padding.
+echo 120 > /tmp/nv.pad
+check "an nv getenv dump of 5.5 KB is shown whole" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"env":{"sw_active":"0","sw_commit":"0","sw_tryactive":"2","sw_version0":"a","sw_version1":"b"},"fallback":')"
+echo 200 > /tmp/nv.pad
+check "one that fills the buffer is not shown in part" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"env":{},"fallback":')"
+rm -f /tmp/nv.pad
+echo 1 > /tmp/nv.getfail
 echo sw_tryactive > /tmp/nv.getfail
 check "a sw_tryactive from an nv that then fails is not taken" yes \
 	"$(err "$(wr "action=write&partition=1&md5=$LOCAL_MD5")" 'cannot tell whether a trial is pending')"

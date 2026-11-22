@@ -386,11 +386,21 @@ void emit_firmware_json(int fd)
 	emit_firmware_body(fd);
 }
 
+/*
+ * The largest dump of `nv getenv` or `nv fallback`: odi-oss nv reads an
+ * environment of at most 8 KB (ENV_MAX in src/nv/env.h there), its pairs end
+ * in a NUL each where the dump has a newline, and the header line and the
+ * closing empty line come on top. A buffer of 4 KB held a dump of half that
+ * environment, and the sw_* lines after the cut were not shown. Static, so
+ * the stack of a request does not carry it.
+ */
+#define NV_DUMP_MAX (8192 + 64)
+
 /* The object alone, without a response head: /api/init carries it too. */
 void emit_firmware_body(int fd)
 {
 	static char *const argv[] = { "nv", "getenv", 0 };
-	char buf[4096];
+	static char buf[NV_DUMP_MAX];
 	char ver[128];
 
 	put_fd(fd, "{\"running\":\"");
@@ -449,11 +459,14 @@ void emit_firmware_body(int fd)
 	put_fd(fd, " MB\",\"env\":{");
 	{
 		/* Only from an nv that exited 0: what one that then failed
-		 * printed, exit 3 included, is not the environment. */
+		 * printed, exit 3 included, is not the environment. Nor a dump
+		 * that filled the buffer: it may have lost lines, and some sw_*
+		 * of it shown as the whole would be wrong. */
 		long code = -1;
+		long got = run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code,
+					 NV_TIMEOUT_MS);
 
-		if (run_to_buf_ex("/bin/nv", argv, buf, sizeof(buf), &code, NV_TIMEOUT_MS) > 0 &&
-		    code == 0)
+		if (got > 0 && code == 0 && (unsigned long)got + 1 < sizeof(buf))
 			emit_sw_pairs(fd, buf);
 	}
 	/*
