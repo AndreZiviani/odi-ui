@@ -1873,6 +1873,11 @@ check "the bias current is in the batch" yes \
 	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status")" 'Bias Current')"
 check "and the uptime rides along, in whole seconds" 1 \
 	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status" | grep -cE '"uptime":"[0-9]+"')"
+# No /proc/odi_ramlog_prev here, as on a stock slot: no member, in an answer
+# that is otherwise whole (the uptime is there).
+r=$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/status")
+check "without the ramlog there is no prev_boot member" "yes 0" \
+	"$(err "$r" '"uptime":"') $(printf '%s' "$r" | grep -c '"prev_boot"')"
 check "it needs the credential" 401 \
 	"$(code "http://127.0.0.1:$PORT/api/l2")"
 # The PON load alone, for the page's one-second refresh: file reads, no diag.
@@ -2683,6 +2688,42 @@ check "random bytes are not a tar archive either" 400 \
 check "a tar archive is accepted" 200 \
 	"$(code -u "$AUTH" -X POST --data-binary @/tmp/small.tar "http://127.0.0.1:$PORT/api/upload")"
 rm -f /tmp/notatar.bin /tmp/img.upload.tar
+
+echo "== the previous boot, from the odi-oss ramlog"
+# /proc cannot be stubbed here, but qemu-user looks up every absolute path
+# under its -L prefix first and falls back to the real one, so a second daemon
+# started with a prefix that holds proc/odi_ramlog_prev reads that file and
+# everything else from the usual places.
+PFX=/tmp/ramlog-root
+PPORT=$((PORT + 1))
+rm -rf "$PFX"; mkdir -p "$PFX/proc"
+printf '%s\n' 'this boot: boot=31 slot=1' \
+	'previous boot: boot=30 slot=1 build=v1.19.0 crumb=TICK/15028 reason=wdt_client:omcid' \
+	'[    0.000000] Linux version 6.18.63' > "$PFX/proc/odi_ramlog_prev"
+qemu-mips-static -L "$PFX" "$BIN" "$PPORT" "$HWMON" &
+PDAEMON=$!
+for _ in $(seq 40); do
+	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PPORT/api/schema" && break
+	sleep 0.25
+done
+check "the previous-boot line is passed on after its prefix" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PPORT/api/status")" \
+		'"prev_boot":"boot=30 slot=1 build=v1.19.0 crumb=TICK/15028 reason=wdt_client:omcid"')"
+printf '%s\n' 'previous boot: boot=1 slot=0 build=x crumb=y/1 reason=panic' > "$PFX/proc/odi_ramlog_prev"
+check "and read once: a later change is not picked up" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PPORT/api/status")" 'reason=wdt_client:omcid"')"
+kill $PDAEMON; wait $PDAEMON 2>/dev/null || true
+printf 'previous boot: %0300d reason=x\n' 0 > "$PFX/proc/odi_ramlog_prev"
+qemu-mips-static -L "$PFX" "$BIN" "$PPORT" "$HWMON" &
+PDAEMON=$!
+for _ in $(seq 40); do
+	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PPORT/api/schema" && break
+	sleep 0.25
+done
+check "a longer line is cut to 200 bytes and the answer stays JSON" 200 \
+	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PPORT/api/status" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("prev_boot","")))' 2>&1)"
+kill $PDAEMON; wait $PDAEMON 2>/dev/null || true
+rm -rf "$PFX"
 
 echo "== an idle client must not take the server down"
 # Single-threaded and serial, so a peer that connects and never sends used to
