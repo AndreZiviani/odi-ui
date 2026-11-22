@@ -89,9 +89,11 @@ function trialOf(h) {
  * fallback bar (or null), ack whether the safe bar offers Acknowledge, reseed
  * the text of the recreated-store bar (or null; it always offers
  * Acknowledge). One short line each: the long explanation of the safe mode
- * is under System, Access. Pure, so make check can drive it with fixtures.
+ * is under System, Access. defaultauth is /api/firmware saying that no
+ * password is saved; it defaults to the last answer in S.FW. Pure apart from
+ * that default, so make check can drive it with fixtures.
  */
-function bannerText(h) {
+function bannerText(h, defaultauth = !!(S.FW && S.FW.defaultauth)) {
   const out = { show: false, safe: null, fallback: null, ack: false, reseed: null };
   if (!h) return out;
   const st = h.state || {};
@@ -123,10 +125,12 @@ function bannerText(h) {
       end = held ? ' Acknowledged: it stays up until you reboot.'
         : ' Acknowledged: the next boot is a normal boot.';
     }
-    out.safe = 'Safe mode. A recovery boot' + WHY[now.cause || ''] + ': the fibre (PON) is off and '
-      + loginText(h, now)
+    out.safe = 'Safe mode. A recovery boot' + (typeof WHY[now.cause] === 'string' ? WHY[now.cause] : '')
+      + ': the fibre (PON) is off and ' + loginText(h, now, defaultauth)
       + cleared(now) + end;
-    out.ack = !!rec || timed;
+    /* Once the timed exit has begun, safe-mode.sh ack answers that it is
+       too late, so the button is not offered. */
+    out.ack = (!!rec || timed) && now.exit !== 'exiting';
   } else if (rec) {
     const build = rec.build ? `build ${rec.build}, ` : '';
     const after = rec.cause === 'watchdog' ? `after ${rec.wdt_resets || 'several'} watchdog resets in a row`
@@ -186,9 +190,9 @@ const defaultLogin = (h) => {
    or default. A boot that keeps the saved login but finds no saved password
    (login=stored with no confd.auth) answers to the default like any boot
    without one: defaultauth from /api/firmware says so. */
-function loginText(h, now) {
+function loginText(h, now, defaultauth) {
   if (!defaultLogin(h)) {
-    if (h.safe_login === 'stored' && S.FW && S.FW.defaultauth) {
+    if (h.safe_login === 'stored' && defaultauth) {
       return 'no password is saved, so this page accepts the default password; one you save applies at once.';
     }
     return 'your saved password and SSH keys still apply.';
@@ -533,4 +537,4 @@ function wireHostlink() {
   };
 }
 
-export { bannerText, trialLeft, refresh as renderHostlink, wireHostlink, serdesShort, safeModeNow, safeModeDefaultLogin, passwordSavedText, hostlinkNow };
+export { bannerText, trialLeft, refresh as renderHostlink, renderBanner, wireHostlink, serdesShort, safeModeNow, safeModeDefaultLogin, passwordSavedText, hostlinkNow };

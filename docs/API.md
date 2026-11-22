@@ -327,11 +327,13 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
     GET  /api/firmware                    partitions, versions, build manifest,
                                           `defaultauth` (true when no credential was
                                           set: no `confd.auth` or an empty one, and on a
-                                          safe-mode boot; false for a file with
-                                          content, `admin:admin` included), `authsaved`
-                                          (a password was saved on this safe-mode boot:
-                                          the page opens, the default stays in force
-                                          until the reboot), `switches`, write progress;
+                                          safe-mode boot that opens the default,
+                                          `safe_login` `default` in `/api/hostlink`;
+                                          false for a file with content, `admin:admin`
+                                          included), `authsaved` (a password was saved
+                                          on such a boot: the page opens, the default
+                                          stays in force until the reboot), `switches`,
+                                          write progress;
                                           `env` (the sw_* of `nv getenv`, empty
                                           unless that nv exited 0),
                                           `fallback` (the sw_* of `nv fallback`, the
@@ -549,5 +551,6 @@ does not fit the daemon's 4 KB buffer (4094 bytes fit), answers 500 with
 `{"ok":false,"error":...}` to all three, and nothing is written: edit it over
 ssh. Listing and removing keys work with the built-in credential too; adding
 one does not, since a key is root over ssh: set a password with `POST
-/api/password` first (on a safe-mode boot, after the reboot). Send `line` with a delete: without it the number alone decides, and a
+/api/password` first (on a safe-mode boot that opened the default, after the
+reboot). Send `line` with a delete: without it the number alone decides, and a
 list that is out of date removes whatever key holds that line now.

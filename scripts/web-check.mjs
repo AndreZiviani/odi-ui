@@ -1278,7 +1278,7 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
 
 /* --- the host-link banner and the Host port control ------------------------- */
 {
-  const { bannerText, trialLeft, renderHostlink, wireHostlink, safeModeNow, safeModeDefaultLogin, passwordSavedText } = await import(join(root, 'web', 'hostlink.js'));
+  const { bannerText, trialLeft, renderHostlink, renderBanner, wireHostlink, safeModeNow, safeModeDefaultLogin, passwordSavedText } = await import(join(root, 'web', 'hostlink.js'));
   const keep = API['/api/hostlink'];
   const st = (o) => ({ setting: 'on', running: 'on', phase: 'steady', fallback: '0', ...o });
 
@@ -1320,8 +1320,11 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
        && !/normal boot/.test(b.safe),
        'safe mode: acknowledged, the bar says it stays up and has no button');
     b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd, exit: 'exiting' }, safemode: wd, uptime: '1801' });
-    ok(/it is rebooting now/.test(b.safe) && !/unless acknowledged/.test(b.safe),
-       'safe mode: once the timed exit has begun the bar says the stick is rebooting, not that an Acknowledge would stop it');
+    ok(/it is rebooting now/.test(b.safe) && !/unless acknowledged/.test(b.safe) && !b.ack,
+       'safe mode: once the timed exit has begun the bar says the stick is rebooting, and offers no Acknowledge (safe-mode.sh refuses it then)');
+    b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd, cause: 'later' }, safemode: wd, uptime: '200' });
+    ok(/^Safe mode\. A recovery boot: the fibre/.test(b.safe) && !/undefined/.test(b.safe),
+       'safe mode: a cause this page does not know is left out of the bar');
     b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd, exit: 'failed' }, safemode: null, uptime: '1900' });
     ok(!b.ack && !/Acknowledged|reboots|rebooting/.test(b.safe),
        'safe mode: a timed exit whose reboot failed claims neither a reboot nor an acknowledgement');
@@ -1374,15 +1377,17 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
     {
       /* login=stored with no confd.auth: confd falls back to the default as on
          any boot without a password, and the bar must not say a saved one applies. */
-      const keep = S.FW;
-      S.FW = { defaultauth: true };
-      b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd }, safemode: wd, safe_login: 'stored' });
+      b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd }, safemode: wd, safe_login: 'stored' }, true);
       ok(/no password is saved, so this page accepts the default password/.test(b.safe)
          && !/saved password and SSH keys still apply/.test(b.safe),
          'safe mode: login=stored with no saved password says the default applies, not a saved one');
-      S.FW = { defaultauth: false };
-      b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd }, safemode: wd, safe_login: 'stored' });
+      b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd }, safemode: wd, safe_login: 'stored' }, false);
       ok(/saved password and SSH keys still apply/.test(b.safe), 'safe mode: and with one saved, the saved login applies');
+      /* Without the argument it is the last /api/firmware answer. */
+      const keep = S.FW;
+      S.FW = { defaultauth: true };
+      b = bannerText({ supported: true, state: st({}), safemode_now: { ...wd }, safemode: wd, safe_login: 'stored' });
+      ok(/no password is saved/.test(b.safe), 'safe mode: defaultauth defaults to the one in S.FW');
       S.FW = keep;
     }
     b = bannerText({ supported: true, state: st({}), safemode_now: { cause: 'short_boots' }, safemode: null, safe_login: 'default' });
@@ -1401,6 +1406,29 @@ ok(slotKind({ slots: { 1: {} } }, '1').kind === 'unknown', 'an unreadable slot i
   ok(trialLeft({ state: st({ phase: 'trial', trial_deadline: '420' }), uptime: '330' }) === 90,
      'host link: the countdown comes from the stick clock');
   ok(trialLeft({ state: st({}), uptime: '330' }) === null, 'host link: no trial, no countdown');
+
+  {
+    /* A password saved from the page: the bar that said none is saved is
+       drawn again from the new /api/firmware answer, with no reload. */
+    const keepFW = S.FW;
+    const wd = { cause: 'watchdog', login: 'stored', root_password: 'stored', exit_at: '1800', exit: 'timed' };
+    API['/api/hostlink'] = { supported: true, state: st({}), safemode_now: wd, safemode: wd, safe_login: 'stored',
+                             link: '1', uptime: '200' };
+    S.FW = { defaultauth: true };
+    await renderHostlink();
+    ok(/no password is saved/.test(textOf(doc.querySelector('#safe-text'))),
+       'safe mode: login=stored and no saved password, the bar says so');
+    S.FW = { defaultauth: false };
+    renderBanner();
+    ok(/saved password and SSH keys still apply/.test(textOf(doc.querySelector('#safe-text')))
+       && !/no password is saved/.test(textOf(doc.querySelector('#safe-text'))),
+       'safe mode: once a password is saved the bar is drawn again and says the saved one applies');
+    const app = readFileSync(join(root, 'web', 'app.js'), 'utf8');
+    const save = app.slice(app.indexOf('async function savePasswordOnce'));
+    ok(/await checkAuth\(\);\s*renderBanner\(\);/.test(save.slice(0, save.indexOf('\n}\n'))),
+       'password: a save reads /api/firmware again and then draws the safe-mode bar again');
+    S.FW = keepFW;
+  }
 
   API['/api/hostlink'] = { supported: true, state: st({ setting: 'off', running: 'on', fallback: '1' }),
                            safemode_now: null, safemode: { short_boots: '3' }, link: '1', uptime: '40' };

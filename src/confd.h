@@ -126,11 +126,14 @@
  * that cannot be used, with the PON off and the host port on
  * auto-negotiation, for that boot only. Entered by a power cycle it also
  * opens the default credentials, in memory. The flag of the boot (tmpfs,
- * key=value lines) is what confd reads: present, and without a
- * login=stored line, the web UI accepts DEFAULT_AUTH whatever confd.auth
- * holds (http.c, safemode_login). With that line the saved credential
- * stays in force, and with cause=config beside it a confd.auth that is not
- * there refuses every login instead of falling back to the default. The
+ * key=value lines) is what confd reads (http.c, safemode_login). The web
+ * UI accepts DEFAULT_AUTH whatever confd.auth holds only when the flag was
+ * read whole (no read error, shorter than the 1023 bytes the buffer takes,
+ * no NUL byte) and every login= line in it is exactly login=default, or it
+ * has no login= line at all. Any other login= value keeps the saved
+ * credential in force, and with cause=config beside it a confd.auth that
+ * is not there refuses every login instead of falling back to the default;
+ * a flag that is not read whole opens nothing either. The
  * flag also says when the boot reboots by itself (exit_at=, an uptime) and
  * where that stands (exit=timed, held by an acknowledgement, exiting,
  * failed); the page reads both from /api/hostlink. The record
