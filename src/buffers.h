@@ -60,4 +60,8 @@ extern char filebuf[65536];
 #define CONS_BUF  (filebuf + META_CAP)
 #define CONS_CAP  16384
 
+/* Defined in buffers.c for the compiler, which calls it by name; main.c
+ * clears the request buffer with it. */
+void *memset(void *dst, int c, unsigned long n);
+
 #endif /* CONFD_BUFFERS_H */

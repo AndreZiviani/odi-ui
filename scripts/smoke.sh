@@ -274,6 +274,24 @@ echo refreshed >> /tmp/slot-state.calls
 exit 0
 SLOTSTATE
 chmod +x /etc/scripts/slot-state.sh
+# What the real one writes at boot, here for a committed image. With the
+# script there, confd takes this for an odi-oss stick and turns a password
+# file as typed into a hash only when this file says the image is committed.
+mkdir -p /var/run
+COMMITTED='running=1
+sw_active=1
+sw_tryactive=
+primary_copy=1
+primary_sw_commit=1
+fallback_copy=2
+fallback_sw_commit=1
+next_boot=1
+uncommitted=0
+other_slot=0
+other_slot_check=ok
+other_slot_detail=
+'
+printf '%s' "$COMMITTED" > /var/run/odi-slot
 
 cat > /bin/omcicli <<'OMCICLI'
 #!/bin/sh
@@ -420,8 +438,8 @@ check "a newline in the password is refused" 400 \
 rm -f /etc/config/confd.auth
 check "with no file, admin:admin can be saved" yes \
 	"$(err "$(curl -s -u admin:admin -X POST -d 'user=admin&password=admin' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
-check "  and is written to the file, 0600" "admin:admin 600" \
-	"$(cat /etc/config/confd.auth) $(stat -c '%a' /etc/config/confd.auth)"
+check "  and is written to the file as a hash, 0600" "admin:\$pbkdf2-sha256\$ 600" \
+	"$(cut -c1-21 /etc/config/confd.auth) $(stat -c '%a' /etc/config/confd.auth)"
 check "  and is not reported as the default" false \
 	"$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p')"
 check "  nor as saved on a safe-mode boot, which this is not" yes \
@@ -469,6 +487,417 @@ check "a real credential overrides the default" 200 \
 	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
 check "and the default stops working once it does" 401 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+
+# The file holds a salted, slow hash of the password, not the password. A
+# file that holds the password as typed keeps working, for good: it is what
+# every stick updated from an earlier release has, and what DESIGN.md says to
+# write by hand. It becomes the hashed form at the first sign-in that proves
+# the password, and at no other time.
+echo "== the credential file holds a hash"
+A=/etc/config/confd.auth
+B="http://127.0.0.1:$PORT"
+typed() { printf '%s' "$1" > $A; chmod "${2:-600}" $A; }
+# The exact line: user, the tag, the count, 32 hex of salt, 64 hex of hash,
+# and no newline after it.
+hashed() { grep -cxE "$1"':\$pbkdf2-sha256\$16000\$[0-9a-f]{32}\$[0-9a-f]{64}' $A | sed 's/^1$/yes/'; }
+# PBKDF2-HMAC-SHA256 by another implementation, from nothing but hashlib
+# sha256: the python of the toolchain image is a minimal one.
+KDF='import hashlib, os, sys
+def kdf(pw, salt, n):
+    k = (pw if len(pw) <= 64 else hashlib.sha256(pw).digest()).ljust(64, b"\0")
+    i0 = hashlib.sha256(bytes(c ^ 0x36 for c in k))
+    o0 = hashlib.sha256(bytes(c ^ 0x5c for c in k))
+    def mac(m):
+        i, o = i0.copy(), o0.copy()
+        i.update(m)
+        o.update(i.digest())
+        return o.digest()
+    u = mac(salt + b"\0\0\0\1")
+    t = int.from_bytes(u, "big")
+    for _ in range(n - 1):
+        u = mac(u)
+        t ^= int.from_bytes(u, "big")
+    return t.to_bytes(32, "big").hex()
+'
+# Whether the hash in the file is that of a password.
+hash_of() { python3 -I -c "$KDF"'
+user, rest = open(sys.argv[1]).read().split(":", 1)
+_, tag, it, salt, want = rest.split("$")
+print("yes" if tag == "pbkdf2-sha256" and kdf(sys.argv[2].encode(), bytes.fromhex(salt), int(it)) == want else "no")' $A "$1"; }
+# A line as confd would write it, made here: user, password, count.
+line_for() { python3 -I -c "$KDF"'
+salt = os.urandom(16)
+print(sys.argv[1] + ":$pbkdf2-sha256$" + sys.argv[3] + "$" + salt.hex() + "$" +
+      kdf(sys.argv[2].encode(), salt, int(sys.argv[3])), end="")' "$@"; }
+signin() { code -X POST -H "Origin: $B" --data "$1" "$B/api/login"; }
+# The session cookie a sign-in with this form body gets.
+session_of() { curl -s -D - -o /dev/null -X POST -H "Origin: $B" --data "$1" "$B/api/login" |
+	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p'; }
+# A Basic header from raw bytes, for what curl -u cannot say: printf format.
+basic_raw() { printf 'Authorization: Basic %s' "$(printf "$1" | base64 | tr -d '\n')"; }
+defaultauth() { curl -s "$@" "$B/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p'; }
+
+typed "$AUTH" 644
+check "a wrong password against a file as typed is refused" 401 "$(code -u admin:wrong "$B/api/schema")"
+check "  on the sign-in form too" 401 "$(signin 'user=admin&password=wrong')"
+check "  and neither made it a hash" "$AUTH" "$(cat $A)"
+check "the password as typed signs in with Basic" 200 "$(code -u "$AUTH" "$B/api/schema")"
+check "  and the file is the hashed form from then on" yes "$(hashed admin)"
+check "  written 0600, whatever it was" 600 "$(stat -c '%a' $A)"
+check "  with no temp file left beside it" no "$([ -e $A.new ] && echo yes || echo no)"
+check "  and the hash is PBKDF2-HMAC-SHA256 of the password, made again in python" yes "$(hash_of "${AUTH#*:}")"
+first=$(cat $A)
+before=$(stat -c '%i' $A)
+check "the same password still signs in" 200 "$(code -u "$AUTH" "$B/api/schema")"
+check "  on the form as well" 200 "$(signin "user=${AUTH%%:*}&password=${AUTH#*:}")"
+check "  a wrong one does not" 401 "$(code -u admin:wrong "$B/api/schema")"
+check "  nor the default" 401 "$(code -u admin:admin "$B/api/schema")"
+check "  nor the right password under another name" 401 "$(code -u "root:${AUTH#*:}" "$B/api/schema")"
+check "  nor the text that is in the file" 401 "$(code -u "$first" "$B/api/schema")"
+check "  and the right one still does, after the wrong ones" 200 "$(code -u "$AUTH" "$B/api/schema")"
+check "a hashed file is not written again by a sign-in" "$before" "$(stat -c '%i' $A)"
+check "a hashed file that is not the default is not reported as it" false "$(defaultauth -u "$AUTH")"
+
+typed "$AUTH"
+check "the password as typed signs in on the form" 200 "$(signin "user=${AUTH%%:*}&password=${AUTH#*:}")"
+check "  and that made it a hash too" yes "$(hashed admin)"
+check "  with a salt of its own" no "$([ "$first" = "$(cat $A)" ] && echo yes || echo no)"
+check "  that Basic signs in against" 200 "$(code -u "$AUTH" "$B/api/schema")"
+
+# A stick that cannot write the file (a full partition; here a directory
+# where the temp file goes) keeps the file it has, and it keeps working.
+typed "$AUTH"
+mkdir $A.new
+check "when the hash cannot be written the password as typed still signs in" 200 "$(code -u "$AUTH" "$B/api/schema")"
+check "  again" 200 "$(code -u "$AUTH" "$B/api/schema")"
+check "  and the file is as it was" "$AUTH" "$(cat $A)"
+rmdir $A.new
+
+# A file made somewhere else: another count, a newline after it, capitals in
+# the hex. The count is in the line so that the default can be raised later.
+{ line_for op hunter22 1000; echo; } > $A
+check "a hashed line with another count signs in" 200 "$(code -u op:hunter22 "$B/api/schema")"
+check "  and refuses a wrong password" 401 "$(code -u op:hunter23 "$B/api/schema")"
+check "  and is left as it is" 1 "$(grep -c '^op:\$pbkdf2-sha256\$1000\$' $A)"
+line_for op hunter22 160000 | awk -F'$' -v OFS='$' '{ $4 = toupper($4); $5 = toupper($5); printf "%s", $0 }' > $A
+check "  (the line made here has them)" 1 "$(grep -cE '\$160000\$[0-9A-F]{32}\$[0-9A-F]{64}$' $A)"
+check "the highest count a line may ask for, hex in capitals" 200 "$(code -u op:hunter22 "$B/api/schema")"
+
+# Saving from the page stores the hash, and the same password saved again is
+# still not written again, though every hash of it differs by its salt.
+# From a session: a Basic header would prove the password first and make
+# the hash before the save was looked at, and the save would have nothing
+# left to do.
+typed op:hunter22
+tok=$(session_of 'user=op&password=hunter22')
+typed op:hunter22
+check "a session leaves a file as typed alone" op:hunter22 "$(curl -s -o /dev/null -H "Cookie: odi_session=$tok" "$B/api/schema"; cat $A)"
+check "a save over a file as typed answers ok" yes \
+	"$(err "$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'user=op&password=hunter22' "$B/api/password")" '"ok":true')"
+check "  and stores the hash" yes "$(hashed op)"
+before=$(stat -c '%i' $A)
+check "the same password saved again answers ok" yes \
+	"$(err "$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "$B/api/password")" '"ok":true')"
+check "  and leaves the hashed file as it was" "$before" "$(stat -c '%i' $A)"
+check "another password is written" yes \
+	"$(err "$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter23' "$B/api/password")" '"ok":true')"
+check "  as a hash of that one" yes "$(hash_of hunter23)"
+check "  and is the one in force" 200 "$(code -u op:hunter23 "$B/api/schema")"
+check "  the old one is not" 401 "$(code -u op:hunter22 "$B/api/schema")"
+
+# The warning about the default password is about a stick with no file. A
+# file that says admin:admin, as a hash or as typed, was written by
+# somebody and is their credential. Asked from a session too, which says
+# nothing about the password in the file.
+typed "$AUTH"
+tok=$(session_of "user=${AUTH%%:*}&password=${AUTH#*:}")
+line_for admin admin 16000 > $A
+check "a hashed admin:admin is not reported as the default, to a session" false "$(defaultauth -H "Cookie: odi_session=$tok")"
+check "  nor to Basic" false "$(defaultauth -u admin:admin)"
+typed admin:admin
+check "admin:admin as typed is not reported as the default, to a session" false "$(defaultauth -H "Cookie: odi_session=$tok")"
+check "  and the file is still as typed: asking proved nothing" admin:admin "$(cat $A)"
+check "  it signs in" 200 "$(code -u admin:admin "$B/api/schema")"
+check "  becomes a hash" yes "$(hashed admin)"
+check "  and is not reported as the default then either" false "$(defaultauth -u admin:admin)"
+# No file and an empty file are the default; a file that cannot be read is
+# not, and is not a credential that was set either (the routes that want
+# one refuse, see the secrets below).
+rm -f $A
+check "with no file the default is reported, to the session as well" "true true" \
+	"$(defaultauth -H "Cookie: odi_session=$tok") $(defaultauth -u admin:admin)"
+: > $A
+check "with an empty file too" "true true" "$(defaultauth -H "Cookie: odi_session=$tok") $(defaultauth -u admin:admin)"
+rm -f $A && mkdir $A
+check "a file that cannot be read is not reported as the default" false "$(defaultauth -H "Cookie: odi_session=$tok")"
+rmdir $A
+
+# A line that starts like a hash and is not a whole one. Nobody signs in:
+# not with the password it was made from, not with the default, and not with
+# the text of the line, which whoever has read the file knows. A count that
+# would take minutes is refused, not run.
+good=$(line_for op hunter22 16000)
+salt=$(printf '%s' "$good" | cut -d'$' -f4)
+sum=$(printf '%s' "$good" | cut -d'$' -f5)
+bad=0
+while IFS= read -r l; do
+	printf '%s' "$l" > $A
+	for c in op:hunter22 admin:admin "$l"; do
+		t=$(curl -s -o /dev/null -w '%{http_code} %{time_total}' -u "$c" "$B/api/schema")
+		[ "${t%% *}" = 401 ] && awk -v t="${t#* }" 'BEGIN { exit !(t < 2.5) }' || { bad=$((bad + 1)); echo "        $t for $c against $l"; }
+	done
+	[ "$(signin 'user=op&password=hunter22')" = 401 ] || bad=$((bad + 1))
+	[ "$(cat $A)" = "$l" ] || bad=$((bad + 1))
+done <<LINES
+op:\$pbkdf2-sha256\$
+op:\$pbkdf2-sha256\$16000
+op:\$pbkdf2-sha256\$16000\$$salt
+op:\$pbkdf2-sha256\$16000\$$salt\$
+op:\$pbkdf2-sha256\$0\$$salt\$$sum
+op:\$pbkdf2-sha256\$\$$salt\$$sum
+op:\$pbkdf2-sha256\$160001\$$salt\$$sum
+op:\$pbkdf2-sha256\$9999999\$$salt\$$sum
+op:\$pbkdf2-sha256\$4294983296\$$salt\$$sum
+op:\$pbkdf2-sha256\$16e3\$$salt\$$sum
+op:\$pbkdf2-sha256\$-16000\$$salt\$$sum
+op:\$pbkdf2-sha256\$16000\$${salt%??}\$$sum
+op:\$pbkdf2-sha256\$16000\$${salt}00\$$sum
+op:\$pbkdf2-sha256\$16000\$${salt%?}g\$$sum
+op:\$pbkdf2-sha256\$16000\$$salt\$${sum%??}
+op:\$pbkdf2-sha256\$16000\$$salt\$${sum}00
+op:\$pbkdf2-sha256\$16000\$$salt\$${sum%?}g
+op:\$pbkdf2-sha256\$16000\$$salt\$$sum\$
+op:\$pbkdf2-sha256\$16000\$$salt\$$sum extra
+LINES
+check "a damaged hashed line lets nobody in, at once, and is left alone" 0 "$bad"
+printf '%s' "$good" > $A
+check "the same line whole signs in" 200 "$(code -u op:hunter22 "$B/api/schema")"
+# Another tag is a password as typed, as it always was: only the tag confd
+# writes is read as a hash.
+typed 'op:$6$notours'
+check "a password that looks like some other hash is a password" 200 "$(code -u 'op:$6$notours' "$B/api/schema")"
+
+# HMAC pads a short key with zeros, so PBKDF2 cannot tell a password from the
+# same password with a NUL after it. Sent first, to a line nothing has been
+# proven against yet, that spelling was the one remembered, and the password
+# itself was refused from then on. Each case starts from a new line.
+line_for op hunter22 16000 > $A
+check "a password with a NUL after it is refused" 401 "$(code -H "$(basic_raw 'op:hunter22\000')" "$B/api/schema")"
+check "  and the password itself signs in after it" 200 "$(code -u op:hunter22 "$B/api/schema")"
+check "  and still does not with the NUL" 401 "$(code -H "$(basic_raw 'op:hunter22\000')" "$B/api/schema")"
+line_for op hunter22 16000 > $A
+check "  nor with two, or one inside, or a tab" 401401401 \
+	"$(code -H "$(basic_raw 'op:hunter22\000\000')" "$B/api/schema")$(code -H "$(basic_raw 'op:hun\000ter22')" "$B/api/schema")$(code -H "$(basic_raw 'op:hunter22\t')" "$B/api/schema")"
+check "  nor on the form with a control character" 401 "$(signin 'user=op&password=hunter22%01')"
+check "  and the password itself signs in after those" 200 "$(code -u op:hunter22 "$B/api/schema")"
+line_for admin admin 16000 > $A
+check "admin:admin with a NUL is refused against its hash" 401 "$(code -H "$(basic_raw 'admin:admin\000')" "$B/api/schema")"
+check "  and admin:admin signs in after it" 200 "$(code -u admin:admin "$B/api/schema")"
+# A file as typed is compared byte for byte and has no such second spelling.
+# One with a control character in it keeps signing in and is not hashed.
+printf 'op:hun\tter22' > $A
+check "a typed password with a tab in it still signs in" 200 "$(code -H "$(basic_raw 'op:hun\tter22')" "$B/api/schema")"
+check "  and is left as typed" 'op:hun	ter22' "$(cat $A)"
+
+# A firmware trial that is not committed yet: the other slot may hold a confd
+# that reads the file as the password, so a sign-in leaves the file alone
+# until the image is committed. An explicit save still stores the hash.
+mkdir -p /var/run
+typed op:hunter22
+printf '%s\n' running=1 next_boot=0 uncommitted=1 other_slot=0 > /var/run/odi-slot
+check "during a trial the password as typed signs in" 200 "$(code -u op:hunter22 "$B/api/schema")"
+check "  on the form too" 200 "$(signin 'user=op&password=hunter22')"
+check "  and the file stays as typed" op:hunter22 "$(cat $A)"
+printf '%s\n' running=1 next_boot= uncommitted= other_slot=0 > /var/run/odi-slot
+check "  also when the state of the trial is not known" op:hunter22 "$(code -u op:hunter22 "$B/api/schema" >/dev/null; cat $A)"
+printf '%s\n' running=1 uncommitted=01 > /var/run/odi-slot
+check "  or reads like nothing slot-state.sh writes" op:hunter22 "$(code -u op:hunter22 "$B/api/schema" >/dev/null; cat $A)"
+printf '%s\n' running=1 next_boot=0 uncommitted=1 other_slot=0 > /var/run/odi-slot
+check "  a save from the page stores the hash all the same" yes \
+	"$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
+# Committed is what the file has to say, whole and once. Anything less is
+# not evidence, and the file stays as typed: the trial is in the U-Boot
+# environment whether or not slot-state.sh has run yet at this boot.
+typed op:hunter22
+staytyped() { check "$1" op:hunter22 "$(code -u op:hunter22 "$B/api/schema" >/dev/null; cat $A)"; }
+rm -f /var/run/odi-slot
+staytyped "no state file on an image that has slot-state.sh: not yet"
+: > /var/run/odi-slot
+staytyped "  an empty one"
+printf '%s\n' running=1 next_boot=1 other_slot=0 > /var/run/odi-slot
+staytyped "  one without the line"
+printf '%s\n' running=1 uncommitted=0 uncommitted=1 > /var/run/odi-slot
+staytyped "  one that says both"
+printf '%s\n' running=1 uncommitted=1 uncommitted=0 > /var/run/odi-slot
+staytyped "  in either order"
+printf '%s\n' running=1 uncommitted=0 uncommitted=0 > /var/run/odi-slot
+staytyped "  or the same thing twice"
+printf 'running=1\nuncommitted=0' > /var/run/odi-slot
+staytyped "  one cut before the end of the line"
+printf 'running=1\nuncommitted=0\n\000rest\n' > /var/run/odi-slot
+staytyped "  one with a NUL in it"
+{ printf 'uncommitted=0\n'; head -c 1100 /dev/zero | tr '\0' 'x'; echo; } > /var/run/odi-slot
+staytyped "  one too long to be read whole"
+printf '%s\n' running=1 xuncommitted=0 > /var/run/odi-slot
+staytyped "  one where the line only ends like it"
+printf '%s\n' running=1 next_boot=1 uncommitted=0 other_slot=0 > /var/run/odi-slot
+check "once it says committed, the next sign-in makes the hash" yes "$(code -u op:hunter22 "$B/api/schema" >/dev/null; hashed op)"
+# An image with neither the script nor the file has no trial to wait for.
+typed op:hunter22
+rm -f /var/run/odi-slot
+mv /etc/scripts/slot-state.sh /etc/scripts/slot-state.sh.kept
+check "with no slot-state.sh and no state file a sign-in makes the hash" yes "$(code -u op:hunter22 "$B/api/schema" >/dev/null; hashed op)"
+typed op:hunter22
+printf '%s\n' running=1 uncommitted=1 > /var/run/odi-slot
+staytyped "  but a state file that says trial is believed without the script too"
+mv /etc/scripts/slot-state.sh.kept /etc/scripts/slot-state.sh
+printf '%s' "$COMMITTED" > /var/run/odi-slot
+
+# What confd writes it must be able to read. A username typed into the file
+# can be longer than the page allows, and with 136 characters the hashed line
+# is the 255 bytes that are refused as too long: written, it let nobody in.
+# With 135 it is the longest line there is; from 136 on the file stays as
+# typed and keeps working.
+u135=$(head -c 135 /dev/zero | tr '\0' u)
+typed "$u135:hunter22"
+check "a username of 135 characters as typed signs in" 200 "$(code -u "$u135:hunter22" "$B/api/schema")"
+check "  its hashed line is 254 bytes, the longest that is read" "yes 254" "$(hashed "$u135") $(wc -c < $A | tr -d ' ')"
+check "  and signs in" 200 "$(code -u "$u135:hunter22" "$B/api/schema")"
+check "  also on the form" 200 "$(signin "user=$u135&password=hunter22")"
+typed "u$u135:hunter22"
+check "one of 136 signs in" 200 "$(code -u "u$u135:hunter22" "$B/api/schema")"
+check "  and is left as typed, since its hash would not fit" "u$u135:hunter22" "$(cat $A)"
+check "  with no temp file" no "$([ -e $A.new ] && echo yes || echo no)"
+check "  and keeps signing in" 200 "$(code -u "u$u135:hunter22" "$B/api/schema")"
+
+# A wrong password against a line nothing is known about holds the next
+# check back; it does not refuse it. The right password straight after a
+# wrong one signs in.
+line_for op hunter22 16000 > $A
+check "a wrong password against a new hashed line" 401 "$(code -u op:wrong "$B/api/schema")"
+check "  does not keep the right one out" 200 "$(code -u op:hunter22 "$B/api/schema")"
+
+# read_file fills its buffer without saying that the file was longer. A line
+# cut at 255 bytes used to be the credential: its prefix signed in. Now a
+# file that fills the buffer is refused whole.
+long=$(python3 -I -c 'print("op:" + "x" * 300, end="")')
+printf '%s' "$long" > $A
+check "a line too long to read whole lets nobody in: not its first 255 bytes" 401 \
+	"$(code -u "$(printf '%s' "$long" | cut -c1-255)" "$B/api/schema")"
+check "  not the default" 401 "$(code -u admin:admin "$B/api/schema")"
+check "  and it is left alone" "$long" "$(cat $A)"
+printf '%s' "$long" | cut -c1-255 | tr -d '\n' > $A
+check "  nor one of exactly 255 bytes, which cannot be told from a cut one" 401 \
+	"$(code -u "$(cat $A)" "$B/api/schema")"
+printf '%s' "$long" | cut -c1-254 | tr -d '\n' > $A
+check "a line of 254 bytes is read whole and signs in" 200 "$(code -u "$(printf '%s' "$long" | cut -c1-254)" "$B/api/schema")"
+check "  and becomes a hash of all of it" yes "$(hash_of "$(printf '%s' "$long" | cut -c4-254)")"
+printf '%s' "$long" > $A
+tok=$(typed op:hunter22; session_of 'user=op&password=hunter22'; printf '%s' "$long" > $A)
+check "a save over a line too long is written" yes \
+	"$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
+
+# A shorter line after a longer one that began the same way.
+typed op:hunter22extra
+check "a longer password as typed" 200 "$(code -u op:hunter22extra "$B/api/schema")"
+typed op:hunter22
+check "  then a shorter one that it began with: that one signs in" 200 "$(code -u op:hunter22 "$B/api/schema")"
+check "  and the longer no longer does" 401 "$(code -u op:hunter22extra "$B/api/schema")"
+
+# The file written by hand while the hash of the old password is being made:
+# the rename must not put that hash over the new line. A named pipe stands
+# in for the file, so that each read of it can be given its own content:
+# the read that the sign-in is checked against, then the one made just
+# before the write, which finds another line. Had the write gone ahead, the
+# rename would have replaced the pipe with a file. The pause lets the first
+# read see its end before the second writer opens the pipe.
+rm -f $A && mkfifo $A
+( printf 'op:hunter22' > $A; sleep 1; printf 'op:changed1' > $A ) &
+feeder=$!
+check "a sign-in against the line as it was" 200 "$(code --max-time 10 -u op:hunter22 "$B/api/schema")"
+check "  does not write its hash over a line changed meanwhile" pipe "$([ -p $A ] && echo pipe || echo "replaced: $(cat $A)")"
+check "  and takes the hash it had staged away again" no "$([ -e $A.new ] && echo yes || echo no)"
+# Unblock whichever side is still waiting on the pipe, then put a file back.
+kill $feeder 2>/dev/null || true
+[ -p $A ] && timeout 2 sh -c ": > $A" 2>/dev/null || true
+rm -f $A
+typed "$AUTH"
+check "the server still answers after it" 200 "$(code --max-time 10 -u "$AUTH" "$B/api/schema")"
+
+# What runs PBKDF2 and what does not, counted: build/confd-kdfcount is the
+# same daemon with one addition, a byte appended to a file for each PBKDF2.
+# In it the pause after a wrong password that cost one is 4 s at least.
+echo "== where the slow hash runs"
+KBIN=build/confd-kdfcount
+KC=/tmp/confd-kdf-count
+[ -x "$KBIN" ] || { echo "no $KBIN -- run 'make confd' first" >&2; exit 1; }
+KPORT=$((PORT + 1))
+K="http://127.0.0.1:$KPORT"
+line_for op hunter22 16000 > $A
+rm -f $KC
+qemu-mips-static "$KBIN" "$KPORT" "$HWMON" &
+KDAEMON=$!
+trap 'kill $DAEMON $KDAEMON 2>/dev/null || true' EXIT
+for _ in $(seq 40); do
+	[ "$(code "$K/login")" = 200 ] && break
+	sleep 0.25
+done
+kdfs() { if [ -f $KC ]; then wc -c < $KC | tr -d ' '; else echo 0; fi; }
+# The routes that answer without a credential asked only whether a session
+# was there, and went on to Basic, and so to PBKDF2, when there was none.
+for _ in 1 2 3; do
+	code -u op:hunter22 "$K/login" >/dev/null
+	code -u op:wrong "$K/login" >/dev/null
+	code -u op:wrong -X POST "$K/api/logout" >/dev/null
+	code -u op:wrong "$K/login.js" >/dev/null
+done
+check "the sign-in page and sign-out never run it, whatever Basic header they get" 0 "$(kdfs)"
+check "  and answer as before" "200 401" "$(code -u op:wrong "$K/login") $(code -u op:wrong -X POST "$K/api/logout")"
+check "a NUL spelling is refused before it" "401 0" "$(code -H "$(basic_raw 'op:hunter22\000')" "$K/api/schema") $(kdfs)"
+check "the first right password runs it once" "200 1" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
+for _ in 1 2 3 4 5; do code -u op:hunter22 "$K/api/schema" >/dev/null; done
+check "five more requests with it run none" 1 "$(kdfs)"
+check "nor the form" "200 1" "$(code -X POST -H "Origin: $K" --data 'user=op&password=hunter22' "$K/api/login") $(kdfs)"
+check "nor a wrong password, once the right one is known" "401 1" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+check "nor asking whether it is the default" "false 1" \
+	"$(curl -s -u op:hunter22 "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
+check "nor the password asked again for the secrets" 1 \
+	"$(code -u op:hunter22 -X POST --data 'password=hunter22' "$K/api/voip/secrets" >/dev/null; kdfs)"
+# Another line: nothing is known about it. A wrong password costs one
+# PBKDF2, and the next check that would cost one waits out a pause first (4 s
+# from the end of the last in this build, of which the answer to the wrong
+# password has used one). It is held back, not refused: the right password
+# signs in when its turn comes.
+timed() { curl -s -o /dev/null -w '%{http_code} %{time_total}' "$@"; }
+waited() { awk -v t="${1#* }" -v min="$2" 'BEGIN { print (t >= min) ? "waited" : "did not wait: " t }'; }
+line_for op hunter23 16000 > $A
+check "against a new line a wrong password runs it once" "401 2" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+r=$(timed -u op:wrong2 "$K/api/schema")
+check "  a second one straight after runs it too" "401 3" "${r%% *} $(kdfs)"
+check "    after the pause" waited "$(waited "$r" 2.5)"
+r=$(timed -u op:hunter23 "$K/api/schema")
+check "  the right one straight after signs in" "200 4" "${r%% *} $(kdfs)"
+check "    after the pause as well" waited "$(waited "$r" 1.5)"
+r=$(timed -u op:hunter23 "$K/api/schema")
+check "  and from then on at once, with none" "200 4" "${r%% *} $(kdfs)"
+check "    " "did not wait" "$(waited "$r" 1.0 | cut -c1-12)"
+# A session outlives a change of the line. The page then asks whether the
+# default is in force, and the answer is whether there is a file: nothing
+# is tried against the new hash, also when it is one of admin:admin.
+ktok=$(curl -s -D - -o /dev/null -X POST -H "Origin: $K" --data 'user=op&password=hunter23' "$K/api/login" |
+	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p')
+line_for admin admin 16000 > $A
+check "a session asking whether a new line is the default runs none" "false 4" \
+	"$(curl -s -H "Cookie: odi_session=$ktok" "$K/api/firmware" | sed -n 's/.*"defaultauth":\([a-z]*\).*/\1/p') $(kdfs)"
+# A file as typed is compared as it is; the one PBKDF2 is the hash made of it.
+typed op:hunter22
+check "a wrong password against a file as typed runs none" "401 4" "$(code -u op:wrong "$K/api/schema") $(kdfs)"
+check "the right one runs the one that makes the hash" "200 5 yes" "$(code -u op:hunter22 "$K/api/schema") $(kdfs) $(hashed op)"
+check "  and the next request none" "200 5" "$(code -u op:hunter22 "$K/api/schema") $(kdfs)"
+kill $KDAEMON 2>/dev/null || true
+trap 'kill $DAEMON 2>/dev/null || true' EXIT
+rm -f $KC
+typed "$AUTH"
 
 echo "== ssh keys"
 rm -f /etc/config/dropbear.d/authorized_keys
@@ -611,6 +1040,92 @@ check "body in a second segment is read" seen "$r"
 big=$(python3 -c 'print("&".join("PON_VENDOR_ID=" + "x"*500 for _ in range(60)))')
 check "an oversized body is refused, not trimmed" 413 \
 	"$(code -u "$AUTH" -X POST --data "$big" "http://127.0.0.1:$PORT/api/config")"
+
+# A Content-Length that is not a number used to be read as 0: the request was
+# served as one with no body and the body was not read. Of two that disagree
+# the first was believed. Sent raw, since curl will not send most of these.
+# cl <method> <header line>...: the status, and the body of the answer. The
+# body sent is VLAN_MANU_TAG_VID=100, 21 bytes, or $CLBODY.
+cl() { python3 -I - "$PORT" "$AUTH" "$@" <<'PY'
+import base64, os, socket, sys
+port, auth, method, lines = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4:]
+body = os.environ.get("CLBODY", "VLAN_MANU_TAG_VID=100").encode() if method == "POST" else b""
+s = socket.create_connection(("127.0.0.1", port), timeout=10)
+s.sendall((method + (" /api/config" if body else " /api/schema") + " HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+           "Authorization: Basic " + base64.b64encode(auth.encode()).decode() + "\r\n" +
+           "".join(l + "\r\n" for l in lines) + "\r\n").encode() + body)
+out = b""
+try:
+    while True:
+        d = s.recv(4096)
+        if not d:
+            break
+        out += d
+except OSError:
+    pass
+head, _, rest = out.decode("utf-8", "replace").partition("\r\n\r\n")
+print((head.split(" ") + ["none", "none"])[1], rest.replace("\n", " "))
+PY
+}
+clcode() { r=$(cl "$@"); echo "${r%% *}"; }
+for v in 'abc' '' '+21' '-21' '21abc' '21, 21' '21,21' '0x15' '2 1' '21;'; do
+	check "Content-Length: [$v] is refused" 400 "$(clcode POST "Content-Length: $v")"
+done
+check "  and says what was wrong" yes "$(err "$(cl POST 'Content-Length: abc')" 'bad Content-Length')"
+check "  on a GET too" 400 "$(clcode GET 'Content-Length: abc')"
+check "  before the credential is looked at" 400 "$(AUTH=admin:wrong clcode POST 'Content-Length: abc')"
+for h in 'Content-Length: 21' 'Content-Length:21' 'Content-Length:    21' 'Content-Length: 21  ' \
+         "Content-Length:$(printf '\t')21$(printf '\t')" 'content-LENGTH: 21' 'Content-Length: 0021'; do
+	check "[$h] is a length of 21" yes "$(err "$(cl POST "$h")" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
+done
+# A number too large is a well-formed request that is too big: 413, and the
+# sum never wraps into a small one (2^32 + 21 would be 21).
+for v in 99999999999999999999999 4294967317 33554433; do
+	check "Content-Length: $v is too large, not bad" 413 "$(clcode POST "Content-Length: $v")"
+done
+check "  and its digits are still checked after the cut" 400 "$(clcode POST 'Content-Length: 99999999999999999999x')"
+check "two Content-Length that disagree are refused" 400 "$(clcode POST 'Content-Length: 21' 'Content-Length: 20')"
+check "  whichever comes first" 400 "$(clcode POST 'Content-Length: 0' 'Content-Length: 21')"
+check "  with other headers between them" 400 "$(clcode POST 'Content-Length: 21' 'X-Other: 1' 'content-length: 5')"
+check "  and when the second is not a number" 400 "$(clcode POST 'Content-Length: 21' 'Content-Length: x')"
+check "  and when both are too large: they still disagree" 400 "$(clcode POST 'Content-Length: 99999999999' 'Content-Length: 88888888888')"
+check "  or differ only past where the sum is cut" 400 "$(clcode POST 'Content-Length: 99999999991' 'Content-Length: 99999999992')"
+check "  the same too large one twice is too large" 413 "$(clcode POST 'Content-Length: 99999999999' 'Content-Length: 99999999999')"
+check "  21 and 0021 are the same length" yes \
+	"$(err "$(cl POST 'Content-Length: 21' 'Content-Length: 0021')" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
+check "  21 and 210 are not" 400 "$(clcode POST 'Content-Length: 21' 'Content-Length: 210')"
+# A CR alone does not end a line: what follows it on the line was not read.
+check "a bare CR after the digits is refused" 400 "$(clcode POST "$(printf 'Content-Length: 21\rX-Rest: 1')")"
+check "  and one before them" 400 "$(clcode POST "$(printf 'Content-Length:\r21')")"
+check "the same Content-Length twice is one length" yes \
+	"$(err "$(cl POST 'Content-Length: 21' 'Content-Length: 21')" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
+check "a header that only ends in the name is not it" yes \
+	"$(err "$(cl POST 'X-Content-Length: abc' 'Content-Length: 21')" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
+check "a GET with no Content-Length is served" 200 "$(clcode GET)"
+# No chunk parser: a body in a Transfer-Encoding is refused, not taken for
+# no body, and not handed to the route with its chunk sizes in it.
+check "Transfer-Encoding: chunked is refused" 501 "$(clcode POST 'Transfer-Encoding: chunked')"
+check "  and says to send a Content-Length" yes "$(err "$(cl POST 'Transfer-Encoding: chunked')" 'send the body with a Content-Length')"
+check "  with a Content-Length beside it too" 501 "$(clcode POST 'Content-Length: 21' 'Transfer-Encoding: chunked')"
+check "  whatever coding it names" 501 "$(clcode POST 'transfer-encoding: gzip')"
+check "  as curl sends it" 501 \
+	"$(code -u "$AUTH" -X POST -H 'Transfer-Encoding: chunked' --data 'VLAN_MANU_TAG_VID=100' "http://127.0.0.1:$PORT/api/config")"
+check "  with an empty value" 501 "$(clcode POST 'Transfer-Encoding:' 'Content-Length: 21')"
+check "  and an empty one does not hide a second" 501 "$(clcode POST 'Transfer-Encoding:' 'Content-Length: 21' 'Transfer-Encoding: chunked')"
+check "  a header that only ends in the name is not it" 200 "$(clcode POST 'X-Transfer-Encoding: chunked' 'Content-Length: 21')"
+# The body is the bytes Content-Length names. What arrived after them in the
+# same segment used to be parsed with them, so a field past the declared
+# length was applied, and with a length of 0 or none the whole body was.
+r=$(CLBODY='VLAN_MANU_TAG_VID=100&PON_VENDOR_ID=EVIL' cl POST 'Content-Length: 21')
+check "a field past the declared length is not applied" no "$(case "$r" in *PON_VENDOR_ID*) echo yes ;; *) echo no ;; esac)"
+check "  the one inside it is" yes "$(err "$r" '200 {"results":[{"name":"VLAN_MANU_TAG_VID"')"
+r=$(CLBODY='VLAN_MANU_TAG_VID=100&PON_VENDOR_ID=EVIL' cl POST 'Content-Length: 17')
+check "  a length that ends inside a field cuts the field there" yes "$(err "$r" '"name":"VLAN_MANU_TAG_VID","ok":false')"
+check "    and what was cut off is not in the error either" no "$(case "$r" in *PON_VENDOR_ID*) echo yes ;; *) echo no ;; esac)"
+check "with a length of 0 nothing sent after the headers is applied" yes \
+	"$(err "$(CLBODY='VLAN_MANU_TAG_VID=100' cl POST 'Content-Length: 0')" '200 {"results":[]')"
+check "  nor with no length at all" yes \
+	"$(err "$(CLBODY='VLAN_MANU_TAG_VID=100' cl POST)" '200 {"results":[]')"
 
 echo "== sessions"
 L="http://127.0.0.1:$PORT"
@@ -2033,14 +2548,51 @@ check "secrets: a prefix of the password is refused" 403 "$(code -u "$AUTH" -X P
 check "secrets: a longer password is refused" 403 "$(code -u "$AUTH" -X POST --data 'password=s3cretx' "$S")"
 check "secrets: a cross-site POST is refused" 403 \
 	"$(code -u "$AUTH" -H 'Origin: http://evil.example' -X POST --data 'password=s3cret' "$S")"
+check "secrets: the file holds the hash by now" yes "$(hashed admin)"
 check "secrets: the right password shows them" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST --data 'password=s3cret' "$S")" 'password SIPPASS9')"
+# The password asked again is checked against a file as typed as well, and
+# proving it there makes the file a hash like any sign-in. A session, so
+# that this is the first place the password is seen.
+tok=$(curl -s -D - -o /dev/null -X POST -H "Origin: $B" --data "user=${AUTH%%:*}&password=${AUTH#*:}" "$B/api/login" |
+	sed -n 's/^Set-Cookie: odi_session=\([0-9a-f]\{32\}\);.*/\1/p')
+typed "$AUTH"
+check "secrets: a wrong password against a file as typed is refused" 403 \
+	"$(code -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'password=s3cre' "$S")"
+check "secrets:   and leaves the file as typed" "$AUTH" "$(cat $A)"
+check "secrets: the right one shows them" yes \
+	"$(err "$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'password=s3cret' "$S")" 'password SIPPASS9')"
+check "secrets:   and the file is a hash from then on" yes "$(hashed admin)"
+check "secrets:   which the password still opens" yes \
+	"$(err "$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'password=s3cret' "$S")" 'password SIPPASS9')"
+check "secrets:   and a wrong one still does not" 403 \
+	"$(code -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'password=s3cretx' "$S")"
 check "secrets: the answer is not cached" yes \
 	"$(err "$(curl -s -i -u "$AUTH" -X POST --data 'password=s3cret' "$S")" 'Cache-Control: no-store')"
 # The factory credential is public: it does not unlock secrets.
 mv /etc/config/confd.auth /etc/config/confd.auth.kept
 check "secrets: refused while the factory password is in force" 403 \
 	"$(code -u admin:admin -X POST --data 'password=admin' "$S")"
+: > /etc/config/confd.auth
+check "secrets:   with an empty file as well" 403 \
+	"$(code -u admin:admin -X POST --data 'password=admin' "$S")"
+# A file the owner wrote is theirs, also when it says admin:admin.
+typed admin:admin
+check "secrets: open to admin:admin once it was set in a file" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data 'password=admin' "$S")" 'password SIPPASS9')"
+check "secrets:   also after that file has become a hash" "yes yes" \
+	"$(hashed admin) $(err "$(curl -s -u admin:admin -X POST --data 'password=admin' "$S")" 'password SIPPASS9')"
+# A file that cannot be read: a session from before still gets in, and must
+# not be taken for the owner because the default cannot be seen in force.
+tok=$(session_of 'user=admin&password=admin')
+rm -f /etc/config/confd.auth && mkdir /etc/config/confd.auth
+r=$(curl -s -i -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'password=admin' "$S")
+check "secrets: refused while the credential file cannot be read" yes "$(err "$r" '503 Service Unavailable')"
+check "secrets:   saying why" yes "$(err "$r" 'the password file cannot be read')"
+check "secrets:   and showing none" no "$(case "$r" in *SIPPASS9*) echo yes ;; *) echo no ;; esac)"
+check "status: refused then too" 503 \
+	"$(code -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST --data 'port=1&state=registered' "$V/status")"
+rmdir /etc/config/confd.auth
 mv /etc/config/confd.auth.kept /etc/config/confd.auth
 # No omcicli: 503, and no body to leak.
 mv /bin/omcicli /bin/omcicli.kept
@@ -2255,26 +2807,35 @@ check "the next boot with the forced link up: no fallback for the banner" yes \
 # A safe-mode boot: the web UI accepts the built-in default credential, in
 # memory, whatever confd.auth holds; the file is not touched, and the
 # saved credential is back as soon as the flag is gone (the next boot).
+# The file is one as typed here, the form a sign-in would turn into a hash:
+# not on this boot, where what signs in is not what the file holds.
+typed "$AUTH"
 printf '%s\n' short_boots=5 cleared=none root_password=default > /var/run/safe-mode
 check "safe-mode boot: the flag reaches the page" yes \
 	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/hostlink")" '"safemode_now":{"short_boots":"5","cleared":"none","root_password":"default"}')"
 check "safe-mode boot: admin:admin is accepted" 200 \
 	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "safe-mode boot:   on the sign-in form too" 200 "$(signin 'user=admin&password=admin')"
 check "safe-mode boot: the saved credential is not" 401 \
 	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "safe-mode boot:   nor on the form" 401 "$(signin "user=${AUTH%%:*}&password=${AUTH#*:}")"
 check "safe-mode boot: the page is told the default is in force" yes \
 	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware")" '"defaultauth":true')"
-check "safe-mode boot: confd.auth is untouched" "$AUTH" "$(cat /etc/config/confd.auth)"
+check "safe-mode boot: confd.auth is untouched, no hash made of it" "$AUTH" "$(cat /etc/config/confd.auth)"
 # The page is the password form until a save (authsaved), and the routes
 # that refuse the default refuse for the whole boot, before and after it.
 check "safe-mode boot: nothing saved yet" yes \
 	"$(err "$(curl -s -u admin:admin "http://127.0.0.1:$PORT/api/firmware")" '"authsaved":false')"
 check "safe-mode boot: no backup" 403 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/backup")"
-# The saved credential sent again is not written, though load_credential()
-# answers the default here; a new one is written, and in force from the next
-# boot only.
-before=$(stat -c '%i' /etc/config/confd.auth)
+# A save is the operator storing a credential, and what is stored is the
+# hash, on this boot as on any other. The saved credential sent again is not
+# written, though load_credential() answers the default here; a new one is
+# written, and in force from the next boot only.
 check "safe-mode boot: saving the stored credential answers ok" yes \
+	"$(err "$(curl -s -u admin:admin -X POST --data "user=${AUTH%%:*}&password=${AUTH#*:}" "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+check "safe-mode boot:   and stores its hash over the file as typed" yes "$(hashed admin)"
+before=$(stat -c '%i' /etc/config/confd.auth)
+check "safe-mode boot: saving it once more answers ok" yes \
 	"$(err "$(curl -s -u admin:admin -X POST --data "user=${AUTH%%:*}&password=${AUTH#*:}" "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
 check "safe-mode boot: and leaves the file as it was" "$before" "$(stat -c '%i' /etc/config/confd.auth)"
 check "safe-mode boot: that save opens the page" yes \

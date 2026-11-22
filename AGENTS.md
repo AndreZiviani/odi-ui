@@ -32,7 +32,8 @@ here.
 ## Layout
 
     src/                 the daemon: main.c, routes.c, http.c, mib.c,
-                          firmware.c, status.c, omci.c, buffers.c, start.S
+                          firmware.c, status.c, omci.c, sha256.c, buffers.c,
+                          start.S
     web/                 the static page: app.js plus one module per tab
                           (status.js, config.js, l2.js, omci.js, ...)
     schema/               keys.tsv, meta.tsv, consumers.tsv, features.tsv, settings.tsv --
