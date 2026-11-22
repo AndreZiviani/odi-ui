@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Security: SECURITY.md sends reports to odi-oss private vulnerability reporting, the release workflow pins every action to a commit SHA, and Dependabot proposes action updates weekly (AndreZiviani/odi-oss#482).
 - Sign-in: a *Forgot your password?* section explains the odi-oss safe mode:
   five short power-ups, or three when the host port runs 2500BASE-X or
   HiSGMII or has auto-negotiation off, then sign in with `admin` / `admin`.
