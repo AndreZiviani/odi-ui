@@ -187,6 +187,23 @@ main { padding: 24px 24px 120px; }
 .banner { margin: 16px 24px 0; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .banner p { margin: 0; flex: 1 1 320px; }
 #err { margin: 16px 24px 0; }
+/* Figures that stopped arriving (status.js): a red bar in the sticky header,
+   the pill reads "No answer", and the Status view loses its verdict colours
+   and dims, so a stick that stopped answering does not keep reading green.
+   The bar stays in the page while empty (a live region), out of the layout. */
+#stalenote { display: block; }
+#stalenote:empty { position: absolute; padding: 0; border: 0; }
+#stalenote:empty + .trial { margin-top: 0; }
+.linepill.stale { border-color: var(--red); color: var(--red-ink); font-weight: 600; }
+.linepill.stale .dot { background: var(--red); }
+[data-stale] #p-status {
+  opacity: .6;
+  --green: var(--ink-3); --yellow: var(--ink-3); --red: var(--ink-3); --blue: var(--ink-3);
+  --green-ink: var(--ink-3); --yellow-ink: var(--ink-3); --red-ink: var(--ink-3); --blue-ink: var(--ink-3);
+}
+[data-stale] #p-status .num, [data-stale] #p-status .ov-val { color: var(--ink-3); }
+[data-stale] .ladder li.here { color: var(--bg); }
+[data-stale] .ov-glass.flowing { animation: none; }
 
 /* The update notice: the same band, in the accent colour, not the warning one. */
 .trial.update {
