@@ -6,7 +6,7 @@
  * any of this.
  */
 
-import { $, el, fail, get, ask, once, wireTheme, wireHelp } from './dom.js';
+import { $, el, fail, get, oneAtATime, ask, once, wireTheme, wireHelp } from './dom.js';
 import { S, EDITS, pwGate } from './state.js';
 import { liveFibreRates } from './overview.js';
 import { renderStatus, renderLinkCheck, renderPon, sections, lineFacts } from './status.js';
@@ -397,6 +397,8 @@ async function resetConfig() {
  */
 const LINK = { T: null, omci: null, gem: undefined, at: 0 };
 const LINK_OMCI_MS = 60000;
+/* What a read of the status poll may take before it is given up (see refresh). */
+const POLL_READ_MS = 60000;
 
 async function linkOmci(st, facts) {
   if (st.onu_id === undefined || !facts || facts.state !== 'O5') {
@@ -409,9 +411,9 @@ async function linkOmci(st, facts) {
   if (Date.now() - LINK.at < LINK_OMCI_MS) return;
   LINK.at = Date.now();
   try {
-    const s = await get('/api/omci?cmd=state');
+    const s = await get('/api/omci?cmd=state', { timeout: POLL_READ_MS });
     LINK.omci = s.error ? null : omciState(s.raw);
-    const m = await get('/api/omci?cmd=me&me=268');
+    const m = await get('/api/omci?cmd=me&me=268', { timeout: POLL_READ_MS });
     LINK.gem = m.ok === false || m.error ? undefined : parseOmci(m.raw || '').instances.length;
   } catch (e) {
     LINK.omci = null;
@@ -428,17 +430,26 @@ async function linkStatus(st) {
   renderLinkCheck(f ? linkCheck(f) : null);
 }
 
-async function refresh() {
+/*
+ * One status poll at a time. confd answers one request at a time, so a poll
+ * that took longer than the 15 s between ticks had the next one queue behind
+ * it, and the link check took its samples twice and out of order. A tick
+ * that finds a poll still going is skipped; the next one comes 15 s later.
+ * Each read of the poll gives up after POLL_READ_MS, so one that never gets
+ * an answer cannot stop the polling for good. The setup wizard's marker write
+ * is not waited for: it has its own guard (wizard.js) and is advisory.
+ */
+const refresh = oneAtATime(async () => {
   if (S.REBOOTING) return;
   try {
-    const st = await get('/api/status');
+    const st = await get('/api/status', { timeout: POLL_READ_MS });
     if (st.error) throw new Error(st.error);
     renderStatus(st.raw, st.chip_temp, st);
     await linkStatus(st);
     /* The setup wizard decides from the same read: open, mark, or leave alone. */
-    await wizardSeen(lineFacts(st.raw));
+    wizardSeen(lineFacts(st.raw)).catch(fail);
   } catch (e) { fail(e); }
-}
+});
 
 /*
  * The shared PON figure and the fibre-line rates, every second between the
