@@ -3338,8 +3338,12 @@ for _ in $(seq 40); do
 	curl -fsS -u "$AUTH" -o /dev/null "http://127.0.0.1:$PPORT/api/schema" && break
 	sleep 0.25
 done
-check "a longer line is cut to 200 bytes and the answer stays JSON" 200 \
-	"$(curl -s -u "$AUTH" "http://127.0.0.1:$PPORT/api/status" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("prev_boot","")))' 2>&1)"
+# Plain grep, no json module: the python3 in the CI image has none. The cut
+# keeps 200 of the 300 zeros and the string is still closed before the next
+# member or the end of the object.
+check "a longer line is cut to 200 bytes and the string stays closed" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PPORT/api/status" | grep -oE '"prev_boot":"0+"[,}]')" \
+		"\"prev_boot\":\"$(printf '%0200d' 0)\"")"
 kill $PDAEMON; wait $PDAEMON 2>/dev/null || true
 rm -rf "$PFX"
 
