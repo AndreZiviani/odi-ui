@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- `scripts/sha256-test.sh` passes on macOS: the files for `password` and
+  `Password` were one file on a case-insensitive filesystem, so the first
+  PBKDF2 vectors read the wrong password. They are now `pw-lower` and
+  `pw-upper`.
+
 - Safe mode: confd opens `admin` / `admin` only on a safe-mode boot that a
   power cycle led into. odi-oss now writes `login=default` or `login=stored`
   into `/var/run/safe-mode`; with `login=stored` (the stick entered the safe
@@ -40,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   boot after it is not promised to bring the fibre back, and what to do
   when every password is refused. `make check` and the smoke
   test cover the flag lines.
+
 - Security: SECURITY.md sends reports to odi-oss private vulnerability
   reporting and covers the latest confd release and the one pinned by the
   latest odi-oss release. The release workflow pins every action to a commit
