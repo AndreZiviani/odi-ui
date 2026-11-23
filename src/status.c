@@ -310,6 +310,44 @@ static void emit_uptime(int fd, char *buf, unsigned long cap)
 		emit_member(fd, "uptime", buf, k);
 }
 
+/*
+ * The "previous boot:" line of /proc/odi_ramlog_prev, after the prefix. It
+ * cannot change while this boot runs, so once it has been read it is kept:
+ * the kernel renders the whole 8 KB copy on every open, and the status poll
+ * runs every few seconds. A file that is not there (a stock slot, ENOENT) or
+ * holds no such line is settled too, and the member stays missing; any other
+ * failure is tried again on the next poll. Nothing is written anywhere; a
+ * power cut empties the pages and the kernel says so itself (reason=power).
+ */
+static void emit_prev_boot(int fd, char *buf, unsigned long cap)
+{
+	static char line[PREV_BOOT_MAX];
+	static unsigned long n;
+	static int settled;
+	const char *v;
+	unsigned long len, k;
+	long got;
+
+	if (!settled) {
+		got = read_file(RAMLOG_PREV, buf, cap);
+		if (got > 0) {
+			settled = 1;
+			v = find_line(buf, "previous boot: ", &len);
+			if (v) {
+				if (len > sizeof(line))
+					len = sizeof(line);
+				for (k = 0; k < len; k++)
+					line[k] = v[k];
+				n = len;
+			}
+		} else if (got == 0 || got == -2 /* ENOENT */) {
+			settled = 1;
+		}
+	}
+	if (n)
+		emit_member(fd, "prev_boot", line, n);
+}
+
 static void emit_overview(int fd)
 {
 	char buf[2048];
@@ -332,6 +370,7 @@ static void emit_overview(int fd)
 	emit_line(fd, "host_link", HOSTLINK_LINK, "", buf, sizeof(buf));
 	emit_line(fd, "host_mode", SERDES_STATE, "running=", buf, sizeof(buf));
 	emit_uptime(fd, buf, sizeof(buf));
+	emit_prev_boot(fd, buf, sizeof(buf));
 	emit_pon_load(fd);
 }
 

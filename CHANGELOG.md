@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the Stick block shows why the stick last restarted, from the
+  reason the odi-oss kernel keeps in RAM across a watchdog reset: power loss,
+  restart, kernel panic, or which watchdog rule fired (for a missed deadline,
+  the service). Hovering shows the rest of the kernel's `previous boot:`
+  line. confd keeps that line once it has read it and writes nothing. A
+  stock slot has no such file and shows no row.
+
 - `scripts/sha256-test.sh` passes on macOS: the files for `password` and
   `Password` were one file on a case-insensitive filesystem, so the first
   PBKDF2 vectors read the wrong password. They are now `pw-lower` and
