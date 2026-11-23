@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Firmware: confd reads `nv getenv` and `nv fallback` into a buffer of
+  8 KB and 64 bytes instead of 4 KB: the 8,192 bytes of the largest
+  environment odi-oss nv reads, with room for the header and closing lines.
+  A dump of more than 4 KB showed only the `sw_*` lines before the cut, and
+  a fallback dump of that size counted as unsure. A `getenv` dump that
+  still fills the buffer is not shown in part (AndreZiviani/odi-oss#482).
+
 - Status: figures that stopped arriving are marked old, in four places at
   once. A failed status poll, or no answer for 35 to 40 s, raises a red
   *Not live* bar in the sticky header on every view that says since when the

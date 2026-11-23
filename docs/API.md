@@ -357,12 +357,16 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           page opens, the default stays in force until
                                           the reboot), `switches`, write progress;
                                           `env` (the sw_* of `nv getenv`, empty
-                                          unless that nv exited 0),
+                                          unless that nv exited 0 and its dump fit
+                                          confd's buffer of 8 KB and 64 bytes: the
+                                          8,192 bytes of the largest environment
+                                          odi-oss nv reads, and its header and
+                                          closing lines),
                                           `fallback` (the sw_* of `nv fallback`, the
                                           other environment copy; empty on stock nv),
                                           `fallback_unsure` (true when that nv gave no
                                           answer to go by, as above, or a dump that
-                                          filled the buffer or is not one: no
+                                          filled that buffer or is not one: no
                                           `Fallback environment: N` line first, or
                                           a sw_commit that is not one line naming 0
                                           or 1; no knowing, so no write is offered,
