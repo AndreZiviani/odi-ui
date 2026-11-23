@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Safe mode: confd opens `admin` / `admin` only on a safe-mode boot that a
+  power cycle led into. odi-oss now writes `login=default` or `login=stored`
+  into `/var/run/safe-mode`; with `login=stored` (the stick entered the safe
+  mode by itself, after watchdog resets or with an unusable config
+  partition) the saved credential stays in force, a password saved then
+  applies at once, and the password gate of the page and the routes that
+  refuse the default treat it as on any boot.
+  With `login=stored` and `cause=config` a `confd.auth` that is absent,
+  empty or unreadable no longer falls back to the default: the partition is
+  what is missing, so every web login is refused until a power cycle makes
+  it `login=default`. An image that writes no `login=` field opens the
+  default on every safe-mode boot, as before; a `login=` field with any
+  value but `default` does not, lines may end in CR LF, and a flag that
+  fills the read buffer, holds a NUL byte or cannot be read opens nothing.
+  `/api/hostlink` answers that decision as `safe_login` (`none`, `default`,
+  `stored`, `strict`) and the page takes it from there, so the bar and the
+  login cannot disagree. The safe-mode bar
+  says why the boot is a safe-mode boot, which passwords apply (root over
+  SSH apart when the image reports `root_password=failed`, and the default
+  when `login=stored` finds no saved password, drawn again as soon as a
+  password is saved from the page), and that it
+  reboots after 30 minutes (`exit_at=`) unless acknowledged, with no promise
+  about the boot after it; *Acknowledge* is offered for that even when
+  there is no record (an unusable config partition), the bar then says the
+  boot stays up, and it says so when the reboot has already begun
+  (`exit=exiting`), with no *Acknowledge* then, since `safe-mode.sh ack`
+  refuses it. A cause the page does not know is left out of the bar. A past safe-mode boot after watchdog resets says so
+  instead of "short power cycles". The help under System › Access and
+  *Forgot your password?* say that only the power opens the default
+  password (with the one case it cannot tell apart: resets that leave no
+  record), that an unacknowledged safe mode ends after 30 minutes, that the
+  boot after it is not promised to bring the fibre back, and what to do
+  when every password is refused. `make check` and the smoke
+  test cover the flag lines.
 - Security: SECURITY.md sends reports to odi-oss private vulnerability
   reporting and covers the latest confd release and the one pinned by the
   latest odi-oss release. The release workflow pins every action to a commit
@@ -79,16 +113,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   check` covers the timeout and the one-at-a-time guard.
 
 - Access: "default password" now means that no password was set: no
-  `confd.auth`, an empty one, or a safe-mode boot. A file that holds
+  `confd.auth`, an empty one, or a safe-mode boot that opens the default
+  (`login=default`, or no `login=` line, see above). A file that holds
   `admin:admin` counts as set. One check answers `defaultauth` and every
   route that refuses the default. While it holds, the page shows the
   password form of System, Access and nothing else (no tab, no setup
   wizard), and confd answers 403 to adding an SSH key and to
   `GET /api/backup`, as it did for the VoIP secrets; all of them answer 503
   while the file cannot be read. Saving any password, `admin` / `admin`
-  included, writes the file and opens the page. On a safe-mode boot the
-  page opens after the save (`authsaved` in `/api/firmware`), while keys
-  and the backup stay refused until the reboot, and the page says so. The
+  included, writes the file and opens the page. On a safe-mode boot that
+  opens the default the page opens after the save (`authsaved` in
+  `/api/firmware`), while keys and the backup stay refused until the
+  reboot, and the page says so; with `login=stored` they are open as on
+  any boot. The
   default-password banner and header chip are gone, and the setup wizard
   no longer asks for the password (odi-oss#482).
 
@@ -98,8 +135,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   When the count is unknown it says to try three first and then five. It is
   static text: it sends nothing and tells no one on the LAN how the stick is
   set up or whether it is in the safe mode.
-- Safe mode: signing in on a safe-mode boot opens System › Access with the
-  password field focused, unless the address names another view. The
+- Safe mode: signing in on a safe-mode boot that opens the default opens
+  System › Access with the password field focused, unless the address
+  names another view. The
   safe-mode bar has *Set a new password*, the default-password warning no
   longer shows a second time, and a password saved in that boot says it is
   in force from the next boot and that other browsers sign in with `admin` /

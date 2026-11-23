@@ -343,11 +343,13 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
     GET  /api/firmware                    partitions, versions, build manifest,
                                           `defaultauth` (true when no credential was
                                           set: no `confd.auth` or an empty one, and on a
-                                          safe-mode boot; false for a file with
-                                          content, `admin:admin` included, as typed or as a hash), `authsaved`
-                                          (a password was saved on this safe-mode boot:
-                                          the page opens, the default stays in force
-                                          until the reboot), `switches`, write progress;
+                                          safe-mode boot that opens the default,
+                                          `safe_login` `default` in `/api/hostlink`;
+                                          false for a file with content, `admin:admin`
+                                          included, as typed or as a hash), `authsaved`
+                                          (a password was saved on such a boot: the
+                                          page opens, the default stays in force until
+                                          the reboot), `switches`, write progress;
                                           `env` (the sw_* of `nv getenv`, empty
                                           unless that nv exited 0),
                                           `fallback` (the sw_* of `nv fallback`, the
@@ -393,18 +395,30 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           (`/var/run/host-autoneg`), the link mode and
                                           trial (`serdes`: `supported` and `state`, from
                                           `/var/run/host-serdes`), the safe-mode
-                                          flag for this boot and the record of an
+                                          flag for this boot (`safemode_now`: with
+                                          `login` `default` or `stored`, `exit_at`, the
+                                          uptime at which the boot reboots by itself, and
+                                          `exit` `timed`, `held`, `exiting` or `failed`,
+                                          on an image that
+                                          writes them) and the record of an
                                           unacknowledged one, `reseed` (the record of
                                           a config store recreated at boot,
                                           `/etc/config/config-reseeded`: `files`,
-                                          `build`, `uptime`, or null), the host link;
+                                          `build`, `uptime`, or null), the host link,
+                                          `safe_login` (what the flag means for the web
+                                          login, as the request path judges it: `none`,
+                                          `default`, `stored`, or `strict`, the saved
+                                          credential or nothing);
                                           `supported` is false on an image without it
     POST /api/hostlink  action=try&mode=on|off
                         action=confirm | revert | ack | reseed-ack
                         action=serdes-try&mode=fiber1g|2500basex|hisgmii
                         action=serdes-confirm | serdes-revert | serdes-status
                                           fixed verbs: try, confirm and revert run
-                                          `host-autoneg.sh`, ack runs `safe-mode.sh ack`,
+                                          `host-autoneg.sh`, ack runs `safe-mode.sh ack`
+                                          (it removes the record and holds a safe-mode
+                                          boot that would end by itself; it fails once
+                                          that reboot has begun),
                                           reseed-ack runs `config-reseed.sh ack`,
                                           the serdes-* ones run `host-serdes.sh try MODE`,
                                           `confirm`, `revert` and `status` (the mode is
@@ -556,5 +570,6 @@ does not fit the daemon's 4 KB buffer (4094 bytes fit), answers 500 with
 `{"ok":false,"error":...}` to all three, and nothing is written: edit it over
 ssh. Listing and removing keys work with the built-in credential too; adding
 one does not, since a key is root over ssh: set a password with `POST
-/api/password` first (on a safe-mode boot, after the reboot). Send `line` with a delete: without it the number alone decides, and a
+/api/password` first (on a safe-mode boot that opened the default, after the
+reboot). Send `line` with a delete: without it the number alone decides, and a
 list that is out of date removes whatever key holds that line now.

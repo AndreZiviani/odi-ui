@@ -1029,6 +1029,9 @@ static void emit_hostlink_body(int conn)
 	got = read_file(HOSTLINK_LINK, buf, sizeof(buf));
 	if (got > 0 && (buf[0] == '0' || buf[0] == '1'))
 		put_json_str(conn, buf, 1);
+	/* The login the flag stands for, as the request path judges it. */
+	put_fd(conn, "\",\"safe_login\":\"");
+	put_fd(conn, safemode_login_name());
 	put_fd(conn, "\",\"uptime\":\"");
 	got = read_file(UPTIME_FILE, buf, sizeof(buf));
 	if (got > 0) {
@@ -2198,7 +2201,8 @@ void serve(int conn)
 			} else if (seq(action, "confirm") || seq(action, "revert")) {
 				argv[1] = action;
 			} else if (seq(action, "ack")) {
-				/* The safe-mode record belongs to safe-mode.sh. */
+				/* The safe-mode record belongs to safe-mode.sh; its ack
+				 * also holds a safe-mode boot that would end by itself. */
 				script = SAFEMODE_SCRIPT;
 				argv[0] = "safe-mode.sh";
 				argv[1] = action;

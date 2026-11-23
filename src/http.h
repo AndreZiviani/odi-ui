@@ -87,12 +87,15 @@ int header_present(const char *r, const char *name);
 int header_has(const char *r, const char *name, const char *needle);
 /* Which credential is in force: 1 one that was set (confd.auth has
  * content, whatever it says); 0 the built-in default (no file, an empty one,
- * or a safe-mode boot); -1 the file cannot be read, so which one is unknown.
+ * or a safe-mode boot that opens it); -1 the file cannot be read, so which one is unknown.
  * The one check for the page and for every route that refuses the default. */
 int auth_state(void);
 /* auth_state() == 0. Reported to the page, because a well-known default that
  * nobody can see is the same thing as no password at all. */
 int auth_is_default(void);
+/* What the odi-oss safe-mode flag of this boot means for the web login:
+ * "none" (no flag), "default", "stored" or "strict" (http.c). */
+const char *safemode_login_name(void);
 /* Answers 403 (the default) or 503 (unreadable) and returns 1 unless a
  * credential was set. For the routes that want the owner: keys, backup,
  * VoIP secrets. */
