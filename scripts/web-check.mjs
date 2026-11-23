@@ -44,10 +44,29 @@ class El {
   set className(v) {
     this.classList._s = new Set(String(v).split(/\s+/).filter(Boolean));
   }
-  get textContent() { return this._text; }
-  set textContent(v) { this._text = String(v); this.children = []; }
+  /* As in a real DOM, text is a child node: reconcile() in dom.js walks
+     childNodes and keeps a text node it can update in place. */
+  get textContent() { return textOf(this); }
+  set textContent(v) {
+    for (const c of this.children) PARENT.delete(c);
+    this.children = [];
+    if (v !== '') this.append(doc.createTextNode(v));
+  }
+  get nodeType() { return 1; }
+  get childNodes() { return this.children; }
+  replaceWith(n) {
+    const p = PARENT.get(this);
+    if (!p) return;
+    const prev = PARENT.get(n);
+    if (prev && prev !== p) prev.children.splice(prev.children.indexOf(n), 1);
+    p.children[p.children.indexOf(this)] = n;
+    PARENT.set(n, p);
+    PARENT.delete(this);
+  }
   append(...n) {
     for (const x of n) {
+      const prev = x && typeof x === 'object' ? PARENT.get(x) : null;
+      if (prev && prev.children.includes(x)) prev.children.splice(prev.children.indexOf(x), 1);
       this.children.push(x);
       if (x && typeof x === 'object') PARENT.set(x, this);
       if (this.tagName === 'select' && x.tagName === 'option') this.options.push(x);
@@ -70,11 +89,18 @@ class El {
   set value(v) { this._value = v; }
 }
 
+/* A text node: its own text, and the two moves reconcile() makes on it. */
+class Text {
+  constructor(t) { this.nodeType = 3; this.textContent = String(t); this.children = []; }
+  remove() { El.prototype.remove.call(this); }
+  replaceWith(n) { El.prototype.replaceWith.call(this, n); }
+}
+
 const byId = new Map();
 const doc = {
   createElement: (t) => new El(t),
   createElementNS: (ns, t) => new El(t),
-  createTextNode: (t) => ({ nodeType: 3, textContent: String(t), children: [] }),
+  createTextNode: (t) => new Text(t),
   querySelector: (sel) => {
     if (!byId.has(sel)) byId.set(sel, new El('div'));
     return byId.get(sel);
@@ -191,6 +217,8 @@ globalThis.fetch = async (path) => {
   return { ok: true, status: 200, json: async () => API[key] };
 };
 
+/* Child elements only: a list with nothing but a hint text renders no rows. */
+const elementsOf = (n) => n.children.filter((c) => c.nodeType !== 3);
 const textOf = (n) => (n.nodeType === 3 ? n.textContent
   : (n._text || '') + (n.children || []).map(textOf).join(''));
 
@@ -221,9 +249,9 @@ for (const c of CONS) S.CONS[c.name] = c;
 for (const f of FEAT) (S.FEATURES[f.mask] ||= []).push(f);
 
 renderConfig('#sections', S.SCHEMA, '', true);
-ok(doc.querySelector('#sections').children.length > 0, 'the stock-keys list renders rows');
+ok(elementsOf(doc.querySelector('#sections')).length > 0, 'the stock-keys list renders rows');
 renderConfig('#set-line', S.SCHEMA.filter((r) => r.common === 'yes'), '');
-ok(doc.querySelector('#set-line').children.length > 0, 'a Config subtab renders rows');
+ok(elementsOf(doc.querySelector('#set-line')).length > 0, 'a Config subtab renders rows');
 
 const vlan = SCHEMA.find((r) => r.name === 'VLAN_MANU_TAG_VID');
 ok(valueProblem(vlan, '99999') !== null, 'an out-of-range VLAN is rejected');
@@ -461,6 +489,67 @@ ok(true, 'renderStatus runs against a diag capture');
   renderStatus(raw2, null, { raw: raw2, host_link: '0' });
   ok(/Memory—/.test(ov()) && /ONU-ID —/.test(ov()) && /No link/.test(ov()) && /CPUmeasuring/.test(ov()),
      'overview: a stock slot without those files shows dashes, and a host link down says so');
+
+  /* A poll lays the new figures over the nodes on screen instead of
+     rebuilding them, so a part keeps the keyboard focus across polls. */
+  {
+    const host = doc.querySelector('#overview');
+    const cpuPart = () => host.children[2].children[2].children[1];
+    renderStatus(raw, null, st('100 0 100 800 0 0 0 0 0 0'));
+    const before = cpuPart();
+    const envRow = doc.querySelector('#env').children[1];
+    t += 10000;
+    renderStatus(raw2, null, st('150 0 150 900 0 0 0 0 0 0'));
+    ok(cpuPart() === before && before.dataset.k === 'ov-cpu' && /50 % busy/.test(textOf(before)),
+       'overview: the next poll keeps the same part node and updates its figure in place');
+    ok(doc.querySelector('#env').children[1] === envRow,
+       'status: the transceiver rows are updated in place, not rebuilt');
+  }
+  {
+    const { reconcile } = await import(join(root, 'web', 'dom.js'));
+    const box = doc.createElement('div');
+    const a = doc.createElement('button'); a.dataset.k = 'a';
+    reconcile(box, a, doc.createElement('span'));
+    const b = doc.createElement('button'); b.dataset.k = 'b';
+    reconcile(box, b);
+    ok(box.children.length === 1 && box.children[0] === b,
+       'reconcile: a node with another data-k is replaced, extra nodes are removed');
+  }
+
+  /* Figures that stopped arriving are marked old: after a failed poll at
+     once, after two polls without an answer by their age. */
+  {
+    const { markFresh, markFailed, checkStale, STALE_MS } = await import(join(root, 'web', 'status.js'));
+    const rootData = doc.documentElement.dataset;
+    const note = doc.querySelector('#stalenote');
+    const pill = doc.querySelector('#linepill');
+    doc.title = 'ODI DFP-34X-2C2';
+    markFresh(t);
+    ok(!checkStale(t + 30000) && !rootData.stale && note.textContent === '',
+       'stale: one poll still waiting for its answer does not mark the figures old');
+    ok(checkStale(t + STALE_MS + 1) && rootData.stale === '1'
+       && /^Not live\. The stick has not answered since .+\. The figures on this page are from then\. Last answer under a minute ago\.$/.test(note.textContent),
+       'stale: two polls without an answer raise the bar and say since when');
+    ok(pill.className === 'linepill stale' && pill.textContent === 'No answer',
+       'stale: the header pill says No answer instead of the state and the level');
+    ok(doc.title === 'No answer \u00b7 ODI DFP-34X-2C2', 'stale: the tab title says it too');
+    const age = note.children[note.children.length - 1];
+    ok(age.getAttribute('aria-hidden') === 'true', 'stale: the running age is not read out on every check');
+    const said = textOf(note).replace(age.textContent, '');
+    checkStale(t + 3 * 60000 + 1000);
+    ok(age.textContent === 'Last answer 3 min ago.' && textOf(note).replace(age.textContent, '') === said,
+       'stale: the age runs on, the spoken part keeps its text, so the live region speaks once');
+    markFresh(t + 200000);
+    ok(!rootData.stale && note.textContent === '' && doc.title === 'ODI DFP-34X-2C2',
+       'stale: the next good answer clears it, leaves the live region empty in the page, restores the title');
+    markFailed(t + 201000);
+    ok(rootData.stale === '1' && /^Not live\./.test(note.textContent),
+       'stale: a failed poll marks the figures old at once');
+    ok(checkStale(t + 202000), 'stale: and they stay old until a good answer, whatever their age');
+    markFresh(t + 210000, 0);
+    ok(!checkStale(t + 210000 + 30000),
+       'stale: the age is measured on the clock it was given, not the wall clock it prints');
+  }
 
   /* The PON load has a section of its own, not a line on the diagram: the
      whole PON beside the figures of this stick would read as this stick.
@@ -701,8 +790,8 @@ ok(true, 'renderStatus runs against a diag capture');
   const head = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
   const bars = [...head.matchAll(/<div id="(\w+)" class="trial([^"]*)"/g)]
     .map((m) => ({ id: m[1], rank: /\bhot\b/.test(m[2]) ? 0 : /\bupdate\b/.test(m[2]) ? 2 : 1 }));
-  ok(bars.map((b) => b.id).join() === 'chipbanner,trialbanner,safebanner,reseedbanner,fallbackbanner,updatebanner',
-     'bars: critical chip bar, then trial boot, safe mode, recreated settings, fallback, then the release notice');
+  ok(bars.map((b) => b.id).join() === 'stalenote,chipbanner,trialbanner,safebanner,reseedbanner,fallbackbanner,updatebanner',
+     'bars: no answer, critical chip bar, then trial boot, safe mode, recreated settings, fallback, then the release notice');
   ok(bars.every((b, i) => i === 0 || bars[i - 1].rank <= b.rank),
      'bars: red first, then the yellow stripes, then the blue notice, never the other way round');
   ok((head.match(/class="trial/g) || []).length === bars.length, 'bars: every header bar is in that list');
