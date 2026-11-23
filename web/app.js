@@ -23,7 +23,7 @@ import { renderPhone, wirePhone, hideSecrets } from './phone.js';
 import { wireRestore, saveBackup } from './restore.js';
 import { renderL2 } from './l2.js';
 import { renderTools } from './tools.js';
-import { renderHostlink, wireHostlink, safeModeNow, passwordSavedText, hostlinkNow } from './hostlink.js';
+import { renderHostlink, renderBanner, wireHostlink, safeModeDefaultLogin, passwordSavedText, hostlinkNow } from './hostlink.js';
 import { renderNetaddr, wireNetaddr } from './netaddr.js';
 import { checkForUpdate, wireUpdates, renderUpdateSwitch } from './updates.js';
 import { passwordProblem, sshKeyProblem } from './validate.js';
@@ -250,7 +250,10 @@ async function savePasswordOnce() {
     out.append(el('div', 'good', said), el('div', null, others));
     $('#pw-pass').value = '';
     $('#pw-pass2').value = '';
+    /* The safe-mode bar says whether a password is saved (defaultauth), so
+       it is drawn again from the answer checkAuth just read. */
     await checkAuth();
+    renderBanner();
   } catch (e) { out.append(el('div', 'bad', String(e.message || e))); }
 }
 
@@ -546,9 +549,10 @@ let INIT_HOSTLINK = null;
   /* The host-link banner, from what /api/init already brought. */
   await renderHostlink(INIT_HOSTLINK);
   showAuth();
-  /* Signed in on a safe-mode boot, most likely to replace a lost password:
-     open that form, unless the address already names a view. */
-  if (safeModeNow() && !location.hash.slice(1)) toPassword();
+  /* Signed in on a safe-mode boot with the default login, most likely to
+     replace a lost password: open that form, unless the address already
+     names a view. */
+  if (safeModeDefaultLogin() && !location.hash.slice(1)) toPassword();
   /* The address trial: whether the image has it (Save and Restore then go through it) and a trial that
      is already running, which raises its dialog. Before the form is used. */
   await renderNetaddr();
