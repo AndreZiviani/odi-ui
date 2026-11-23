@@ -420,11 +420,20 @@ check "no temp file is left beside the credential" no \
 # twice costs the flash nothing. A rename would give the file a new inode.
 before=$(stat -c '%i' /etc/config/confd.auth)
 check "saving the same credential again answers ok" yes \
-	"$(err "$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+	"$(err "$(curl -s -u op:hunter22 -X POST -d 'current=hunter22&user=op&password=hunter22' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+# With a password of its own in force, a change names it again in current.
+check "a change without the current password is refused" 403 \
+	"$(code -u op:hunter22 -X POST -d 'user=op&password=hunter99' "http://127.0.0.1:$PORT/api/password")"
+check "a change with a wrong current password is refused" 403 \
+	"$(code -u op:hunter22 -X POST -d 'current=hunter21&user=op&password=hunter99' "http://127.0.0.1:$PORT/api/password")"
+check "  and says why" yes \
+	"$(err "$(curl -s -u op:hunter22 -X POST -d 'current=nope&user=op&password=hunter99' "http://127.0.0.1:$PORT/api/password")" 'the current password is wrong')"
+check "  and the old password is still the one in force" 200 \
+	"$(code -u op:hunter22 "http://127.0.0.1:$PORT/api/schema")"
 check "and leaves the file as it was" "$before" "$(stat -c '%i' /etc/config/confd.auth)"
 # Unless the file is not private: then the save writes it again, 0600.
 chmod 644 /etc/config/confd.auth
-curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "http://127.0.0.1:$PORT/api/password" >/dev/null
+curl -s -u op:hunter22 -X POST -d 'current=hunter22&user=op&password=hunter22' "http://127.0.0.1:$PORT/api/password" >/dev/null
 check "the same credential in a file others can read is written again, 0600" 600 \
 	"$(stat -c '%a' /etc/config/confd.auth)"
 check "the default stops working once one is set" 401 \
@@ -438,10 +447,10 @@ check "and the default is no longer reported" false \
 for bad in 'user=a:b&password=hunter22' 'user=&password=hunter22' \
            'user=op&password=abc' 'user=op&password=' 'user=op' 'password=x'; do
 	check "refuses $bad" 400 \
-		"$(code -u op:hunter22 -X POST -d "$bad" "http://127.0.0.1:$PORT/api/password")"
+		"$(code -u op:hunter22 -X POST -d "current=hunter22&$bad" "http://127.0.0.1:$PORT/api/password")"
 done
 check "a newline in the password is refused" 400 \
-	"$(code -u op:hunter22 -X POST -d 'user=op&password=one%0Atwo' "http://127.0.0.1:$PORT/api/password")"
+	"$(code -u op:hunter22 -X POST -d 'current=hunter22&user=op&password=one%0Atwo' "http://127.0.0.1:$PORT/api/password")"
 
 # "Default" means that no credential was set: no file, or an empty one. A
 # file somebody wrote is theirs, admin:admin included, and the page, the
@@ -607,14 +616,14 @@ tok=$(session_of 'user=op&password=hunter22')
 typed op:hunter22
 check "a session leaves a file as typed alone" op:hunter22 "$(curl -s -o /dev/null -H "Cookie: odi_session=$tok" "$B/api/schema"; cat $A)"
 check "a save over a file as typed answers ok" yes \
-	"$(err "$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'user=op&password=hunter22' "$B/api/password")" '"ok":true')"
+	"$(err "$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'current=hunter22&user=op&password=hunter22' "$B/api/password")" '"ok":true')"
 check "  and stores the hash" yes "$(hashed op)"
 before=$(stat -c '%i' $A)
 check "the same password saved again answers ok" yes \
-	"$(err "$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "$B/api/password")" '"ok":true')"
+	"$(err "$(curl -s -u op:hunter22 -X POST -d 'current=hunter22&user=op&password=hunter22' "$B/api/password")" '"ok":true')"
 check "  and leaves the hashed file as it was" "$before" "$(stat -c '%i' $A)"
 check "another password is written" yes \
-	"$(err "$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter23' "$B/api/password")" '"ok":true')"
+	"$(err "$(curl -s -u op:hunter22 -X POST -d 'current=hunter22&user=op&password=hunter23' "$B/api/password")" '"ok":true')"
 check "  as a hash of that one" yes "$(hash_of hunter23)"
 check "  and is the one in force" 200 "$(code -u op:hunter23 "$B/api/schema")"
 check "  the old one is not" 401 "$(code -u op:hunter22 "$B/api/schema")"
@@ -728,7 +737,7 @@ printf '%s\n' running=1 uncommitted=01 > /var/run/odi-slot
 check "  or reads like nothing slot-state.sh writes" op:hunter22 "$(code -u op:hunter22 "$B/api/schema" >/dev/null; cat $A)"
 printf '%s\n' running=1 next_boot=0 uncommitted=1 other_slot=0 > /var/run/odi-slot
 check "  a save from the page stores the hash all the same" yes \
-	"$(curl -s -u op:hunter22 -X POST -d 'user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
+	"$(curl -s -u op:hunter22 -X POST -d 'current=hunter22&user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
 # Committed is what the file has to say, whole and once. Anything less is
 # not evidence, and the file stays as typed: the trial is in the U-Boot
 # environment whether or not slot-state.sh has run yet at this boot.
@@ -809,7 +818,7 @@ check "  and becomes a hash of all of it" yes "$(hash_of "$(printf '%s' "$long" 
 printf '%s' "$long" > $A
 tok=$(typed op:hunter22; session_of 'user=op&password=hunter22'; printf '%s' "$long" > $A)
 check "a save over a line too long is written" yes \
-	"$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
+	"$(curl -s -H "Cookie: odi_session=$tok" -H "Origin: $B" -X POST -d 'current=hunter22&user=op&password=hunter22' "$B/api/password" >/dev/null; hashed op)"
 
 # A shorter line after a longer one that began the same way.
 typed op:hunter22extra
@@ -1216,7 +1225,7 @@ check "  and keeps the newest" 200 "$(code -H "Cookie: odi_session=$newest" "$L/
 a=$(login_tok)
 b=$(login_tok)
 check "a password change from a session" 200 \
-	"$(code -H "Cookie: odi_session=$a" -X POST -H "Origin: $L" --data 'user=admin&password=n3wpass' "$L/api/password")"
+	"$(code -H "Cookie: odi_session=$a" -X POST -H "Origin: $L" --data "current=${AUTH#*:}&user=admin&password=n3wpass" "$L/api/password")"
 check "  keeps that session" 200 "$(code -H "Cookie: odi_session=$a" "$L/api/schema")"
 check "  and ends the others" 401 "$(code -H "Cookie: odi_session=$b" "$L/api/schema")"
 check "  and Basic takes the new password" 200 "$(code -u admin:n3wpass "$L/api/schema")"
@@ -2903,7 +2912,7 @@ check "safe-mode boot, login=stored: the page is not told the default is in forc
 check "safe-mode boot, login=stored: the login and the exit reach the page" yes \
 	"$(err "$(hl)" '"login":"stored","root_password":"stored","exit_at":"1800","exit":"timed"}')"
 check "safe-mode boot, login=stored: a new credential is in force at once" yes \
-	"$(err "$(curl -s -u "$AUTH" -X POST -d 'user=op&password=rescued2' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+	"$(err "$(curl -s -u "$AUTH" -X POST -d "current=${AUTH#*:}&user=op&password=rescued2" "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
 check "  it is accepted in the same boot" 200 "$(code -u op:rescued2 "http://127.0.0.1:$PORT/api/schema")"
 check "  and admin:admin still is not" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
 check "  the backup is open to it, as on any boot" 200 "$(code -u op:rescued2 "http://127.0.0.1:$PORT/api/backup")"
@@ -3428,7 +3437,7 @@ while IFS=$'\037' read -r kind name value expect why; do
 		r=$(curl -s -u "$AUTH" -X POST --data "$name=$value&_confirm=identity" "http://127.0.0.1:$PORT/api/config")
 		case "$r" in *'"ok":true'*) got=ok ;; esac ;;
 	password)
-		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "user=$name&password=$value" "http://127.0.0.1:$PORT/api/password")
+		c=$(curl -s -o /dev/null -w '%{http_code}' -u "$AUTH" -X POST --data "current=${AUTH#*:}&user=$name&password=$value" "http://127.0.0.1:$PORT/api/password")
 		[ "$c" = 200 ] && got=ok
 		# put the credential back so the next row, and the checks after, still sign in
 		cp /etc/config/confd.auth.vec /etc/config/confd.auth ;;

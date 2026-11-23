@@ -551,7 +551,11 @@ backup go through `/api/netaddr` instead when the image has the trial.
 
 ## Admin
 
-    POST /api/password   user=...&password=...
+    POST /api/password   user=...&password=...[&current=...]
+                                          current: the password in force, required
+                                          once one of its own is set (403 without it
+                                          or when wrong, after a second); not asked
+                                          while the built-in default is in force.
                                           user 1-64 printable characters, no space or
                                           colon; password 4-128 printable ASCII. Ends
                                           every session but the one that made the change.
