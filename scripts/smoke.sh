@@ -2884,6 +2884,151 @@ check "  and admin:admin no longer" 401 "$(code -u admin:admin "http://127.0.0.1
 printf '%s' "$AUTH" > /etc/config/confd.auth
 chmod 600 /etc/config/confd.auth
 check "the saved credential again" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+# The login line of the flag (odi-oss safe-mode.sh). login=stored: the stick
+# entered the safe mode by itself, so the saved credential stays in force and
+# the default is refused. Only that exact line withholds the default: an
+# image that writes no login= line (above) and login=default both open it.
+printf '%s\n' cause=watchdog wdt_resets=3 prev=wdt_userland login=stored root_password=stored exit_at=1800 exit=timed > /var/run/safe-mode
+check "safe-mode boot, login=stored: admin:admin is refused" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "safe-mode boot, login=stored: the saved credential is accepted" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+check "safe-mode boot, login=stored: the page is not told the default is in force" yes \
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"defaultauth":false')"
+check "safe-mode boot, login=stored: the login and the exit reach the page" yes \
+	"$(err "$(hl)" '"login":"stored","root_password":"stored","exit_at":"1800","exit":"timed"}')"
+check "safe-mode boot, login=stored: a new credential is in force at once" yes \
+	"$(err "$(curl -s -u "$AUTH" -X POST -d 'user=op&password=rescued2' "http://127.0.0.1:$PORT/api/password")" '"ok":true')"
+check "  it is accepted in the same boot" 200 "$(code -u op:rescued2 "http://127.0.0.1:$PORT/api/schema")"
+check "  and admin:admin still is not" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "  the backup is open to it, as on any boot" 200 "$(code -u op:rescued2 "http://127.0.0.1:$PORT/api/backup")"
+printf '%s' "$AUTH" > /etc/config/confd.auth
+chmod 600 /etc/config/confd.auth
+# cause=config with login=stored: the partition could not be used and nobody
+# cycled the power. A confd.auth that is not there is then a partition that
+# is not mounted, so nothing falls back to the default: every login is
+# refused until a power cycle makes it login=default. The same file missing
+# after watchdog resets is an owner who never set a password, as on any boot.
+printf '%s\n' cause=config login=stored root_password=stored exit_at=1800 exit=timed > /var/run/safe-mode
+check "safe-mode boot, cause=config login=stored: the saved credential is accepted while it reads" 200 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+mv /etc/config/confd.auth /etc/config/confd.auth.away
+check "safe-mode boot, cause=config login=stored, no confd.auth: admin:admin is refused" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "  and so is the credential that was saved" 401 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+: > /etc/config/confd.auth
+check "  an empty confd.auth is refused the same way" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+rm -f /etc/config/confd.auth
+mkdir /etc/config/confd.auth
+check "  and one that cannot be read" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+rmdir /etc/config/confd.auth
+printf '%s\n' cause=config prev=power login=default root_password=default exit_at=1800 exit=timed > /var/run/safe-mode
+check "safe-mode boot, cause=config login=default (a power cycle), no confd.auth: admin:admin is accepted" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+printf '%s\n' cause=watchdog login=stored exit=timed > /var/run/safe-mode
+check "safe-mode boot, cause=watchdog login=stored, no confd.auth: the default, as on any boot without one" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+mv /etc/config/confd.auth.away /etc/config/confd.auth
+printf '%s\n' cause=short_boots prev=power login=default root_password=default exit_at=1800 exit=timed > /var/run/safe-mode
+check "safe-mode boot, login=default: admin:admin is accepted" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "safe-mode boot, login=default: the saved credential is not" 401 \
+	"$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+# The default is open with a login=default line, or with no login= field at
+# all (an image that predates it). A login= field with any other value is
+# not the default.
+for l in 'xlogin=stored' ' login=stored' 'note=login=stored' 'Login=stored'; do
+	printf '%s\n' cause=watchdog "$l" exit=timed > /var/run/safe-mode
+	check "safe-mode boot: '$l' is no login= field, the default stays open as on an older image" 200 \
+		"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+done
+for l in 'login=stored2' 'login=' 'login=defaults' 'login=default x'; do
+	printf '%s\n' cause=watchdog "$l" exit=timed > /var/run/safe-mode
+	check "safe-mode boot: '$l' is a login= field that does not say default, the default is closed" 401 \
+		"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+done
+printf '%s\n' cause=short_boots login=default login=stored > /var/run/safe-mode
+check "safe-mode boot: login=stored beside login=default wins" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+# CR LF line ends, as a file edited elsewhere has.
+printf 'cause=watchdog\r\nlogin=stored\r\nexit=timed\r\n' > /var/run/safe-mode
+check "safe-mode boot: login=stored with CR LF line ends counts" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "  and the saved credential is accepted" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+printf 'cause=short_boots\r\nlogin=default\r\nexit=timed\r\n' > /var/run/safe-mode
+check "safe-mode boot: login=default with CR LF line ends opens the default" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+printf 'cause=config\r\nlogin=stored\r\n' > /var/run/safe-mode
+mv /etc/config/confd.auth /etc/config/confd.auth.away
+check "safe-mode boot: cause=config with CR LF line ends is strict too" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+mv /etc/config/confd.auth.away /etc/config/confd.auth
+# A flag that fills the read buffer may have lost the line that matters: it
+# opens nothing, whatever the part that was read says.
+{ printf 'cause=short_boots\n'; head -c 2000 /dev/zero | tr '\0' 'x'; printf '\nlogin=stored\n'; } > /var/run/safe-mode
+check "safe-mode boot: a flag cut by the read buffer does not open the default" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "  the saved credential is accepted" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+{ printf 'cause=short_boots\nlogin=default\n'; head -c 2000 /dev/zero | tr '\0' 'x'; printf '\n'; } > /var/run/safe-mode
+check "  not even when the part that was read says login=default" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+# A NUL byte in the flag would end the text for a parser that stops at it,
+# and hide the lines behind it: such a flag opens nothing either.
+printf 'cause=watchdog\n\0\nlogin=stored\nexit=timed\n' > /var/run/safe-mode
+check "safe-mode boot: a NUL byte hiding login=stored does not open the default" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "  the saved credential is accepted" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+printf 'cause=short_boots\nlogin=default\n\0' > /var/run/safe-mode
+check "  not even behind a login=default line" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+# A flag that is there and cannot be read (a directory in its place): no
+# default from it, and with confd.auth absent no fallback either.
+rm -f /var/run/safe-mode
+mkdir /var/run/safe-mode
+check "safe-mode flag that cannot be read: the default is not opened by it" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "  the saved credential is accepted" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+mv /etc/config/confd.auth /etc/config/confd.auth.away
+check "safe-mode flag that cannot be read, confd.auth absent: every login is refused" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+check "  the saved one too" 401 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
+mv /etc/config/confd.auth.away /etc/config/confd.auth
+rmdir /var/run/safe-mode
+{ printf 'cause=short_boots\n'; head -c 900 /dev/zero | tr '\0' 'x'; printf '\n'; } > /var/run/safe-mode
+check "  a long flag that still fits, with no login= field, is the older image: the default" 200 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+printf 'cause=watchdog\nlogin=stored' > /var/run/safe-mode
+check "safe-mode boot: login=stored as a last line with no newline counts" 401 \
+	"$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+# /api/hostlink says what the flag means for the login (safe_login), from
+# the same parser: the page takes it from there and reads no flag itself.
+sl() { curl -s -u "${1:-$AUTH}" "http://127.0.0.1:$PORT/api/hostlink" | sed -n 's/.*"safe_login":"\([a-z]*\)".*/\1/p'; }
+printf '%s\n' cause=short_boots login=default exit=timed > /var/run/safe-mode
+check "hostlink: login=default is safe_login default" default "$(sl admin:admin)"
+printf '%s\n' cause=short_boots short_boots=5 > /var/run/safe-mode
+check "hostlink: no login= field (an older image) is safe_login default" default "$(sl admin:admin)"
+printf '%s\n' cause=watchdog login=stored exit=timed > /var/run/safe-mode
+check "hostlink: login=stored is safe_login stored" stored "$(sl)"
+printf '%s\n' cause=config login=stored exit=timed > /var/run/safe-mode
+check "hostlink: login=stored with cause=config is safe_login strict" strict "$(sl)"
+printf 'cause=watchdog\n\0\nlogin=stored\n' > /var/run/safe-mode
+check "hostlink: a flag with a NUL byte is safe_login strict" strict "$(sl)"
+{ printf 'cause=short_boots\nlogin=default\n'; head -c 2000 /dev/zero | tr '\0' 'x'; printf '\n'; } > /var/run/safe-mode
+check "hostlink: a flag cut by the read buffer is safe_login strict" strict "$(sl)"
+printf '%s\n' cause=short_boots login=stored login=default > /var/run/safe-mode
+check "hostlink: login=stored before login=default is safe_login stored" stored "$(sl)"
+check "  and admin:admin is refused, as the field says" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+printf 'cause=short_boots\r\nlogin=default\r\r\n' > /var/run/safe-mode
+check "hostlink: login=default with two CRs is not the default: one CR is dropped, no more" stored "$(sl)"
+check "  and admin:admin is refused" 401 "$(code -u admin:admin "http://127.0.0.1:$PORT/api/schema")"
+printf 'cause=short_boots\r\nlogin=default\r\n' > /var/run/safe-mode
+check "hostlink: login=default with one CR is safe_login default" default "$(sl admin:admin)"
+rm -f /var/run/safe-mode
+check "hostlink: no flag is safe_login none" none "$(sl)"
+check "the next boot: the saved credential" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/api/schema")"
 check "the Host port page is served" 200 "$(code -u "$AUTH" "http://127.0.0.1:$PORT/hostlink.js")"
 rm -f /etc/scripts/host-autoneg.sh /etc/scripts/safe-mode.sh /var/run/host-autoneg
 

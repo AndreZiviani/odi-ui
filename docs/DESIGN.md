@@ -88,9 +88,15 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
     itself after two minutes unless Keep arrives over the link being tried, in a dialog
     that counts the window down. A banner on every view says when the image runs
     auto-negotiation although the key is off: the boot fallback (clears at the next boot
-    that brings the forced link up), an odi-oss safe-mode boot (the fibre off, the default
-    password for that boot only: confd accepts `admin:admin` while `/var/run/safe-mode`
-    exists, without reading or touching `confd.auth`) and a past safe-mode boot not yet
+    that brings the forced link up), an odi-oss safe-mode boot (the fibre off, and after a
+    power cycle the default password for that boot only: confd accepts `admin:admin`,
+    without reading or touching `confd.auth`, only when `/var/run/safe-mode` was read whole
+    (no read error, under 1023 bytes, no NUL byte) and every `login=` line in it is exactly
+    `login=default`, or it has no `login=` line at all; with any other `login=` value, such
+    as the `login=stored` the image writes when the stick entered the safe mode by itself,
+    the saved credential stays in force, and with `cause=config` beside it a missing
+    `confd.auth` refuses every login instead of falling back to the default; a flag that
+    is not read whole opens nothing) and a past safe-mode boot not yet
     acknowledged (Acknowledge runs `safe-mode.sh ack`). A bar of its own says when the
     config store was recreated from the image defaults at boot (Acknowledge runs
     `config-reseed.sh ack`). Under it, the **link mode**
@@ -188,7 +194,11 @@ button; after 15 minutes the page stops asking.
 
 The same striped band carries four more states, because in each the image
 changed what runs without being asked, and none may go unseen: an odi-oss
-**safe-mode boot** (the fibre off, the default passwords for this boot only), a
+**safe-mode boot** (the fibre off; the default passwords for this boot only when a
+power cycle led into it, the saved ones when the stick entered it by itself after
+watchdog resets or with an unusable config partition, and the bar says which; it
+also says when the boot reboots by itself, which Acknowledge holds off, and
+promises nothing about the boot after it), a
 **safe-mode record** (a safe-mode boot happened and nobody has acknowledged it;
 it stays until someone does), a **recreated config store** (odi-oss
 `config-reseed.sh` found `lastgood.xml` or `lastgood_hs.xml` missing at boot,
@@ -1159,7 +1169,9 @@ the password block of System &rsaquo; Access and nothing else: no tab, no
 setup wizard, no save bar. Saving a password opens the rest.
 
 "Default" means that no credential was set: there is no `confd.auth`, or it
-is empty, or the boot is a safe-mode boot, which does not read it. It does not
+is empty, or the boot is a safe-mode boot that opens the default
+(`login=default` in `/var/run/safe-mode`, or no `login=` line), which does not
+read it. It does not
 mean a particular password. A file somebody wrote counts as theirs, even one
 that says `admin:admin`, as typed or as a hash: saving `admin` / `admin` from the form writes the file
 (the skip of a credential saved again compares with the file, and there is
@@ -1170,11 +1182,13 @@ server cannot disagree. A file that is there and cannot be read is neither:
 nobody signs in, and those routes answer `503`, since a browser signed in
 before still has its session and must not pass for the owner.
 
-A safe-mode boot keeps the default in force until the reboot, whatever is
-saved. There `authsaved` turns true at the first save and the page opens, so
-firmware upload stays reachable in the recovery boot; adding a key and the
-backup (and so *Back up, then reset*) stay refused for the whole boot, and the
-page says so beside each.
+A safe-mode boot that opens the default keeps it in force until the reboot,
+whatever is saved. There `authsaved` turns true at the first save and the page
+opens, so firmware upload stays reachable in the recovery boot; adding a key
+and the backup (and so *Back up, then reset*) stay refused for the whole boot,
+and the page says so beside each. A safe-mode boot that keeps the saved
+credential (`login=stored`) is like any boot here: a saved password applies
+at once, and keys and the backup are open to it.
 
 Earlier releases compared the content of the file with the default, so
 `admin:admin` in the file kept the warning while the routes let it through.
@@ -1429,7 +1443,8 @@ and *Skip, I'll use Config* is on every step):
 
 1. **Admin access**: optionally, one SSH key. The web password is not asked
    here: while none is set the page is the password form alone and the wizard
-   does not open, also from *Setup*. On a safe-mode boot after a save, where
+   does not open, also from *Setup*. On a safe-mode boot that opened the
+   default, after a save, where
    confd adds no key until the reboot, the step says so and offers no field.
    The key is added first, before the line settings, and a refusal stops the
    apply with nothing written, so Apply can be pressed again.
