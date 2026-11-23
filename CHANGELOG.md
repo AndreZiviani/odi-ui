@@ -12,6 +12,92 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the service). Hovering shows the rest of the kernel's `previous boot:`
   line. confd keeps that line once it has read it and writes nothing. A
   stock slot has no such file and shows no row.
+- Security: SECURITY.md sends reports to odi-oss private vulnerability
+  reporting and covers the latest confd release and the one pinned by the
+  latest odi-oss release. The release workflow pins every action to a commit
+  SHA, and Dependabot proposes action updates weekly
+  (AndreZiviani/odi-oss#482).
+
+- `/etc/config/confd.auth` holds a salted, slow hash of the password, no
+  longer the password: `user:$pbkdf2-sha256$<iterations>$<salt>$<hash>`,
+  PBKDF2-HMAC-SHA256 with a 16-byte salt and 16000 rounds (about 0.4 s,
+  measured on an RTL9602C). A file that holds
+  `user:password` as typed keeps working, and can still be written by hand:
+  the first sign-in that proves the password replaces it with the hashed
+  line, in one atomic write, mode 0600. A wrong password, a safe-mode boot,
+  a firmware trial that is not committed yet and a stick that cannot write
+  the file leave it as it is. Saving a password from the page always stores
+  the hash, and the same password saved again is still not written again.
+  HTTP Basic does not pay for the hash on every request: after the first check
+  confd keeps a keyed tag of the credential in RAM until the file changes,
+  and the sign-in page and sign-out never run it. Wrong passwords tried
+  before the first right one are spaced out: the check after one waits up to
+  1.6 s at the default count (at most 5 s) before it runs the hash, and is
+  not refused, so the right password
+  still signs in. A hashed line that is damaged, or asks for more than
+  160000 rounds, lets nobody in (as a file that cannot be read does), and
+  so does a file of 255 bytes or more, whose first 255 bytes used to be
+  taken for the credential (a username of 136 characters or more typed
+  into the file keeps it as typed, since its hashed line would be that long);
+  the safe mode is the way back. Anything that reads the file expecting the
+  password now finds the hash there: the odi-oss bundle scrub, which cuts
+  after the first colon, then redacts the hash, and
+  `scripts/schema-drift.sh`, which takes the credential from `CONFD_AUTH`
+  once the file holds a hash, stops with an error without it, and hands it
+  to curl on stdin rather than on its command line. In odi-oss,
+  `tools/config-backup.sh` (`ODI_AUTH_FILE`, described as the same shape as
+  the file on the stick), `docs/TOOLS.md` and `docs/SETTINGS.md` describe
+  the file as `user:password`: a copy of a hashed file gets 401 from the
+  backup. A companion odi-oss change corrects those. See DESIGN.md, "The
+  file holds a hash".
+- **Going back to v1.19.0 or older after this release:** an older confd
+  reads the hashed file as the password as typed, so the password no longer
+  signs in. Use the safe mode, or write the file again over ssh
+  (`printf "user:password" > /etc/config/confd.auth`). A sign-in does not
+  make the hash until `/var/run/odi-slot` says the image is committed, so
+  a trial that is not kept leaves the file as it was, unless a password was
+  saved from the page during it. A password set with v1.19.0 or older that begins with
+  `$pbkdf2-sha256$` reads as a damaged hash after the update: safe mode.
+- A `Content-Length` that is not a number (empty, letters, `+5`, a list) and
+  two `Content-Length` headers that disagree are answered `400`. They were
+  read as 0, or the first was believed, and the request was served as one
+  with no body. The same value twice is accepted; a number too large is
+  still `413`. The body is the bytes `Content-Length` names: what arrived
+  after them in the same segment was parsed as part of the form, also with
+  a length of 0 or none. A request with `Transfer-Encoding` is answered
+  `501`: there is no chunk parser, and such a body was ignored or handed to
+  the route with the chunk sizes in it.
+- `make confd` also builds `build/confd-kdfcount`, a test build that counts
+  the slow hashes it runs, for `make smoke`. It is not released.
+- `make check` runs `scripts/sha256-test.sh`: `src/sha256.c` built for the
+  host, against the FIPS 180-4, RFC 4231 and RFC 7914 vectors and against
+  hashlib.
+
+- Status: the status poll runs one at a time. A poll that took longer than
+  the 15 s between ticks had the next one queue behind it in confd, which
+  answers one request at a time, and the link check could take its samples
+  twice and out of order. A tick that finds a poll still going is now
+  skipped. Each read the poll waits for (`/api/status` and the two OMCI reads
+  of the link check) gives up after 60 s, so one with no answer cannot stop
+  the polling for good; `get()` in `dom.js` takes an optional `timeout` for
+  that, covering headers and body. The setup wizard's marker write is no
+  longer waited for. The wizard's own 3 s status read is unchanged. `make
+  check` covers the timeout and the one-at-a-time guard.
+
+- Access: "default password" now means that no password was set: no
+  `confd.auth`, an empty one, or a safe-mode boot. A file that holds
+  `admin:admin` counts as set. One check answers `defaultauth` and every
+  route that refuses the default. While it holds, the page shows the
+  password form of System, Access and nothing else (no tab, no setup
+  wizard), and confd answers 403 to adding an SSH key and to
+  `GET /api/backup`, as it did for the VoIP secrets; all of them answer 503
+  while the file cannot be read. Saving any password, `admin` / `admin`
+  included, writes the file and opens the page. On a safe-mode boot the
+  page opens after the save (`authsaved` in `/api/firmware`), while keys
+  and the backup stay refused until the reboot, and the page says so. The
+  default-password banner and header chip are gone, and the setup wizard
+  no longer asks for the password (odi-oss#482).
+
 - Sign-in: a *Forgot your password?* section explains the odi-oss safe mode:
   five short power-ups, or three when the host port runs 2500BASE-X or
   HiSGMII or has auto-negotiation off, then sign in with `admin` / `admin`.

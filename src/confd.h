@@ -56,6 +56,9 @@
 /* Rewrites /var/run/odi-slot (what the exporter and the trial banner read)
  * from the environment; odi-oss only, absent on a stock-based image. */
 #define SLOT_STATE_SCRIPT "/etc/scripts/slot-state.sh"
+/* What it writes, KEY=value lines; `uncommitted=0` on a committed image.
+ * http.c reads it before turning a typed password file into a hash. */
+#define SLOT_STATE_FILE "/var/run/odi-slot"
 /*
  * What fwu_starter.sh leaves behind on an image that writes in the background
  * (odi-oss): the state, "running|ok|failed <pid> <slot> [rc]", and the flasher's
@@ -345,6 +348,8 @@
  */
 #define DEFAULT_CS "/etc/config_default.xml"
 #define DEFAULT_HS "/etc/config_default_hs.xml"
+/* One line: `user:` and a hash of the password, or `user:password` as
+ * written by hand. http.c has the format and why both are read. */
 #define AUTH_PATH    "/etc/config/confd.auth"
 /* Extra names the UI answers to, one per line (http.c, host_ok). */
 #define HOSTS_PATH   "/etc/config/confd.hosts"
@@ -367,6 +372,36 @@
  * use and the page says so on every tab until a real credential is written.
  */
 #define DEFAULT_AUTH "admin:admin"
+
+/*
+ * How many rounds of PBKDF2-HMAC-SHA256 a password written to confd.auth is
+ * hashed with (http.c has the file format). The count is stored in the
+ * line, so this can be raised later and the files already written keep
+ * working with the count they have.
+ *
+ * The aim is 0.3 to 0.5 s for one check: slow enough to matter to somebody
+ * guessing from a copy of the file, short enough for a server with one
+ * thread, which answers nothing else meanwhile. Measured on a stick
+ * (RTL9602C, RLX5281, odi-oss v1.18.1, idle; src/sha256.c as built here,
+ * -Os, MIPS-I): 1000 rounds take 24 ms, 16000 rounds 381 to 397 ms over
+ * nine runs. So 16000 is about 0.4 s. One round is two SHA-256 blocks,
+ * about 11,400 instructions without a rotate instruction to use.
+ *
+ * It is not paid per request. Once a password has been proven against a
+ * line, requests are checked against a tag in RAM (`known` in http.c). It
+ * is paid for the first right password after a start of confd or a change
+ * of the file, for each wrong one tried before that (held apart by the
+ * pause of COLD_KDF_MIN_MS in http.c), and by every save. A
+ * stick with no /dev/urandom has no tag and pays it per request. A plain
+ * decimal number, it is pasted into the line as text.
+ *
+ * PBKDF2_ITER_MAX is the most a line may ask for. A file is written by
+ * hand too, and a count with a digit too many must not become a daemon
+ * that answers nothing for a minute per sign-in; ten times the default is
+ * about 4 s and leaves room to raise it.
+ */
+#define PBKDF2_ITER     16000
+#define PBKDF2_ITER_MAX 160000
 
 /*
  * Browser sign-in sessions (http.c). A browser signs in once on /login and
