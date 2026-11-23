@@ -511,6 +511,10 @@
            the built-in <code>admin</code> / <code>admin</code>. Set one to open the rest of the page.</p>
         <div class="formrow">
           <label>Username <input id="pw-user" autocomplete="username" value="admin" maxlength="64"></label>
+          <!-- Asked only while a password of its own is in force (app.js,
+               showAuth): the built-in default is the way back in. -->
+          <label id="pw-cur-row" hidden>Current password <input id="pw-cur" type="password"
+                 autocomplete="current-password" maxlength="128"></label>
           <label>New password <input id="pw-pass" type="password"
                  autocomplete="new-password" placeholder="4 to 128 characters" maxlength="128"></label>
           <label>Again <input id="pw-pass2" type="password"

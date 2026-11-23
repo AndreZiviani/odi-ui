@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Access: a password change asks for the current password once one of the
+  stick's own is set. `/api/password` takes it as `current` and answers 403,
+  after a second, when it is missing or wrong; the form under System, Access
+  shows the field then. While the built-in `admin` / `admin` is in force (a
+  fresh stick, or a safe-mode boot that opened it) nothing more is asked, so
+  that stays the way back in after a lost password (odi-oss#482).
+
 - Firmware: confd reads `nv getenv` and `nv fallback` into a buffer of
   8 KB and 64 bytes instead of 4 KB: the 8,192 bytes of the largest
   environment odi-oss nv reads, with room for the header and closing lines.

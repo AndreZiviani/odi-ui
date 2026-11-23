@@ -113,6 +113,9 @@ function showAuth() {
      downloads a backup first. Only seen past the gate, so on a safe-mode
      boot after a save, where the default stays until the reboot. */
   const on = !!(S.FW && S.FW.defaultauth);
+  /* confd asks for the current password only while one of its own is in
+     force (routes.c, /api/password). */
+  $('#pw-cur-row').hidden = on;
   $('#sshkey-locked').hidden = !on;
   $('#sshkey-add').disabled = on;
   $('#backup-locked').hidden = !on;
@@ -230,6 +233,7 @@ async function savePasswordOnce() {
   const user = $('#pw-user').value.trim();
   const pass = $('#pw-pass').value;
   const again = $('#pw-pass2').value;
+  const current = $('#pw-cur').value;
 
   out.textContent = '';
   /* The daemon checks the same rules, but a typo in a password with no repeat
@@ -241,13 +245,14 @@ async function savePasswordOnce() {
     const r = await fetch('/api/password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ user, password: pass }).toString(),
+      body: new URLSearchParams({ user, password: pass, current }).toString(),
     });
     const j = await r.json();
     if (!j.ok) { out.append(el('div', 'bad', j.error || 'refused')); return; }
     /* This browser stays signed in; confd has signed out every other one. */
     const [said, others] = passwordSavedText(user, hostlinkNow());
     out.append(el('div', 'good', said), el('div', null, others));
+    $('#pw-cur').value = '';
     $('#pw-pass').value = '';
     $('#pw-pass2').value = '';
     /* The safe-mode bar says whether a password is saved (defaultauth), so

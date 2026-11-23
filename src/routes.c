@@ -1545,6 +1545,29 @@ void serve(int conn)
 
 		have = form_get(body, "user", user, sizeof(user)) &&
 		       form_get(body, "password", pass, sizeof(pass));
+		/* Once a password of its own is in force, a change has to name
+		 * it again in `current`: a session left open in a browser, or a
+		 * Basic header a script replays, is not proof that the person
+		 * at the keyboard knows it. Not while the built-in default is
+		 * in force (a fresh stick, or a safe-mode boot that opened it):
+		 * that is the way back in for somebody who lost the password.
+		 * A wrong one costs a second, like a failed sign-in. */
+		if (have && auth_state() == 1) {
+			char cur[512];
+			int known = form_get(body, "current", cur, sizeof(cur)) &&
+				    password_matches(cur);
+
+			for (k = 0; k < sizeof(cur); k++)
+				((volatile char *)cur)[k] = 0;
+			if (!known) {
+				for (k = 0; k < sizeof(pass); k++)
+					((volatile char *)pass)[k] = 0;
+				sleep_s(1);
+				respond(conn, "403 Forbidden", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"the current password is wrong\"}");
+				return;
+			}
+		}
 		if (have)
 			ok = set_credential(user, pass, &why);
 		/* The password has been used, whichever way this answers:
