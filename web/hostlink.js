@@ -28,9 +28,14 @@
  *     itself at the next boot that brings the forced link up;
  *   - the SerDes boot fallback: HOST_SERDES is 2.5G, this boot saw no link in
  *     it and runs Fiber 1G to stay reachable; the setting is kept;
- *   - a safe-mode boot (odi-oss safe-mode.sh): a run of short power-ups made
- *     this boot a recovery boot, with the PON off, the host port on
- *     auto-negotiation and the default password, for this boot only;
+ *   - a safe-mode boot (odi-oss safe-mode.sh): a run of short power-ups,
+ *     watchdog resets in a row or an unusable config partition made this
+ *     boot a recovery boot, with the PON off and the host port on
+ *     auto-negotiation, for this boot only. The default password is open
+ *     only when a power cycle led into it (login=default in the flag, or
+ *     no login= line on an older image); login=stored keeps the saved one.
+ *     It reboots by itself (exit_at=, an uptime) unless acknowledged
+ *     (exit=held);
  *   - a safe-mode record: a safe-mode boot happened and nobody acknowledged
  *     it yet. It stays until acknowledged, from the banner;
  *   - a recreated config store (odi-oss config-reseed.sh): the config
@@ -40,6 +45,7 @@
  */
 
 import { $, el, get, ask, once } from './dom.js';
+import { S } from './state.js';
 
 const POLL_MS = 3000;
 let H = null;          /* the last /api/hostlink answer */
@@ -83,14 +89,16 @@ function trialOf(h) {
  * fallback bar (or null), ack whether the safe bar offers Acknowledge, reseed
  * the text of the recreated-store bar (or null; it always offers
  * Acknowledge). One short line each: the long explanation of the safe mode
- * is under System, Access. Pure, so make check can drive it with fixtures.
+ * is under System, Access. defaultauth is /api/firmware saying that no
+ * password is saved; it defaults to the last answer in S.FW. Pure apart from
+ * that default, so make check can drive it with fixtures.
  */
-function bannerText(h) {
+function bannerText(h, defaultauth = !!(S.FW && S.FW.defaultauth)) {
   const out = { show: false, safe: null, fallback: null, ack: false, reseed: null };
   if (!h) return out;
   const st = h.state || {};
-  const now = h.safemode_now;
-  const rec = h.safemode;
+  const now = clean(h.safemode_now);
+  const rec = clean(h.safemode);
   /* cleared is a list: HOST_AUTONEG, HOST_SERDES, OMCI_UNI_LOCK, joined
      with commas, or none or failed. */
   const cleared = (s) => {
@@ -102,13 +110,32 @@ function bannerText(h) {
     return (an ? ' It also cleared the host port setting.' : '') + ul;
   };
   if (now) {
-    out.safe = 'Safe mode. A recovery boot: the fibre (PON) is off and the default passwords work for this boot only.'
-      + cleared(now) + (rec ? '' : ' Acknowledged: the next boot is a normal boot.');
-    out.ack = !!rec;
+    /* An image without the timed exit writes no exit= line: there the
+       record is all an acknowledgement removes. */
+    const timed = now.exit === 'timed', held = now.exit === 'held';
+    const acked = held || (now.exit === undefined && !rec);
+    /* What boots next is not this page's to promise: an armed trial, or a
+       config partition that is still unusable, decide that. */
+    let end = '';
+    if (timed) {
+      end = ` It reboots${exitWhen(now)} unless acknowledged.`;
+    } else if (now.exit === 'exiting') {
+      end = ' Nobody acknowledged it: it is rebooting now.';
+    } else if (acked) {
+      end = held ? ' Acknowledged: it stays up until you reboot.'
+        : ' Acknowledged: the next boot is a normal boot.';
+    }
+    out.safe = 'Safe mode. A recovery boot' + (typeof WHY[now.cause] === 'string' ? WHY[now.cause] : '')
+      + ': the fibre (PON) is off and ' + loginText(h, now, defaultauth)
+      + cleared(now) + end;
+    /* Once the timed exit has begun, safe-mode.sh ack answers that it is
+       too late, so the button is not offered. */
+    out.ack = (!!rec || timed) && now.exit !== 'exiting';
   } else if (rec) {
-    const n = rec.short_boots || 'several';
     const build = rec.build ? `build ${rec.build}, ` : '';
-    out.safe = `A safe-mode boot happened (${build}after ${n} short power cycles).` + cleared(rec);
+    const after = rec.cause === 'watchdog' ? `after ${rec.wdt_resets || 'several'} watchdog resets in a row`
+      : `after ${rec.short_boots || 'several'} short power cycles`;
+    out.safe = `A safe-mode boot happened (${build}${after}).` + cleared(rec);
     out.ack = true;
   }
   const ss = sdState(h);
@@ -122,6 +149,67 @@ function bannerText(h) {
   out.reseed = reseedText(h.reseed);
   out.show = !!(out.safe || out.fallback || out.reseed);
   return out;
+}
+
+/* Why this boot is a safe-mode boot, for the bar. Short boots need no word:
+   the person who made them knows. */
+const WHY = {
+  '': '', short_boots: '',
+  watchdog: ' the stick entered by itself after repeated resets',
+  config: ' the stick entered by itself because its settings partition cannot be used',
+};
+
+/* A flag or record as the page reads it: every value without the one
+   trailing CR that a file with CR LF line ends leaves on it. One, as confd
+   drops one: a second CR is part of the value for both. */
+function clean(r) {
+  if (!r) return r;
+  const out = {};
+  for (const k of Object.keys(r)) out[k] = typeof r[k] === 'string' ? r[k].replace(/\r$/, '') : r[k];
+  return out;
+}
+
+/* Whether this safe-mode boot answers to the default credentials. confd
+   decides that when it checks a login (http.c, safemode_login) and says so
+   in safe_login: default, stored, strict (the saved credential or nothing)
+   or none. The page takes its word and does not read the flag again, so
+   the bar cannot say one thing while the login does another. Without the
+   field (an answer that predates it) the flag is read as confd reads a
+   whole one: login=default, or no login field at all. */
+const defaultLogin = (h) => {
+  const now = clean(h && h.safemode_now);
+  if (!now) return false;
+  if (h.safe_login !== undefined) return h.safe_login === 'default';
+  return now.login === undefined || now.login === 'default';
+};
+
+/* Which passwords a safe-mode boot answers to, for the bar. root over SSH is
+   said apart from this page: root_password=failed is a boot whose web login
+   is the default while root kept its own account (the image could not put
+   the default one in place). An older image writes no root_password line,
+   or default. A boot that keeps the saved login but finds no saved password
+   (login=stored with no confd.auth) answers to the default like any boot
+   without one: defaultauth from /api/firmware says so. */
+function loginText(h, now, defaultauth) {
+  if (!defaultLogin(h)) {
+    if (h.safe_login === 'stored' && defaultauth) {
+      return 'no password is saved, so this page accepts the default password; one you save applies at once.';
+    }
+    return 'your saved password and SSH keys still apply.';
+  }
+  if (now.root_password === 'failed') {
+    return 'this page accepts the default password for this boot only; root over SSH does not (its saved login applies).';
+  }
+  return 'the default passwords work for this boot only.';
+}
+
+/* When a safe-mode boot reboots by itself, from exit_at (seconds of uptime):
+   counted from its start, not from now, so a bar left open never says a
+   time that has passed. Nothing when the flag does not carry a number. */
+function exitWhen(now) {
+  const at = Number(now.exit_at);
+  if (!now.exit_at || !Number.isFinite(at) || at <= 0) return ' by itself';
+  return at < 90 ? ` after ${at} seconds` : ` after ${Math.round(at / 60)} minutes`;
 }
 
 /*
@@ -160,7 +248,7 @@ function renderBanner() {
   bar('#reseedbanner', '#reseed-text', b.reseed);
   bar('#fallbackbanner', '#fallback-text', b.fallback);
   $('#hostlink-ack').hidden = !b.ack;
-  $('#safe-password').hidden = !safeModeNow();
+  $('#safe-password').hidden = !safeModeDefaultLogin();
 }
 
 /* The last /api/hostlink answer. */
@@ -171,21 +259,29 @@ function safeModeNow() {
   return !!(H && H.safemode_now);
 }
 
+/* Whether this boot is a safe-mode boot that answers to admin / admin. */
+function safeModeDefaultLogin() {
+  return defaultLogin(H);
+}
+
 /*
  * What the page says after a password was saved, for a /api/hostlink answer
- * h: two lines, the result and what other browsers do. A safe-mode boot
- * answers to admin / admin until it ends whatever was saved, so the new
- * credential is for the next boot, and the bar is named only while it still
- * waits for Acknowledge. Pure, so make check can drive it.
+ * h: two lines, the result and what other browsers do. A safe-mode boot on
+ * the default login answers to admin / admin until it ends whatever was
+ * saved, so the new credential is for the next boot, and the bar is named
+ * only while it still waits for Acknowledge. One that kept the saved login
+ * takes the new credential at once, like any boot. Pure, so make check can
+ * drive it.
  */
 function passwordSavedText(user, h) {
   const saved = 'Saved to /etc/config/confd.auth.';
-  if (!(h && h.safemode_now)) {
+  const smNow = clean(h && h.safemode_now);
+  if (!defaultLogin(h)) {
     return [saved, 'You stay signed in here. Any other browser signed in to this page is signed out, '
       + 'and signs in again as ' + user + '.'];
   }
   return [saved + ' From the next boot this page answers to ' + user + ' and the new password. '
-      + (h.safemode ? 'Acknowledge the safe-mode bar, then reboot.' : 'Reboot to use it.'),
+      + (h.safemode || smNow.exit === 'timed' ? 'Acknowledge the safe-mode bar, then reboot.' : 'Reboot to use it.'),
     'You stay signed in here. Any other browser signed in to this page is signed out, and until the '
       + 'reboot signs in again with admin / admin.'];
 }
@@ -441,4 +537,4 @@ function wireHostlink() {
   };
 }
 
-export { bannerText, trialLeft, refresh as renderHostlink, wireHostlink, serdesShort, safeModeNow, passwordSavedText, hostlinkNow };
+export { bannerText, trialLeft, refresh as renderHostlink, renderBanner, wireHostlink, serdesShort, safeModeNow, safeModeDefaultLogin, passwordSavedText, hostlinkNow };

@@ -51,22 +51,24 @@ t "hmac, RFC 4231 case 6: a key longer than a block" \
 	60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54 "$("$T/chk" hmac "$T/k6" "$T/m6")"
 
 # RFC 7914 section 11 gives 64 bytes; this is its first block, which is all
-# pbkdf2_sha256 makes.
+# pbkdf2_sha256 makes. The two passwords that differ only in case get names
+# that do not: on a case-insensitive filesystem, as macOS has by default,
+# password and Password are one file.
 f passwd passwd
-f password password
+f pw-lower password
 f salt salt
-f Password Password
+f pw-upper Password
 f NaCl NaCl
 t "pbkdf2, RFC 7914: passwd, salt, c=1" \
 	55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc "$("$T/chk" pbkdf2 "$T/passwd" "$T/salt" 1)"
 t "pbkdf2, RFC 7914: Password, NaCl, c=80000" \
-	4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56 "$("$T/chk" pbkdf2 "$T/Password" "$T/NaCl" 80000)"
+	4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56 "$("$T/chk" pbkdf2 "$T/pw-upper" "$T/NaCl" 80000)"
 t "pbkdf2: password, salt, c=1" \
-	120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b "$("$T/chk" pbkdf2 "$T/password" "$T/salt" 1)"
+	120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b "$("$T/chk" pbkdf2 "$T/pw-lower" "$T/salt" 1)"
 t "pbkdf2: password, salt, c=2" \
-	ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43 "$("$T/chk" pbkdf2 "$T/password" "$T/salt" 2)"
+	ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43 "$("$T/chk" pbkdf2 "$T/pw-lower" "$T/salt" 2)"
 t "pbkdf2: password, salt, c=4096" \
-	c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a "$("$T/chk" pbkdf2 "$T/password" "$T/salt" 4096)"
+	c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a "$("$T/chk" pbkdf2 "$T/pw-lower" "$T/salt" 4096)"
 
 # Against hashlib, over what the vectors do not reach: every message length
 # around the block and padding boundaries, a password longer than a block (the
