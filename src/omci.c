@@ -366,7 +366,7 @@ void emit_voip_secrets_json(int fd, char *body)
  * carries nothing else and the file keeps nothing else: no number, login,
  * server or password ever reaches this route, a log or the report.
  *
- * The factory admin:admin is refused as for the secrets route: anyone on the
+ * The built-in default is refused as for the secrets route: anyone on the
  * LAN knows it, and a state the OLT will read is not theirs to set.
  */
 static const char *const voip_states[] = {

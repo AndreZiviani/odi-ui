@@ -66,11 +66,11 @@ LDFLAGS := -nostdlib -nostartfiles -static -Wl,-e,_start -Wl,--build-id=none -fl
            -Wl,-z,noexecstack
 
 SRCS := src/start.S src/main.c src/routes.c src/http.c src/mib.c \
-        src/firmware.c src/status.c src/omci.c src/buffers.c
+        src/firmware.c src/status.c src/omci.c src/sha256.c src/buffers.c
 HDRS := $(wildcard src/*.h)
 
 # One compiler invocation rather than per-object rules and a link step: there
-# are eight inputs, the whole build takes under a second, and there is no
+# are ten inputs, the whole build takes under a second, and there is no
 # incremental case worth the machinery. Splitting into real translation units
 # was for the source, not for the build.
 # BUILD_ID is compiled in, but it is a make VARIABLE -- make cannot see it
@@ -91,6 +91,16 @@ $(BUILD)/confd: $(SRCS) $(HDRS) $(BUILD)/.build-id scripts/check-hardening.sh Ma
 	sh scripts/check-hardening.sh $(CROSS) $@
 	$(STRIP) $@
 
+# The same daemon with one thing added, for scripts/smoke.sh and never
+# released: it appends a byte to a file for every PBKDF2 it runs, so that
+# "this request does not run the slow hash" is a count and not a timing.
+# COLD_KDF_MIN_MS is raised so that the pause after a wrong password
+# (http.c) is longer than the second the answer takes, which is what the
+# test needs to see it. Not stripped, not stamped, not in SHA256SUMS.
+$(BUILD)/confd-kdfcount: $(SRCS) $(HDRS) Makefile | $(BUILD)
+	$(CC) $(CFLAGS) -DKDF_COUNT_PATH='"/tmp/confd-kdf-count"' -DCOLD_KDF_MIN_MS=4000 \
+		$(LDFLAGS) -o $@ $(filter %.S %.c,$^)
+
 $(BUILD):
 	mkdir -p $@
 
@@ -106,7 +116,7 @@ image:
 	@TOOLCHAIN_IMAGE='$(IMAGE)' scripts/toolchain-image.sh >/dev/null
 
 confd: image
-	$(RUN) make IN_CONTAINER=1 BUILD_ID='$(BUILD_ID)' $(BUILD)/confd
+	$(RUN) make IN_CONTAINER=1 BUILD_ID='$(BUILD_ID)' $(BUILD)/confd $(BUILD)/confd-kdfcount
 	@ls -l $(BUILD)/confd
 
 # The target cannot run anything this refuses.
@@ -128,6 +138,7 @@ check:
 	scripts/check-api-doc.sh
 	scripts/parser-check.sh
 	scripts/uimage-test.sh
+	scripts/sha256-test.sh
 	node scripts/crypto-check.mjs
 	node scripts/web-check.mjs
 

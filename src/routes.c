@@ -790,7 +790,7 @@ static int serve_public(int conn, unsigned long body_have, unsigned long body_wa
 	if (spre(req, "GET ") &&
 	    (seq(target, "/login") || seq(target, "/login.js") || seq(target, "/style.css"))) {
 		/* Signed in already: nothing to do there. */
-		if (seq(target, "/login") && authorised(req) == AUTH_SESSION) {
+		if (seq(target, "/login") && session_live(req)) {
 			respond(conn, "303 See Other", "text/plain", "Location: /\r\n");
 			return 1;
 		}
@@ -862,8 +862,7 @@ static int serve_public(int conn, unsigned long body_have, unsigned long body_wa
 	 * challenge, so a browser that cached the password drops it.
 	 */
 	if (seq(target, "/api/logout")) {
-		if (authorised(req) != AUTH_SESSION &&
-		    header_copy(req, "authorization", hdrbuf, sizeof(hdrbuf))) {
+		if (!session_live(req) && header_present(req, "authorization:")) {
 			respond(conn, "401 Unauthorized", "text/html",
 				"WWW-Authenticate: Basic realm=\"odi-ui\"\r\n");
 			put_fd(conn,
@@ -1057,6 +1056,19 @@ void serve(int conn)
 		put_fd(conn, "request too large\n");
 		return;
 	}
+	/* Answered before any route, the public ones and the credential
+	 * check included: a request whose body cannot be delimited is not one
+	 * to act on, or to judge a password from. */
+	if (n == REQ_BAD_LENGTH) {
+		respond(conn, "400 Bad Request", "text/plain", 0);
+		put_fd(conn, "bad Content-Length: one number, or the same one repeated\n");
+		return;
+	}
+	if (n == REQ_UNSUPPORTED) {
+		respond(conn, "501 Not Implemented", "text/plain", 0);
+		put_fd(conn, "Transfer-Encoding is not supported: send the body with a Content-Length\n");
+		return;
+	}
 	if (n <= 0)
 		return;
 	note_cache_request(req);
@@ -1084,7 +1096,7 @@ void serve(int conn)
 	 * any later scan for a header dead. That cost an hour of a correct
 	 * password being rejected. */
 	if (!authorised(req)) {
-		int basic = header_copy(req, "authorization", hdrbuf, sizeof(hdrbuf));
+		int basic = header_present(req, "authorization:");
 
 		/*
 		 * Sleep before answering a wrong password. There is no lockout,
@@ -1528,15 +1540,25 @@ void serve(int conn)
 		 * and not "required" because it did not fit a buffer. */
 		char user[256], pass[512];
 		const char *why = 0;
+		unsigned long k;
+		int have, ok = 0;
 
-		if (!form_get(body, "user", user, sizeof(user)) ||
-		    !form_get(body, "password", pass, sizeof(pass))) {
+		have = form_get(body, "user", user, sizeof(user)) &&
+		       form_get(body, "password", pass, sizeof(pass));
+		if (have)
+			ok = set_credential(user, pass, &why);
+		/* The password has been used, whichever way this answers:
+		 * out of this frame. The form it came in goes with the rest
+		 * of the request, when serve() returns (main.c). */
+		for (k = 0; k < sizeof(pass); k++)
+			((volatile char *)pass)[k] = 0;
+		if (!have) {
 			respond(conn, "400 Bad Request", "application/json", 0);
 			put_fd(conn, "{\"ok\":false,\"error\":\"user and password are required, "
 				     "and must be 64 and 128 characters at most\"}");
 			return;
 		}
-		if (!set_credential(user, pass, &why)) {
+		if (!ok) {
 			respond(conn, "400 Bad Request", "application/json", 0);
 			put_fd(conn, "{\"ok\":false,\"error\":\"");
 			put_json_cstr(conn, why ? why : "refused");

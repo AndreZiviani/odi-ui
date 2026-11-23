@@ -25,6 +25,22 @@ its own password dialog. Without a credential, a `GET` that accepts
 All writes refuse a cross-site `Origin`, and (for `/api/config`) read every
 value back before reporting success.
 
+A body is sent with one `Content-Length`, and is exactly that many bytes:
+anything sent after them is not read, and with no `Content-Length` there is no
+body. A value that is not a decimal number on a line of its own (empty,
+letters, a sign, a list, a bare CR after the digits), or two `Content-Length`
+headers that disagree, whatever their size, is `400` on any route, before the
+credential is looked at; the same value sent twice is accepted. A body larger
+than the route takes is `413`. A request with a `Transfer-Encoding` header,
+with any value or none, is `501` on any route, before the credential is looked
+at: chunked bodies are not read.
+
+Against a credential file that holds a hash, a credential with a control
+character in it is `401`. The first right password after confd started or the
+file changed takes about 0.4 s to check, and a check that follows a wrong one
+in that state waits up to 1.6 s more before it is answered: see DESIGN.md,
+"The file holds a hash".
+
 ## Sign in
 
     GET  /login                          the sign-in page (and /login.js, /style.css),
@@ -330,10 +346,10 @@ Refused regardless of schema: `LAN_SDS_MODE`, `LAN_SPEED_MODE`, `FIBER_MODE`.
                                           safe-mode boot that opens the default,
                                           `safe_login` `default` in `/api/hostlink`;
                                           false for a file with content, `admin:admin`
-                                          included), `authsaved` (a password was saved
-                                          on such a boot: the page opens, the default
-                                          stays in force until the reboot), `switches`,
-                                          write progress;
+                                          included, as typed or as a hash), `authsaved`
+                                          (a password was saved on such a boot: the
+                                          page opens, the default stays in force until
+                                          the reboot), `switches`, write progress;
                                           `env` (the sw_* of `nv getenv`, empty
                                           unless that nv exited 0),
                                           `fallback` (the sw_* of `nv fallback`, the
@@ -529,9 +545,12 @@ backup go through `/api/netaddr` instead when the image has the trial.
                                           user 1-64 printable characters, no space or
                                           colon; password 4-128 printable ASCII. Ends
                                           every session but the one that made the change.
-                                          The credential already on flash, in a file
-                                          of mode 0600, is not written again: the same
-                                          answer, the file untouched
+                                          Stored as a salted PBKDF2-HMAC-SHA256 hash
+                                          (DESIGN.md, "The file holds a hash"), never
+                                          as typed. The credential already on flash
+                                          as a hash, in a file of mode 0600, is not
+                                          written again: the same answer, the file
+                                          untouched
     GET  /api/sshkeys                     {"path":..., "keys":[{"i":0,"line":"ssh-ed25519 AAAA... comment"}]}
     POST /api/sshkeys    key=<line>       append; the type is one of ssh-ed25519,
                                           ssh-rsa, ecdsa-sha2-nistp256/384/521 or an
