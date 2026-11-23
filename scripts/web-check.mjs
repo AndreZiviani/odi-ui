@@ -384,6 +384,22 @@ ok(true, 'renderStatus runs against a diag capture');
   ok(prevBoot(pb('wdt_userland')).join('|') === 'Watchdog: the boot was not confirmed|warn'
      && prevBoot(pb('panic'))[1] === 'bad' && prevBoot(pb('unknown'))[1] === 'warn',
      'prev boot: watchdog and unknown warn, panic is bad');
+  {
+    /* Every name the page knows, with its text and class: a reason that
+       lost its text or its colour would pass the cases above. */
+    const want = [
+      ['power', 'Power loss or cold start', ''], ['reboot', 'Restart', ''],
+      ['halt', 'Halt', ''], ['poweroff', 'Power off', ''],
+      ['panic', 'Kernel panic', 'bad'], ['oops', 'Kernel oops', 'bad'],
+      ['wdt_client', 'Watchdog: a service stopped answering', 'warn'],
+      ['wdt_mem', 'Watchdog: memory ran low', 'warn'],
+      ['wdt_userland', 'Watchdog: the boot was not confirmed', 'warn'],
+      ['wdt_cpu_rx', 'Watchdog: the CPU port stopped receiving', 'warn'],
+      ['unknown', 'Unknown: a hang or an older image', 'warn'],
+    ];
+    const bad = want.filter(([r, t, c]) => (prevBoot(pb(r)) || []).join('|') !== `${t}|${c}`);
+    ok(bad.length === 0, `prev boot: every known reason has its text and class${bad.length ? ` (not: ${bad.map((w) => w[0]).join(' ')})` : ''}`);
+  }
   ok(prevBoot(pb('wdt_future:x')).join('|') === 'wdt_future: x|warn',
      'prev boot: a name this page does not know is shown as the kernel wrote it');
   ok(prevBoot('no metadata block (an older image) crumb=TICK/9 reason=wdt_client:svc-1.x').join('|')
