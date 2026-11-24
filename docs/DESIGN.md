@@ -1485,7 +1485,8 @@ factory reset removes it, which is intended. No odi-oss key is involved.
 **Auto-open** is exactly: no marker, the fibre has light, the ONU is not in O5.
 The page decides from the `/api/status` it already polls (`lineFacts` in
 `status.js`): *light* is no LOS or LOF asserted and a receive power at or above
-the bottom of the Status scale; the state is `Operation State(On)`. O5 writes the
+the bottom of the Status scale; the state is the `(On)` of the diag line, `Initial State(O1)` to
+`Emergency Stop State(O7)`. O5 writes the
 marker silently and shows nothing. A fibre with no light does nothing and writes
 nothing. Every way out of the wizard (Finish, Skip, the close button, Escape)
 writes the marker; only closing the tab mid-wizard leaves it unset.

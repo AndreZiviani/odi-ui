@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Status: the ONU state is read in every state, not only in O5. diag names
+  each state itself (`Initial State(O1)`, `Standby State(O2)`, `Serial Number
+  State(O3)`, `Ranging State(O4)`, `POPUP State(O6)`, `Emergency Stop
+  State(O7)`), and the page looked for `Operation State(On)`, which is O5
+  alone. Outside O5 it had no state: Registration said *No state reported.*
+  with no step lit, the row that times the state was hidden, the link check
+  could not name O7 or tell an OLT that does not answer the serial from one
+  that ranges the ONU and drops it, and the setup wizard never opened by
+  itself, since it opens on a line with light that is not in O5. `make
+  check` now reads the lines an odi-oss v1.18.1 stick without a fibre
+  answered.
+
 - Access: a password change asks for the current password once one of the
   stick's own is set. `/api/password` takes it as `current` and answers 403,
   after a second, when it is missing or wrong; the form under System, Access

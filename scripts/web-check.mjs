@@ -446,7 +446,7 @@ ok(true, 'renderStatus runs against a diag capture');
   renderStatus(o5, null, { in_state_s: '11520' });
   ok(textOf(lineup()) === 'Line up3 h 12 min' && lineup().hidden === false,
      'line up: in O5, the time since the line last came up');
-  renderStatus('RTK.0> gpon get onu-state\n  Operation State(O2)\n', null, { in_state_s: '75' });
+  renderStatus('RTK.0> gpon get onu-state\nONU state: Standby State(O2) \n\r', null, { in_state_s: '75' });
   ok(textOf(lineup()) === 'In O21 min', 'line up: outside O5, named by the state it times');
   renderStatus(o5, null, { uptime: '14105' });
   ok(lineup().hidden === true && textOf(lineup()) === '', 'line up: no member, no row');
@@ -3266,7 +3266,18 @@ ok(inputsOf('#sections') > 100,
   ok(wz.decide(L('O3', '-18.4', false), st(false)) === 'open', 'wizard rule: any state short of O5 opens');
   ok(wz.decide(L('O1', '-18.4', true), st(false)) === 'none', 'wizard rule: LOS does not open it');
   ok(wz.decide(L('O1', '-45.00', false), st(false)) === 'none', 'wizard rule: no light (below the receive scale) does not open it');
-  ok(wz.decide(lineFacts('RTK.0> gpon get onu-state\n  Operation State(O1)\n'), st(false)) === 'none',
+  /* What diag answered on an odi-oss v1.18.1 stick with no fibre: only O5 is
+     called "Operation State", every other state goes by its own name. */
+  const dark = lineFacts('RTK.0> gpon get onu-state\nONU state: Initial State(O1) \n\r'
+    + 'RTK.0> gpon get alarm-status\nAlarm LOS, status: occur\nAlarm LOF, status: occur\nAlarm LOM, status: occur\n'
+    + 'Alarm SF, status: clear\nAlarm SD, status: clear\n% TX Too Long, TX Mismatch: not tracked by odi_gpon\n'
+    + 'RTK.0> pon get transceiver rx-power\nRx Power: -inf  dBm\n');
+  ok(dark.state === 'O1' && dark.los === true && dark.rx === null,
+     'line facts: a dark fibre reads O1, LOS and no receive level');
+  ok(['Standby State(O2)', 'Serial Number State(O3)', 'Ranging State(O4)', 'Operation State(O5)', 'POPUP State(O6)',
+    'Emergency Stop State(O7)'].every((n, i) => lineFacts('RTK.0> gpon get onu-state\nONU state: ' + n + ' \n\r').state === 'O' + (i + 2)),
+     'line facts: every ONU state is read by the name diag gives it');
+  ok(wz.decide(lineFacts('RTK.0> gpon get onu-state\n  Initial State(O1)\n'), st(false)) === 'none',
      'wizard rule: no receive reading is not light');
   ok(wz.decide(L('O5', '-18.4', false), st(false)) === 'mark', 'wizard rule: O5 writes the marker and does not open');
   ok(wz.decide(L('O5', '-18.4', false), st(true)) === 'none', 'wizard rule: a marker already there, O5, does nothing');
