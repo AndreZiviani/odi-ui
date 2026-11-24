@@ -535,7 +535,7 @@ function renderStatus(raw, chip, st) {
   pathLoss(st, rx.value);
   eqd(st);
 
-  const state = num(s['gpon get onu-state'], /Operation State\((O\d)\)/);
+  const state = num(s['gpon get onu-state'], /State\((O\d)\)/);
   ladder(state);
   lineUp(state, st && st.in_state_s);
 
@@ -712,7 +712,7 @@ function lineFacts(raw) {
   const v = num(s['pon get transceiver rx-power'], /:\s*(-?\d+\.\d+)/);
   const alarms = (s['gpon get alarm-status'] || '').split('\n').filter((l) => /Alarm /.test(l));
   return {
-    state: num(s['gpon get onu-state'], /Operation State\((O\d)\)/),
+    state: num(s['gpon get onu-state'], /State\((O\d)\)/),
     los: alarms.some((l) => !/clear/i.test(l) && /\bLO[SF]\b/i.test(l)),
     rx: v === null ? null : Number(v),
   };
