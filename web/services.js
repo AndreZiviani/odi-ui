@@ -56,14 +56,99 @@ function fields(v) {
 }
 
 /*
- * G.988 fills unused filter fields with the maximum the field can hold: a VLAN
- * id is 12 bits, so 4096 cannot be one and means "do not filter on this"; a
- * priority is 3 bits, so 15 means the same. Both are printed by the firmware as
- * ordinary numbers, and reading them as real values is how a rule that matches
- * everything gets described as a rule that matches VLAN 4096.
+ * One row of ME 171 (G.988 9.3.13), read the way the stick applies it; the
+ * values are those of odi-oss src/omci/extvlan.h.
+ *
+ * Filter side: the two priorities say which frames a row is for. An outer
+ * priority of 15 means the row is not for double-tagged frames, an inner one
+ * of 15 that it is for untagged frames, and 14 marks the default row for that
+ * tag count (frames no other row of that count matched). 8 is "any priority"
+ * and a VID of 4096 "any VLAN": a VID is 12 bits and a priority 3, so neither
+ * can be a real value, and reading them as one is how a row for untagged
+ * frames got described as a row for "VLAN 4096".
+ *
+ * Treatment side: RemoveTags 3 is not a count, it discards the frame. A
+ * priority of 15 adds no tag; 8 and 9 copy the priority of the received inner
+ * or outer tag, 10 derives it from DSCP. A VID of 4096 or 4097 copies the VID
+ * of the received inner or outer tag. Two added tags: the outer is outermost.
  */
-const vidText = (v) => (v === '4096' ? 'any' : v);
-const priText = (v) => (v === '15' ? 'any' : v);
+const ETHERTYPES = { 1: 'IPv4', 2: 'PPPoE', 3: 'ARP', 4: 'IPv6', 5: '802.1X' };
+
+const num = (v) => (v === undefined || v === '' ? NaN : Number(v));
+/* A VID a filter names, or null for "any". */
+const vidOf = (f) => (num(f.VID) >= 0 && num(f.VID) <= 4094 ? String(num(f.VID)) : null);
+
+function tagText(f, any) {
+  const vid = vidOf(f);
+  const pri = num(f.PRI);
+  return (vid === null ? any : 'VLAN ' + vid) + (pri >= 0 && pri <= 7 ? ' priority ' + pri : '');
+}
+
+/* Which received frames a row is for, and how many tags they carry; null for
+   a combination of the two priorities this page does not read. */
+function ruleMatch(r) {
+  const fo = r['filter outer'] || {};
+  const fi = r['filter inner'] || {};
+  const op = num(fo.PRI);
+  const ip = num(fi.PRI);
+  let m;
+
+  if (op === 15 && ip === 15) m = { what: 'untagged', tags: 0 };
+  else if (op === 15 && ip === 14) m = { what: 'other tagged', tags: 1 };
+  else if (op === 15 && ip >= 0 && ip <= 8)
+    m = { what: ip === 8 && !vidOf(fi) ? 'any tagged' : tagText(fi, 'any VLAN'), tags: 1, vid: vidOf(fi) };
+  else if (op === 14 && ip === 14) m = { what: 'other double-tagged', tags: 2 };
+  else if (op >= 0 && op <= 8 && ip >= 0 && ip <= 8)
+    m = { what: op === 8 && ip === 8 && !vidOf(fo) && !vidOf(fi) ? 'any double-tagged'
+            : tagText(fo, 'any VLAN') + ' outside ' + tagText(fi, 'any VLAN'), tags: 2 };
+  else return null;
+
+  const et = num(fi.EthType);
+  if (et > 0) m.what += ' (' + (ETHERTYPES[et] || 'ethertype code ' + et) + ')';
+  return m;
+}
+
+/* The tag a treatment half adds, or null when it adds none. */
+function addedTag(t, fo, fi) {
+  if (!(num(t.PRI) >= 0 && num(t.PRI) <= 10)) return null;
+  const v = num(t.VID);
+  const vid = v === 4096 ? vidOf(fi) : v === 4097 ? vidOf(fo) : v >= 0 && v <= 4094 ? String(v) : null;
+  return vid === null ? 'a copy of its VLAN' : 'VLAN ' + vid;
+}
+
+function priNote(t) {
+  const p = num(t.PRI);
+  return p >= 0 && p <= 7 ? 'priority ' + p : p === 10 ? 'priority from DSCP' : '';
+}
+
+/* What happens to the frames a row matched: { text, pri, to } where `to` is
+   the one VID a single-tagged frame leaves with, when that is all it does. */
+function ruleAction(r, m) {
+  const fo = r['filter outer'] || {};
+  const fi = r['filter inner'] || {};
+  const to = r['treatment outer'] || {};
+  const ti = r['treatment inner'] || {};
+  const rm = num(to.RemoveTags) || 0;
+
+  if (rm === 3) return { text: 'dropped', pri: '' };
+
+  const outer = addedTag(to, fo, fi);
+  const inner = addedTag(ti, fo, fi);
+  const added = [outer, inner].filter(Boolean);
+  const kept = m.tags - Math.min(rm, m.tags);
+  const pri = outer ? priNote(to) : inner ? priNote(ti) : '';
+  let text;
+
+  if (!added.length)
+    text = kept === m.tags ? 'unchanged' : kept === 0 ? 'sent untagged' : 'outer tag removed';
+  else if (kept === 0)
+    text = added.join(' outside ');
+  else
+    text = 'adds ' + added.join(' outside ');  /* outside the tags it kept */
+
+  const single = m.tags === 1 && kept === 0 && added.length === 1 && /^VLAN \d+$/.test(added[0]);
+  return { text, pri, to: single ? added[0].slice(5) : null };
+}
 
 const hexToAscii = (h) => {
   const s = String(h || '').replace(/^0x/i, '');
@@ -201,31 +286,23 @@ function renderExtVlan(box, dump) {
   let translated = null;
 
   for (const r of rules) {
-    const fi = r['filter inner'] || {};
-    const ti = r['treatment inner'] || {};
-    const from = vidText(fi.VID);
-    /*
-       A treatment whose priority is 15 adds no tag at all. PRI is a 3-bit
-       field, so 15 is out of range and is the same "unspecified" sentinel
-       already read that way in a filter -- and on a live stick most rows carry
-       exactly that, which this rendered as "any VLAN -> VLAN 0". A VLAN id
-       nobody set, printed as if the OLT had set it, is the sort of confident
-       wrong answer this page exists to avoid.
-    */
-    const adds = priText(ti.PRI) !== 'any' || (ti.VID !== undefined && ti.VID !== '0');
-    const to = adds ? vidText(ti.VID) : null;
+    const m = ruleMatch(r);
     const line = el('div', 'me-rule');
 
-    line.append(el('span', 'me-from', from === 'any' ? 'any VLAN' : 'VLAN ' + from));
+    if (!m) {
+      line.append(el('span', 'me-from', 'a rule this page does not read (see Raw)'));
+      list.append(line);
+      continue;
+    }
+    const act = ruleAction(r, m);
+    line.append(el('span', 'me-from', m.what));
     line.append(el('span', 'me-arrow', '→'));
-    line.append(el('span', 'me-to', to === null ? 'no tag added'
-                                  : to === 'any' ? 'unchanged' : 'VLAN ' + to));
-    if (fi.PRI && priText(fi.PRI) !== 'any')
-      line.append(el('span', 'me-pri', 'priority ' + fi.PRI));
+    line.append(el('span', 'me-to', act.text));
+    if (act.pri) line.append(el('span', 'me-pri', act.pri));
     list.append(line);
 
-    if (from !== 'any' && to && to !== 'any' && from !== to && translated === null)
-      translated = { from, to };
+    if (m.vid && act.to && act.to !== m.vid && translated === null)
+      translated = { from: m.vid, to: act.to };
   }
   box.append(list);
 

@@ -11,6 +11,7 @@ Provenance matters, so each file says where it came from:
 |---|---|
 | `84-VlanTagFilterData.txt` | posted by a user running `V1.0-220923` — this repo's own base — in Anime4000/RTL960x#282 |
 | `171-ExtVlanTagOperCfgData.txt` | same thread, same stick |
+| `171-qinq.txt` | posted by an odi-oss user in odi-oss #520, with OMCC version 160 set: the table the OLT built at that version |
 
 Add to these with `scripts/capture-omci.sh <user@stick>`, which dumps every
 registered table from a live stick. A capture from this device's own hardware

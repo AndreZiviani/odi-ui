@@ -1132,11 +1132,20 @@ ok(idx.attrs.some(([k, v]) => k === 'Treatment Inner' && /VID 1600/.test(v)),
 /* The decoded page, on the same bytes. The claim under test is the one the
    page leads with: the OLT calls it 35 on your side and 1600 on the fibre. */
 const { renderServices } = await import(join(root, 'web', 'services.js'));
+/* The ME 171 card, one string per rule line ("from -> to priority"). */
+const ruleLines = (n, out = []) => {
+  if (n.classList && n.classList.contains('me-rule'))
+    out.push(n.children.map((c) => textOf(c)).join(' '));
+  else for (const c of n.children || []) ruleLines(c, out);
+  return out;
+};
 await renderServices(true);
 const cards = doc.querySelector('#services-cards');
 ok(cards.children.length === 7, 'the Services tab renders a card per table');
 const text = JSON.stringify(cards, (k, v) => (k === 'classList' ? undefined : v));
 ok(/VLAN 1600/.test(text), 'the translation card names the VLAN on the fibre');
+ok(ruleLines(cards).includes('VLAN 35 → VLAN 1600') && /expects VLAN 1600 on the fibre and calls it VLAN 35/.test(text),
+   'ME 171: a single-tag rule that swaps the VID reads as a translation');
 ok(/allows these VLANs on this line: 75, 1600/.test(text),
    'the filter card lists the VLANs the OLT permits');
 
@@ -1157,16 +1166,41 @@ ok(/carries the VEIP, not the physical port/.test(isp2Text),
    'ISP2: the bridge carries the VEIP alone');
 OMCI[47] = fx('47-MacBriPortCfgData-isp1.txt');
 
-/* ISP1's real ME 171: most rows add no tag at all (treatment PRI 15, a 3-bit
-   field, so out of range and unspecified). Rendering those as "VLAN 0" is a
-   VLAN id nobody set, printed as though the OLT had set it -- which is what
-   the live page did until a stick showed it. */
+
+/* ISP1's real ME 171: one row tags untagged frames, the other four discard.
+   Their treatment priority is 15 (adds no tag), which once read as "VLAN 0";
+   then, with RemoveTags ignored, the discard rows read as "no tag added",
+   the opposite of what they do. */
 OMCI[171] = OMCI_ISP1_171;
 await renderServices(true);
-const c171 = JSON.stringify(doc.querySelector('#services-cards'),
-                            (k, v) => (k === 'classList' ? undefined : v));
-ok(/no tag added/.test(c171), 'an unset treatment reads as "no tag added"');
-ok(!/VLAN 0/.test(c171), 'and never as VLAN 0');
+const isp1Rules = ruleLines(doc.querySelector('#services-cards'));
+ok(isp1Rules.length === 5, 'ISP1 ME 171: five rule lines');
+ok(isp1Rules.filter((l) => l === 'other double-tagged → dropped').length === 2
+   && isp1Rules.filter((l) => l === 'other tagged → dropped').length === 2,
+   'ME 171: RemoveTags 3 reads as dropped, for the default rows of each tag count');
+ok(isp1Rules[0] === 'untagged → VLAN 1 priority 0', 'ME 171: untagged frames get VLAN 1, priority 0');
+ok(!isp1Rules.some((l) => /VLAN 0|VLAN 4096|no tag added|priority 1[45]/.test(l)),
+   'and never VLAN 0, VLAN 4096, "no tag added" or a filter sentinel as a priority');
+
+/* odi-oss #520: what an OLT built at OMCC 160, a tag added outside the
+   router tag (QinQ) and untagged frames tagged. The card once printed every
+   row as "any VLAN", the default-rule marker 14 as "priority 14", and the
+   discard row as "no tag added". */
+OMCI[171] = fx('171-qinq.txt');
+await renderServices(true);
+const qinq = ruleLines(doc.querySelector('#services-cards'));
+const want = [
+  'other double-tagged → adds VLAN 1001',
+  'other tagged → adds VLAN 1001',
+  'untagged → VLAN 101 priority 0',
+  'untagged → dropped',
+  'untagged → VLAN 99 priority 5',
+];
+ok(JSON.stringify(qinq) === JSON.stringify(want), 'ME 171 at OMCC 160: each row reads as the stick applies it');
+if (JSON.stringify(qinq) !== JSON.stringify(want)) console.log(qinq);
+const qinqText = textOf(doc.querySelector('#services-cards'));
+ok(!/expects VLAN/.test(qinqText), 'a tag added outside is not described as a translation');
+
 OMCI[171] = fx('171-ExtVlanTagOperCfgData.txt');
 
 /* --- a MIB service that has stopped answering --------------------------- */
