@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Services: the VLAN translation card reads each ME 171 rule the way the
+  stick applies it. Rules for untagged, single-tagged and double-tagged frames
+  are told apart (they all read "any VLAN"), a rule that discards frames reads
+  "dropped" (it read "no tag added"), a tag added outside the frame's own
+  reads "adds VLAN n", and the default-rule and "any priority" markers are no
+  longer printed as priorities. Refs AndreZiviani/odi-oss#520.
+
 - ONU identity: preview the first on-stick snapshot by key, showing only
   presence and equality, and explicitly restore it through the firmware
   identity script. No snapshot values leave the stick on this route; no
