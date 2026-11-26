@@ -117,6 +117,14 @@ every session but the one that made it.
                                           for a `what` that does not decode, or a
                                           body with a field name that does not
                                           decode: neither is read as no `what`
+    GET  /api/identity-snapshot            configured admin only; available false if absent,
+                                          otherwise image, taken, and 12 keys with
+                                          captured/current presence or equality only
+    POST /api/identity-snapshot  _confirm=identity
+                                          configured admin only; calls identity.sh restore
+                                          on the first on-stick snapshot; returns ok,
+                                          omci and reboot flags (no apply or reboot).
+                                          No identity values or script output are returned
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file:
                                           `omci-identity.on`; `confd.setup`, the setup
                                           wizard marker below; and `update-check.off`

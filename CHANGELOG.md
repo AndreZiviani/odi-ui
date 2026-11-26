@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- ONU identity: preview the first on-stick snapshot by key, showing only
+  presence and equality, and explicitly restore it through the firmware
+  identity script. No snapshot values leave the stick on this route; no
+  automatic apply or reboot.
+
 - Status: the ONU state is read in every state, not only in O5. diag names
   each state itself (`Initial State(O1)`, `Standby State(O2)`, `Serial Number
   State(O3)`, `Ranging State(O4)`, `POPUP State(O6)`, `Emergency Stop

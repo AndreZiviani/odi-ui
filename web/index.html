@@ -225,6 +225,18 @@
       <p class="lede">What the OLT is told this ONU is.</p>
       <div id="identity-switch" class="switchrow" hidden></div>
       <div id="identity-out"></div>
+      <section class="block" id="identity-snapshot" hidden>
+        <h2>First captured identity</h2>
+        <p id="identity-snapshot-meta" class="help"></p>
+        <div id="identity-snapshot-rows"></div>
+        <p class="help">All values remain hidden; only differences are shown.
+           Restores the original stored values on this stick, without applying them or rebooting.
+           A missing captured value is left unchanged.</p>
+        <label class="check"><input type="checkbox" id="identity-restore-confirm">
+          I confirm restoring this stick's first captured identity.</label>
+        <button id="identity-restore-go" type="button" disabled>Restore first captured identity</button>
+        <p id="identity-restore-result" role="status"></p>
+      </section>
       <div class="settings" id="set-identity"></div>
       <details class="expert" id="expert" hidden>
         <summary>Expert settings</summary>

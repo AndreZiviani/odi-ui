@@ -108,6 +108,9 @@
 #define HWMON_ROOT        "/sys/class/hwmon"
 #define PROC_STAT         "/proc/stat"
 #define PROC_MEMINFO      "/proc/meminfo"
+#define IDENTITY_SCRIPT    "/etc/scripts/identity.sh"
+#define IDENTITY_SNAPSHOT  "/var/config/identity.orig"
+#define IDENTITY_TIMEOUT_MS 30000 /* lock up to 5 s, then snapshot validation and store rewrites */
 #define GPON_STATUS       "/proc/odi_gpon/status"
 #define GPON_COUNTERS     "/proc/odi_gpon/counters"
 #define ODI_SW_DEV        "/dev/odi_sw"

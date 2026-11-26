@@ -1044,6 +1044,187 @@ static void emit_hostlink_body(int conn)
 	put_fd(conn, "\"}");
 }
 
+/* The snapshot interface is intentionally narrower than the script: it
+ * exposes no values, even those identity.sh show leaves visible. Do not
+ * forward child output (including errors), read the raw snapshot, or accept
+ * arbitrary paths, verbs or identity values from the browser. */
+static const char *const identity_keys[] = {
+	"GPON_SN", "GPON_PLOAM_PASSWD", "ELAN_MAC_ADDR", "GPON_ONU_MODEL",
+	"LOID", "LOID_PASSWD", "LOID_OLD", "LOID_PASSWD_OLD", "ONU_HW_VERSION",
+	"MAC_KEY", "PON_VENDOR_ID", "GPON_PLOAM_FORMAT"
+};
+
+static char *identity_line(char **p)
+{
+	char *line = *p, *end = line;
+	while (*end && *end != '\n')
+		end++;
+	if (!*end)
+		return 0;
+	*end = 0;
+	*p = end + 1;
+	return line;
+}
+
+static int identity_suffix(const char *line, const char *suffix)
+{
+	unsigned long n = slen(line), k = slen(suffix);
+	return n >= k && seq(line + n - k, suffix);
+}
+
+/* Metadata from identity.sh is not a general-purpose text field. */
+static int identity_digits(const char *s, unsigned long n)
+{
+	for (unsigned long i = 0; i < n; i++)
+		if (s[i] < '0' || s[i] > '9')
+			return 0;
+	return n != 0;
+}
+
+static const char *identity_metadata(const char *line, const char *prefix)
+{
+	unsigned long n, i;
+	if (!line || !spre(line, prefix))
+		return "unknown";
+	line += slen(prefix);
+	n = slen(line);
+	if (seq(line, "unknown"))
+		return line;
+	if (seq(prefix, "taken=")) {
+		if (n == 20 && identity_digits(line, 4) && line[4] == '-' &&
+		    identity_digits(line + 5, 2) && line[7] == '-' &&
+		    identity_digits(line + 8, 2) && line[10] == 'T' &&
+		    identity_digits(line + 11, 2) && line[13] == ':' &&
+		    identity_digits(line + 14, 2) && line[16] == ':' &&
+		    identity_digits(line + 17, 2) && line[19] == 'Z')
+			return line;
+		return "unknown";
+	}
+	/* Accept release version syntax, not arbitrary strings from the
+	 * snapshot header. Unrecognized local builds show unknown. */
+	if (n < 6 || n > 40 || line[0] != 'v')
+		return "unknown";
+	i = 1;
+	for (unsigned group = 0; group < 3; group++) {
+		unsigned long start = i;
+		while (i < n && line[i] >= '0' && line[i] <= '9')
+			i++;
+		if (i == start || (group < 2 && (i == n || line[i++] != '.')))
+			return "unknown";
+	}
+	if (i == n)
+		return line;
+	if (!spre(line + i, "-beta.") && !spre(line + i, "-rc."))
+		return "unknown";
+	i += spre(line + i, "-beta.") ? 6 : 4;
+	return identity_digits(line + i, n - i) ? line : "unknown";
+}
+
+static void identity_clear_output(void)
+{
+	for (unsigned long i = 0; i < sizeof(status); i++)
+		status[i] = 0;
+}
+
+static void identity_snapshot_get(int conn)
+{
+	char *argv[] = { IDENTITY_SCRIPT, "show", 0 };
+	char *p = status, *line;
+	const char *image, *taken;
+	const char *captured[sizeof(identity_keys) / sizeof(identity_keys[0])];
+	const char *current[sizeof(identity_keys) / sizeof(identity_keys[0])];
+	long code, got;
+	unsigned k;
+
+	respond(conn, "200 OK", "application/json", 0);
+	if (!file_exists(IDENTITY_SCRIPT) || !file_exists(IDENTITY_SNAPSHOT))
+		goto absent;
+	got = run_to_buf_ex(IDENTITY_SCRIPT, argv, status, sizeof(status), &code,
+			    IDENTITY_TIMEOUT_MS);
+	if (got <= 0 || code != 0 || (unsigned long)got >= sizeof(status) - 1)
+		goto absent;
+	image = identity_metadata(identity_line(&p), "image=");
+	taken = identity_metadata(identity_line(&p), "taken=");
+	for (k = 0; k < sizeof(identity_keys) / sizeof(identity_keys[0]); k++) {
+		unsigned long n = slen(identity_keys[k]);
+		const char *value;
+
+		line = identity_line(&p);
+		if (!line || !spre(line, identity_keys[k]) || !spre(line + n, ": "))
+			goto absent;
+		value = line + n + 2;
+		if (seq(value, "(absent) same")) {
+			captured[k] = current[k] = "absent";
+		} else if (seq(value, "(absent) differs (now in cs)") ||
+			   seq(value, "(absent) differs (now in hs)") ||
+			   seq(value, "(absent) differs (now in odi)")) {
+			captured[k] = "absent";
+			current[k] = "present";
+		} else if (identity_suffix(value, "] same")) {
+			captured[k] = "present"; current[k] = "same";
+		} else if (identity_suffix(value, "] differs")) {
+			captured[k] = "present"; current[k] = "different";
+		} else if (identity_suffix(value, "] differs (now absent)")) {
+			captured[k] = "present"; current[k] = "absent";
+		} else {
+			goto absent;
+		}
+	}
+	if (*p)
+		goto absent;
+	put_fd(conn, "{\"available\":true,\"image\":\"");
+	put_json_cstr(conn, image);
+	put_fd(conn, "\",\"taken\":\"");
+	put_json_cstr(conn, taken);
+	put_fd(conn, "\",\"keys\":[");
+	for (k = 0; k < sizeof(identity_keys) / sizeof(identity_keys[0]); k++) {
+		if (k) put_fd(conn, ",");
+		put_fd(conn, "{\"key\":\"");
+		put_fd(conn, identity_keys[k]);
+		put_fd(conn, "\",\"captured\":\"");
+		put_fd(conn, captured[k]);
+		put_fd(conn, "\",\"current\":\"");
+		put_fd(conn, current[k]);
+		put_fd(conn, "\"}");
+	}
+	put_fd(conn, "]}");
+	identity_clear_output();
+	return;
+absent:
+	identity_clear_output();
+	put_fd(conn, "{\"available\":false}");
+}
+
+static void identity_snapshot_restore(int conn)
+{
+	char *argv[] = { IDENTITY_SCRIPT, "restore", 0 };
+	char *p = status, *line;
+	long got, code;
+	int omci = 0, reboot = 0;
+
+	if (!file_exists(IDENTITY_SCRIPT) || !file_exists(IDENTITY_SNAPSHOT)) {
+		respond(conn, "404 Not Found", "application/json", 0);
+		put_fd(conn, "{\"ok\":false,\"error\":\"No snapshot available\"}");
+		return;
+	}
+	got = run_to_buf_ex(IDENTITY_SCRIPT, argv, status, sizeof(status), &code,
+			    IDENTITY_TIMEOUT_MS);
+	if (got > 0) {
+		while ((line = identity_line(&p))) {
+			if (seq(line, "identity: next: apply.sh omci (re-registers with the OLT: interrupts internet)"))
+				omci = 1;
+			else if (seq(line, "identity: next: reboot, ELAN_MAC_ADDR takes effect at boot"))
+				reboot = 1;
+		}
+	}
+	identity_clear_output();
+	respond(conn, "200 OK", "application/json", 0);
+	put_fd(conn, got >= 0 && (unsigned long)got < sizeof(status) - 1 && code == 0 ? "{\"ok\":true" :
+		"{\"ok\":false,\"error\":\"Restore incomplete; check saved settings before applying\"");
+	put_fd(conn, omci ? ",\"omci\":true" : ",\"omci\":false");
+	put_fd(conn, reboot ? ",\"reboot\":true}" : ",\"reboot\":false}");
+}
+
 void serve(int conn)
 {
 	char *path, *method, *body, *query;
@@ -2431,6 +2612,27 @@ void serve(int conn)
 			if (got > 0)
 				put_json_cstr(conn, status);
 			put_fd(conn, got == -2 ? "\",\"error\":\"the script did not answer in time\"}" : "\"}");
+			return;
+		}
+	}
+
+	if (seq(path, "/api/identity-snapshot")) {
+		if (refuse_unless_set(conn, 1))
+			return;
+		if (seq(method, "GET")) {
+			identity_snapshot_get(conn);
+			return;
+		}
+		if (seq(method, "POST")) {
+			/* The only accepted body is the same explicit identity
+			 * confirmation as the configuration editor. */
+			if (*query || body_want != slen("_confirm=identity") ||
+			    !seq(body, "_confirm=identity")) {
+				respond(conn, "400 Bad Request", "application/json", 0);
+				put_fd(conn, "{\"ok\":false,\"error\":\"Confirm identity restore only\"}");
+				return;
+			}
+			identity_snapshot_restore(conn);
 			return;
 		}
 	}
