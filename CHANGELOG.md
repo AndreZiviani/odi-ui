@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- ONU identity: preview the first on-stick snapshot by key, showing only
+  presence and equality, and explicitly restore it through the firmware
+  identity script. No snapshot values leave the stick on this route; no
+  automatic apply or reboot. The preview waits at most 5 s for the script,
+  the restore 20 s.
+
 - Optional fibre registration status on sign-in, off by default. System >
   Access toggles a single marker; only a configured admin can change it.
   The public route returns three coarse states, no diagnostics, and retains

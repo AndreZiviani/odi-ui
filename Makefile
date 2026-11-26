@@ -150,7 +150,7 @@ check:
 # request path -- framing, auth, form parsing, validation -- that fails silently
 # on real hardware, and every case in there is a bug this has actually had.
 # The idle-client check waits out a 15 s socket timeout, so budget ~20 s.
-smoke: confd pon-state-test
+smoke: confd pon-state-test identity-snapshot-test
 	scripts/smoke.sh
 
 # Isolated loopback-only test, with a synthetic kernel status file.
@@ -158,6 +158,11 @@ smoke: confd pon-state-test
 pon-state-test: confd
 	$(RUN) make IN_CONTAINER=1 $(BUILD)/confd-pon-test
 	docker run --rm --network none -v "$(CURDIR)":/src -w /src $(IMAGE) sh scripts/pon-state-test.sh
+
+# Synthetic snapshot test in its own isolated container.
+.PHONY: identity-snapshot-test
+identity-snapshot-test: confd
+	docker run --rm --network none -v "$(CURDIR)":/src -w /src $(IMAGE) sh scripts/identity-snapshot-test.sh
 
 # Assert the schema and the device agree in both directions. Needs a stick.
 schema:

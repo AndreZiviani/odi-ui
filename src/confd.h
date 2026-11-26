@@ -108,6 +108,13 @@
 #define HWMON_ROOT        "/sys/class/hwmon"
 #define PROC_STAT         "/proc/stat"
 #define PROC_MEMINFO      "/proc/meminfo"
+#define IDENTITY_SCRIPT    "/etc/scripts/identity.sh"
+#define IDENTITY_SNAPSHOT  "/var/config/identity.orig"
+/* confd serves one request at a time, so a stuck identity.sh holds the whole
+ * UI. show takes no lock and runs in under a second; restore may wait up to
+ * 5 s for the writer lock and then rewrites the stores. */
+#define IDENTITY_SHOW_TIMEOUT_MS    5000
+#define IDENTITY_RESTORE_TIMEOUT_MS 20000
 #ifndef GPON_STATUS
 #define GPON_STATUS       "/proc/odi_gpon/status"
 #endif

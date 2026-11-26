@@ -53,6 +53,7 @@ const ON_SHOW = {
   'omci/mib': () => renderMeBrowser(),
   'omci/phone': () => renderPhone(),
   'system/firmware': () => { renderFirmware(); renderUpdateSwitch(); },
+  'config/identity': () => renderIdentitySnapshot(),
   'system/access': () => renderSshKeys(),
   'system/logs': () => renderTools(),
 };
@@ -170,6 +171,8 @@ $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
 $('#topo-reload').onclick = () => renderTopology(true);
 $('#pw-save').onclick = savePassword;
+$('#identity-restore-confirm').onchange = () => { $('#identity-restore-go').disabled = !$('#identity-restore-confirm').checked; };
+$('#identity-restore-go').onclick = restoreIdentitySnapshot;
 $('#login-pon-toggle').onclick = toggleLoginPonSwitch;
 $('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;
@@ -274,6 +277,56 @@ async function savePasswordOnce() {
 /* The lines on the stick as last listed, for the duplicate check and for the
    warning before the last one is removed. */
 let SSH_LINES = [];
+
+async function renderIdentitySnapshot() {
+  const box = $('#identity-snapshot');
+  const rows = $('#identity-snapshot-rows');
+  box.hidden = true;
+  $('#identity-restore-confirm').checked = false;
+  $('#identity-restore-go').disabled = true;
+  try {
+    const j = await get('/api/identity-snapshot', { timeout: 10000 });
+    if (!j.available || !Array.isArray(j.keys)) return;
+    $('#identity-snapshot-meta').textContent = `Image: ${j.image}; captured: ${j.taken}`;
+    const t = el('table');
+    const head = el('tr');
+    for (const col of ['Key', 'First captured', 'Current']) head.append(el('th', '', col));
+    t.append(head);
+    for (const row of j.keys) {
+      const tr = el('tr');
+      if (row.current === 'different' || row.current === 'present' ||
+          (row.captured === 'present' && row.current === 'absent')) tr.className = 'warn';
+      tr.append(el('td', 'mono', row.key), el('td', '', row.captured), el('td', '', row.current));
+      t.append(tr);
+    }
+    rows.textContent = '';
+    rows.append(t);
+    box.hidden = false;
+  } catch (e) { /* no snapshot or older firmware */ }
+}
+
+async function restoreIdentitySnapshot() {
+  const b = $('#identity-restore-go'), check = $('#identity-restore-confirm');
+  const out = $('#identity-restore-result');
+  if (!check.checked) return;
+  if (EDITS.size) { out.textContent = 'Save or discard pending edits first.'; return; }
+  b.disabled = check.disabled = true;
+  try {
+    const r = await fetch('/api/identity-snapshot', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: '_confirm=identity',
+    });
+    const j = await r.json();
+    let msg = j.ok ? 'Stored identity restored. Nothing has been applied.' :
+      'Restore could be incomplete. Check saved settings before applying.';
+    if (j.omci) msg += ' OMCI keys changed: apply.sh omci interrupts internet.';
+    if (j.reboot) msg += ' The Ethernet MAC changed: it takes effect only after a reboot.';
+    msg += ' Reload this page before editing again; apply or reboot only when ready.';
+    out.textContent = msg;
+    await renderIdentitySnapshot();
+  } catch (e) { out.textContent = 'Restore result unknown. Reload and check the stored settings.'; }
+  finally { check.checked = false; check.disabled = false; b.disabled = true; }
+}
 
 function renderLoginPonSwitch() {
   const sw = (S.FW || {}).switches || {};
