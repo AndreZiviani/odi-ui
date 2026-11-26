@@ -1,6 +1,7 @@
 /*
  * The path the OLT provisioned, drawn: T-CONT, GEM port, interworking TP,
- * 802.1p mapper, bridge port, bridge, bridge port, UNI.
+ * 802.1p mapper, bridge port, bridge, bridge port, UNI, and the VLAN tagging
+ * rules the OLT set on it.
  *
  * The Services tab answers six questions and the MIB browser shows one class
  * at a time. Neither says how the entities hang together, and that is the
@@ -20,15 +21,17 @@
 
 import { $, el } from './dom.js';
 import { fetchMe, attr, unavailable } from './omci.js';
+import { ruleWords } from './services.js';
 
-/* The classes read, in order. 84 and 171 only annotate boxes. */
+/* The classes read, in order. 84 annotates the bridge ports; 171 gets a
+   column of its own, after the entity each table is set on. */
 const CLASSES = ['262', '268', '266', '281', '130', '47', '45', '11', '329', '134', '84', '171'];
 
 /* G.988 says which side creates each class; the ONU makes these at MIB reset. */
 const ONU_MADE = new Set(['262', '11', '329', '134']);
 
 const COLUMNS = ['T-CONT', 'GEM port', 'Interworking', '802.1p mapper',
-  'Bridge port', 'Bridge', 'Bridge port', 'UNI'];
+  'Bridge port', 'Bridge', 'Bridge port', 'UNI', 'VLAN tagging'];
 
 /* The TP type of a bridge port (G.988 9.3.4, attribute 3): which class its TP
    pointer names, and which side of the bridge that puts it on. Type 3 is
@@ -231,24 +234,35 @@ function buildGraph(dumps) {
       + '. omcid reads each as that IW TP, with the p-bits of the mapper the IW TP names, '
       + 'and the picture follows omcid.');
 
-  /* Annotations: the VIDs a bridge port filters on, and how many extended
-     VLAN rules sit on an entity. Neither is decoded beyond that; the
-     Services tab says what the rules do. */
+  /* The VIDs a bridge port filters on (ME 84): what may pass, not which tag
+     is added. That is ME 171, the column after the UNI. */
   for (const [id, inst] of rows['84']) {
     const n = nodes.get(key('47', id));
     const vids = inst.attrs.filter(([k]) => /^FilterTbl\[/i.test(k))
       .map(([, v]) => (/VID\s+(\d+)/.exec(v) || [])[1]).filter(Boolean);
-    if (n && vids.length) n.lines.push('VLAN ' + vids.join(', '));
+    if (n && vids.length) n.lines.push('VLAN filter ' + vids.join(', '));
   }
-  for (const [, inst] of rows['171']) {
+  for (const [id, inst] of rows['171']) {
     /* The stock dump prints AssociatedMePoint after the rule table, so the
        parser files it under the last INDEX row. */
     const deep = (name) => attr(inst, name) ?? inst.groups.map((g) => attr(g, name)).find((v) => v != null);
-    const cls = ASSOC[num(deep('AssociationType'))];
-    const n = cls && nodes.get(key(cls, num(deep('AssociatedMePoint'))));
-    const count = inst.groups.filter((g) => /^INDEX\b/i.test(g.label)).length;
-    if (n) n.lines.push('VLAN rules: ' + count);
+    const type = num(deep('AssociationType'));
+    const cls = ASSOC[type];
+    const ptr = num(deep('AssociatedMePoint'));
+    const rules = inst.groups.filter((g) => /^INDEX\b/i.test(g.label));
+    const n = add('171', id, 8, 'VLAN rules ' + hex(id), []);
+    for (const g of rules) n.lines.push(ruleWords(g) || g.label + ': not read, see the MIB browser');
+    if (!rules.length) n.lines.push('no rules');
+    const ds = num(deep('DsMode'));
+    if (ds) n.lines.push('downstream mode ' + ds + ', not the reverse');
+    if (cls) follow(n.key, 'associated ME pointer', ptr, cls, () => link(cls, ptr, '171', id));
+    else n.lines.push('set on association type ' + type + ', not drawn');
   }
+
+  if (rows['171'].size)
+    notes.push('On a UNI or VEIP, the VLAN tagging column reads each rule for frames from your router towards the fibre. '
+      + 'Downstream the ONU applies the reverse, unless a box says otherwise. '
+      + 'The bridge ports show the ME 84 filter: which VLANs may pass, not which tag is added.');
 
   markUsed(nodes, edges);
   return { nodes, edges, dangling, notes };
@@ -292,6 +306,11 @@ function markUsed(nodes, edges) {
   for (const e of edges) {
     const a = nodes.get(e.from);
     if (a && a.cls === '262' && nodes.get(e.to) && nodes.get(e.to).used) a.used = true;
+  }
+  /* A VLAN tagging table counts when the entity it is set on does. */
+  for (const e of edges) {
+    const b = nodes.get(e.to);
+    if (b && b.cls === '171' && nodes.get(e.from)) b.used = nodes.get(e.from).used;
   }
 }
 
@@ -414,7 +433,10 @@ function orderColumns(g) {
   for (const br of sorted.filter((n) => n.cls === '45')) {
     put(br.key);
     for (const p of inbound(br.key)) { put(p); left(p); }
-    for (const p of outbound(br.key)) { put(p); for (const u of outbound(p)) put(u); }
+    for (const p of outbound(br.key)) {
+      put(p);
+      for (const u of outbound(p)) { put(u); for (const v of outbound(u)) put(v); }
+    }
   }
   for (const n of sorted) { put(n.key); left(n.key); }
   /* Spare T-CONTs (no Alloc-ID, nothing on them) fold into one line. */

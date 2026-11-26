@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- OMCI > Topology: a VLAN tagging column after the UNI. Each ME 171 table
+  gets a box linked from the entity it is set on, with every rule in words,
+  read the same way as the Services card (`untagged → VLAN 1, priority 0`,
+  `other tagged → dropped`). Bridge ports now say `VLAN filter` for their
+  ME 84 VIDs, since that list says what may pass, not which tag is added.
+  The UNI box no longer counts the rules.
+
 - Services: the VLAN translation card reads each ME 171 rule the way the
   stick applies it. Rules for untagged, single-tagged and double-tagged frames
   are told apart (they all read "any VLAN"), a rule that discards frames reads

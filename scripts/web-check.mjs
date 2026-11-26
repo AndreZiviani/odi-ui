@@ -2481,14 +2481,22 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
      'topology ISP1: all six GEM ports reach a UNI');
   ok(of(g1, '130').length === 5 && of(g1, '130').every((n) => n.used),
      'topology ISP1: TP type 3 naming an IW TP goes through the mapper of that IW TP, as omcid reads it');
-  ok(g1.notes.length === 0 && of(g1, '47').every((n) => !n.lines.some((l) => /names IW TP/.test(l))),
+  ok(g1.notes.length === 1 && /VLAN tagging column/.test(g1.notes[0]) && of(g1, '47').every((n) => !n.lines.some((l) => /names IW TP/.test(l))),
      'topology ISP1: each mapper has the id of its IW TP, so both readings draw the same and nothing is said');
   ok(g1.dangling.length === 0, 'topology ISP1: no pointer names a missing entity');
   ok(of(g1, '262').filter((n) => n.used).length === 5 && of(g1, '262').filter((n) => !n.used).length === 11,
      'topology ISP1: five T-CONTs carry a GEM port, eleven carry none');
   ok(of(g1, '11')[0].used && of(g1, '329')[0].used, 'topology ISP1: the bridge carries the UNI and the VEIP');
-  ok(of(g1, '47').some((n) => n.lines.includes('VLAN 10')), 'topology ISP1: a bridge port shows its ME 84 VLAN');
-  ok(of(g1, '11')[0].lines.some((l) => /^VLAN rules: \d+$/.test(l)), 'topology ISP1: ME 171 rules are counted on the UNI');
+  ok(of(g1, '47').some((n) => n.lines.includes('VLAN filter 10')), 'topology ISP1: a bridge port shows its ME 84 VLAN filter');
+  {
+    const t = g1.nodes.get('171/1');
+    ok(t && t.col === 8 && g1.edges.some((e) => e.from === '11/257' && e.to === '171/1') && t.used,
+       'topology ISP1: the UNI\'s ME 171 table gets a box in the VLAN column, linked from the UNI');
+    ok(t && t.lines.join('|') === 'untagged → VLAN 1, priority 0|other double-tagged → dropped|other tagged → dropped',
+       'topology ISP1: each ME 171 rule is said in words, read as the Services card reads it');
+    ok(g1.edges.some((e) => e.from === '329/1537' && e.to === '171/2'),
+       'topology ISP1: a table on the VEIP links from the VEIP');
+  }
   const sel = pathOf('268/3', g1.edges);
   ok(sel.has('262/32769') && sel.has('130/2') && sel.has('329/1537') && !sel.has('268/4'),
      'topology: a GEM port\'s path runs from its T-CONT to the UNIs and leaves the other GEM ports out');
@@ -2497,8 +2505,20 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   const g2 = buildGraph(line('isp2'));
   ok(g2.edges.some((e) => e.from === '130/4098' && e.to === '47/4098'),
      'topology ISP2: TP type 3 naming a mapper links the mapper');
-  ok(g2.notes.length === 0, 'topology ISP2: nothing read against G.988, nothing to explain');
+  ok(g2.notes.length === 1 && /VLAN tagging column/.test(g2.notes[0]),
+     'topology ISP2: nothing read against G.988, only the VLAN column explained');
   ok(of(g2, '329')[0].used && !of(g2, '11')[0].used, 'topology ISP2: the VEIP is in use, the UNI is not');
+  ok(g2.nodes.get('171/5').lines.join('|') === 'any double-tagged → unchanged|any tagged → unchanged',
+     'topology ISP2: rules that filter on nothing and add nothing pass frames unchanged');
+
+  /* The stock capture from RTL960x#282: one rule that rewrites VID 35 to 1600,
+     on a UNI this dump does not hold, so the box stands alone. */
+  {
+    const g = buildGraph({ 171: parseOmci(OMCI[171]) });
+    const t = g.nodes.get('171/2');
+    ok(t && t.lines[0] === 'VLAN 35 → VLAN 1600' && !t.used,
+       'topology: a VID translation rule is said in words, and a table on no drawn entity is not in use');
+  }
 
   /* Hand-built, labelled: ISP1 without mapper 0x0002. The IW TP 0x0002 the
      bridge port names now has no mapper of that id, so only the omcid
@@ -2506,7 +2526,7 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
   const d130 = line('isp1')['130'];
   const g1b = buildGraph({ ...line('isp1'),
     130: { ...d130, instances: d130.instances.filter((i) => parseInt(i.id, 16) !== 2) } });
-  ok(g1b.notes.length === 1 && /^A bridge port has TP type 3/.test(g1b.notes[0]) && /IW TP 0x0002/.test(g1b.notes[0]),
+  ok(g1b.notes.length === 2 && /^A bridge port has TP type 3/.test(g1b.notes[0]) && /IW TP 0x0002/.test(g1b.notes[0]),
      'topology: a TP type 3 pointer the two readings place apart is said, once');
   ok(of(g1b, '47').filter((n) => n.lines.some((l) => /names IW TP/.test(l))).length === 1,
      'topology: and only that bridge port says it names an IW TP');
@@ -2537,7 +2557,7 @@ ok(['188:0x8001:0:00', '188:0x8001:17:00', '188:0x8001:001:00x', '188:0x10000:1:
     const boxes = [];
     const walk = (n) => { if (n && n.dataset && n.dataset.key) boxes.push(n); for (const c of (n && n.children) || []) walk(c); };
     walk(tg);
-    boxes.forEach((b, i) => { b.getBoundingClientRect = () => ({ left: (i % 8) * 150, right: (i % 8) * 150 + 100, top: i * 30, height: 20, width: 100 }); });
+    boxes.forEach((b, i) => { b.getBoundingClientRect = () => ({ left: (i % 9) * 150, right: (i % 9) * 150 + 100, top: i * 30, height: 20, width: 100 }); });
     const svg = new El('svg');
     svg.removeChild = (c) => { svg.children.splice(svg.children.indexOf(c), 1); };
     Object.defineProperty(svg, 'firstChild', { get: () => svg.children[0] || null });

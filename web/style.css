@@ -853,7 +853,7 @@ button.mib-row:focus-visible { outline-offset: -2px; }
 .mib-dumps-head { margin-top: 4px; }
 #me-select { max-width: 320px; }
 
-/* The topology: eight columns that scroll sideways on a narrow screen, the
+/* The topology: nine columns that scroll sideways on a narrow screen, the
    connectors in one SVG behind them. OLT-made boxes carry the UPC blue
    (what the line set up), ONU-made ones stay neutral, and anything stored
    but on no path is dashed and quiet. */
@@ -862,7 +862,7 @@ button.mib-row:focus-visible { outline-offset: -2px; }
 .topo-edge { fill: none; stroke: var(--blue-ink); stroke-width: 1.5; }
 .topo-edge.unused { stroke: var(--line-2); stroke-dasharray: 4 4; }
 .topo-edge.faded { stroke: var(--line); stroke-dasharray: none; }
-.topo-grid { position: relative; display: grid; grid-template-columns: repeat(8, minmax(140px, 1fr)); gap: 0 26px; min-width: 1300px; }
+.topo-grid { position: relative; display: grid; grid-template-columns: repeat(9, minmax(140px, 1fr)); gap: 0 26px; min-width: 1470px; }
 .topo-col { display: flex; flex-direction: column; gap: 10px; }
 .topo-col h4 { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .topo-box { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; font: inherit;

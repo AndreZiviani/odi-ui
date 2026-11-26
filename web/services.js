@@ -488,4 +488,15 @@ async function renderServices(force) {
   }
 }
 
-export { renderServices };
+/* One ME 171 row in a line, as this card reads it; null for a row it does
+   not read. The Topology tab draws its VLAN column with it. */
+function ruleWords(g) {
+  const r = {};
+  for (const [k, v] of g.attrs) r[k.toLowerCase()] = fields(v);
+  const m = ruleMatch(r);
+  if (!m) return null;
+  const act = ruleAction(r, m);
+  return m.what + ' → ' + act.text + (act.pri ? ', ' + act.pri : '');
+}
+
+export { renderServices, ruleWords };

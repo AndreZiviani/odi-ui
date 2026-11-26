@@ -122,7 +122,8 @@ ARIA tablists: arrow keys move between tabs, Home and End jump to the ends.
   profiles in `odi-sandbox` carry.
 - **OMCI** &mdash; *Services*, what the OLT actually provisioned, in sentences;
   *Topology*, how those entities connect, drawn from their pointers (T-CONT,
-  GEM port, interworking TP, 802.1p mapper, bridge port, bridge, UNI), with
+  GEM port, interworking TP, 802.1p mapper, bridge port, bridge, UNI, and
+  the VLAN tagging rules in words), with
   what no path uses and any pointer to a missing entity called out; and *MIB
   browser*, the same thing unedited: every table, its entities, and each
   entity's attributes.
