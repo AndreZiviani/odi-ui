@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Optional fibre registration status on sign-in, off by default. System >
+  Access toggles a single marker; only a configured admin can change it.
+  The public route returns three coarse states, no diagnostics, and retains
+  host and cross-site checks.
+
 - Status: the ONU state is read in every state, not only in O5. diag names
   each state itself (`Initial State(O1)`, `Standby State(O2)`, `Serial Number
   State(O3)`, `Ranging State(O4)`, `POPUP State(O6)`, `Emergency Stop

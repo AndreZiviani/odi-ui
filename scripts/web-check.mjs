@@ -3880,7 +3880,15 @@ ok(githubCalls.length === 0, 'updates: a stick running a non-release image never
   ok(g.fetch === once, 'session: wrapping twice wraps once');
 }
 {
-  const { loginOutcome, signIn } = await import(join(root, 'web', 'login.js'));
+  const { loginOutcome, signIn, readPonState } = await import(join(root, 'web', 'login.js'));
+  for (const [state, label] of [['registered', 'Fibre: registered'],
+    ['not_registered', 'Fibre: not registered'], ['unknown', 'Fibre: status unknown'],
+    ['unexpected', null]]) {
+    ok(await readPonState(async () => ({ status: 200, json: async () => ({ state }) })) === label,
+      'sign-in PON: ' + state);
+  }
+  ok(await readPonState(async () => ({ status: 204 })) === null, 'sign-in PON: off hides state');
+  ok(await readPonState(async () => { throw new Error('unavailable'); }) === null, 'sign-in PON: old firmware hides state');
   ok(loginOutcome(200, { ok: true }).ok, 'sign-in: 200 with ok is a sign-in');
   ok(loginOutcome(401, { ok: false, error: 'wrong username or password' }).text === 'Wrong username or password.',
      'sign-in: a wrong password says so, as a sentence');

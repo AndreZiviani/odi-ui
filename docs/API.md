@@ -46,6 +46,9 @@ in that state waits up to 1.6 s more before it is answered: see DESIGN.md,
     GET  /login                          the sign-in page (and /login.js, /style.css),
                                           no credential needed; `303` to `/` when the
                                           browser already has a live session
+    GET  /api/pon-state                   no credential needed; 204 when disabled (default),
+                                          else 200 {"state":"registered|not_registered|unknown"};
+                                          no-store, host and cross-site checks apply
     POST /api/login    user=...&password=...
                                           200 `{"ok":true}` with
                                           `Set-Cookie: odi_session=<32 hex>; Path=/; HttpOnly; SameSite=Strict`;
@@ -124,7 +127,9 @@ every session but the one that made it.
                                           new odi-oss releases, for every browser; the
                                           look itself is made by the browser, the stick
                                           contacts nothing). `/api/firmware` reports
-                                          all three under `switches`
+                                          all four under `switches`; `login-pon-state.on`
+                                          enables the coarse public sign-in status, only
+                                          with a configured admin credential
 
 The page's data files, each a TSV from `/etc/confd/` (or its override in
 `/etc/config/confd/`) served as a JSON array of objects, one per row:
