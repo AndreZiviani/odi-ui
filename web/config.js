@@ -29,7 +29,8 @@ const GROUPS = {
   vlan: ['VLAN_CFG_TYPE', 'VLAN_MANU_MODE', 'VLAN_MANU_TAG_VID', 'VLAN_MANU_TAG_PRI', 'VLAN_EAPOL_UNTAGGED',
     'RTK_DEVINFO_SPECVER'],
   identity: ['OMCI_VENDOR_PRODUCT_CODE', 'GPON_ONU_MODEL', 'ONU_HW_VERSION', 'OMCI_SW_VER1', 'OMCI_SW_VER2', 'OMCC_VER',
-    'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNI_LOCK', 'OMCI_TCONT_ALLOC_UNSET'],
+    'OLT_SW_DOWNLOAD', 'OMCI_ACCEPT_REBOOT', 'OMCI_UNI_LOCK', 'OMCI_TCONT_ALLOC_UNSET',
+    'OMCI_GEM_US_RATE'],
   /* Behind the Expert settings disclosure on the ONU identity subtab: keys
      that change how the stick presents itself to the OLT, for someone who has
      read what a native ONU reports. */

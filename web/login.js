@@ -38,6 +38,22 @@ export async function signIn(user, password, f = fetch) {
   return loginOutcome(r.status, body);
 }
 
+/* One read, no polling. A previous firmware or a disabled switch leaves
+ * the page exactly as it was. Never render arbitrary response content. */
+export async function readPonState(f = fetch) {
+  try {
+    const r = await f('/api/pon-state', { cache: 'no-store' });
+    if (r.status !== 200) return null;
+    const j = await r.json();
+    switch (j && j.state) {
+      case 'registered': return 'Fibre: registered';
+      case 'not_registered': return 'Fibre: not registered';
+      case 'unknown': return 'Fibre: status unknown';
+    }
+  } catch (e) { /* unavailable: omit the indicator */ }
+  return null;
+}
+
 async function onSubmit(ev) {
   ev.preventDefault();
   const user = $('#user').value.trim();
@@ -61,4 +77,7 @@ async function onSubmit(ev) {
 if (typeof document !== 'undefined' && $('#signin')) {
   if (new URLSearchParams(location.search).has('out')) say('good', 'You have been signed out.');
   $('#signin').addEventListener('submit', onSubmit);
+  readPonState().then((label) => {
+    if (label) { const p = $('#login-pon-state'); p.textContent = label; p.hidden = false; }
+  });
 }

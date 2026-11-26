@@ -11,6 +11,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   identity script. No snapshot values leave the stick on this route; no
   automatic apply or reboot.
 
+- Optional fibre registration status on sign-in, off by default. System >
+  Access toggles a single marker; only a configured admin can change it.
+  The public route returns three coarse states, no diagnostics, and retains
+  host and cross-site checks.
+
+- Config: `OMCI_GEM_US_RATE`, new in odi-oss #521, is on the ONU identity
+  subtab. On, omcid applies the upload limit the OLT names per GEM port, as
+  odi-oss up to v1.19.0 always did; off, the default, the upstream queues stay
+  unlimited. It takes effect at the next boot. `make check` failed against an
+  odi-oss checkout with #521 because the key had no schema row.
+
 - Status: the ONU state is read in every state, not only in O5. diag names
   each state itself (`Initial State(O1)`, `Standby State(O2)`, `Serial Number
   State(O3)`, `Ranging State(O4)`, `POPUP State(O6)`, `Emergency Stop

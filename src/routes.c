@@ -797,6 +797,24 @@ static int serve_public(int conn, unsigned long body_have, unsigned long body_wa
 		return serve_asset(conn, target);
 	}
 
+	/* Optional coarse status, after request_refusal and before auth.
+	 * Check the switch before even opening the status file. */
+	if (seq(target, "/api/pon-state") && spre(req, "GET ")) {
+		if (!same_origin(req)) {
+			respond(conn, "403 Forbidden", "text/plain", 0);
+			return 1;
+		}
+		if (!file_exists(SWITCH_DIR SWITCH_PON_STATE)) {
+			respond(conn, "204 No Content", "text/plain", 0);
+			return 1;
+		}
+		respond(conn, "200 OK", "application/json", 0);
+		put_fd(conn, "{\"state\":\"");
+		put_fd(conn, login_pon_state());
+		put_fd(conn, "\"}");
+		return 1;
+	}
+
 	/*
 	 * Sign in: the credential, once, for a session cookie.
 	 *
@@ -2647,6 +2665,7 @@ void serve(int conn)
 		static const char p_identity[] = SWITCH_DIR SWITCH_OMCI_IDENTITY;
 		static const char p_setup[] = SWITCH_DIR SWITCH_CONFD_SETUP;
 		static const char p_update[] = SWITCH_DIR SWITCH_UPDATE_OFF;
+		static const char p_pon[] = SWITCH_DIR SWITCH_PON_STATE;
 		const char *target = 0;
 
 		form_get(body, "name", name, sizeof(name));
@@ -2662,6 +2681,11 @@ void serve(int conn)
 			target = p_setup;
 		else if (seq(name, SWITCH_UPDATE_OFF))
 			target = p_update;
+		else if (seq(name, SWITCH_PON_STATE)) {
+			if (refuse_unless_set(conn, 1))
+				return;
+			target = p_pon;
+		}
 		if (!target) {
 			respond(conn, "400 Bad Request", "application/json", 0);
 			put_fd(conn, "{\"ok\":false,\"error\":\"not a switch this UI sets\"}");

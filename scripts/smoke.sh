@@ -2275,12 +2275,12 @@ check "without apply.sh the syslog action is refused, not turned into an omci re
 
 echo "== switch files"
 check "the ONU identity switch starts off" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false,"confd.setup":false,"update-check.off":false}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":false,"confd.setup":false,"update-check.off":false,"login-pon-state.on":false}')"
 check "it can be turned on" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=1' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":true')"
 check "which creates the file" yes "$([ -f /etc/config/omci-identity.on ] && echo yes)"
 check "and is reported" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":true,"confd.setup":false,"update-check.off":false}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"switches":{"omci-identity.on":true,"confd.setup":false,"update-check.off":false,"login-pon-state.on":false}')"
 check "and off again" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=omci-identity.on&on=0' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":false')"
 check "which removes it" no "$([ -f /etc/config/omci-identity.on ] && echo yes || echo no)"
@@ -2382,12 +2382,12 @@ echo "== update check switch"
 # The update check runs in the browser; the stick only keeps whether it is off,
 # for every browser. On by default, so the file means off.
 check "the update check starts on" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":false}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":false,')"
 check "it can be turned off" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=update-check.off&on=1' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":true')"
 check "which creates the file" yes "$([ -f /etc/config/update-check.off ] && echo yes)"
 check "and is reported" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":true}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":true,')"
 check "the identity switch is untouched by it" no "$([ -f /etc/config/omci-identity.on ] && echo yes || echo no)"
 # The state is a file on the config partition, so a new daemon reads it back.
 kill "$DAEMON"; wait "$DAEMON" 2>/dev/null || true
@@ -2398,7 +2398,7 @@ for _ in $(seq 40); do
 	sleep 0.25
 done
 check "it survives a restart of confd" yes \
-	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":true}')"
+	"$(err "$(curl -s -u "$AUTH" "http://127.0.0.1:$PORT/api/firmware")" '"update-check.off":true,')"
 check "and turned on again" yes \
 	"$(err "$(curl -s -u "$AUTH" -X POST -d 'name=update-check.off&on=0' "http://127.0.0.1:$PORT/api/switch")" '"ok":true,"on":false')"
 check "which removes the file" no "$([ -f /etc/config/update-check.off ] && echo yes || echo no)"
