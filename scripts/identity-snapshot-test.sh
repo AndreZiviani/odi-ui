@@ -18,6 +18,7 @@ case "$1" in
 snapshot)
     printf 'fixture\n' > /var/config/identity.orig ;;
 show)
+    [ -f /tmp/identity-show-hang ] && exec sleep 30
     changed='differs'
     grep -q 'FAKE00000001' /var/config/lastgood.xml && changed=same
     cat <<ROWS
@@ -52,7 +53,7 @@ chmod +x /etc/scripts/identity.sh
 # An apply/reboot is never part of the interface.
 printf '#!/bin/sh\ntouch /tmp/unexpected-apply\n' > /etc/scripts/apply.sh
 chmod +x /etc/scripts/apply.sh
-rm -f /var/config/identity.orig /tmp/unexpected-apply
+rm -f /var/config/identity.orig /tmp/unexpected-apply /tmp/identity-show-hang
 qemu-mips-static build/confd 18080 > /tmp/identity-snapshot-test.log 2>&1 &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || :' EXIT
@@ -90,4 +91,12 @@ grep -q 'synthetic-secret-two' /var/config/lastgood.xml
 grep -q '"key":"GPON_SN","captured":"present","current":"same"' /tmp/identity-body
 ! grep -Eq 'FAKE000|synthetic-secret|02000000000' /tmp/identity-body
 ! grep -Eq 'FAKE000|synthetic-secret|02000000000' /tmp/identity-snapshot-test.log
-echo 'ok: snapshot unavailable, private diff, only confirmed fixed restore, no apply'
+# A stuck show is cut off at its own 5 s bound, not the longer restore one,
+# so it holds the single-threaded daemon for seconds, not half a minute.
+touch /tmp/identity-show-hang
+t0=$(date +%s)
+[ "$(auth "$endpoint")" = 200 ]
+[ "$(cat /tmp/identity-body)" = '{"available":false}' ]
+[ $(( $(date +%s) - t0 )) -le 8 ]
+rm -f /tmp/identity-show-hang
+echo 'ok: snapshot unavailable, private diff, only confirmed fixed restore, no apply, show bounded'

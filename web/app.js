@@ -285,7 +285,7 @@ async function renderIdentitySnapshot() {
   $('#identity-restore-confirm').checked = false;
   $('#identity-restore-go').disabled = true;
   try {
-    const j = await get('/api/identity-snapshot', { timeout: 35000 });
+    const j = await get('/api/identity-snapshot', { timeout: 10000 });
     if (!j.available || !Array.isArray(j.keys)) return;
     $('#identity-snapshot-meta').textContent = `Image: ${j.image}; captured: ${j.taken}`;
     const t = el('table');

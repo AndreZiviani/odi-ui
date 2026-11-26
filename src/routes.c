@@ -1158,7 +1158,7 @@ static void identity_snapshot_get(int conn)
 	if (!file_exists(IDENTITY_SCRIPT) || !file_exists(IDENTITY_SNAPSHOT))
 		goto absent;
 	got = run_to_buf_ex(IDENTITY_SCRIPT, argv, status, sizeof(status), &code,
-			    IDENTITY_TIMEOUT_MS);
+			    IDENTITY_SHOW_TIMEOUT_MS);
 	if (got <= 0 || code != 0 || (unsigned long)got >= sizeof(status) - 1)
 		goto absent;
 	image = identity_metadata(identity_line(&p), "image=");
@@ -1226,7 +1226,7 @@ static void identity_snapshot_restore(int conn)
 		return;
 	}
 	got = run_to_buf_ex(IDENTITY_SCRIPT, argv, status, sizeof(status), &code,
-			    IDENTITY_TIMEOUT_MS);
+			    IDENTITY_RESTORE_TIMEOUT_MS);
 	if (got > 0) {
 		while ((line = identity_line(&p))) {
 			if (seq(line, "identity: next: apply.sh omci (re-registers with the OLT: interrupts internet)"))

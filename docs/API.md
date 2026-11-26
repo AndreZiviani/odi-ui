@@ -122,11 +122,13 @@ every session but the one that made it.
                                           decode: neither is read as no `what`
     GET  /api/identity-snapshot            configured admin only; available false if absent,
                                           otherwise image, taken, and 12 keys with
-                                          captured/current presence or equality only
+                                          captured/current presence or equality only;
+                                          identity.sh show gets 5 s, then available false
     POST /api/identity-snapshot  _confirm=identity
                                           configured admin only; calls identity.sh restore
                                           on the first on-stick snapshot; returns ok,
-                                          omci and reboot flags (no apply or reboot).
+                                          omci and reboot flags (no apply or reboot);
+                                          identity.sh restore gets 20 s.
                                           No identity values or script output are returned
     POST /api/switch    name=...&on=0|1  create or remove one allowlisted switch file:
                                           `omci-identity.on`; `confd.setup`, the setup
