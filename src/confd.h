@@ -108,7 +108,9 @@
 #define HWMON_ROOT        "/sys/class/hwmon"
 #define PROC_STAT         "/proc/stat"
 #define PROC_MEMINFO      "/proc/meminfo"
+#ifndef GPON_STATUS
 #define GPON_STATUS       "/proc/odi_gpon/status"
+#endif
 #define GPON_COUNTERS     "/proc/odi_gpon/counters"
 #define ODI_SW_DEV        "/dev/odi_sw"
 #define UPTIME_FILE       "/proc/uptime"
@@ -269,6 +271,8 @@
 #define SWITCH_OMCI_IDENTITY "omci-identity.on"
 #define SWITCH_CONFD_SETUP   "confd.setup"
 #define SWITCH_UPDATE_OFF    "update-check.off"
+/* Opt-in public three-value PON status; absent means off. */
+#define SWITCH_PON_STATE     "login-pon-state.on"
 
 /*
  * Two development files odi-oss reads at boot, reported to the Firmware tab

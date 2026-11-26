@@ -101,6 +101,10 @@ $(BUILD)/confd-kdfcount: $(SRCS) $(HDRS) Makefile | $(BUILD)
 	$(CC) $(CFLAGS) -DKDF_COUNT_PATH='"/tmp/confd-kdf-count"' -DCOLD_KDF_MIN_MS=4000 \
 		$(LDFLAGS) -o $@ $(filter %.S %.c,$^)
 
+# Test-only binary with the kernel status path pointing at a fixture.
+$(BUILD)/confd-pon-test: $(SRCS) $(HDRS) Makefile | $(BUILD)
+	$(CC) $(CFLAGS) -DGPON_STATUS='"/tmp/confd-pon-status"' $(LDFLAGS) -o $@ $(filter %.S %.c,$^)
+
 $(BUILD):
 	mkdir -p $@
 
@@ -146,8 +150,14 @@ check:
 # request path -- framing, auth, form parsing, validation -- that fails silently
 # on real hardware, and every case in there is a bug this has actually had.
 # The idle-client check waits out a 15 s socket timeout, so budget ~20 s.
-smoke: confd
+smoke: confd pon-state-test
 	scripts/smoke.sh
+
+# Isolated loopback-only test, with a synthetic kernel status file.
+.PHONY: pon-state-test
+pon-state-test: confd
+	$(RUN) make IN_CONTAINER=1 $(BUILD)/confd-pon-test
+	docker run --rm --network none -v "$(CURDIR)":/src -w /src $(IMAGE) sh scripts/pon-state-test.sh
 
 # Assert the schema and the device agree in both directions. Needs a stick.
 schema:

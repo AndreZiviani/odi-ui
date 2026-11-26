@@ -123,6 +123,24 @@ static const char *find_line(const char *buf, const char *prefix, unsigned long 
 	return 0;
 }
 
+/* Public status is deliberately a closed vocabulary, never file content.
+ * The kernel prints "state N (ON)" as its first line. */
+const char *login_pon_state(void)
+{
+	char buf[128];
+	unsigned long len;
+	const char *v;
+
+	if (read_file(GPON_STATUS, buf, sizeof(buf)) <= 0)
+		return "unknown";
+	v = find_line(buf, "state ", &len);
+	if (!v || len != 6 || v[0] < '1' || v[0] > '7' ||
+	    v[1] != ' ' || v[2] != '(' || v[3] != 'O' ||
+	    v[4] != v[0] || v[5] != ')')
+		return "unknown";
+	return v[0] == '5' ? "registered" : "not_registered";
+}
+
 static void emit_member(int fd, const char *name, const char *v, unsigned long len)
 {
 	put_fd(fd, ",\"");

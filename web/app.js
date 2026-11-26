@@ -118,6 +118,7 @@ function showAuth() {
   $('#pw-cur-row').hidden = on;
   $('#sshkey-locked').hidden = !on;
   $('#sshkey-add').disabled = on;
+  renderLoginPonSwitch();
   $('#backup-locked').hidden = !on;
   $('#backup-go').disabled = on;
   $('#backup-plain').hidden = on;
@@ -169,6 +170,7 @@ $('#save').onclick = save;
 $('#services-reload').onclick = () => renderServices(true);
 $('#topo-reload').onclick = () => renderTopology(true);
 $('#pw-save').onclick = savePassword;
+$('#login-pon-toggle').onclick = toggleLoginPonSwitch;
 $('#sshkey-add').onclick = addSshKey;
 $('#reset-go').onclick = resetConfig;
 wireRestore();
@@ -272,6 +274,34 @@ async function savePasswordOnce() {
 /* The lines on the stick as last listed, for the duplicate check and for the
    warning before the last one is removed. */
 let SSH_LINES = [];
+
+function renderLoginPonSwitch() {
+  const sw = (S.FW || {}).switches || {};
+  const supported = Object.hasOwn(sw, 'login-pon-state.on');
+  $('#login-pon-block').hidden = !supported || !!S.FW.defaultauth;
+  $('#login-pon-toggle').textContent = sw['login-pon-state.on'] ? 'Turn off' : 'Turn on';
+}
+
+async function toggleLoginPonSwitch() {
+  const b = $('#login-pon-toggle');
+  const out = $('#login-pon-out');
+  const on = !!S.FW.switches['login-pon-state.on'];
+  b.disabled = true;
+  out.textContent = '';
+  try {
+    const r = await fetch('/api/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ name: 'login-pon-state.on', on: on ? '0' : '1' }).toString(),
+    });
+    const j = await r.json();
+    if (!j.ok) { out.textContent = j.error || 'Could not save setting.'; return; }
+    S.FW.switches['login-pon-state.on'] = j.on;
+    renderLoginPonSwitch();
+    out.textContent = j.on ? 'Fibre status is shown on sign-in.' : 'Fibre status is hidden on sign-in.';
+  } catch (e) { out.textContent = 'Could not save setting.'; }
+  finally { b.disabled = false; }
+}
 
 async function renderSshKeys() {
   const box = $('#sshkeys');

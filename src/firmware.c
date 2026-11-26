@@ -581,6 +581,8 @@ void emit_firmware_body(int fd)
 	put_fd(fd, file_exists(SWITCH_DIR SWITCH_CONFD_SETUP) ? "true" : "false");
 	put_fd(fd, ",\"" SWITCH_UPDATE_OFF "\":");
 	put_fd(fd, file_exists(SWITCH_DIR SWITCH_UPDATE_OFF) ? "true" : "false");
+	put_fd(fd, ",\"" SWITCH_PON_STATE "\":");
+	put_fd(fd, file_exists(SWITCH_DIR SWITCH_PON_STATE) ? "true" : "false");
 	put_fd(fd, "},\"lanip_override\":");
 	put_fd(fd, file_exists(LANIP_OVERRIDE) ? "true" : "false");
 	emit_dev_files(fd);
