@@ -2996,6 +2996,75 @@ EDITS.clear();
        'gated: setting mode 1 back unlocks it, with nothing pending');
     ok(field('VLAN_EAPOL_UNTAGGED') !== null && field('VLAN_EAPOL_UNTAGGED').tagName === 'select',
        'gated: and the EAPOL switch is a choice again');
+    {
+      /* The VLAN ID offers the VIDs of the tag filters of the OLT (ME 84) and
+         still takes any other; it fills one in only right after the user
+         turned the manual tag on, and only on an empty key. */
+      const { forgetFilterVids } = await import(join(root, 'web', 'config.js'));
+      const listOf = () => {
+        let l = null;
+        walk(vidRow(), (x) => { if (x.tagName === 'datalist') l = x; });
+        return l;
+      };
+      const settle = () => new Promise((r) => setTimeout(r, 0));
+      const was = S.VALUES.VLAN_MANU_TAG_VID;
+      const wasType = S.VALUES.VLAN_CFG_TYPE;
+      const was84 = OMCI['84'];
+      const turnManualOn = async () => {
+        S.VALUES.VLAN_CFG_TYPE = '0';
+        renderAll();
+        field('VLAN_CFG_TYPE').value = '1';
+        field('VLAN_CFG_TYPE').oninput();
+        await settle();
+      };
+      forgetFilterVids();
+      renderAll();
+      await settle();
+      ok(field('VLAN_MANU_TAG_VID').getAttribute('list') === listOf().id
+         && listOf().children.map((o) => o.value).join(',') === '75,1600'
+         && /allows VLANs 75, 1600/.test(textOf(vidRow())),
+         'VLAN ID: the field offers the VIDs of the tag filters, each once');
+      ok(field('VLAN_MANU_TAG_VID').value === was && !EDITS.has('VLAN_MANU_TAG_VID'),
+         'VLAN ID: two VIDs fill in nothing');
+      OMCI['84'] = was84.replace('VID 1600', 'VID 75');
+      S.VALUES.VLAN_MANU_TAG_VID = '';
+      forgetFilterVids();
+      renderAll();
+      await settle();
+      ok(field('VLAN_MANU_TAG_VID').value === '' && !EDITS.has('VLAN_MANU_TAG_VID') && EDITS.size === 0,
+         'VLAN ID: loading the page fills in nothing, even with one VID on an empty key');
+      await turnManualOn();
+      ok(field('VLAN_MANU_TAG_VID').value === '75' && EDITS.get('VLAN_MANU_TAG_VID') === '75'
+         && field('VLAN_MANU_TAG_VID').classList.contains('changed'),
+         'VLAN ID: turning the manual tag on fills in the one VID, as an edit Save still has to take');
+      renderAll();
+      await settle();
+      EDITS.delete('VLAN_MANU_TAG_VID');
+      renderAll();
+      await settle();
+      ok(field('VLAN_MANU_TAG_VID').value === '' && !EDITS.has('VLAN_MANU_TAG_VID'),
+         'VLAN ID: dropping that edit leaves the field empty, a later draw fills in nothing');
+      EDITS.clear();
+      S.VALUES.VLAN_MANU_TAG_VID = '35';
+      await turnManualOn();
+      ok(field('VLAN_MANU_TAG_VID').value === '35' && !EDITS.has('VLAN_MANU_TAG_VID')
+         && listOf().children.length === 1,
+         'VLAN ID: a stored value is never changed, the VID is only offered');
+      EDITS.clear();
+      S.VALUES.VLAN_CFG_TYPE = wasType;
+      OMCI['84'] = '';
+      S.VALUES.VLAN_MANU_TAG_VID = '';
+      forgetFilterVids();
+      renderAll();
+      await settle();
+      ok(field('VLAN_MANU_TAG_VID').value === '' && !EDITS.has('VLAN_MANU_TAG_VID')
+         && listOf().children.length === 0 && !/The OLT allows/.test(textOf(vidRow())),
+         'VLAN ID: no filters, a plain field');
+      OMCI['84'] = was84;
+      S.VALUES.VLAN_MANU_TAG_VID = was;
+      forgetFilterVids();
+      renderAll();
+    }
     EDITS.set('VLAN_CFG_TYPE', '0');
     EDITS.set('VLAN_MANU_TAG_VID', '100');
     ok(invalidEdits().some(([k, why]) => k === 'VLAN_MANU_TAG_VID' && /ignored by the firmware/.test(why)),

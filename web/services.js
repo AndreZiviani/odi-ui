@@ -264,6 +264,25 @@ function renderVlanFilter(box, dump) {
     + 'shows unread in the raw view.'));
 }
 
+/*
+ * The VLAN ids the tag filters of the OLT (ME 84) name, each once, in the order
+ * they come, for the VLAN ID field on Config to offer. Only ids a manual tag
+ * can carry, 1 to 4094: a filter on VID 0 matches priority-tagged frames,
+ * which is not a VLAN to tag.
+ */
+function filterVids(dump) {
+  const out = [];
+  for (const inst of dump.instances) {
+    for (const [k, v] of inst.attrs) {
+      if (!/^FilterTbl\[/i.test(k)) continue;
+      const vid = fields(v).VID;
+      if (/^\d+$/.test(vid || '') && Number(vid) >= 1 && Number(vid) <= 4094 && !out.includes(String(Number(vid))))
+        out.push(String(Number(vid)));
+    }
+  }
+  return out;
+}
+
 function renderExtVlan(box, dump) {
   const rules = [];
 
@@ -499,4 +518,4 @@ function ruleWords(g) {
   return m.what + ' → ' + act.text + (act.pri ? ', ' + act.pri : '');
 }
 
-export { renderServices, ruleWords };
+export { renderServices, ruleWords, filterVids };

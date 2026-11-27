@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Config > VLAN: the service VLAN ID field offers the VIDs of the OLT's tag
+  filters (ME 84) as a list and still takes any other value. It fills in the
+  VID only right after you turn the manual tag on, when the key is empty and
+  the filters name exactly one VID, as a pending edit that Save still has to
+  take. Loading the page or Discard fills in nothing, and a stored value is
+  never changed. The field says which VLANs the OLT allows. Refs #120.
+
 - OMCI > Topology: a VLAN tagging column after the UNI. Each ME 171 table
   gets a box linked from the entity it is set on, with every rule in words,
   read the same way as the Services card (`untagged → VLAN 1, priority 0`,

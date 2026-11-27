@@ -16,6 +16,8 @@ import {
 import { hexAscii, snFromHex, snToHex, validateInput } from './validate.js';
 import { renderFixedMeEditor } from './expert.js';
 import { renderRoutesEditor } from './lanroutes.js';
+import { fetchMe, unavailable } from './omci.js';
+import { filterVids } from './services.js';
 
 /*
  * The subtabs, grouped by what someone changing the line thinks about rather
@@ -160,6 +162,31 @@ function startNtpTimer() {
   }, 10000);
 }
 
+/* Set by the user turning the manual tag on, and taken by the first VLAN ID
+   field still on the page once the filters are read: the one moment that
+   field may fill itself in. A change can draw the rows more than once, so it
+   is not taken at the draw itself. */
+let FILL_VID = false;
+const vidLocked = () => {
+  const r = S.SCHEMA.find((x) => x.name === 'VLAN_MANU_TAG_VID');
+  return !r || !!dependsUnmet(r);
+};
+
+/* The VIDs of the tag filters of the OLT, read once per page load: the filters
+   change only when the OLT provisions the line again. A read that fails or
+   comes back empty offers nothing, and the field stays a plain text field. */
+let FILTER_VIDS = null;
+function filterVidsOnce() {
+  if (!FILTER_VIDS) {
+    FILTER_VIDS = fetchMe('84')
+      .then((d) => (unavailable(d) ? [] : filterVids(d)))
+      .catch(() => []);
+  }
+  return FILTER_VIDS;
+}
+/* Read them again at the next draw (scripts/web-check.mjs, which swaps the dump). */
+const forgetFilterVids = () => { FILTER_VIDS = null; };
+
 function renderValue(row, raw, readonly = false) {
   const box = el('div', 's-field');
   const meta = S.META[row.name] || {};
@@ -277,6 +304,7 @@ function renderValue(row, raw, readonly = false) {
     document.dispatchEvent(new Event('edits-changed'));
   };
   input.oninput = input.onchange = () => {
+    const vidWasLocked = gatesOthers(row.name) && vidLocked();
     /* A serial number typed or pasted as 16 hex digits becomes the form the
        stick stores, in the field, so what is saved is what is shown. */
     const sn = row.type === 'gponsn' ? snFromHex(input.value) : null;
@@ -291,6 +319,7 @@ function renderValue(row, raw, readonly = false) {
     /* A key others depend on locks or unlocks them: redraw, and keep the
        focus on the control that was changed. */
     if (gatesOthers(row.name)) {
+      if (vidWasLocked && !vidLocked()) FILL_VID = true;
       dropIgnoredEdits();
       renderAll();
       const again = $('#f-' + row.name);
@@ -338,6 +367,42 @@ function renderValue(row, raw, readonly = false) {
     paint(input.value);
     follow = paint;
     box.append(aside);
+  }
+
+  /* The VLAN ID offers the VLANs the tag filters of the OLT (ME 84) allow, as
+     a list the field still takes any other value beside (odi-ui#120). With
+     the manual tag the VID goes on the fibre side and no class 171 table is
+     applied, so the class 84 VID is the value this field wants. It is filled
+     in only right after the user turned the manual tag on, while
+     nothing is stored or typed and the filters name exactly one VID, as an
+     edit like any other: loading the page or Discard fills in nothing, and a
+     stored value is never changed. */
+  if (row.name === 'VLAN_MANU_TAG_VID') {
+    const list = el('datalist');
+    list.id = 'vids-' + row.name;
+    input.setAttribute('list', list.id);
+    const aside = el('div', 's-aside');
+    aside.hidden = true;
+    box.append(list, aside);
+    filterVidsOnce().then((vids) => {
+      /* A row drawn again meanwhile has its own field and its own wait. */
+      if (input.isConnected === false) return;
+      const mayFill = FILL_VID;
+      FILL_VID = false;
+      if (!vids.length) return;
+      for (const v of vids) {
+        const o = el('option');
+        o.value = v;
+        list.append(o);
+      }
+      aside.textContent = (vids.length === 1 ? 'The OLT allows VLAN ' : 'The OLT allows VLANs ')
+        + vids.join(', ') + ' (VLAN filter, ME 84).';
+      aside.hidden = false;
+      if (mayFill && vids.length === 1 && (raw === undefined || raw === '') && !EDITS.has(row.name) && input.value === '') {
+        input.value = vids[0];
+        input.oninput();
+      }
+    });
   }
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form
@@ -612,4 +677,4 @@ function renderAll() {
   markPending();
 }
 
-export { ntpLine, renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS, OWN_CONTROL };
+export { forgetFilterVids, ntpLine, renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS, OWN_CONTROL };
