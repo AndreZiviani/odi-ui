@@ -162,8 +162,10 @@ function startNtpTimer() {
   }, 10000);
 }
 
-/* Set by the user turning the manual tag on, and taken by the next draw of
-   the VLAN ID: the one moment that field may fill itself in. */
+/* Set by the user turning the manual tag on, and taken by the first VLAN ID
+   field still on the page once the filters are read: the one moment that
+   field may fill itself in. A change can draw the rows more than once, so it
+   is not taken at the draw itself. */
 let FILL_VID = false;
 const vidLocked = () => {
   const r = S.SCHEMA.find((x) => x.name === 'VLAN_MANU_TAG_VID');
@@ -371,13 +373,11 @@ function renderValue(row, raw, readonly = false) {
      a list the field still takes any other value beside (odi-ui#120). With
      the manual tag the VID goes on the fibre side and no class 171 table is
      applied, so the class 84 VID is the value this field wants. It is filled
-     in only on the draw right after the user turned the manual tag on, while
+     in only right after the user turned the manual tag on, while
      nothing is stored or typed and the filters name exactly one VID, as an
      edit like any other: loading the page or Discard fills in nothing, and a
      stored value is never changed. */
   if (row.name === 'VLAN_MANU_TAG_VID') {
-    const mayFill = FILL_VID;
-    FILL_VID = false;
     const list = el('datalist');
     list.id = 'vids-' + row.name;
     input.setAttribute('list', list.id);
@@ -386,7 +386,10 @@ function renderValue(row, raw, readonly = false) {
     box.append(list, aside);
     filterVidsOnce().then((vids) => {
       /* A row drawn again meanwhile has its own field and its own wait. */
-      if (!vids.length || input.isConnected === false) return;
+      if (input.isConnected === false) return;
+      const mayFill = FILL_VID;
+      FILL_VID = false;
+      if (!vids.length) return;
       for (const v of vids) {
         const o = el('option');
         o.value = v;
