@@ -265,7 +265,7 @@ function renderVlanFilter(box, dump) {
 }
 
 /*
- * The VLAN ids the OLT's tag filters (ME 84) name, each once, in the order
+ * The VLAN ids the tag filters of the OLT (ME 84) name, each once, in the order
  * they come, for the VLAN ID field on Config to offer. Only ids a manual tag
  * can carry, 1 to 4094: a filter on VID 0 matches priority-tagged frames,
  * which is not a VLAN to tag.

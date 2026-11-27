@@ -162,7 +162,15 @@ function startNtpTimer() {
   }, 10000);
 }
 
-/* The VIDs of the OLT's tag filters, read once per page load: the filters
+/* Set by the user turning the manual tag on, and taken by the next draw of
+   the VLAN ID: the one moment that field may fill itself in. */
+let FILL_VID = false;
+const vidLocked = () => {
+  const r = S.SCHEMA.find((x) => x.name === 'VLAN_MANU_TAG_VID');
+  return !r || !!dependsUnmet(r);
+};
+
+/* The VIDs of the tag filters of the OLT, read once per page load: the filters
    change only when the OLT provisions the line again. A read that fails or
    comes back empty offers nothing, and the field stays a plain text field. */
 let FILTER_VIDS = null;
@@ -294,6 +302,7 @@ function renderValue(row, raw, readonly = false) {
     document.dispatchEvent(new Event('edits-changed'));
   };
   input.oninput = input.onchange = () => {
+    const vidWasLocked = gatesOthers(row.name) && vidLocked();
     /* A serial number typed or pasted as 16 hex digits becomes the form the
        stick stores, in the field, so what is saved is what is shown. */
     const sn = row.type === 'gponsn' ? snFromHex(input.value) : null;
@@ -308,6 +317,7 @@ function renderValue(row, raw, readonly = false) {
     /* A key others depend on locks or unlocks them: redraw, and keep the
        focus on the control that was changed. */
     if (gatesOthers(row.name)) {
+      if (vidWasLocked && !vidLocked()) FILL_VID = true;
       dropIgnoredEdits();
       renderAll();
       const again = $('#f-' + row.name);
@@ -357,14 +367,17 @@ function renderValue(row, raw, readonly = false) {
     box.append(aside);
   }
 
-  /* The VLAN ID offers the VLANs the OLT's tag filters (ME 84) allow, as a
-     list the field still takes any other value beside (odi-ui#120). With the
-     manual tag the VID goes on the fibre side and no class 171 table is
+  /* The VLAN ID offers the VLANs the tag filters of the OLT (ME 84) allow, as
+     a list the field still takes any other value beside (odi-ui#120). With
+     the manual tag the VID goes on the fibre side and no class 171 table is
      applied, so the class 84 VID is the value this field wants. It is filled
-     in only while nothing is stored or typed and the filters name exactly one
-     VID, as an edit like any other, so Save still decides; a stored value is
-     never changed. */
+     in only on the draw right after the user turned the manual tag on, while
+     nothing is stored or typed and the filters name exactly one VID, as an
+     edit like any other: loading the page or Discard fills in nothing, and a
+     stored value is never changed. */
   if (row.name === 'VLAN_MANU_TAG_VID') {
+    const mayFill = FILL_VID;
+    FILL_VID = false;
     const list = el('datalist');
     list.id = 'vids-' + row.name;
     input.setAttribute('list', list.id);
@@ -382,7 +395,7 @@ function renderValue(row, raw, readonly = false) {
       aside.textContent = (vids.length === 1 ? 'The OLT allows VLAN ' : 'The OLT allows VLANs ')
         + vids.join(', ') + ' (VLAN filter, ME 84).';
       aside.hidden = false;
-      if (vids.length === 1 && (raw === undefined || raw === '') && !EDITS.has(row.name) && input.value === '') {
+      if (mayFill && vids.length === 1 && (raw === undefined || raw === '') && !EDITS.has(row.name) && input.value === '') {
         input.value = vids[0];
         input.oninput();
       }
