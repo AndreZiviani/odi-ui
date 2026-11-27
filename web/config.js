@@ -16,6 +16,8 @@ import {
 import { hexAscii, snFromHex, snToHex, validateInput } from './validate.js';
 import { renderFixedMeEditor } from './expert.js';
 import { renderRoutesEditor } from './lanroutes.js';
+import { fetchMe, unavailable } from './omci.js';
+import { filterVids } from './services.js';
 
 /*
  * The subtabs, grouped by what someone changing the line thinks about rather
@@ -159,6 +161,21 @@ function startNtpTimer() {
     if (box && box.offsetParent !== null && !document.hidden) refreshNtp();
   }, 10000);
 }
+
+/* The VIDs of the OLT's tag filters, read once per page load: the filters
+   change only when the OLT provisions the line again. A read that fails or
+   comes back empty offers nothing, and the field stays a plain text field. */
+let FILTER_VIDS = null;
+function filterVidsOnce() {
+  if (!FILTER_VIDS) {
+    FILTER_VIDS = fetchMe('84')
+      .then((d) => (unavailable(d) ? [] : filterVids(d)))
+      .catch(() => []);
+  }
+  return FILTER_VIDS;
+}
+/* Read them again at the next draw (scripts/web-check.mjs, which swaps the dump). */
+const forgetFilterVids = () => { FILTER_VIDS = null; };
 
 function renderValue(row, raw, readonly = false) {
   const box = el('div', 's-field');
@@ -338,6 +355,38 @@ function renderValue(row, raw, readonly = false) {
     paint(input.value);
     follow = paint;
     box.append(aside);
+  }
+
+  /* The VLAN ID offers the VLANs the OLT's tag filters (ME 84) allow, as a
+     list the field still takes any other value beside (odi-ui#120). With the
+     manual tag the VID goes on the fibre side and no class 171 table is
+     applied, so the class 84 VID is the value this field wants. It is filled
+     in only while nothing is stored or typed and the filters name exactly one
+     VID, as an edit like any other, so Save still decides; a stored value is
+     never changed. */
+  if (row.name === 'VLAN_MANU_TAG_VID') {
+    const list = el('datalist');
+    list.id = 'vids-' + row.name;
+    input.setAttribute('list', list.id);
+    const aside = el('div', 's-aside');
+    aside.hidden = true;
+    box.append(list, aside);
+    filterVidsOnce().then((vids) => {
+      /* A row drawn again meanwhile has its own field and its own wait. */
+      if (!vids.length || input.isConnected === false) return;
+      for (const v of vids) {
+        const o = el('option');
+        o.value = v;
+        list.append(o);
+      }
+      aside.textContent = (vids.length === 1 ? 'The OLT allows VLAN ' : 'The OLT allows VLANs ')
+        + vids.join(', ') + ' (VLAN filter, ME 84).';
+      aside.hidden = false;
+      if (vids.length === 1 && (raw === undefined || raw === '') && !EDITS.has(row.name) && input.value === '') {
+        input.value = vids[0];
+        input.oninput();
+      }
+    });
   }
 
   /* PLOAM and friends store the hex of an ASCII string; show the readable form
@@ -612,4 +661,4 @@ function renderAll() {
   markPending();
 }
 
-export { ntpLine, renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS, OWN_CONTROL };
+export { forgetFilterVids, ntpLine, renderValue, renderConfig, renderAll, renderRow, splitHelp, groupOf, markPending, GROUPS, OWN_CONTROL };
